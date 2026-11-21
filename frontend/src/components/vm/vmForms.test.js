@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 
 import { changedFields } from '../../hooks/formState.js';
 import {
-  expertForm, memoryText, nicsForApi, sizeForm, sizeProblems, sizeSent, systemSummary, toggledBootDevice, withPreset,
+  expertForm, memoryText, nicsForApi, profileText, sizeForm, sizeProblems, sizeSent, systemSummary, takesFirstBootSetup,
+  toggledBootDevice, withPreset,
 } from './vmForms.js';
+import { PROFILE_NAMES, VM_PROFILES } from '../../../../backend/src/lib/vmProfiles.js';
 
 const vm = {
   name: 'archy', vcpus: 2, memoryMiB: 4096, firmware: 'uefi', machineType: 'pc-q35-9.2', cpuMode: 'host-passthrough',
@@ -70,4 +72,12 @@ test('an adapter read back with no bridge, model or MAC is sent with strings', (
   assert.deepEqual(nicsForApi([nic]), [{ type: 'bridge', mac: '52:54:00:00:00:02', source: '', model: 'virtio' }]);
   assert.deepEqual(nicsForApi([{ mac: null, model: null, source: 'br0' }]), [{ type: 'bridge', mac: '', source: 'br0', model: 'virtio' }]);
   for (const sent of nicsForApi([{}, nic])) for (const v of Object.values(sent)) assert.equal(typeof v, 'string');
+});
+
+test('the page knows every profile the server makes, and shows first boot setup where the server takes one', () => {
+  for (const profile of PROFILE_NAMES) {
+    assert.notEqual(profileText(profile), 'Unknown', profile);
+    assert.equal(takesFirstBootSetup(profile), VM_PROFILES[profile].firstBootSetup, profile);
+  }
+  assert.deepEqual([profileText(null), takesFirstBootSetup(null)], ['Unknown', false]);
 });

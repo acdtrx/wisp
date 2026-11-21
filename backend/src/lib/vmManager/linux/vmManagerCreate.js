@@ -398,7 +398,7 @@ async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primar
   // The cloud-init ISO is built by the caller (Wisp glue) through populateVMDir.
   // We just record the expected path so buildDomainXML can wire up the sde slot.
   let sdePath = null;
-  if (s.cloudInit && s.osType !== 'Windows' && s.cloudInit.enabled !== false) {
+  if (s.cloudInit && s.cloudInit.enabled !== false) {
     emit('cloudinit');
     sdePath = join(vmBasePath, 'cloud-init.iso');
   }

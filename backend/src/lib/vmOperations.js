@@ -36,6 +36,7 @@ import {
   isOfflineState,
   planBackupRestore,
   restoreBackup,
+  getVMConfig,
 } from './vmManager/index.js';
 import {
   startJob,
@@ -52,7 +53,7 @@ import { withVmOperationLock } from './vmOperationLock.js';
 import { createAppError } from './appErrors.js';
 import { startWorkloadBackupJob } from './workloadBackup.js';
 import { followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
-import { createSpecForProfile } from './vmProfiles.js';
+import { assertFirstBootSetupFits, createSpecForProfile } from './vmProfiles.js';
 import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const vm = (name) => ({ type: 'vm', name });
@@ -67,9 +68,10 @@ const vm = (name) => ({ type: 'vm', name });
  */
 export function startVmCreateJob({ spec: request, log }) {
   /* The profile's settings, the request's own values over them (lib/vmProfiles.js). */
+  if (request.cloudInit) assertFirstBootSetupFits(request.profile, request.name);
   const spec = createSpecForProfile(request);
   const name = spec.name;
-  const wantsCloudInit = !!(spec.cloudInit && spec.osType !== 'Windows' && spec.cloudInit.enabled !== false);
+  const wantsCloudInit = !!(spec.cloudInit && spec.cloudInit.enabled !== false);
   return startJob({
     kind: JOB_KIND.VM_CREATE,
     title: titleForVmCreate(name),
@@ -285,9 +287,16 @@ export function detachVmUsb(name, vendorId, productId) {
   return withVmOperationLock(name, 'USB change', () => detachUSBDevice(name, vendorId, productId));
 }
 
-/** Save the VM's cloud-init config: rewrites cloud-init.json and the seed ISO in its directory, and redefines the sde slot. */
+/**
+ * Save the VM's cloud-init config: rewrites cloud-init.json and the seed ISO in its
+ * directory, and redefines the sde slot. Only for a VM whose profile takes one.
+ */
 export function saveVmCloudInit(name, config, log) {
-  return withVmOperationLock(name, 'cloud-init change', () => updateCloudInit(name, config, log));
+  return withVmOperationLock(name, 'cloud-init change', async () => {
+    const { profile } = await getVMConfig(name);
+    assertFirstBootSetupFits(profile, name);
+    return updateCloudInit(name, config, log);
+  });
 }
 
 /** Detach the seed ISO and delete it and cloud-init.json. */

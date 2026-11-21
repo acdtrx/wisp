@@ -27,7 +27,7 @@ mockModule('./vmManager/index.js', [
   'assertVMNameAvailable', 'createVM', 'assertVMState', 'startVM', 'stopVM', 'forceStopVM', 'rebootVM', 'suspendVM',
   'resumeVM', 'deleteVM', 'updateVMConfig', 'attachDisk', 'createAndAttachDisk', 'detachDisk', 'resizeDiskBySlot',
   'updateDiskBus', 'attachISO', 'ejectISO', 'attachUSBDevice', 'detachUSBDevice', 'createBackup', 'listVMs',
-  'isOfflineState', 'planBackupRestore', 'restoreBackup',
+  'isOfflineState', 'planBackupRestore', 'restoreBackup', 'getVMConfig',
 ]);
 mockModule('./cloudInit.js', ['generateCloudInit', 'rebuildCloudInitISO', 'updateCloudInit', 'detachCloudInitDisk']);
 mockModule('./paths.js', ['isPathInsideAllowedRoots']);
@@ -36,7 +36,7 @@ mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'for
 mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
-const { editVmConfig, startVmDeleteJob } = await import('./vmOperations.js');
+const { editVmConfig, saveVmCloudInit, startVmCreateJob, startVmDeleteJob } = await import('./vmOperations.js');
 const { whenJobEnds } = await import('./jobs/index.js');
 const { acquireVmOperationLock } = await import('./vmOperationLock.js');
 
@@ -100,4 +100,37 @@ test('a delete is followed by its follow-ups: the backup status and the section 
     ['forgetBackupStatus', { type: 'vm', name: 'gone' }],
     ['removeWorkloadAssignment', 'vm', 'gone'],
   ]);
+});
+
+const SETUP = { hostname: 'w', username: 'wisp', password: 'pw' };
+
+test('a create with a first boot setup is refused for a profile that takes none, before any job', () => {
+  for (const profile of ['windows-11', 'other']) {
+    assert.throws(
+      () => startVmCreateJob({ spec: { name: 'w', profile, cloudInit: SETUP }, log }),
+      (err) => err.code === 'INVALID_REQUEST' && err.message.includes(profile),
+    );
+  }
+  assert.deepEqual(calls, []);
+});
+
+test('a Linux create with a first boot setup builds it into the new VM', async () => {
+  impl.createVM = async (_spec, { populateVMDir }) => { await populateVMDir(); };
+  const { jobId } = await startVmCreateJob({ spec: { name: 'l', profile: 'linux', cloudInit: SETUP }, log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(names(), ['assertVMNameAvailable', 'createVM', 'generateCloudInit']);
+  assertUnlocked('l');
+});
+
+test('a first boot setup is saved only on a VM whose profile takes one; one with no profile is refused', async () => {
+  for (const profile of ['windows-11', 'other', null]) {
+    calls.length = 0;
+    impl.getVMConfig = async () => ({ name: 'v', profile });
+    await assert.rejects(saveVmCloudInit('v', SETUP, log), (err) => err.code === 'INVALID_REQUEST');
+    assert.deepEqual(names(), ['getVMConfig']);
+  }
+  impl.getVMConfig = async () => ({ name: 'v', profile: 'linux' });
+  await saveVmCloudInit('v', SETUP, log);
+  assert.deepEqual(calls.at(-1), ['updateCloudInit', 'v', SETUP, log]);
+  assertUnlocked('v');
 });

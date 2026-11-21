@@ -101,8 +101,20 @@ function machineChoice(raw) {
   return s || 'q35';
 }
 
+/** The VM profiles as the page shows them: the name, and whether a VM of the profile
+ *  takes a first boot setup (the server's profile table says the same, and refuses one
+ *  elsewhere: backend/src/lib/vmProfiles.js). */
+const PROFILES = {
+  linux: { text: 'Linux', firstBootSetup: true },
+  'windows-11': { text: 'Windows 11', firstBootSetup: false },
+  other: { text: 'Other', firstBootSetup: false },
+};
+
 /** What a VM's profile says on the page; a VM Wisp neither made nor migrated has none. */
-export const profileText = (profile) => ({ linux: 'Linux', 'windows-11': 'Windows 11', other: 'Other' }[profile] ?? 'Unknown');
+export const profileText = (profile) => PROFILES[profile]?.text ?? 'Unknown';
+
+/** Whether the VM takes a first boot setup: by its profile; a VM with none takes none. */
+export const takesFirstBootSetup = (profile) => PROFILES[profile]?.firstBootSetup === true;
 
 /** The operating system the Windows tuning follows (Expert settings): Windows while the
  *  definition carries the tuning. */

@@ -34,7 +34,7 @@ import VmNetworkGroup from './VmNetworkGroup.jsx';
 import VmSizeGroup from './VmSizeGroup.jsx';
 import VmSystemGroup from './VmSystemGroup.jsx';
 import VmUsbGroup from './VmUsbGroup.jsx';
-import { profileText } from './vmForms.js';
+import { profileText, takesFirstBootSetup } from './vmForms.js';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
@@ -261,7 +261,7 @@ export default function OverviewPanel({ name }) {
                   <VmSizeGroup {...groupProps} lockReason={lockReason} />
                   <VmDisksGroup {...groupProps} lockReason={lockReason} />
                   <VmNetworkGroup {...groupProps} lockReason={lockReason} />
-                  {config.profile === 'linux' && <VmFirstBootGroup {...groupProps} />}
+                  {takesFirstBootSetup(config.profile) && <VmFirstBootGroup {...groupProps} />}
                   <VmUsbGroup {...groupProps} />
                   <GroupCard title="Start-up">
                     <GroupSwitch
