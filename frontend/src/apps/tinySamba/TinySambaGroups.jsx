@@ -15,9 +15,9 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import {
-  ICON_MODEL_OFF, ICON_MODEL_ON, PROTOCOLS, editDeletesShareData, removalDeletesShareData, serverForm, serverProblems,
+  ICON_MODEL_OFF, PROTOCOLS, editDeletesShareData, removalDeletesShareData, serverForm, serverProblems,
   shareForm, shareProblem, sharesOnlyUserReaches, userForm, userProblem, withServer, withShare, withUser, withoutShare,
-  withoutUser,
+  withAppleExtensions, withoutUser,
 } from './tinySambaConfig.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
@@ -288,7 +288,7 @@ function UserEditor({ config, userKey, save, onClose }) {
 }
 
 function ServerEditor({ config, save, onClose }) {
-  const { form, setField, dirty } = useEditor(() => serverForm(appConfigOf(config)));
+  const { form, start, setField, setForm, dirty } = useEditor(() => serverForm(appConfigOf(config)));
   const command = useCommand();
   const problems = serverProblems(form);
   const blocked = Object.values(problems)[0] ?? (dirty ? null : 'Nothing changed');
@@ -322,7 +322,7 @@ function ServerEditor({ config, save, onClose }) {
         label="Apple extensions"
         hint="Nicer Finder icons and faster browsing on a Mac; shares on exFAT or FAT drives turn them off on their own."
         checked={form.iconModel !== ICON_MODEL_OFF}
-        onChange={(e) => setField('iconModel', e.target.checked ? ICON_MODEL_ON : ICON_MODEL_OFF)}
+        onChange={(e) => setForm((f) => withAppleExtensions(f, start, e.target.checked))}
       />
     </FormModal>
   );

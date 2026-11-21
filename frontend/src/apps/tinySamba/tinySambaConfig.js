@@ -8,7 +8,7 @@ import { keyTaken, withRow, withoutRow } from '../appConfigRows.js';
  */
 
 export const PROTOCOLS = ['SMB1', 'SMB2', 'SMB3'];
-export const ICON_MODEL_ON = 'TimeCapsule6,106';
+const ICON_MODEL_ON = 'TimeCapsule6,106';
 export const ICON_MODEL_OFF = '-';
 
 const shareKey = (s) => s.name;
@@ -159,10 +159,19 @@ export function userProblem(ac, key, form) {
 
 /* ---- Server ---- */
 
+/** The server's form: `iconModel` as stored, whichever model it names; the form offers
+ *  only on and off, and changes it only when that control is changed. */
 export const serverForm = (ac = {}) => {
   const s = sambaSendable(ac).server;
-  return { ...s, dataUid: String(s.dataUid), iconModel: s.iconModel === ICON_MODEL_OFF ? ICON_MODEL_OFF : ICON_MODEL_ON };
+  return { ...s, dataUid: String(s.dataUid) };
 };
+
+/** The form with Apple extensions turned on or off (`start`: the form as it opened):
+ *  on again, it takes back the stored model, or the default when the stored one was off. */
+export const withAppleExtensions = (form, start, on) => ({
+  ...form,
+  iconModel: on ? (start.iconModel !== ICON_MODEL_OFF ? start.iconModel : ICON_MODEL_ON) : ICON_MODEL_OFF,
+});
 
 export const withServer = (ac, form) => ({
   ...sambaSendable(ac),

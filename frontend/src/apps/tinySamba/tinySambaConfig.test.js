@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   editDeletesShareData, removalDeletesShareData, sambaSendable, serverForm, serverProblems, shareForm, shareProblem,
-  sharesOnlyUserReaches, userProblem, withServer, withShare, withUser, withoutShare, withoutUser,
+  sharesOnlyUserReaches, userProblem, withAppleExtensions, withServer, withShare, withUser, withoutShare, withoutUser,
 } from './tinySambaConfig.js';
 
 const stored = {
@@ -72,4 +72,15 @@ test('the server form keeps the users and shares, and checks its fields', () => 
   assert.equal(sent.server.dataUid, 1000);
   assert.deepEqual(sent.users, [{ name: 'alice' }, { name: 'bob' }]);
   assert.deepEqual(Object.keys(serverProblems({ ...form, dataUid: '70000', workgroup: '' })), ['workgroup', 'dataUid']);
+});
+
+test('a stored Apple model the form does not offer is kept unless the switch is changed', () => {
+  const custom = { ...stored, server: { ...stored.server, iconModel: 'MacPro7,1' } };
+  const form = serverForm(custom);
+  assert.equal(withServer(custom, { ...form, minProtocol: 'SMB2' }).server.iconModel, 'MacPro7,1');
+  const off = withAppleExtensions(form, form, false);
+  assert.equal(off.iconModel, '-');
+  assert.equal(withAppleExtensions(off, form, true).iconModel, 'MacPro7,1');
+  const fromOff = serverForm({ ...stored, server: { ...stored.server, iconModel: '-' } });
+  assert.equal(withAppleExtensions(fromOff, fromOff, true).iconModel, 'TimeCapsule6,106');
 });
