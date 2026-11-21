@@ -3,20 +3,21 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 
+/* Widths apply from `sm`: below it every modal is a full-width sheet from the bottom. */
 const SIZE_CLASS = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-xl',
-  '2xl': 'max-w-2xl',
-  '3xl': 'max-w-3xl',
-  '4xl': 'max-w-4xl',
+  sm: 'sm:max-w-sm',
+  md: 'sm:max-w-md',
+  lg: 'sm:max-w-lg',
+  xl: 'sm:max-w-xl',
+  '2xl': 'sm:max-w-2xl',
+  '3xl': 'sm:max-w-3xl',
+  '4xl': 'sm:max-w-4xl',
 };
 
 const HEIGHT_CLASS = {
   auto: '',
   tall: 'h-[80vh]',
-  cap: 'max-h-[85vh]',
+  cap: 'sm:max-h-[85vh]',
 };
 
 const BODY_PADDING_CLASS = {
@@ -33,7 +34,8 @@ const BODY_PADDING_CLASS = {
  * inert under it. Standardized on a `bg-black/40` backdrop (deepened to /60 in
  * dark, where 40% over an already-dark canvas barely separates the dialog from
  * the page) and a `bg-surface-card` body. A click beside the modal closes
- * nothing: Escape, the X and Cancel do.
+ * nothing: Escape, the X and Cancel do. Below `sm` it is a sheet from the bottom of
+ * the screen, its footer above the home indicator.
  *
  * @param {boolean} open
  * @param {() => void} onClose - called on the X and on Escape
@@ -89,7 +91,7 @@ export default function Modal({
   return createPortal(
     <div
       ref={layerRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 dark:bg-black/60 pt-8 sm:items-center sm:p-4"
     >
       <div
         ref={cardRef}
@@ -98,7 +100,7 @@ export default function Modal({
         aria-labelledby={title != null ? titleId : undefined}
         aria-label={title == null ? ariaLabel : undefined}
         tabIndex={-1}
-        className={`relative flex w-full ${widthCls} ${heightCls} flex-col overflow-hidden rounded-card border border-surface-border bg-surface-card shadow-popover outline-hidden ${className}`}
+        className={`relative flex w-full ${widthCls} ${heightCls} max-h-full flex-col overflow-hidden rounded-t-2xl border border-b-0 border-surface-border bg-surface-card pb-safe shadow-popover outline-hidden sm:rounded-card sm:border-b sm:pb-0 ${className}`}
       >
         {showHeader && (
           <div className="flex items-start justify-between gap-3 border-b border-surface-border px-4 py-3 shrink-0">
