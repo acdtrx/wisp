@@ -7,6 +7,7 @@ import GroupAction from '../../components/shared/GroupAction.jsx';
 import GroupCard from '../../components/shared/GroupCard.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
+import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useForm.js';
 import { autoFocusField } from '../../lib/focus.js';
@@ -15,6 +16,7 @@ import {
 } from './zotConfig.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
+const removeAbout = (username) => `Couldn't remove ${username}`;
 
 /**
  * The Zot registry's own groups: its users (password sign-in, for `docker login`), the
@@ -22,24 +24,26 @@ const appConfigOf = (config) => config.metadata?.appConfig ?? {};
  */
 export default function ZotGroups({ config, busy, act, update }) {
   const ac = appConfigOf(config);
+  /* One whole-config command at a time: the rows and switches wait for it. */
+  const appReason = appRowReason(busy, act);
   const [editor, setEditor] = useState(null);
   const save = (appConfig) => update({ appConfig });
   const users = (ac.users ?? []).filter(Boolean);
   const oidc = ac.oidc ?? {};
 
   const remove = (username) => act.run(() => save(withoutUser(appConfigOf(config), username)), {
-    key: `user:${username}`, about: `Couldn't remove ${username}`,
+    key: APP_CONFIG_COMMAND, about: removeAbout(username),
   });
 
   return (
     <>
       <GroupCard
         title="Users"
-        actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={busy} onClick={() => setEditor({ user: null })} />}
+        actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
       >
         {users.length === 0 && <p className="py-1 text-sm text-text-muted">{oidc.enabled ? 'No users: sign in with single sign-on.' : 'No users: anyone may push and pull.'}</p>}
         {users.map((u) => {
-          const removing = act.isBusy(`user:${u.username}`);
+          const removing = appCommandRunning(act, removeAbout(u.username));
           return (
             <GroupItem
               key={u.username}
@@ -47,8 +51,8 @@ export default function ZotGroups({ config, busy, act, update }) {
               detail={u.hasPassword ? 'Password set' : 'No password'}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${u.username}`} reason={busy} disabled={removing} onClick={() => setEditor({ user: u.username })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${u.username}`} reason={busy} busy={removing} onClick={() => remove(u.username)} />
+                  <GroupAction icon={Pencil} label={`Edit ${u.username}`} reason={appReason} disabled={removing} onClick={() => setEditor({ user: u.username })} />
+                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${u.username}`} reason={appReason} busy={removing} onClick={() => remove(u.username)} />
                 </>
               )}
             />
@@ -58,14 +62,14 @@ export default function ZotGroups({ config, busy, act, update }) {
 
       <GroupCard
         title="Address"
-        actions={<GroupAction icon={Pencil} label="Edit the address" reason={busy} onClick={() => setEditor({ address: true })} />}
+        actions={<GroupAction icon={Pencil} label="Edit the address" reason={appReason} onClick={() => setEditor({ address: true })} />}
       >
         <ValueRows rows={[{ label: 'Reached at', value: ac.externalUrl || 'Not set', mono: !!ac.externalUrl }]} />
       </GroupCard>
 
       <GroupCard
         title="Sign-in (SSO)"
-        actions={<GroupAction icon={Pencil} label="Edit sign-in" reason={busy} onClick={() => setEditor({ sso: true })} />}
+        actions={<GroupAction icon={Pencil} label="Edit sign-in" reason={appReason} onClick={() => setEditor({ sso: true })} />}
       >
         <ValueRows
           rows={[

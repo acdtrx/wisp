@@ -9,6 +9,7 @@ import GroupCard from '../../components/shared/GroupCard.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import RecordError from '../../components/shared/RecordError.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
+import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useForm.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -21,6 +22,8 @@ import {
 } from './tinySambaConfig.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
+const removeShareAbout = (name) => `Couldn't remove the share ${name}`;
+const removeUserAbout = (name) => `Couldn't remove ${name}`;
 const NO_MOUNTS = [];
 const LEVEL_TEXT = { rw: 'read and write', ro: 'read' };
 
@@ -55,6 +58,8 @@ function ShareDataConfirm({ share, moving, onConfirm, onCancel }) {
  */
 export default function TinySambaGroups({ config, busy, act, update }) {
   const ac = appConfigOf(config);
+  /* One whole-config command at a time: the rows and switches wait for it. */
+  const appReason = appRowReason(busy, act);
   const [editor, setEditor] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const settings = useRecord(RECORD.SETTINGS);
@@ -65,26 +70,26 @@ export default function TinySambaGroups({ config, busy, act, update }) {
   const server = ac.server ?? {};
 
   const removeShare = (name) => act.run(() => save(withoutShare(appConfigOf(config), name)), {
-    key: `share:${name}`, about: `Couldn't remove the share ${name}`,
+    key: APP_CONFIG_COMMAND, about: removeShareAbout(name),
   });
   const askRemoveShare = (name) => {
     if (removalDeletesShareData(ac, name)) setConfirmRemove(name);
     else removeShare(name);
   };
   const removeUser = (name) => act.run(() => save(withoutUser(appConfigOf(config), name)), {
-    key: `user:${name}`, about: `Couldn't remove ${name}`,
+    key: APP_CONFIG_COMMAND, about: removeUserAbout(name),
   });
 
   return (
     <>
       <GroupCard
         title="Shares"
-        actions={<GroupAction icon={Plus} kindIcon={Folder} variant="add" label="Add a share" reason={busy} onClick={() => setEditor({ share: null })} />}
+        actions={<GroupAction icon={Plus} kindIcon={Folder} variant="add" label="Add a share" reason={appReason} onClick={() => setEditor({ share: null })} />}
       >
         <RecordError record={settings} what="storage mounts" className="mb-2" />
         {shares.length === 0 && <p className="py-1 text-sm text-text-muted">No shares.</p>}
         {shares.map((s) => {
-          const removing = act.isBusy(`share:${s.name}`);
+          const removing = appCommandRunning(act, removeShareAbout(s.name));
           const where = s.source?.sourceId
             ? `on ${storageLabel(storage, s.source.sourceId)}${s.source.subPath ? `/${s.source.subPath}` : ''}`
             : 'on this host';
@@ -96,8 +101,8 @@ export default function TinySambaGroups({ config, busy, act, update }) {
               detail={`${where} · ${who}`}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${s.name}`} reason={busy} disabled={removing} onClick={() => setEditor({ share: s.name })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${s.name}`} reason={busy} busy={removing} onClick={() => askRemoveShare(s.name)} />
+                  <GroupAction icon={Pencil} label={`Edit ${s.name}`} reason={appReason} disabled={removing} onClick={() => setEditor({ share: s.name })} />
+                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${s.name}`} reason={appReason} busy={removing} onClick={() => askRemoveShare(s.name)} />
                 </>
               )}
             />
@@ -107,11 +112,11 @@ export default function TinySambaGroups({ config, busy, act, update }) {
 
       <GroupCard
         title="Users"
-        actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={busy} onClick={() => setEditor({ user: null })} />}
+        actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
       >
         {users.length === 0 && <p className="py-1 text-sm text-text-muted">No users.</p>}
         {users.map((u) => {
-          const removing = act.isBusy(`user:${u.name}`);
+          const removing = appCommandRunning(act, removeUserAbout(u.name));
           const sole = sharesOnlyUserReaches(ac, u.name);
           return (
             <GroupItem
@@ -120,12 +125,12 @@ export default function TinySambaGroups({ config, busy, act, update }) {
               detail={u.password?.isSet ? 'Password set' : 'No password'}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${u.name}`} reason={busy} disabled={removing} onClick={() => setEditor({ user: u.name })} />
+                  <GroupAction icon={Pencil} label={`Edit ${u.name}`} reason={appReason} disabled={removing} onClick={() => setEditor({ user: u.name })} />
                   <GroupAction
                     icon={Trash2}
                     variant="danger"
                     label={`Remove ${u.name}`}
-                    reason={busy ?? (sole.length > 0 ? `the only user of ${sole.join(', ')}` : undefined)}
+                    reason={appReason ?? (sole.length > 0 ? `the only user of ${sole.join(', ')}` : undefined)}
                     busy={removing}
                     onClick={() => removeUser(u.name)}
                   />
@@ -138,7 +143,7 @@ export default function TinySambaGroups({ config, busy, act, update }) {
 
       <GroupCard
         title="Server"
-        actions={<GroupAction icon={Pencil} label="Edit the server" reason={busy} onClick={() => setEditor({ server: true })} />}
+        actions={<GroupAction icon={Pencil} label="Edit the server" reason={appReason} onClick={() => setEditor({ server: true })} />}
       >
         <ValueRows
           rows={[

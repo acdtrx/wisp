@@ -7,12 +7,14 @@ import GroupAction from '../../components/shared/GroupAction.jsx';
 import GroupCard from '../../components/shared/GroupCard.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
+import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useForm.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { domainForm, siteForm, siteProblem, withDomain, withSite, withoutSite } from './caddyConfig.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
+const removeAbout = (sub) => `Couldn't remove the site ${sub}`;
 
 /**
  * The Caddy reverse proxy's own groups: its sites (each saved or removed on its own,
@@ -20,24 +22,26 @@ const appConfigOf = (config) => config.metadata?.appConfig ?? {};
  */
 export default function CaddyGroups({ config, busy, act, update }) {
   const ac = appConfigOf(config);
+  /* One whole-config command at a time: the rows and switches wait for it. */
+  const appReason = appRowReason(busy, act);
   /* The open editor: `{ site: key | null }` or `{ domain: true }`. */
   const [editor, setEditor] = useState(null);
   const save = (appConfig) => update({ appConfig });
   const hosts = (ac.hosts ?? []).filter(Boolean);
 
   const remove = (sub) => act.run(() => save(withoutSite(appConfigOf(config), sub)), {
-    key: `site:${sub}`, about: `Couldn't remove the site ${sub}`,
+    key: APP_CONFIG_COMMAND, about: removeAbout(sub),
   });
 
   return (
     <>
       <GroupCard
         title="Sites"
-        actions={<GroupAction icon={Plus} kindIcon={Globe} variant="add" label="Add a site" reason={busy} onClick={() => setEditor({ site: null })} />}
+        actions={<GroupAction icon={Plus} kindIcon={Globe} variant="add" label="Add a site" reason={appReason} onClick={() => setEditor({ site: null })} />}
       >
         {hosts.length === 0 && <p className="py-1 text-sm text-text-muted">No sites.</p>}
         {hosts.map((h) => {
-          const removing = act.isBusy(`site:${h.subdomain}`);
+          const removing = appCommandRunning(act, removeAbout(h.subdomain));
           return (
             <GroupItem
               key={h.subdomain}
@@ -45,8 +49,8 @@ export default function CaddyGroups({ config, busy, act, update }) {
               detail={`to ${h.target}`}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${h.subdomain}`} reason={busy} disabled={removing} onClick={() => setEditor({ site: h.subdomain })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${h.subdomain}`} reason={busy} busy={removing} onClick={() => remove(h.subdomain)} />
+                  <GroupAction icon={Pencil} label={`Edit ${h.subdomain}`} reason={appReason} disabled={removing} onClick={() => setEditor({ site: h.subdomain })} />
+                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${h.subdomain}`} reason={appReason} busy={removing} onClick={() => remove(h.subdomain)} />
                 </>
               )}
             />
@@ -56,7 +60,7 @@ export default function CaddyGroups({ config, busy, act, update }) {
 
       <GroupCard
         title="Domain and certificates"
-        actions={<GroupAction icon={Pencil} label="Edit the domain and certificates" reason={busy} onClick={() => setEditor({ domain: true })} />}
+        actions={<GroupAction icon={Pencil} label="Edit the domain and certificates" reason={appReason} onClick={() => setEditor({ domain: true })} />}
       >
         <ValueRows
           rows={[

@@ -9,6 +9,7 @@ import GroupItem from '../../components/shared/GroupItem.jsx';
 import GroupSwitch from '../../components/shared/GroupSwitch.jsx';
 import RecordError from '../../components/shared/RecordError.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
+import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useForm.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -19,6 +20,8 @@ import {
 } from './jellyfinConfig.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
+const removeAbout = (label) => `Couldn't remove the library ${label}`;
+const gpuAbout = (on) => `Couldn't turn the GPU ${on ? 'on' : 'off'}`;
 const NO_MOUNTS = [];
 
 const storageLabel = (mounts, id) => {
@@ -33,6 +36,8 @@ const storageLabel = (mounts, id) => {
  */
 export default function JellyfinGroups({ config, busy, act, update }) {
   const ac = appConfigOf(config);
+  /* One whole-config command at a time: the rows and switches wait for it. */
+  const appReason = appRowReason(busy, act);
   const [editor, setEditor] = useState(null);
   const settings = useRecord(RECORD.SETTINGS);
   const storage = settings.data?.mounts ?? NO_MOUNTS;
@@ -42,13 +47,13 @@ export default function JellyfinGroups({ config, busy, act, update }) {
   const libraries = (ac.libraries ?? []).filter(Boolean);
 
   const remove = (label) => act.run(() => save(withoutLibrary(appConfigOf(config), label)), {
-    key: `library:${label}`, about: `Couldn't remove the library ${label}`,
+    key: APP_CONFIG_COMMAND, about: removeAbout(label),
   });
   const toggleGpu = (on) => act.run(() => save(withGpu(appConfigOf(config), on)), {
-    key: 'gpu', about: `Couldn't turn the GPU ${on ? 'on' : 'off'}`,
+    key: APP_CONFIG_COMMAND, about: gpuAbout(on),
   });
 
-  const gpuReason = busy ?? (hostGpus == null
+  const gpuReason = appReason ?? (hostGpus == null
     ? (gpus.status === 'error' ? 'the host GPUs could not be listed' : 'checking the host for a GPU')
     : (hostGpus.length === 0 && !ac.gpuEnabled ? 'the host has no Intel or AMD GPU to share' : undefined));
 
@@ -56,12 +61,12 @@ export default function JellyfinGroups({ config, busy, act, update }) {
     <>
       <GroupCard
         title="Libraries"
-        actions={<GroupAction icon={Plus} kindIcon={Library} variant="add" label="Add a library" reason={busy} onClick={() => setEditor({ library: null })} />}
+        actions={<GroupAction icon={Plus} kindIcon={Library} variant="add" label="Add a library" reason={appReason} onClick={() => setEditor({ library: null })} />}
       >
         <RecordError record={settings} what="storage mounts" className="mb-2" />
         {libraries.length === 0 && <p className="py-1 text-sm text-text-muted">No libraries.</p>}
         {libraries.map((lib) => {
-          const removing = act.isBusy(`library:${lib.label}`);
+          const removing = appCommandRunning(act, removeAbout(lib.label));
           return (
             <GroupItem
               key={lib.label}
@@ -70,8 +75,8 @@ export default function JellyfinGroups({ config, busy, act, update }) {
               detail={`From ${storageLabel(storage, lib.sourceId)}${lib.subPath ? `/${lib.subPath}` : ''}`}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${lib.label}`} reason={busy} disabled={removing} onClick={() => setEditor({ library: lib.label })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${lib.label}`} reason={busy} busy={removing} onClick={() => remove(lib.label)} />
+                  <GroupAction icon={Pencil} label={`Edit ${lib.label}`} reason={appReason} disabled={removing} onClick={() => setEditor({ library: lib.label })} />
+                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${lib.label}`} reason={appReason} busy={removing} onClick={() => remove(lib.label)} />
                 </>
               )}
             />
@@ -81,7 +86,7 @@ export default function JellyfinGroups({ config, busy, act, update }) {
 
       <GroupCard
         title="Published address"
-        actions={<GroupAction icon={Pencil} label="Edit the published address" reason={busy} onClick={() => setEditor({ address: true })} />}
+        actions={<GroupAction icon={Pencil} label="Edit the published address" reason={appReason} onClick={() => setEditor({ address: true })} />}
       >
         <ValueRows rows={[{ label: 'Address', value: ac.publishedUrl || 'Its local name', mono: !!ac.publishedUrl }]} />
         <div className="mt-1 border-t border-surface-border">
@@ -90,7 +95,7 @@ export default function JellyfinGroups({ config, busy, act, update }) {
             hint="Hardware video encoding and decoding; turn it on in Jellyfin’s Playback settings too."
             checked={ac.gpuEnabled === true}
             onChange={toggleGpu}
-            busy={act.isBusy('gpu')}
+            busy={appCommandRunning(act, gpuAbout(true)) || appCommandRunning(act, gpuAbout(false))}
             reason={gpuReason}
           />
         </div>
