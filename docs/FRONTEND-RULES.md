@@ -11,69 +11,98 @@ holds the UI library's rules.
   `ARCHITECTURE.md`.
   - Applied: per-viewer presentation is not server state: keep the theme per device
     (Wisp's design, Theme activation and persistence).
-  - Applied: mirror a stream (a topic of the `/api/events` singleton, or a scoped
-    stream) in a store made by the one helper, `createStreamStore`
-    (`store/streamStore.js`): `connect` / `disconnect` / `retry`, and `{ data,
-    connection, error }`, `connection` one of connecting, open, dropped, refused; an
-    error frame shown beside the last good data, a drop keeping both, a refusal shown
-    in the data's place. Every stream goes
-    through the one client, `openStream` (`api/sse.js`), a job's progress too (it
-    ends at the terminal frame). The VM and container stores are one base
-    (`store/workloadStore.js`) with a spec each. The wire's names (topics, change
-    kinds, job kinds) come from `shared/wireNames.js`, never a bare string (ESLint),
-    and the functions that take one refuse a name not in it.
-  - Applied: read a record through `useRecord(kind, id)` (`hooks/useRecord.js`) and the
-    one table of record kinds (`store/records.js`), which says once per kind how it is
-    read, the cues it is read again on (a `changes` kind, or a topic), the error codes
-    that mean it is gone (its subject's own not-found: any other 404 is an error), and
-    whether a command waits for its re-read (all do but a mount's disk usage, a
-    best-effort figure). A record is read while something shows it, once for everyone
-    showing it, again on its cues and when the events stream (re)connects — so a page
-    load reads each record twice, its first read and the connect frame's — and the read
-    is aborted when nothing shows it. A record named by an id is then dropped; one
-    without keeps its last data for the session (a returning view shows it while it
-    reads again), until sign-out. Every read wrapper in `api/` takes a `signal`. The
-    hook answers `{ data, status, error, reading, reload, dismiss }`, `status` one of
-    loading, ready, error, gone; a Retry joins the read on its way and shows it busy.
-    The stale-answer guard is the cache's alone (`specs/ERROR-HANDLING.md`, Stale
-    responses).
-    Three reads are not records, each read once where it is used: the login page's
-    SSO status (there is no session yet; aborted on unmount), a console's host-info
-    probe (does the server answer, before reconnecting), and the self-update's poll
-    of the version (it waits out the backend's restart).
-  - Applied (settled 2026-11-21): stage edits behind a Save with `useForm(record,
-    toForm)` (`hooks/useForm.js`): the form follows its record by value (a write
-    elsewhere in the record leaves it be), and `dirty` is computed by value. While its
-    own save is in flight the form does not follow its record; when the save's command
-    ends — which is after the re-read of what it changed has landed — the form follows
-    the record as it then is. A failed save leaves the form as typed, dirty. The save is
-    the form hook's own: the command, then a new read of the form's record, sent after
-    the command ended whatever the events stream does; the form follows the record once
-    that read has landed, and a failed read leaves it as typed.
-  - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
-    its new state (its topic's next frame, or the `changes` reference and the re-read it
-    triggers), so a section or modal closes onto fresh data; a command error ends it at
-    once. A request the guest may ignore (VM Stop, which is an ACPI shutdown, and
-    Reboot) ends at the ack: the list shows the VM stopping when it does (settled
+  - Applied: a stream (a topic of the events stream, or a scoped stream) is mirrored in
+    one kind of store: each opens, closes and is asked again the same way, and holds
+    its data, its connection (connecting, open, dropped, refused) and an error. An error
+    frame shows beside the last good data, a drop keeps both, a refusal shows in the
+    data's place. Every stream goes through one client, a job's progress too. The
+    VM and container stores are one store with a part of their own each. The wire's
+    names (topics, change kinds, job kinds) are written once, in the shared module,
+    never as a bare string; a function that takes one refuses a name not on the wire.
+  - Applied: a record — what one read route answers — is read through the one record
+    cache, and each kind of record is described once: how it is read, the cues it is
+    read again on, the error that means it is gone (its subject's own not-found: any
+    other is an error), and whether a command waits for its re-read (all do but a
+    mount's disk usage, a best-effort figure). A record is read while something shows
+    it, once for everyone showing it, again on its cues and when the events stream
+    (re)connects, and the read is aborted when nothing shows it; one named by an id is
+    then dropped, one without keeps its last data until sign-out. A view of a record is
+    loading, ready, in error or gone; a Retry joins the read on its way. A view never
+    shows an older answer after a newer one (`specs/ERROR-HANDLING.md`, Stale
+    responses), and every read settles: one a newer read replaced takes that read's
+    outcome. Three reads are not records, each read where it is used: the login page's
+    SSO status, a console's host probe, and the self-update's version poll.
+  - Applied (settled 2026-11-21): a form that edits a saved record follows that record
+    and owns its whole save.
+    - It is made from the record, the record's values as the form shows them, and what
+      Save sends for the values (the same values where they are the same).
+      Normalisation — a trim, a MAC's case, a list in the order the server acts on —
+      lives in that last step and nowhere else. Both steps are pure and total: the first
+      reads the record (a modal editor's, also the key it opened on), the second the
+      values and the record (its data, and the id it is read by), nothing else, and
+      neither throws. Text that does not parse is sent as typed (the form is dirty), and
+      the field's problem shows beside it and blocks Save with its reason. A problem is
+      one of a value the user changed: one the record already holds never blocks a save.
+    - A field the record's state locks (a running VM's CPU) shows the saved value, is not
+      sent and makes no change; a value typed in it before the lock began is dropped,
+      and does not come back when the lock ends. Each form states which fields are
+      locked now, once: a field is locked where the server would refuse its change, or
+      where the UI spec locks it, one test per rule (`utils/workloadLocks.js`).
+    - `dirty` means "Save would send something": what the form's values would send,
+      against what its saved values would. A row's identity is not compared, and
+      UI-only state (a row expanded, a password revealed) is not form state.
+    - It follows its record by value: a change in what the record's values would send
+      resets the form, a write elsewhere in the record leaves it. A reset takes the
+      record afresh and starts a new generation of the form: its rows get new
+      identities, and whatever a view holds on a row or on the form as it was — an open
+      row editor, an open confirm, a reveal flag, a passed test, anything pending — is
+      held by that generation and dropped with it. A failed save is no reset. Nothing
+      opened on one row can apply to another.
+    - Every form saves one way, a section's or an editor's: the command, ending at its
+      ack, then the form's own new read of the record; the form is saving until that read
+      has landed, and every Save control shows it. A save that renames its workload ends
+      at its ack, and the page follows to the new name, whose page reads its record. No
+      form's Save waits on a stream frame. A failed command or a failed read leaves the
+      form as typed.
+    - A modal editor's record is its parent's (the workload's config, the settings),
+      the entity picked when the editor opens by a key unique in that record (where the
+      wire addresses it by position, the position and the entity it opened on); the
+      editor mounts when it opens, and says so when its entity is removed elsewhere (its
+      own delete closes it). What it checks against — the other entities, for a
+      duplicate — is the record as the form took it. An edit's Save needs a change, a
+      create's only valid values.
+    - Creating a VM or a container, the panel's draft is the only state: it holds each
+      section's values in that section's own shape, the sections read it and write it
+      by functional update, and one pure conversion turns it into the create request,
+      at submit. A derived default is never shown as if typed: in a text field it is the
+      placeholder, and what is sent when the field is empty; in a select it is the
+      selected option, and what is sent.
+    - An input to a command — a password change, a token's name, a rename field, a
+      create dialog, sign-in, a row being added to a staged form — is its control's own
+      state, not a form.
+  - Applied (settled 2026-11-15): a command's control stays busy until the stream
+    brings its new state (its topic's next frame, or the `changes` reference and the
+    re-read it triggers), so a view closes onto fresh data; a command error ends it at
+    once. It does not govern a form's Save, which ends at its own re-read (above). A
+    request the guest may ignore (VM Stop, which is an ACPI shutdown, and Reboot) ends
+    at the ack: the list shows the VM stopping when it does (settled
     2026-11-16). A wait ends after 30 s even if no frame came, with no error: the
     command was accepted (settled 2026-11-16, CODING-RULES §6).
-  - Applied (settled 2026-11-21): a command that runs as a job names the records it
-    changes, and stays busy until the job ended and their re-read, sent after the job
-    ended, has landed; it depends on no stream frame (a cue from elsewhere still reads
-    them again). A job that ended cancelled is the command's failure, not a success.
-    A workload's header actions live in its store (`actions`, one error
-    slot per workload, cleared when any of its actions begins; the icon change shares
-    that slot, not the busy state). Every other command runs through `useCommand`
-    (`hooks/useCommand.js`, over `store/commands.js`): a command is named by key, a key
-    runs once at a time and its control is disabled while it runs, different keys run in
-    parallel, and each key holds its own error until it is dismissed or runs again;
-    different commands are different keys or hooks, and where the server takes one at
-    a time the other controls are disabled while it runs. Every control of a row is
-    disabled while a command on that row runs. A form's save is the form hook's own:
-    the command, then a new read of the form's record. Job state is read three ways and
-    no other: `awaitJob` (or the hook's `job`) to act on a job's end,
-    `useJobProgress(jobId)` to show its progress, and `runningJobs` (the jobs store) to
-    ask which jobs run — `useFollowJob` takes up one already running, to its end.
+  - Applied (settled 2026-11-21): commands and jobs.
+    - A command that runs as a job names the records it changes, and stays busy until
+      the job ended and their re-read, sent after it ended, has landed; it depends on no
+      stream frame. A job that ended cancelled is the command's failure.
+    - A workload's header actions are held by its store, one error per workload,
+      cleared when any of its actions begins; the icon change shares that error, not
+      the busy state. Every other command is named by a key: a key runs once at a time,
+      different keys run in parallel, each holds its own error, and what a key stands
+      for (what its error names) is held with it, never parsed back from it; different
+      commands are different keys. Every control of a row is disabled while a command on
+      that row runs, and where the server takes one at a time the other rows' controls
+      are too.
+    - Job state is read three ways and no other: to act on a job's end, to show its
+      progress, and to ask which jobs run (a terminal event already received counts as
+      the end). A view that opens on a job already running takes it up, to its end.
 - Initialise form and component state with meaningful defaults derived from the data
   model, never with an empty object.
   - Applied: start form state from the config's defaults, never `useState({})`.
@@ -89,20 +118,19 @@ holds the UI library's rules.
 ## Errors
 
 - Keep an error shown to the user visible until the user dismisses it.
-  - Applied: show an error through `ErrorBanner` (`components/shared/ErrorBanner.jsx`),
-    a record's through `RecordError`; a section's (`SectionCard`'s `error`) and a
-    modal's are `ErrorBanner`s too. A full-screen state (the app's error boundary, the
-    server unreachable), a dialog's alert and a console's connection state are their
+  - Applied: an error shows in the one error display (`ErrorBanner`); a section's and a
+    modal's errors are that display too. A full-screen state (the app's error boundary,
+    the server unreachable), a dialog's alert and a console's connection state are their
     own displays; a field's validation hint and a status shown as data (a backup's
     failed last attempt) are not errors.
   - Applied: a command's error stays until the user dismisses it or runs that command
-    again; a re-read of other data, or opening another editor, leaves it.
+    again; a re-read of other data, or opening another editor, leaves it. Several
+    commands' errors show as several.
   - Applied: a failed read is the view's error state: it stays until a read succeeds or
     the user dismisses it, and it never hides data that was already shown. With no data
     shown, the error state is the view itself, with a Retry; a dismiss exists only where
-    data is shown under the banner. A stream's error frame is shown the same way (its
-    store's `dismissError`); a dropped connection is a status line while the client
-    reconnects, not an error.
+    data is shown under it. A stream's error frame shows the same way; a dropped
+    connection is a status line while the client reconnects, not an error.
 
 ## Design
 
@@ -477,11 +505,11 @@ The standard shape for creating or editing **one entity** (a mount, a bridge, a 
 
 Structure (see **[FormModalChrome.jsx](../frontend/src/components/shared/FormModalChrome.jsx)** for the shared tokens):
 
-- **One purpose-named modal component per entity kind** (`SmbShareEditorModal`, not a generic kind-switched editor), owning its field state, validation, and API calls. Create vs edit is the presence of the entity prop (`share`, `drive`); the parent passes `onClose`, and `onSaved` only when it has its own follow-up to a save (the SMB editor's parent drops its connection-test results).
-- **Shell:** `<Modal size="sm"|"md" height="cap">` with `title` (e.g. "Edit SMB share") and a context `subtitle` (the share path, the device name). `closeOnEscape={!save.busy}` guards in-flight saves.
+- **One purpose-named modal component per entity kind** (`SmbShareEditorModal`, not a generic kind-switched editor), owning its form, validation, and API calls; its record is its parent's (Data). Create vs edit is whether the parent names an entity to edit; the parent passes `onClose`, and `onSaved` only when it has its own follow-up to a save (the SMB editor's parent drops its connection-test results).
+- **Shell:** `<Modal size="sm"|"md" height="cap">` with `title` (e.g. "Edit SMB share") and a context `subtitle` (the share path, the device name). Escape stays closed while the save runs.
 - **Fields:** stacked **`FormField`** (label above control, optional hint below) in a `space-y-3` `<form id=…>`; short related fields pair into `sm:grid-cols-2`. Controls use the **`input-field`** utility; checkboxes use **`FormCheckbox`** (box left, label + hint right). Read-only identity (UUID, filesystem, derived names) renders as a muted summary box or preview line, not as disabled inputs. The first field focuses on open through the focus module (`ref={autoFocusField}`, [lib/focus.js](../frontend/src/lib/focus.js)) — never on a touch device; Enter submits via the form.
-- **Footer** (via the Modal `footer` prop): right-aligned **Cancel** (`formModalNeutralBtn`) + primary **Save/Create/Adopt** (`formModalPrimaryBtn`, disabled until valid **and** dirty, `Loader2` while saving). Secondary actions (e.g. SMB **Test connection**) sit footer-left in an `mr-auto` group; a pass shows there as inline text (green OK), a failure as the action's own error in the body.
-- **Errors:** the save's error (its command hook's) as an **`ErrorBanner`** at the bottom of the body, dismissible; the modal stays open on failure. The save's command ends once its new state is on screen; on success the modal then closes.
+- **Footer** (via the Modal `footer` prop): right-aligned **Cancel** (`formModalNeutralBtn`) + primary **Save/Create/Adopt** (`formModalPrimaryBtn`, disabled until the save would send something — valid values, and for an edit a change (Data) — `Loader2` while saving). Secondary actions (e.g. SMB **Test connection**) sit footer-left in an `mr-auto` group; a pass shows there as inline text (green OK), a failure as the action's own error in the body.
+- **Errors:** the save's error as an **`ErrorBanner`** at the bottom of the body, dismissible; the modal stays open on failure. The save ends once its record's re-read has landed; on success the modal then closes.
 - **Nested dialogs** (settled 2026-08-25, reworked 2026-11-12): a `ConfirmDialog` opened from inside an editor modal is the top layer; the layer stack sends Escape to it alone, with no flag on the parent. Render it as a sibling of `<Modal>`, not inside its scrolling body. Reference: the generate-secret dialog in [EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx).
 - **Rows stay read-only.** The table keeps display cells only; row actions shrink to purpose actions (mount, check) + **Edit** + **Delete**, which fit on phones. Write-only secrets keep the "empty means keep what's on file" convention with a hint under the field.
 
