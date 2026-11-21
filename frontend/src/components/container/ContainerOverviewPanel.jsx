@@ -24,6 +24,7 @@ import IconPickerModal from '../shared/IconPickerModal.jsx';
 import MoreMenu from '../shared/MoreMenu.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
+import RenameDialog from '../shared/RenameDialog.jsx';
 import WorkloadGone from '../shared/WorkloadGone.jsx';
 import { getDefaultContainerIconId, getVmIcon } from '../shared/vmIcons.jsx';
 import ContainerLogsSection from '../sections/ContainerLogsSection.jsx';
@@ -33,7 +34,6 @@ import ContainerFigures from './ContainerFigures.jsx';
 import ContainerImageGroup from './ContainerImageGroup.jsx';
 import ContainerLimitsGroup from './ContainerLimitsGroup.jsx';
 import ContainerNetworkGroup from './ContainerNetworkGroup.jsx';
-import ContainerRenameDialog from './ContainerRenameDialog.jsx';
 import ContainerStartupGroup from './ContainerStartupGroup.jsx';
 import ContainerStorageGroup from './ContainerStorageGroup.jsx';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
@@ -320,7 +320,14 @@ export default function ContainerOverviewPanel({ name }) {
       </ConfirmDialog>
 
       {dialog === 'rename' && (
-        <ContainerRenameDialog name={name} update={update} onRenamed={followRename} onClose={() => setDialog(null)} />
+        <RenameDialog
+          name={name}
+          maxLength={63}
+          hint="Letters, digits, dots, dashes and underscores; its page, logs and local name follow it."
+          update={update}
+          onRenamed={followRename}
+          onClose={() => setDialog(null)}
+        />
       )}
 
       <IconPickerModal

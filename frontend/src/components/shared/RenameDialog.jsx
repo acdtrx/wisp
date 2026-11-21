@@ -1,14 +1,15 @@
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useForm.js';
 import { autoFocusField } from '../../lib/focus.js';
-import FormModal from '../shared/FormModal.jsx';
-import { FormField } from '../shared/FormModalChrome.jsx';
+import FormModal from './FormModal.jsx';
+import { FormField } from './FormModalChrome.jsx';
 
 /**
- * Rename a stopped container: `PATCH { name }`. At its ack `onRenamed(name)` moves the
- * page to the new name (the server takes the name as sent, once it is valid).
+ * Rename a stopped workload: `PATCH { name }` (`update`). At its ack `onRenamed(name)`
+ * moves the page to the new name (the server takes the name as sent, once it is valid).
+ * `maxLength` is the kind's name rule; `hint` says what follows the name.
  */
-export default function ContainerRenameDialog({ name, update, onRenamed, onClose }) {
+export default function RenameDialog({ name, maxLength, hint, update, onRenamed, onClose }) {
   const { form, setField } = useEditor({ name });
   const save = useCommand();
   const next = form.name.trim();
@@ -27,14 +28,14 @@ export default function ContainerRenameDialog({ name, update, onRenamed, onClose
         onRenamed(next);
       })}
     >
-      <FormField label="New name" htmlFor="container-new-name" hint="Letters, digits, dots, dashes and underscores; its page, logs and local name follow it.">
+      <FormField label="New name" htmlFor="workload-new-name" hint={hint}>
         <input
-          id="container-new-name"
+          id="workload-new-name"
           ref={autoFocusField}
           type="text"
           value={form.name}
           onChange={(e) => setField('name', e.target.value)}
-          maxLength={63}
+          maxLength={maxLength}
           spellCheck={false}
           autoComplete="off"
           className="input-field font-mono"
