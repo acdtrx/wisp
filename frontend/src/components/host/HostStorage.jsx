@@ -147,7 +147,8 @@ export default function HostStorage() {
  * A mount row's commands, shared by the SMB and drive tables: the removal and the
  * mount toggle, each keyed by the mount's id, so rows run in parallel and each keeps
  * its error (the Storage section's). A removal and an unmount are jobs: busy until the
- * job ended; a mount is busy until the `host-mounts` cue's re-read has.
+ * job ended and the records they change, read again after it, have landed; a mount is
+ * busy until the `host-mounts` cue's re-read has.
  */
 function useMountRowCommands() {
   const removal = useCommand();
@@ -160,10 +161,10 @@ function useMountRowCommands() {
     /** Whether a command runs on the row: every control of the row is disabled then. */
     busy: (id) => removal.isBusy(id) || toggleCommand.isBusy(id),
     remove: (id) => removal.run(() => deleteMount(id), {
-      job: true, key: id,
+      job: true, rereads: [[RECORD.SETTINGS], [RECORD.HOST_MOUNT_STATUS]], key: id,
     }),
     toggle: (id, mounted) => (mounted
-      ? toggleCommand.run(() => unmountMount(id), { job: true, key: id })
+      ? toggleCommand.run(() => unmountMount(id), { job: true, rereads: [[RECORD.HOST_MOUNT_STATUS]], key: id })
       : toggleCommand.run(() => sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id)), { key: id })),
   };
 }

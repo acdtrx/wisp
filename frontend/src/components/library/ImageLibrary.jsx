@@ -347,8 +347,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   const [urlCheckResult, setUrlCheckResult] = useState(null);
   const urlCheck = useCommand();
   const urlChecking = urlCheck.busy;
-  /* A download (from the URL, or a preset) is a job: busy until it ended; its
-   * progress shows from its job. */
+  /* A download (from the URL, or a preset) is a job: busy until it ended and the
+   * library, read again after it, has landed; its progress shows from its job. */
   const urlDownload = useCommand();
   const [urlJobId, setUrlJobId] = useState(null);
   const urlDownloading = urlDownload.busy;
@@ -407,9 +407,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     const target = deleteTarget;
     setDeleteTarget(null);
     if (target.kind === 'oci') {
-      /* A job: busy until it ended. */
+      /* A job: busy until it ended and the images, read again after it, have landed. */
       removal.run(() => deleteContainerImage(target.ref), {
-        job: true, key: `oci:${target.ref}`,
+        job: true, rereads: [[RECORD.CONTAINER_IMAGES]], key: `oci:${target.ref}`,
       });
     } else {
       removal.run(() => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => deleteFile(target.name)), { key: `file:${target.name}` });
@@ -433,6 +433,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!url) return;
     urlDownload.run(() => startDownloadFromUrl(url), {
       job: true,
+      rereads: [[RECORD.LIBRARY]],
       onAck: ({ jobId }) => setUrlJobId(jobId),
       onDone: () => {
         setUrlModalOpen(false);
@@ -458,6 +459,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!start) return;
     preset.run(start, {
       job: true,
+      rereads: [[RECORD.LIBRARY]],
       onAck: ({ jobId, title }) => setPresetJob({ jobId, title }),
     });
   };

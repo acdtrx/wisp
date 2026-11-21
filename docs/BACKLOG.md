@@ -80,15 +80,6 @@ lower open-files limit didn't change it. Cause unknown (capabilities, seccomp, t
 container's DNS?). Found while building a test share in the command-acks milestone 5 run,
 2026-11-16. **Revisit trigger:** a user running a file server in a container.
 
-**Job-based host commands go idle before the re-read their cue started lands.** The
-host mount delete and unmount and the bridge delete (`HostStorage.jsx`,
-`HostNetworkBridges.jsx`) end their busy state when `awaitJob` resolves, but the list
-re-read that their `host-mounts` or `network-bridges` cue started may still be in
-flight: for one GET's latency the old row's button is clickable again, and a click
-answers 409 or 404. Closing it means waiting for the cue's re-read as well as the job
-(found in the command-acks milestone 5 review, 2026-11-16). **Revisit trigger:** a user
-seeing that 409 or 404 after a delete or unmount.
-
 **The image update status could carry the containers the last check flagged.** The
 image library's status line reads the update status record (`lastCheckedAt`,
 `imagesUpdated`); how many containers a check flagged reaches only the tab that ran the

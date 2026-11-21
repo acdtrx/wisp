@@ -168,9 +168,10 @@ export default function ContainerMountsSection({ config }) {
 
   const closeEditor = () => setEditor({ open: false, kind: 'file', mount: null });
 
-  /* The removal is a job: busy until it ended. */
+  /* The removal is a job: busy until it ended and the container's config, read
+   * again after it, has landed. */
   const handleRemove = (row) => removal.run(() => removeContainerMount(config.name, row.name), {
-    job: true, key: row.name,
+    job: true, rereads: [[RECORD.CONTAINER, config.name]], key: row.name,
   });
 
   const runUploadForRow = (row, send, options = {}) => upload.run(send, { ...options, key: row.name });
@@ -190,7 +191,7 @@ export default function ContainerMountsSection({ config }) {
     if (row.type !== 'directory') return;
     // The upload answers once received; the extract is a job.
     runUploadForRow(row, () => uploadMountZip(config.name, row.name, file), {
-      job: true,
+      job: true, rereads: [[RECORD.CONTAINER, config.name]],
     });
   };
 

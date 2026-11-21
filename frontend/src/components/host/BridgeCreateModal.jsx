@@ -8,6 +8,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { createManagedNetworkBridge } from '../../api/host.js';
+import { RECORD } from '../../store/records.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { autoFocusField } from '../../lib/focus.js';
@@ -45,11 +46,12 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
 
   const canCreate = !!bridgePreview && !submitting;
 
-  /* A job: busy until it ended. */
+  /* A job: busy until it ended and the bridge lists, read again after it, have
+   * landed, so the new bridge is on screen when the modal closes. */
   const handleCreate = () => {
     if (!canCreate) return;
     create.run(() => createManagedNetworkBridge(baseBridge, Number(vlanId)), {
-      job: true, onDone: onClose,
+      job: true, rereads: [[RECORD.NETWORK_BRIDGES], [RECORD.HOST_BRIDGES]], onDone: onClose,
     });
   };
 

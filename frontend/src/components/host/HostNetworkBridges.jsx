@@ -25,8 +25,8 @@ import RecordError from '../shared/RecordError.jsx';
 const NO_BRIDGES = [];
 
 export default function HostNetworkBridges() {
-  /* A bridge's delete, keyed by its name: a job, busy until it ended. Its error shows
-   * in this section. */
+  /* A bridge's delete, keyed by its name: a job, busy until it ended and the bridge
+   * lists, read again after it, have landed. Its error shows in this section. */
   const remove = useCommand();
   const [createOpen, setCreateOpen] = useState(false);
   /* The managed bridges, read again when a create or delete settles (any tab). */
@@ -35,7 +35,7 @@ export default function HostNetworkBridges() {
   const eligibleParents = Array.isArray(bridges.data?.eligibleParents) ? bridges.data.eligibleParents : NO_BRIDGES;
 
   const onDelete = (name) => remove.run(() => deleteManagedNetworkBridge(name), {
-    job: true, key: name,
+    job: true, rereads: [[RECORD.NETWORK_BRIDGES], [RECORD.HOST_BRIDGES]], key: name,
   });
 
   const openCreate = () => setCreateOpen(true);

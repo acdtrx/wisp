@@ -57,8 +57,11 @@ holds the UI library's rules.
     Reboot) ends at the ack: the list shows the VM stopping when it does (settled
     2026-11-16). A wait ends after 30 s even if no frame came, with no error: the
     command was accepted (settled 2026-11-16, CODING-RULES §6).
-  - Applied (settled 2026-11-21): a job that ended cancelled is the command's failure,
-    not a success. A workload's header actions live in its store (`actions`, one error
+  - Applied (settled 2026-11-21): a command that runs as a job names the records it
+    changes, and stays busy until the job ended and their re-read, sent after the job
+    ended, has landed; it depends on no stream frame (a cue from elsewhere still reads
+    them again). A job that ended cancelled is the command's failure, not a success.
+    A workload's header actions live in its store (`actions`, one error
     slot per workload, cleared when any of its actions begins; the icon change shares
     that slot, not the busy state). Every other command runs through `useCommand`
     (`hooks/useCommand.js`, over `store/commands.js`): a command is named by key, a key
