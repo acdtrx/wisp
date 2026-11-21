@@ -6,7 +6,7 @@ import WispGlyph from './WispGlyph.jsx';
 
 // ─── Custom SVG Brand Icons ─────────────────────
 
-export function WindowsIcon({ size = 16, className }) {
+function WindowsIcon({ size = 16, className }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
       <path d="M3 5.5l7.5-1V11H3V5.5zm0 7h7.5v6.5L3 18V12.5zm8.5-8.2L21 3v8.5h-9.5V4.3zm0 8.7H21V21l-9.5-1.3V13z" />
@@ -14,7 +14,7 @@ export function WindowsIcon({ size = 16, className }) {
   );
 }
 
-export function LinuxIcon({ size = 16, className }) {
+function LinuxIcon({ size = 16, className }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
       <path d="M12.5 2c-1.6 0-2.9 1.8-3.2 4.2-.5.2-1 .5-1.4.9C6.2 8.5 5.5 10.5 5.5 12c0 1.2.3 2.2.7 3-.8.5-1.7 1.3-2.2 2.3-.7 1.3-.5 2.7.5 3.3.6.4 1.4.4 2.1.1.7-.3 1.2-.8 1.6-1.4.6.3 1.2.5 1.9.6.1.6.3 1.2.6 1.7.5.7 1.2 1.1 2 1.1s1.5-.4 2-1.1c.3-.5.5-1.1.6-1.7.7-.1 1.3-.3 1.9-.6.4.6.9 1.1 1.6 1.4.7.3 1.5.3 2.1-.1 1-.6 1.2-2 .5-3.3-.5-1-1.4-1.8-2.2-2.3.4-.8.7-1.8.7-3 0-1.5-.7-3.5-2.4-4.9-.4-.4-.9-.7-1.4-.9C15.4 3.8 14.1 2 12.5 2z" />
@@ -164,9 +164,10 @@ export function getVmIcon(iconId) {
   return ICON_MAP[iconId] || ICON_MAP['monitor'];
 }
 
-export function getDefaultIconId(osCategory) {
-  if (osCategory === 'windows') return 'windows';
-  if (osCategory === 'linux') return 'linux';
+/** A VM's default icon, by its profile. */
+export function getDefaultIconId(profile) {
+  if (profile === 'windows-11') return 'windows';
+  if (profile === 'linux') return 'linux';
   return 'monitor';
 }
 

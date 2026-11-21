@@ -8,7 +8,7 @@ const vms = createWorkloadStore({
   record: RECORD.VM,
   seed: (item) => ({
     name: item.name, uuid: item.uuid, state: item.state, stateCode: item.stateCode, vcpus: item.vcpus,
-    memoryMiB: item.memoryMiB, osCategory: item.osCategory, iconId: item.iconId, pendingRestart: item.pendingRestart ?? null,
+    memoryMiB: item.memoryMiB, profile: item.profile ?? null, iconId: item.iconId, pendingRestart: item.pendingRestart ?? null,
   }),
   /* The list refreshes on every libvirt domain event, so it carries the run state and
    * the restart-required flag ahead of any re-read (the flag is dropped by the list

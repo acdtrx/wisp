@@ -101,8 +101,12 @@ function machineChoice(raw) {
   return s || 'q35';
 }
 
-/** The operating system a VM's settings follow: Windows when its config reads as one. */
-export const vmOperatingSystem = (config) => (config.osCategory === 'windows' ? 'Windows' : 'Linux');
+/** What a VM's profile says on the page; a VM Wisp neither made nor migrated has none. */
+export const profileText = (profile) => ({ linux: 'Linux', 'windows-11': 'Windows 11', other: 'Other' }[profile] ?? 'Unknown');
+
+/** The operating system the Windows tuning follows (Expert settings): Windows while the
+ *  definition carries the tuning. */
+const vmOperatingSystem = (config) => (config.features?.hyperv ? 'Windows' : 'Linux');
 
 export function expertForm(config) {
   return {

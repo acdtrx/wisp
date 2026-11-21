@@ -32,7 +32,7 @@ export default function VMListItem({ vm }) {
   const isStopped = vm.state === 'shutoff' || vm.state === 'nostate';
   const isPaused = vm.state === 'paused' || vm.state === 'pmsuspended';
 
-  const iconId = vm.iconId || getDefaultIconId(vm.osCategory);
+  const iconId = vm.iconId || getDefaultIconId(vm.profile);
   const OsIcon = getVmIcon(iconId).component;
   const iconColorClass = STATE_ICON_COLOR[vm.state] || STATE_ICON_COLOR.nostate;
   const staleBinary = !!vm.staleBinary;

@@ -10,7 +10,7 @@ import {
 const vm = {
   name: 'archy', vcpus: 2, memoryMiB: 4096, firmware: 'uefi', machineType: 'pc-q35-9.2', cpuMode: 'host-passthrough',
   videoModel: 'virtio', graphics: { type: 'vnc' }, bootOrder: ['hd', 'cdrom'], bootMenu: false, guestAgent: true,
-  memBalloon: true, virtioRng: true, vtpm: false, nestedVirt: false, osCategory: 'linux', features: { hyperv: false },
+  memBalloon: true, virtioRng: true, vtpm: false, nestedVirt: false, profile: 'linux', features: { hyperv: false },
 };
 
 test('the size form picks the preset the stored size matches, else custom', () => {

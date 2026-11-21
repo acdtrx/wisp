@@ -34,6 +34,7 @@ import VmNetworkGroup from './VmNetworkGroup.jsx';
 import VmSizeGroup from './VmSizeGroup.jsx';
 import VmSystemGroup from './VmSystemGroup.jsx';
 import VmUsbGroup from './VmUsbGroup.jsx';
+import { profileText } from './vmForms.js';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
@@ -138,7 +139,7 @@ export default function OverviewPanel({ name }) {
   const lockReason = vmLocked(state) ? LOCKED : undefined;
   const staleBinary = !!(stats?.staleBinary || item?.staleBinary);
   const needsStart = !!config.pendingRestart || staleBinary;
-  const IconComp = getVmIcon(config.iconId || getDefaultIconId(config.osCategory)).component;
+  const IconComp = getVmIcon(config.iconId || getDefaultIconId(config.profile)).component;
   const notRunning = isRunning ? undefined : 'it is not running';
 
   const update = (changes) => updateVM(name, changes);
@@ -197,7 +198,7 @@ export default function OverviewPanel({ name }) {
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATE_PILL[state] ?? 'bg-surface text-text-muted'}`}>
             {STATE_TEXT[state] ?? state ?? 'unknown'}
           </span>
-          <span className="hidden shrink-0 text-xs text-text-muted sm:inline">{config.osCategory === 'windows' ? 'Windows VM' : 'Linux VM'}</span>
+          <span className="hidden shrink-0 text-xs text-text-muted sm:inline">{`${profileText(config.profile)} VM`}</span>
           {/* The console is desktop-only: below lg Overview is the one tab, so none shows. */}
           <nav className="hidden border-l border-surface-border pl-2 lg:flex" aria-label="VM tabs">
             {tabButton('overview', 'Overview')}
@@ -260,7 +261,7 @@ export default function OverviewPanel({ name }) {
                   <VmSizeGroup {...groupProps} lockReason={lockReason} />
                   <VmDisksGroup {...groupProps} lockReason={lockReason} />
                   <VmNetworkGroup {...groupProps} lockReason={lockReason} />
-                  {config.osCategory !== 'windows' && <VmFirstBootGroup {...groupProps} />}
+                  {config.profile === 'linux' && <VmFirstBootGroup {...groupProps} />}
                   <VmUsbGroup {...groupProps} />
                   <GroupCard title="Start-up">
                     <GroupSwitch
@@ -312,7 +313,7 @@ export default function OverviewPanel({ name }) {
 
       <IconPickerModal
         open={dialog === 'icon'}
-        currentIconId={config.iconId || getDefaultIconId(config.osCategory)}
+        currentIconId={config.iconId || getDefaultIconId(config.profile)}
         onSelect={(iconId) => store().setVmIcon(name, iconId)}
         onClose={() => setDialog(null)}
       />

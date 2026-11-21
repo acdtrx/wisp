@@ -11,12 +11,12 @@ import GroupCard from '../shared/GroupCard.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import XMLModal from './XMLModal.jsx';
 import {
-  BOOT_DEVICES, CONSOLE, CPU_MODELS, FIRMWARE, MACHINE_TYPES, OPERATING_SYSTEMS, VIDEO, expertForm, systemSummary,
-  toggledBootDevice, vmOperatingSystem,
+  BOOT_DEVICES, CONSOLE, CPU_MODELS, FIRMWARE, MACHINE_TYPES, OPERATING_SYSTEMS, VIDEO, expertForm, profileText, systemSummary,
+  toggledBootDevice,
 } from './vmForms.js';
 
 /**
- * What the VM is set up as: its operating system and, in one line, what that set.
+ * What the VM was made as (its profile) and, in one line, what its settings are.
  * Expert settings opens every technical setting, grouped, while the VM is shut off; View
  * XML shows its definition at any time.
  */
@@ -34,7 +34,7 @@ export default function VmSystemGroup({ config, busy, lockReason, update }) {
       )}
     >
       <p className="py-1 text-sm text-text-primary">
-        <span className="mr-2 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-text">{vmOperatingSystem(config)}</span>
+        <span className="mr-2 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-text">{profileText(config.profile)}</span>
         {systemSummary(config)}
       </p>
       {open === 'expert' && <ExpertSettings config={config} update={update} onClose={() => setOpen(null)} />}
@@ -46,7 +46,7 @@ export default function VmSystemGroup({ config, busy, lockReason, update }) {
 function Section({ title, children }) {
   return (
     <fieldset className="space-y-3 border-t border-surface-border pt-3 first:border-t-0 first:pt-0">
-      <legend className="float-left mb-1 w-full text-xs font-semibold text-text-primary">{title}</legend>
+      <legend className="mb-1 text-xs font-semibold text-text-primary">{title}</legend>
       {children}
     </fieldset>
   );
@@ -58,7 +58,7 @@ function ExpertSettings({ config, update, onClose }) {
   return (
     <FormModal
       title="Expert settings"
-      subtitle={`${config.name}: ${vmOperatingSystem(config)}`}
+      subtitle={`${config.name}: ${profileText(config.profile)}`}
       save={save}
       blocked={dirty ? null : 'Nothing changed'}
       onClose={onClose}
