@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Loader2, Rocket, AlertCircle, ExternalLink } from 'lucide-react';
@@ -6,7 +6,11 @@ import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
-import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { awaitJob, useRunningJobCount } from '../../store/backgroundJobsStore.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import { useJobProgress } from '../../hooks/useJobProgress.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import RecordError from '../shared/RecordError.jsx';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
@@ -16,7 +20,7 @@ import {
   checkForWispUpdate,
   installWispUpdate,
 } from '../../api/updates.js';
-import { CLIENT_CODES, errorText } from '../../api/errors.js';
+import { CLIENT_CODES } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 function formatRelativeTime(isoString) {
@@ -69,7 +73,13 @@ export default function WispUpdateSection() {
   const publishedAt = hydrated?.publishedAt ?? null;
   const repo = hydrated?.repo ?? null;
 
-  const [checking, setChecking] = useState(false);
+  /* The check, and the channel change (which checks again on the new channel): two
+   * commands of one hook (`channel` the latter's key), each with its error. The
+   * install's start is its own command; its wait through the backend's restart is the
+   * `installing` / `restarting` flags below (the self-update's, not a command's). */
+  const check = useCommand();
+  const install = useCommand();
+  const checking = check.busy;
   const [installing, setInstalling] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
   /* Set once the install job hands over to the updater: from then on the
@@ -78,21 +88,19 @@ export default function WispUpdateSection() {
   const [installJobId, setInstallJobId] = useState(null);
   /* Once the install job's stream brought a `restarting` event, the handover happened
    * (read from its progress, which the wait follows whether or not the topic lists the job). */
-  const handedOver = useBackgroundJobsStore((s) => (installJobId ? !!s.progress[installJobId]?.events.restarting : false));
+  const handedOver = !!useJobProgress(installJobId)?.events.restarting;
   const handedOverRef = useRef(false);
   useEffect(() => {
     if (handedOver) handedOverRef.current = true;
   }, [handedOver]);
   const [installSlow, setInstallSlow] = useState(false);
   const [installStuck, setInstallStuck] = useState(false);
-  const [error, setError] = useState(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmForce, setConfirmForce] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const jobs = useBackgroundJobsStore((s) => s.jobs);
-  const runningOtherJobs = Object.values(jobs).filter((j) => j.status === 'running');
+  const runningJobCount = useRunningJobCount();
 
   /* The configured update channel lives in settings; the check result never
    * echoes it back (see spec/UPDATES.md). */
@@ -109,66 +117,46 @@ export default function WispUpdateSection() {
   const available = (wispUpdate?.available ?? hydrated?.available) === true;
   const lastChecked = wispUpdate?.lastChecked ?? hydrated?.lastChecked ?? null;
 
-  const handleCheck = useCallback(async () => {
-    setError(null);
-    setChecking(true);
-    try {
-      await sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setChecking(false);
-    }
-  }, []);
+  const handleCheck = () => check.run(() => sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate));
 
   /* Save the channel, then check on it right away: the backend reads the
    * setting at check time, so the card would otherwise keep showing the
    * previous channel's result until the next hourly poll. */
-  const handleChannelChange = useCallback(async (event) => {
+  const handleChannelChange = (event) => {
     const next = event.target.value;
-    setError(null);
-    setChecking(true);
     setPendingChannel(next);
-    try {
-      await updateSettings({ updateChannel: next });
-    } catch (err) {
-      setPendingChannel(null);
-      setError(errorText(err));
-      setChecking(false);
-      return;
-    }
-    try {
+    check.run(async () => {
+      try {
+        await updateSettings({ updateChannel: next });
+      } catch (err) {
+        setPendingChannel(null);
+        throw err;
+      }
       await sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setChecking(false);
-    }
-  }, []);
+    }, { key: 'channel' });
+  };
 
-  const beginInstall = useCallback(() => {
-    setError(null);
-    setConfirmForce(runningOtherJobs.length > 0);
+  const beginInstall = () => {
+    setConfirmForce(runningJobCount > 0);
     setConfirmOpen(true);
-  }, [runningOtherJobs.length]);
+  };
 
-  const doInstall = useCallback(async () => {
+  const doInstall = async () => {
     setConfirmOpen(false);
-    setError(null);
     setInstallSlow(false);
     setInstallStuck(false);
     setInstalling(true);
     setRestarting(false);
     setInstallTarget(latest);
-    try {
-      /* The install is a job: it downloads and stages the release (progress in
-       * the jobs tray), reports `restarting`, starts wisp-updater.service and
-       * ends. The updater then stops this backend, so the job's stream may drop
-       * before its result arrives; it reconnects, and the restarted backend no
-       * longer knows the job: after `restarting`, JOB_GONE means the handover
-       * happened. Before it, JOB_GONE is a failure to show.
-       * Completion is detected below by polling /api/host wispVersion === target. */
-      handedOverRef.current = false;
+    handedOverRef.current = false;
+    /* The install is a job: it downloads and stages the release (progress in
+     * the jobs tray), reports `restarting`, starts wisp-updater.service and
+     * ends. The updater then stops this backend, so the job's stream may drop
+     * before its result arrives; it reconnects, and the restarted backend no
+     * longer knows the job: after `restarting`, JOB_GONE means the handover
+     * happened. Before it, JOB_GONE is a failure to show.
+     * Completion is detected below by polling /api/host wispVersion === target. */
+    const started = await install.run(async () => {
       const { jobId } = await installWispUpdate({ force: confirmForce });
       setInstallJobId(jobId);
       try {
@@ -176,13 +164,14 @@ export default function WispUpdateSection() {
       } catch (err) {
         if (!(err.code === CLIENT_CODES.JOB_GONE && handedOverRef.current)) throw err;
       }
+    });
+    if (started) {
       setRestarting(true);
-    } catch (err) {
+    } else {
       setInstalling(false);
       setInstallTarget(null);
-      setError(errorText(err));
     }
-  }, [confirmForce, latest]);
+  };
 
   /* Poll /api/host every 5s. Stop when wispVersion matches the target (then
    * reload the page to pick up the new frontend bundle). Show a "may be slow"
@@ -238,13 +227,11 @@ export default function WispUpdateSection() {
   const releaseUrl = repo && latest ? `https://github.com/${repo}/releases/tag/v${latest}` : null;
   const publishedLabel = formatRelativeTime(publishedAt);
 
-  /* A command's error first, then a failed read of the status (a failed read of the
-   * settings is the page's notice). */
-  const readError = statusRecord.error;
-  const shownError = error ?? (readError ? `Couldn't load the update status: ${errorText(readError)}` : null);
+  /* A command's error shows in the card's error slot, a failed read of the status as
+   * the status record's error (a failed read of the settings is the page's notice). */
   let status = null;
-  if (shownError && !installing) {
-    status = { type: 'error', message: shownError };
+  if ((check.errors.length > 0 || install.error) && !installing) {
+    status = null;
   } else if (available && latest && !installing) {
     status = { type: 'warn', message: `v${latest} available` };
   } else if (lastChecked && !available && !installing && !checking) {
@@ -286,9 +273,12 @@ export default function WispUpdateSection() {
         updateBusyLabel="Installing…"
         details={available && notes && !installing ? { label: 'Release notes', onClick: () => setDetailsOpen(true) } : null}
         status={status}
+        commands={[check, install]}
+        errorPrefix={(key, command) => (command === install ? 'Install' : key === 'channel' ? 'Channel change' : 'Check')}
         lastChecked={lastChecked}
         autoCheckLabel="Checked hourly"
       >
+        <RecordError record={statusRecord} what="update status" className="mt-2" />
         <div className="mt-2 flex items-center gap-2 text-xs">
           <label htmlFor="wisp-update-channel" className="text-text-muted">
             Channel
@@ -321,15 +311,21 @@ export default function WispUpdateSection() {
                 </span>
               </div>
             )}
+            {/* Dismissing it stops waiting for the backend to come back. */}
             {installStuck && (
-              <div className="mt-1 flex items-start gap-2 text-status-stopped">
-                <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                <span>
-                  Install hasn't completed after 5 minutes. Check{' '}
-                  <code className="rounded-sm bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
-                  on the server for details.
-                </span>
-              </div>
+              <ErrorBanner
+                className="mt-1"
+                onDismiss={() => {
+                  setInstallStuck(false);
+                  setInstalling(false);
+                  setRestarting(false);
+                  setInstallTarget(null);
+                }}
+              >
+                Install hasn't completed after 5 minutes. Check{' '}
+                <code className="rounded-sm bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
+                on the server for details.
+              </ErrorBanner>
             )}
           </div>
         )}
@@ -378,7 +374,7 @@ export default function WispUpdateSection() {
         </p>
         {confirmForce && (
           <p className="mt-2 text-status-warning">
-            <span className="font-medium">{runningOtherJobs.length} background job(s) are still running.</span>{' '}
+            <span className="font-medium">{runningJobCount} background job(s) are still running.</span>{' '}
             They will be interrupted by the restart.
           </p>
         )}

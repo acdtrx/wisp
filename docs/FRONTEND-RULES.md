@@ -57,6 +57,20 @@ holds the UI library's rules.
     Reboot) ends at the ack: the list shows the VM stopping when it does (settled
     2026-11-16). A wait ends after 30 s even if no frame came, with no error: the
     command was accepted (settled 2026-11-16, CODING-RULES §6).
+  - Applied (settled 2026-11-21): a job that ended cancelled is the command's failure,
+    not a success. A workload's header actions live in its store (`actions`, one error
+    slot per workload, cleared when any of its actions begins; the icon change shares
+    that slot, not the busy state). Every other command runs through `useCommand`
+    (`hooks/useCommand.js`, over `store/commands.js`): a command is named by key, a key
+    runs once at a time and its control is disabled while it runs, different keys run in
+    parallel, and each key holds its own error until it is dismissed or runs again;
+    different commands are different keys or hooks, and where the server takes one at
+    a time the other controls are disabled while it runs. Every control of a row is
+    disabled while a command on that row runs. A form's save is the form hook's own:
+    the command, then a new read of the form's record. Job state is read three ways and
+    no other: `awaitJob` (or the hook's `job`) to act on a job's end,
+    `useJobProgress(jobId)` to show its progress, and `runningJobs` (the jobs store) to
+    ask which jobs run — `useFollowJob` takes up one already running, to its end.
 - Initialise form and component state with meaningful defaults derived from the data
   model, never with an empty object.
   - Applied: start form state from the config's defaults, never `useState({})`.
@@ -73,13 +87,19 @@ holds the UI library's rules.
 
 - Keep an error shown to the user visible until the user dismisses it.
   - Applied: show an error through `ErrorBanner` (`components/shared/ErrorBanner.jsx`),
-    a record's through `RecordError`.
+    a record's through `RecordError`; a section's (`SectionCard`'s `error`) and a
+    modal's are `ErrorBanner`s too. A full-screen state (the app's error boundary, the
+    server unreachable), a dialog's alert and a console's connection state are their
+    own displays; a field's validation hint and a status shown as data (a backup's
+    failed last attempt) are not errors.
   - Applied: a command's error stays until the user dismisses it or runs that command
-    again.
+    again; a re-read of other data, or opening another editor, leaves it.
   - Applied: a failed read is the view's error state: it stays until a read succeeds or
     the user dismisses it, and it never hides data that was already shown. With no data
     shown, the error state is the view itself, with a Retry; a dismiss exists only where
-    data is shown under the banner.
+    data is shown under the banner. A stream's error frame is shown the same way (its
+    store's `dismissError`); a dropped connection is a status line while the client
+    reconnects, not an error.
 
 ## Design
 
@@ -454,11 +474,11 @@ The standard shape for creating or editing **one entity** (a mount, a bridge, a 
 
 Structure (see **[FormModalChrome.jsx](../frontend/src/components/shared/FormModalChrome.jsx)** for the shared tokens):
 
-- **One purpose-named modal component per entity kind** (`SmbShareEditorModal`, not a generic kind-switched editor), owning its field state, validation, and API calls. Create vs edit is the presence of the entity prop (`share`, `drive`); the parent passes `onSaved` (refresh) and `onClose`.
-- **Shell:** `<Modal size="sm"|"md" height="cap">` with `title` (e.g. "Edit SMB share") and a context `subtitle` (the share path, the device name). `closeOnEscape={!saving}` guards in-flight saves.
+- **One purpose-named modal component per entity kind** (`SmbShareEditorModal`, not a generic kind-switched editor), owning its field state, validation, and API calls. Create vs edit is the presence of the entity prop (`share`, `drive`); the parent passes `onClose`, and `onSaved` only when it has its own follow-up to a save (the SMB editor's parent drops its connection-test results).
+- **Shell:** `<Modal size="sm"|"md" height="cap">` with `title` (e.g. "Edit SMB share") and a context `subtitle` (the share path, the device name). `closeOnEscape={!save.busy}` guards in-flight saves.
 - **Fields:** stacked **`FormField`** (label above control, optional hint below) in a `space-y-3` `<form id=…>`; short related fields pair into `sm:grid-cols-2`. Controls use the **`input-field`** utility; checkboxes use **`FormCheckbox`** (box left, label + hint right). Read-only identity (UUID, filesystem, derived names) renders as a muted summary box or preview line, not as disabled inputs. The first field focuses on open through the focus module (`ref={autoFocusField}`, [lib/focus.js](../frontend/src/lib/focus.js)) — never on a touch device; Enter submits via the form.
-- **Footer** (via the Modal `footer` prop): right-aligned **Cancel** (`formModalNeutralBtn`) + primary **Save/Create/Adopt** (`formModalPrimaryBtn`, disabled until valid **and** dirty, `Loader2` while saving). Secondary actions (e.g. SMB **Test connection**) sit footer-left in an `mr-auto` group with their result as inline text (green OK / truncated red error with full text in `title`).
-- **Errors:** sticky red line (**`FormModalError`**) at the bottom of the body; the modal stays open on failure. On success the modal calls `await onSaved()` then `onClose()`.
+- **Footer** (via the Modal `footer` prop): right-aligned **Cancel** (`formModalNeutralBtn`) + primary **Save/Create/Adopt** (`formModalPrimaryBtn`, disabled until valid **and** dirty, `Loader2` while saving). Secondary actions (e.g. SMB **Test connection**) sit footer-left in an `mr-auto` group; a pass shows there as inline text (green OK), a failure as the action's own error in the body.
+- **Errors:** the save's error (its command hook's) as an **`ErrorBanner`** at the bottom of the body, dismissible; the modal stays open on failure. The save's command ends once its new state is on screen; on success the modal then closes.
 - **Nested dialogs** (settled 2026-08-25, reworked 2026-11-12): a `ConfirmDialog` opened from inside an editor modal is the top layer; the layer stack sends Escape to it alone, with no flag on the parent. Render it as a sibling of `<Modal>`, not inside its scrolling body. Reference: the generate-secret dialog in [EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx).
 - **Rows stay read-only.** The table keeps display cells only; row actions shrink to purpose actions (mount, check) + **Edit** + **Delete**, which fit on phones. Write-only secrets keep the "empty means keep what's on file" convention with a hint under the field.
 

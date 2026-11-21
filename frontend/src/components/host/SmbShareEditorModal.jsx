@@ -11,9 +11,9 @@ import { randomId } from '../../utils/randomId.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -49,18 +49,20 @@ function formFromShare(share) {
  */
 export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [check, setCheck] = useState(null);
-  const [error, setError] = useState(null);
+  const save = useCommand();
+  /* The connection test: busy while it runs; a failure is its error, a pass shows as OK. */
+  const test = useCommand();
+  const [testPassed, setTestPassed] = useState(false);
+  const checking = test.busy;
 
   const isEdit = share != null;
 
   useEffect(() => {
     if (!open) return;
     setForm(share ? formFromShare(share) : emptyForm());
-    setCheck(null);
-    setError(null);
+    setTestPassed(false);
+    test.dismiss();
+    save.dismiss();
   }, [open, share]);
 
   const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -74,16 +76,15 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
     || trimmedPath !== (share.mountPath || '').trim()
     || form.username.trim() !== (share.username || '').trim()
     || form.password.trim() !== '';
-  const canSave = pathOk && trimmedShare !== '' && dirty && !saving;
+  const canSave = pathOk && trimmedShare !== '' && dirty && !save.busy;
   const hasStoredPassword = isEdit && share.hasPassword === true;
 
   const handleCheck = () => {
+    setTestPassed(false);
     if (!trimmedShare) {
-      setCheck({ error: 'Set share first' });
+      test.fail('Set share first');
       return;
     }
-    setChecking(true);
-    setCheck(null);
     /* A saved share tests by id with the form's values as overrides, so an
      * empty password field means the stored password — same "empty keeps what's
      * on file" rule as Save. A new share has nothing on file: test what's typed. */
@@ -91,17 +92,12 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
     const body = isEdit
       ? { id: form.id, share: trimmedShare, username: form.username.trim(), ...(newPw !== '' && { password: newPw }) }
       : { share: trimmedShare, username: form.username.trim(), password: newPw };
-    checkMountConnection(body)
-      .then(() => setCheck({ ok: true }))
-      .catch((err) => setCheck({ error: errorText(err) }))
-      .finally(() => setChecking(false));
+    test.run(() => checkMountConnection(body), { onDone: () => setTestPassed(true) });
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    setError(null);
-    try {
+    save.run(async () => {
       if (!isEdit) {
         /* Saved once the settings store holds it: the mount list is read from there. */
         await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => addMount({
@@ -126,12 +122,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
         if (Object.keys(patch).length > 0) await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => patchMount(form.id, patch));
       }
       await onSaved?.();
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    }, { onDone: onClose });
   };
 
   return (
@@ -142,14 +133,14 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
       subtitle={isEdit ? share.share || share.label : 'Network mount over SMB/CIFS'}
       size="md"
       height="cap"
-      closeOnEscape={!saving}
+      closeOnEscape={!save.busy}
       footer={(
         <>
           <div className="mr-auto flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={handleCheck}
-              disabled={checking || saving}
+              disabled={checking || save.busy}
               className={formModalNeutralBtn}
             >
               {checking
@@ -157,18 +148,13 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
                 : <ShieldCheck size={14} aria-hidden />}
               Test connection
             </button>
-            {check?.ok && <span className="text-status-running">Connection OK</span>}
-            {check?.error && (
-              <span className="min-w-0 truncate text-status-stopped" title={check.error}>
-                {check.error}
-              </span>
-            )}
+            {testPassed && <span className="text-status-running">Connection OK</span>}
           </div>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
             Cancel
           </button>
           <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
             Save
           </button>
         </>
@@ -242,7 +228,8 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
             />
           </FormField>
         </div>
-        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+        <ErrorBanner className="mt-3" error={test.error} prefix="Connection test" onDismiss={test.dismiss} />
+        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
     </Modal>
   );

@@ -6,7 +6,7 @@ import Toggle from '../shared/Toggle.jsx';
 import HelpIcon from '../shared/HelpIcon.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
 import { formatCommandLine, parseCommandLine } from '../../utils/commandLine.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 /** Same control pattern as AdvancedSection (machine type, CPU model). */
 const RESTART_OPTIONS = [
@@ -38,8 +38,7 @@ export function buildGeneralFormDefaults(config) {
 export default function ContainerGeneralSection({ config, isCreating, onSave, onFormChange, headerAction }) {
   const [form, setForm] = useState(() => buildGeneralFormDefaults(config));
   const [original, setOriginal] = useState(() => buildGeneralFormDefaults(config));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !isCreating && !!config?.pendingRestart;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -54,7 +53,6 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     const d = buildGeneralFormDefaults(config);
     setForm(d);
     setOriginal(d);
-    setError(null);
     /* command serialised so re-renders with same-contents arrays don't trigger re-init */
   }, [
     config?.name,
@@ -97,11 +95,9 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     if (isCreating && onFormChange) onFormChange({ [key]: value });
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (nameError) return;
-    setSaving(true);
-    setError(null);
-    try {
+    save.run(async () => {
       const changes = {};
       /* Compared with the stored name: a padded name saved earlier snapped the form, not
        * the container, so it is no rename once the padding goes. */
@@ -140,15 +136,11 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       const canonical = { ...form, name: nameEditable ? trimmedName : config.name, command: commandText };
       setForm(canonical);
       setOriginal(canonical);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   return (
-    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} error={error} onDismissError={() => setError(null)} headerAction={headerAction}>
+    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={save.busy} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} commands={[save]} headerAction={headerAction}>
       <div className="space-y-3">
         <div className="flex items-end gap-4 flex-wrap">
           <Field

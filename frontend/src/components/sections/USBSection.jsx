@@ -18,11 +18,11 @@ import {
   DataTableTd,
   dataTableEmptyCellClass,
 } from '../shared/DataTableChrome.jsx';
-import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const NO_DEVICES = [];
 
@@ -41,8 +41,9 @@ export default function USBSection({ vmConfig, busyReason }) {
   const attached = useRecord(RECORD.VM_USB, vmName);
   const attachedDevices = attached.data ?? NO_DEVICES;
   const loading = attached.status === 'loading';
-  const [actionLoading, setActionLoading] = useState(null);
-  const [error, setError] = useState(null);
+  /* Attach and detach, named by the device (`vendor:product`), each with its error. They
+   * take the VM's lock, so one runs at a time: the others are disabled meanwhile. */
+  const op = useCommand();
   const [attachModalOpen, setAttachModalOpen] = useState(false);
 
   useEffect(() => {
@@ -50,32 +51,15 @@ export default function USBSection({ vmConfig, busyReason }) {
     return () => disconnectUsb();
   }, [connectUsb, disconnectUsb]);
 
-  const handleAttach = async (vendorId, productId) => {
-    const key = `${vendorId}:${productId}`;
-    setActionLoading(key);
-    setError(null);
-    try {
-      await awaitVmChange(vmName, () => attachUSBToVM(vmName, vendorId, productId));
-      setAttachModalOpen(false);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setActionLoading(null);
-    }
-  };
+  const handleAttach = (vendorId, productId) => op.run(
+    () => awaitVmChange(vmName, () => attachUSBToVM(vmName, vendorId, productId)),
+    { key: `${vendorId}:${productId}`, onDone: () => setAttachModalOpen(false) },
+  );
 
-  const handleDetach = async (vendorId, productId) => {
-    const key = `${vendorId}:${productId}`;
-    setActionLoading(key);
-    setError(null);
-    try {
-      await awaitVmChange(vmName, () => detachUSBFromVM(vmName, vendorId, productId));
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setActionLoading(null);
-    }
-  };
+  const handleDetach = (vendorId, productId) => op.run(
+    () => awaitVmChange(vmName, () => detachUSBFromVM(vmName, vendorId, productId)),
+    { key: `${vendorId}:${productId}` },
+  );
 
   const hostList = hostDevices ?? [];
   const hostLoading = hostDevices === null;
@@ -132,8 +116,7 @@ export default function USBSection({ vmConfig, busyReason }) {
     <SectionCard
       title="USB Devices"
       titleIcon={<Usb size={14} strokeWidth={2} />}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[op]}
       headerAction={headerAttach}
     >
       <UsbAttachModal
@@ -141,7 +124,8 @@ export default function USBSection({ vmConfig, busyReason }) {
         onClose={() => setAttachModalOpen(false)}
         devices={available}
         onAttach={handleAttach}
-        actionLoadingKey={actionLoading}
+        isBusy={op.isBusy}
+        anyBusy={op.busy}
       />
 
       <RecordError record={attached} what="attached devices" className="my-1" />
@@ -183,7 +167,7 @@ export default function USBSection({ vmConfig, busyReason }) {
               )}
               {attachedWithNames.map((dev) => {
                 const key = `${dev.vendorId}:${dev.productId}`;
-                const rowBusy = actionLoading === key;
+                const rowBusy = op.isBusy(key);
                 return (
                   <tr key={key} className={dataTableInteractiveRowClass}>
                     <DataTableTd dense className="font-medium text-text-primary">
@@ -214,7 +198,7 @@ export default function USBSection({ vmConfig, busyReason }) {
                         <button
                           type="button"
                           onClick={() => handleDetach(dev.vendorId, dev.productId)}
-                          disabled={actionLoading != null || !!busyReason}
+                          disabled={op.busy || !!busyReason}
                           className={iconBtn}
                           title={busyReason || 'Detach'}
                           aria-label="Detach"

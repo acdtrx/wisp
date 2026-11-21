@@ -43,7 +43,7 @@ import { randomId } from '../../utils/randomId.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordGate from '../../components/shared/RecordGate.jsx';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -115,8 +115,7 @@ export default function TinySambaAppSection({ config, onSave }) {
 
   const [form, setForm] = useState(() => parseAppConfig(config));
   const [original, setOriginal] = useState(() => parseAppConfig(config));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
   /** { appConfig, names } while the delete-share-data confirm is open. */
   const [pendingDataLoss, setPendingDataLoss] = useState(null);
   const [showPasswords, setShowPasswords] = useState({});
@@ -132,7 +131,6 @@ export default function TinySambaAppSection({ config, onSave }) {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setError(null);
     setShowPasswords({});
     setPendingDataLoss(null);
   }, [appConfigKey]);
@@ -313,24 +311,14 @@ export default function TinySambaAppSection({ config, onSave }) {
     };
   };
 
-  const commitSave = async (appConfig) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave(appConfig);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const commitSave = (appConfig) => save.run(() => onSave(appConfig));
 
-  const handleSave = async () => {
+  const handleSave = () => {
     let appConfig;
     try {
       appConfig = buildAppConfig();
     } catch (err) {
-      setError(errorText(err));
+      save.fail(err);
       return;
     }
     const names = sharesLosingData(original, form);
@@ -338,13 +326,13 @@ export default function TinySambaAppSection({ config, onSave }) {
       setPendingDataLoss({ appConfig, names });
       return;
     }
-    await commitSave(appConfig);
+    commitSave(appConfig);
   };
 
-  const confirmDataLoss = async () => {
+  const confirmDataLoss = () => {
     const { appConfig } = pendingDataLoss;
     setPendingDataLoss(null);
-    await commitSave(appConfig);
+    commitSave(appConfig);
   };
 
   const dirty = isDirty();
@@ -361,11 +349,10 @@ export default function TinySambaAppSection({ config, onSave }) {
       title="Tiny Samba Configuration"
       titleIcon={<Network size={14} />}
       onSave={handleSave}
-      saving={saving}
+      saving={save.busy}
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
     >
       <RecordGate record={settingsRecord} what="storage settings">
         {() => (

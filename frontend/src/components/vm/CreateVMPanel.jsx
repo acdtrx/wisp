@@ -2,14 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
-import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import { useJobProgress } from '../../hooks/useJobProgress.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { createVM } from '../../api/vms.js';
 import GeneralSection from '../sections/GeneralSection.jsx';
 import DisksSection from '../sections/DisksSection.jsx';
 import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
-import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 
@@ -60,10 +61,11 @@ export default function CreateVMPanel() {
 
   const [form, setForm] = useState(defaultForm);
   const bridges = useRecord(RECORD.HOST_BRIDGES).data ?? NO_BRIDGES;
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState(null);
+  /* The create: a job, busy until it ended; its progress shows by the Create button. */
+  const create = useCommand();
+  const creating = create.busy;
   const [createJobId, setCreateJobId] = useState(null);
-  const activeCreate = useBackgroundJobsStore((s) => (createJobId ? s.jobs[createJobId] : null));
+  const activeCreate = useJobProgress(createJobId);
 
   /* The create job outlives this panel (it keeps running in the jobs
    * tray), so its completion only opens the new workload while the user is
@@ -133,88 +135,80 @@ export default function CreateVMPanel() {
     setForm((prev) => ({ ...prev, cloudInit: c }));
   }, []);
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     const name = (form.name || '').trim();
     if (!name) {
-      setCreateError('VM name is required');
+      create.fail('VM name is required');
       return;
     }
     if (form.disk?.type === 'existing' && !form.disk?.sourcePath) {
-      setCreateError('Please select an existing disk image');
+      create.fail('Please select an existing disk image');
       return;
     }
     if (form.disk2?.type === 'existing' && !form.disk2?.sourcePath) {
-      setCreateError('Please select an existing disk image for the second disk');
+      create.fail('Please select an existing disk image for the second disk');
       return;
     }
 
-    setCreating(true);
-    setCreateError(null);
+    const spec = {
+      name,
+      osType: form.osType,
+      osVariant: form.osVariant ?? 'generic',
+      vcpus: form.vcpus,
+      memoryMiB: form.memoryMiB,
+      autostart: form.autostart,
+      firmware: form.firmware,
+      machineType: form.machineType,
+      cpuMode: form.cpuMode,
+      videoDriver: form.videoDriver,
+      graphicsType: form.graphicsType,
+      bootOrder: form.bootOrder,
+      bootMenu: form.bootMenu,
+      memBalloon: form.memBalloon,
+      guestAgent: form.guestAgent,
+      vtpm: form.vtpm,
+      virtioRng: form.virtioRng,
+      nestedVirt: form.nestedVirt,
+      nics: form.nics.map((n) => ({
+        type: n.type || 'bridge',
+        source: n.source || bridges[0] || undefined,
+        model: n.model || 'virtio',
+        mac: n.mac || undefined,
+      })),
+      disk:
+        form.disk?.type === 'none'
+          ? { type: 'none', bus: form.disk?.bus || 'virtio' }
+          : {
+              type: form.disk?.type || 'new',
+              sizeGB: form.disk?.sizeGB ?? 32,
+              bus: form.disk?.bus || 'virtio',
+              sourcePath: form.disk?.sourcePath || undefined,
+              resizeGB: form.disk?.resizeGB != null && form.disk.resizeGB > 0 ? form.disk.resizeGB : undefined,
+            },
+      disk2: form.disk2?.type && form.disk2.type !== 'none' ? {
+        type: form.disk2.type,
+        sizeGB: form.disk2.sizeGB ?? 32,
+        bus: form.disk2.bus || 'virtio',
+        sourcePath: form.disk2.type === 'existing' ? form.disk2.sourcePath : undefined,
+        resizeGB: form.disk2.resizeGB != null && form.disk2.resizeGB > 0 ? form.disk2.resizeGB : undefined,
+      } : undefined,
+      cdrom1Path: form.cdrom1Path || undefined,
+      cdrom2Path: form.cdrom2Path || undefined,
+      cloudInit:
+        form.osType !== 'Windows' &&
+        form.cloudInit &&
+        (form.disk?.type === 'existing' || form.disk2?.type === 'existing')
+          ? form.cloudInit
+          : undefined,
+    };
 
-    try {
-      const spec = {
-        name,
-        osType: form.osType,
-        osVariant: form.osVariant ?? 'generic',
-        vcpus: form.vcpus,
-        memoryMiB: form.memoryMiB,
-        autostart: form.autostart,
-        firmware: form.firmware,
-        machineType: form.machineType,
-        cpuMode: form.cpuMode,
-        videoDriver: form.videoDriver,
-        graphicsType: form.graphicsType,
-        bootOrder: form.bootOrder,
-        bootMenu: form.bootMenu,
-        memBalloon: form.memBalloon,
-        guestAgent: form.guestAgent,
-        vtpm: form.vtpm,
-        virtioRng: form.virtioRng,
-        nestedVirt: form.nestedVirt,
-        nics: form.nics.map((n) => ({
-          type: n.type || 'bridge',
-          source: n.source || bridges[0] || undefined,
-          model: n.model || 'virtio',
-          mac: n.mac || undefined,
-        })),
-        disk:
-          form.disk?.type === 'none'
-            ? { type: 'none', bus: form.disk?.bus || 'virtio' }
-            : {
-                type: form.disk?.type || 'new',
-                sizeGB: form.disk?.sizeGB ?? 32,
-                bus: form.disk?.bus || 'virtio',
-                sourcePath: form.disk?.sourcePath || undefined,
-                resizeGB: form.disk?.resizeGB != null && form.disk.resizeGB > 0 ? form.disk.resizeGB : undefined,
-              },
-        disk2: form.disk2?.type && form.disk2.type !== 'none' ? {
-          type: form.disk2.type,
-          sizeGB: form.disk2.sizeGB ?? 32,
-          bus: form.disk2.bus || 'virtio',
-          sourcePath: form.disk2.type === 'existing' ? form.disk2.sourcePath : undefined,
-          resizeGB: form.disk2.resizeGB != null && form.disk2.resizeGB > 0 ? form.disk2.resizeGB : undefined,
-        } : undefined,
-        cdrom1Path: form.cdrom1Path || undefined,
-        cdrom2Path: form.cdrom2Path || undefined,
-        cloudInit:
-          form.osType !== 'Windows' &&
-          form.cloudInit &&
-          (form.disk?.type === 'existing' || form.disk2?.type === 'existing')
-            ? form.cloudInit
-            : undefined,
-      };
-
-      const { jobId } = await createVM(spec);
-      setCreateJobId(jobId);
-      const result = await awaitJob(jobId);
-      setCreating(false);
-      setCreateJobId(null);
-      if (mountedRef.current) navigate(`/vm/${encodeURIComponent(result.name)}/overview`);
-    } catch (err) {
-      setCreateError(errorText(err));
-      setCreating(false);
-      setCreateJobId(null);
-    }
+    create.run(() => createVM(spec), {
+      job: true,
+      onAck: ({ jobId }) => setCreateJobId(jobId),
+      onDone: (result) => {
+        if (mountedRef.current) navigate(`/vm/${encodeURIComponent(result.name)}/overview`);
+      },
+    }).then(() => setCreateJobId(null));
   };
 
   const config = vmConfig();
@@ -272,11 +266,7 @@ export default function CreateVMPanel() {
           <AdvancedSection vmConfig={config} isCreating onSave={handleAdvancedSave} onFormChange={(changes) => setForm((prev) => ({ ...prev, ...changes }))} />
         </div>
 
-        {createError && (
-          <div className="mt-4 rounded-lg border border-status-stopped/30 bg-status-stopped-soft p-4">
-            <p className="text-sm font-medium text-status-stopped">{createError}</p>
-          </div>
-        )}
+        <ErrorBanner className="mt-4" error={create.error} onDismiss={create.dismiss} />
 
         <div className="sticky bottom-0 mt-8 flex flex-col gap-2 rounded-lg border border-surface-border bg-surface-card p-4">
           {creating && (

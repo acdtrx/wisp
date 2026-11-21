@@ -12,6 +12,7 @@ import HomePanel from '../home/HomePanel.jsx';
 import BackupsPanel from '../backups/BackupsPanel.jsx';
 import { hostShutdown, hostReboot } from '../../api/host.js';
 import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const TABS = [
   { id: 'home', label: 'Home' },
@@ -56,8 +57,11 @@ export default function HostPanel() {
 
   const [powerOffOpen, setPowerOffOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
-  const [powerLoading, setPowerLoading] = useState(null);
-  const [powerError, setPowerError] = useState(null);
+  /* Power off and restart, keyed by which: the host takes one, so both buttons are
+   * disabled while either runs. A failure shows in an alert, titled by which failed. */
+  const power = useCommand();
+  const powerLoading = power.running[0] ?? null;
+  const failedPower = power.errors[0] ?? null;
 
   if (!tab || !VALID_TAB_IDS.has(tab)) {
     return <Navigate to="/host/home" replace />;
@@ -76,31 +80,10 @@ export default function HostPanel() {
   }
   const softwareBadgeTitle = softwareReasons.length > 0 ? softwareReasons.join(' · ') : null;
 
-  const handlePowerOff = async () => {
-    setPowerLoading('shutdown');
-    try {
-      await hostShutdown();
-      setPowerOffOpen(false);
-    } catch (err) {
-      setPowerOffOpen(false);
-      setPowerError({ title: 'Power off failed', message: errorText(err) });
-    } finally {
-      setPowerLoading(null);
-    }
-  };
-
-  const handleRestart = async () => {
-    setPowerLoading('restart');
-    try {
-      await hostReboot();
-      setRestartOpen(false);
-    } catch (err) {
-      setRestartOpen(false);
-      setPowerError({ title: 'Restart failed', message: errorText(err) });
-    } finally {
-      setPowerLoading(null);
-    }
-  };
+  /* The confirm stays open until the command ends; the button shows it in flight. */
+  const runPower = (key, send, closeConfirm) => power.run(send, { key }).then(() => closeConfirm(false));
+  const handlePowerOff = () => runPower('shutdown', hostShutdown, setPowerOffOpen);
+  const handleRestart = () => runPower('restart', hostReboot, setRestartOpen);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -193,11 +176,11 @@ export default function HostPanel() {
         onCancel={() => setRestartOpen(false)}
       />
       <AlertDialog
-        open={!!powerError}
-        title={powerError?.title}
-        message={powerError?.message || ''}
+        open={!!failedPower}
+        title={failedPower?.key === 'shutdown' ? 'Power off failed' : 'Restart failed'}
+        message={failedPower ? errorText(failedPower.error) : ''}
         tone="error"
-        onClose={() => setPowerError(null)}
+        onClose={() => power.dismiss(failedPower?.key)}
       />
     </div>
   );

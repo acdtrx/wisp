@@ -6,6 +6,7 @@ import { useHomeStore } from '../../store/homeStore.js';
 import HomeTile from './HomeTile.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const headerBtn =
   'rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-30 disabled:hover:bg-transparent';
@@ -21,9 +22,9 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
   const deleteGroup = useHomeStore((s) => s.deleteGroup);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(group.name);
-  const [busy, setBusy] = useState(false);
+  const command = useCommand();
+  const busy = command.busy;
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     if (autoEdit && !renaming) {
@@ -37,33 +38,18 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
     if (!renaming) setDraftName(group.name);
   }, [group.name, renaming]);
 
-  const submitRename = async () => {
+  const submitRename = () => {
     const name = draftName.trim();
     if (!name || name === group.name) {
       setRenaming(false);
       return;
     }
-    setBusy(true);
-    try {
-      await renameGroup(group.id, name);
-      setRenaming(false);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    command.run(() => renameGroup(group.id, name), { key: 'rename', onDone: () => setRenaming(false) });
   };
 
-  const performDelete = async () => {
+  const performDelete = () => {
     setConfirmDelete(false);
-    setBusy(true);
-    try {
-      await deleteGroup(group.id);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    command.run(() => deleteGroup(group.id), { key: 'delete' });
   };
 
   return (
@@ -186,11 +172,11 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
         onCancel={() => setConfirmDelete(false)}
       />
       <AlertDialog
-        open={!!errorMsg}
+        open={!!command.errors[0]}
         title="Group action failed"
-        message={errorMsg || ''}
+        message={command.errors[0] ? errorText(command.errors[0].error) : ''}
         tone="error"
-        onClose={() => setErrorMsg(null)}
+        onClose={() => command.dismiss(command.errors[0]?.key)}
       />
     </section>
   );

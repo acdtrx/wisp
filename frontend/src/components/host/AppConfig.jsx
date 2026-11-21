@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
@@ -6,9 +5,7 @@ import OidcSettings from '../settings/OidcSettings.jsx';
 import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
 import { updateSettings } from '../../api/settings.js';
 import RecordGate from '../shared/RecordGate.jsx';
-import { errorText } from '../../api/errors.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
@@ -26,31 +23,17 @@ function formFromSettings(settings) {
 
 export default function AppConfig() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
-  const { form, setField, dirty, save } = useForm(settingsRecord, formFromSettings);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings);
+  const command = useCommand();
 
-  const handleSave = async () => {
-    setError(null);
-    setSaving(true);
-    try {
-      await save(async (sent) => {
-        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
-          serverName: sent.serverName.trim() || undefined,
-          vmsPath: sent.vmsPath.trim(),
-          imagePath: sent.imagePath.trim(),
-          discoveryEnabled: sent.discoveryEnabled,
-          // explicit null clears back to the default announcement
-          advertisedUrl: sent.advertisedUrl.trim() || null,
-        }));
-        return true;
-      });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleSave = () => save((sent) => command.run(() => updateSettings({
+        serverName: sent.serverName.trim() || undefined,
+        vmsPath: sent.vmsPath.trim(),
+        imagePath: sent.imagePath.trim(),
+        discoveryEnabled: sent.discoveryEnabled,
+        // explicit null clears back to the default announcement
+        advertisedUrl: sent.advertisedUrl.trim() || null,
+      })));
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
@@ -61,8 +44,7 @@ export default function AppConfig() {
         onSave={handleSave}
         saving={saving}
         isDirty={dirty}
-        error={error}
-        onDismissError={() => setError(null)}
+        commands={[command]}
       >
         <RecordGate record={settingsRecord} what="settings">
           {() => (

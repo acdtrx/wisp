@@ -30,7 +30,6 @@ import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEd
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
 import { CONNECTION } from '../../store/streamStore.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
 import {
   deleteMount,
   mountMount,
@@ -39,11 +38,12 @@ import {
 } from '../../api/settings.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const NO_STATUS = [];
 
@@ -92,7 +92,7 @@ export default function HostStorage() {
    * removal (any tab, the auto-mount included). */
   const status = useRecord(RECORD.HOST_MOUNT_STATUS);
   const mountStatus = status.data ?? NO_STATUS;
-  const [error, setError] = useState(null);
+  const rowCommands = useMountRowCommands();
 
   const smbSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'smb'), [settings]);
   const diskSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'disk'), [settings]);
@@ -108,7 +108,12 @@ export default function HostStorage() {
   );
 
   return (
-    <SectionCard title="Storage" titleIcon={<Server size={14} strokeWidth={2} />} error={error} onDismissError={() => setError(null)}>
+    <SectionCard
+      title="Storage"
+      titleIcon={<Server size={14} strokeWidth={2} />}
+      commands={rowCommands.commands}
+      errorPrefix={rowCommands.errorPrefix((id) => (settings?.mounts || []).find((m) => m.id === id)?.label || id)}
+    >
       <RecordGate record={settingsRecord} what="storage settings">
         {() => (
           <div className="space-y-6">
@@ -119,14 +124,14 @@ export default function HostStorage() {
             <SmbMountsSection
               smbSaved={smbSaved}
               mountStatus={mountStatus}
-              onError={setError}
+              rowCommands={rowCommands}
             />
 
             <RemovableDrivesSection
               diskSaved={diskSaved}
               detectedDisks={disks}
               unadoptedDetected={unadoptedDetected}
-              onError={setError}
+              rowCommands={rowCommands}
               diskStreamError={diskStreamError}
               diskStreamDropped={diskStreamDropped}
               onDismissDiskStreamError={dismissDiskStreamError}
@@ -138,27 +143,46 @@ export default function HostStorage() {
   );
 }
 
+/**
+ * A mount row's commands, shared by the SMB and drive tables: the removal and the
+ * mount toggle, each keyed by the mount's id, so rows run in parallel and each keeps
+ * its error (the Storage section's). A removal and an unmount are jobs: busy until the
+ * job ended; a mount is busy until the `host-mounts` cue's re-read has.
+ */
+function useMountRowCommands() {
+  const removal = useCommand();
+  const toggleCommand = useCommand();
+  return {
+    commands: [removal, toggleCommand],
+    errorPrefix: (labelOf) => (id, command) => `Couldn't ${command === removal ? 'remove' : 'mount or unmount'} ${labelOf(id)}`,
+    deleting: (id) => removal.isBusy(id),
+    toggling: (id) => toggleCommand.isBusy(id),
+    /** Whether a command runs on the row: every control of the row is disabled then. */
+    busy: (id) => removal.isBusy(id) || toggleCommand.isBusy(id),
+    remove: (id) => removal.run(() => deleteMount(id), {
+      job: true, key: id,
+    }),
+    toggle: (id, mounted) => (mounted
+      ? toggleCommand.run(() => unmountMount(id), { job: true, key: id })
+      : toggleCommand.run(() => sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id)), { key: id })),
+  };
+}
+
 /* -------------------------- SMB mounts sub-section -------------------------- */
 
-function SmbMountsSection({ smbSaved, mountStatus, onError }) {
+function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
   const [editor, setEditor] = useState({ open: false, share: null });
-  const [deletingId, setDeletingId] = useState(null);
-  const [mountActionId, setMountActionId] = useState(null);
-  const [checkId, setCheckId] = useState(null);
+  /* A connection test: its outcome, pass or fail, is the row's result, not an error. */
+  const connectionTest = useCommand();
+  const rowBusy = (id) => rowCommands.busy(id) || connectionTest.isBusy(id);
   const [checkByRow, setCheckByRow] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(null);
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedId, setExpandedId] = useState(null);
 
-  const openCreate = () => {
-    onError(null);
-    setEditor({ open: true, share: null });
-  };
+  const openCreate = () => setEditor({ open: true, share: null });
 
-  const openEdit = (share) => {
-    onError(null);
-    setEditor({ open: true, share });
-  };
+  const openEdit = (share) => setEditor({ open: true, share });
 
   const closeEditor = () => setEditor({ open: false, share: null });
 
@@ -167,46 +191,25 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
     setCheckByRow({});
   };
 
-  const handleRemoveConfirm = async () => {
+  const handleRemoveConfirm = () => {
     const row = confirmDelete;
     if (!row) return;
     setConfirmDelete(null);
-    setDeletingId(row.id);
-    try {
-      /* The removal reaches the list and the status on their cues. */
-      await awaitJob((await deleteMount(row.id)).jobId);
-    } catch (err) {
-      onError(errorText(err));
-    } finally {
-      setDeletingId(null);
-    }
+    rowCommands.remove(row.id);
   };
 
-  const handleMountToggle = (id, mounted) => {
-    onError(null);
-    setMountActionId(id);
-    const p = mounted
-      ? unmountMount(id).then((job) => awaitJob(job.jobId))
-      : sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id));
-    p
-      .catch((err) => onError(errorText(err)))
-      .finally(() => setMountActionId(null));
-  };
+  const handleMountToggle = (id, mounted) => rowCommands.toggle(id, mounted);
 
   const handleCheck = (id) => {
-    setCheckId(id);
     setCheckByRow((o) => {
       const n = { ...o };
       delete n[id];
       return n;
     });
-    checkMountConnection({ id })
-      .then(() => setCheckByRow((o) => ({ ...o, [id]: { ok: true } })))
-      .catch((err) => setCheckByRow((o) => ({
-        ...o,
-        [id]: { error: errorText(err) },
-      })))
-      .finally(() => setCheckId(null));
+    connectionTest.run(() => checkMountConnection({ id }).then(() => ({ ok: true }), (err) => ({ error: errorText(err) })), {
+      key: id,
+      onDone: (outcome) => setCheckByRow((o) => ({ ...o, [id]: outcome })),
+    });
   };
 
   const headerAdd = (
@@ -250,7 +253,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
               const mounted = status?.mounted ?? false;
 
               const check = checkByRow[row.id];
-              const checkLoading = checkId === row.id;
+              const checkLoading = connectionTest.isBusy(row.id);
               const checkBtnClass = checkLoading
                 ? rowActionIconBtn
                 : check?.ok
@@ -273,17 +276,17 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
               const expanded = expandedId === row.id;
               const actionButtons = (
                 <>
-                  <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={mountActionId === row.id} className={`${tintedActionBtnBase} ${mountBtnClass}`} title={mounted ? 'Unmount share' : 'Mount share'} aria-label={mounted ? 'Unmount share' : 'Mount share'}>
-                    {mountActionId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
+                  <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={rowBusy(row.id)} className={`${tintedActionBtnBase} ${mountBtnClass}`} title={mounted ? 'Unmount share' : 'Mount share'} aria-label={mounted ? 'Unmount share' : 'Mount share'}>
+                    {rowCommands.toggling(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
                   </button>
-                  <button type="button" onClick={() => handleCheck(row.id)} disabled={checkLoading} className={checkBtnClass} title={checkTitle} aria-label={checkTitle}>
+                  <button type="button" onClick={() => handleCheck(row.id)} disabled={rowBusy(row.id)} className={checkBtnClass} title={checkTitle} aria-label={checkTitle}>
                     {checkLoading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
                   </button>
-                  <button type="button" onClick={() => openEdit(row)} className={rowActionIconBtn} title="Edit" aria-label="Edit SMB mount">
+                  <button type="button" onClick={() => openEdit(row)} disabled={rowBusy(row.id)} className={rowActionIconBtn} title="Edit" aria-label="Edit SMB mount">
                     <Pencil size={14} aria-hidden />
                   </button>
-                  <button type="button" onClick={() => { onError(null); setConfirmDelete(row); }} disabled={deletingId === row.id} className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove SMB mount">
-                    {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+                  <button type="button" onClick={() => setConfirmDelete(row)} disabled={rowBusy(row.id)} className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove SMB mount">
+                    {rowCommands.deleting(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                   </button>
                 </>
               );
@@ -326,7 +329,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
                   </DataTableTd>
                   <DataTableTd dense align="right" className="hidden sm:table-cell">
                     <div onClick={(e) => e.stopPropagation()}>
-                      <DataTableRowActions forceVisible={deletingId === row.id}>
+                      <DataTableRowActions forceVisible={rowBusy(row.id)}>
                         {actionButtons}
                       </DataTableRowActions>
                     </div>
@@ -368,53 +371,29 @@ function RemovableDrivesSection({
   diskSaved,
   detectedDisks,
   unadoptedDetected,
-  onError,
+  rowCommands,
 }) {
+  const rowBusy = rowCommands.busy;
   const [editor, setEditor] = useState({ open: false, drive: null, adoptDisk: null });
-  const [deletingId, setDeletingId] = useState(null);
-  const [mountActionId, setMountActionId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedId, setExpandedId] = useState(null);
 
-  const openEdit = (drive) => {
-    onError(null);
-    setEditor({ open: true, drive, adoptDisk: null });
-  };
+  const openEdit = (drive) => setEditor({ open: true, drive, adoptDisk: null });
 
-  const openAdopt = (disk) => {
-    onError(null);
-    setEditor({ open: true, drive: null, adoptDisk: disk });
-  };
+  const openAdopt = (disk) => setEditor({ open: true, drive: null, adoptDisk: disk });
 
   const closeEditor = () => setEditor({ open: false, drive: null, adoptDisk: null });
 
 
-  const handleRemoveConfirm = async () => {
+  const handleRemoveConfirm = () => {
     const row = confirmDelete;
     if (!row) return;
     setConfirmDelete(null);
-    setDeletingId(row.id);
-    try {
-      /* The removal reaches the list and the status on their cues. */
-      await awaitJob((await deleteMount(row.id)).jobId);
-    } catch (err) {
-      onError(errorText(err));
-    } finally {
-      setDeletingId(null);
-    }
+    rowCommands.remove(row.id);
   };
 
-  const handleMountToggle = (id, mounted) => {
-    onError(null);
-    setMountActionId(id);
-    const p = mounted
-      ? unmountMount(id).then((job) => awaitJob(job.jobId))
-      : sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id));
-    p
-      .catch((err) => onError(errorText(err)))
-      .finally(() => setMountActionId(null));
-  };
+  const handleMountToggle = (id, mounted) => rowCommands.toggle(id, mounted);
 
   /* The device stream's state, in one place whether or not the tables have rows: an
    * error frame as a banner (dismissible over the drives shown), a dropped connection
@@ -487,15 +466,15 @@ function RemovableDrivesSection({
                 const actionButtons = (
                   <>
                     {present && (
-                      <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={mountActionId === row.id} className={`${tintedActionBtnBase} ${mountBtnClass}`} title={mounted ? 'Unmount drive' : 'Mount drive'} aria-label={mounted ? 'Unmount drive' : 'Mount drive'}>
-                        {mountActionId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
+                      <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={rowBusy(row.id)} className={`${tintedActionBtnBase} ${mountBtnClass}`} title={mounted ? 'Unmount drive' : 'Mount drive'} aria-label={mounted ? 'Unmount drive' : 'Mount drive'}>
+                        {rowCommands.toggling(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
                       </button>
                     )}
-                    <button type="button" onClick={() => openEdit(row)} className={rowActionIconBtn} title="Edit" aria-label="Edit drive">
+                    <button type="button" onClick={() => openEdit(row)} disabled={rowBusy(row.id)} className={rowActionIconBtn} title="Edit" aria-label="Edit drive">
                       <Pencil size={14} aria-hidden />
                     </button>
-                    <button type="button" onClick={() => { onError(null); setConfirmDelete(row); }} disabled={deletingId === row.id} className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove drive">
-                      {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+                    <button type="button" onClick={() => setConfirmDelete(row)} disabled={rowBusy(row.id)} className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove drive">
+                      {rowCommands.deleting(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                     </button>
                   </>
                 );
@@ -539,7 +518,7 @@ function RemovableDrivesSection({
                     </DataTableTd>
                     <DataTableTd dense align="right" className="hidden sm:table-cell">
                       <div onClick={(e) => e.stopPropagation()}>
-                        <DataTableRowActions forceVisible={deletingId === row.id}>
+                        <DataTableRowActions forceVisible={rowBusy(row.id)}>
                           {actionButtons}
                         </DataTableRowActions>
                       </div>

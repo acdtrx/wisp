@@ -7,9 +7,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
-import { errorText } from '../../api/errors.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const HELP =
   'Single sign-on via OpenID Connect (e.g. Pocket ID). Wisp stays single-user — a ' +
@@ -27,10 +25,9 @@ const formFromSettings = (settings) => ({
 export default function OidcSettings() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, saved, setField, dirty, save } = useForm(settingsRecord, formFromSettings);
+  const { form, saved, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings);
   const hasSecret = !!settings?.oidc?.hasClientSecret;
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const command = useCommand();
   const [copied, setCopied] = useState(false);
   const enabled = form?.enabled ?? false;
   const issuer = form?.issuer ?? '';
@@ -63,33 +60,21 @@ export default function OidcSettings() {
     }
   };
 
-  const handleSave = async () => {
-    setError(null);
+  const handleSave = () => {
     if (secretRequired && !clientSecret) {
-      setError('Re-enter the client secret when changing the issuer or client ID');
+      command.fail('Re-enter the client secret when changing the issuer or client ID');
       return;
     }
-    setSaving(true);
-    try {
-      const oidcUpdate = {
-        enabled,
-        issuer: issuer.trim(),
-        clientId: clientId.trim(),
-      };
-      // Only send the secret when the admin typed a new one — an empty field
-      // keeps the saved secret (the API never returns it to echo back), as
-      // long as issuer and client ID are unchanged.
-      if (clientSecret) oidcUpdate.clientSecret = clientSecret;
-
-      await save(async () => {
-        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateOidcSettings(oidcUpdate));
-        return true;
-      });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    const oidcUpdate = {
+      enabled,
+      issuer: issuer.trim(),
+      clientId: clientId.trim(),
+    };
+    // Only send the secret when the admin typed a new one — an empty field
+    // keeps the saved secret (the API never returns it to echo back), as
+    // long as issuer and client ID are unchanged.
+    if (clientSecret) oidcUpdate.clientSecret = clientSecret;
+    save(() => command.run(() => updateOidcSettings(oidcUpdate)));
   };
 
   return (
@@ -100,8 +85,7 @@ export default function OidcSettings() {
       onSave={handleSave}
       saving={saving}
       isDirty={dirty}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[command]}
     >
       <RecordGate record={settingsRecord} what="settings">
         {() => (

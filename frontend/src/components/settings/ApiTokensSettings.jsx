@@ -19,10 +19,10 @@ import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
-import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -39,19 +39,20 @@ export default function ApiTokensSettings() {
   /* The tokens, read again on a create or revoke from any tab. */
   const tokensRecord = useRecord(RECORD.TOKENS);
   const tokens = tokensRecord.data;
-  const [error, setError] = useState(null);
+  /* Create, and each token's revoke (keyed by its id): separate commands, each with
+   * its own error in the section. */
+  const create = useCommand();
+  const revoke = useCommand();
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newScope, setNewScope] = useState('read');
-  const [creating, setCreating] = useState(false);
+  const creating = create.busy;
   // { label, token } — shown once after a successful create, until dismissed.
   const [minted, setMinted] = useState(null);
   const [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleting, setDeleting] = useState(false);
 
   const openAdd = () => {
-    setError(null);
     setNewLabel('');
     setNewScope('read');
     setAdding(true);
@@ -62,36 +63,25 @@ export default function ApiTokensSettings() {
     setNewLabel('');
   };
 
-  const handleCreate = async () => {
-    if (!newLabel.trim() || creating) return;
-    setError(null);
-    setCreating(true);
-    try {
-      /* The secret is shown once, from the 201; the list row arrives with the cue. */
-      const created = await sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => createApiToken({ label: newLabel.trim(), scope: newScope }));
-      setMinted({ label: created.label, token: created.token });
-      setCopied(false);
-      setAdding(false);
-      setNewLabel('');
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setCreating(false);
-    }
+  const handleCreate = () => {
+    if (!newLabel.trim()) return;
+    /* The secret is shown once, from the 201; the list row arrives with the cue. */
+    create.run(() => sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => createApiToken({ label: newLabel.trim(), scope: newScope })), {
+      onDone: (created) => {
+        setMinted({ label: created.label, token: created.token });
+        setCopied(false);
+        setAdding(false);
+        setNewLabel('');
+      },
+    });
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget || deleting) return;
-    setError(null);
-    setDeleting(true);
-    try {
-      await sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => deleteApiToken(deleteTarget.id));
-      setDeleteTarget(null);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setDeleting(false);
-    }
+  /* The confirm stays open until the revoke ends; the token's row shows it in flight. */
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    revoke.run(() => sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => deleteApiToken(id)), { key: id })
+      .then(() => setDeleteTarget(null));
   };
 
   const copyToken = async () => {
@@ -123,8 +113,8 @@ export default function ApiTokensSettings() {
       title="API tokens"
       titleIcon={<KeyRound size={14} />}
       helpText={HELP}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[create, revoke]}
+      errorPrefix={(key, command) => (command === create ? "Couldn't create the token" : `Couldn't revoke ${tokens?.find((t) => t.id === key)?.label ?? 'the token'}`)}
       headerAction={headerAdd}
     >
       <div className="space-y-4">
@@ -256,11 +246,12 @@ export default function ApiTokensSettings() {
                           <button
                             type="button"
                             onClick={() => setDeleteTarget(t)}
+                            disabled={revoke.isBusy(t.id)}
                             title="Revoke token"
                             aria-label="Revoke token"
                             className={rowActionIconBtn}
                           >
-                            <Trash2 size={14} />
+                            {revoke.isBusy(t.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                           </button>
                         </DataTableRowActions>
                       </DataTableTd>
@@ -276,9 +267,9 @@ export default function ApiTokensSettings() {
       <ConfirmDialog
         open={deleteTarget != null}
         title="Revoke API token"
-        confirmLabel={deleting ? 'Revoking…' : 'Revoke'}
+        confirmLabel="Revoke"
         onConfirm={handleDelete}
-        onCancel={() => (deleting ? null : setDeleteTarget(null))}
+        onCancel={() => setDeleteTarget(null)}
       >
         Revoke “{deleteTarget?.label}”? Clients using it will stop working immediately.
       </ConfirmDialog>

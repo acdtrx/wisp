@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Link as LinkIcon, FolderPlus, Check, Pencil, Lightbulb } from 'lucide-react';
 import { useHomeStore } from '../../store/homeStore.js';
-import { useBusyCommand } from '../../hooks/useBusyCommand.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import HomeMotes from './HomeMotes.jsx';
 import HomeGroup from './HomeGroup.jsx';
 import ManualLinkModal from './ManualLinkModal.jsx';
 import { errorText } from '../../api/errors.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { CONNECTION } from '../../store/streamStore.js';
 
 const LIT_STATES = new Set(['running', 'blocked']);
@@ -41,9 +41,6 @@ export default function HomePanel() {
   const groups = home?.groups ?? NO_GROUPS;
   const loaded = home != null;
   const loadError = useHomeStore((s) => s.error);
-  const dismissLoadError = useHomeStore((s) => s.dismissError);
-  const retryHome = useHomeStore((s) => s.retry);
-  const homeRetrying = useHomeStore((s) => s.connection === CONNECTION.CONNECTING && s.error != null);
   const connectHome = useHomeStore((s) => s.connect);
   const disconnectHome = useHomeStore((s) => s.disconnect);
   const createGroup = useHomeStore((s) => s.createGroup);
@@ -53,10 +50,13 @@ export default function HomePanel() {
 
   const [editing, setEditing] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
   /* A group add or move in flight, until its frame lands: a second one would act on
    * the groups as they were (the same default name, a stale order). */
-  const [groupsBusy, runGroupsCommand] = useBusyCommand();
+  const groupsCommand = useCommand();
+  const groupsBusy = groupsCommand.busy;
+  const dismissLoadError = useHomeStore((s) => s.dismissError);
+  const retryHome = useHomeStore((s) => s.retry);
+  const homeRetrying = useHomeStore((s) => s.connection === CONNECTION.CONNECTING && s.error != null);
 
   useEffect(() => {
     connectHome();
@@ -78,7 +78,7 @@ export default function HomePanel() {
     return { lit, asleep, elsewhere };
   }, [tiles]);
 
-  const handleMoveGroup = async (id, direction) => {
+  const handleMoveGroup = (id, direction) => {
     const userGroups = groups.filter((g) => !g.builtin);
     const idx = userGroups.findIndex((g) => g.id === id);
     if (idx < 0) return;
@@ -86,20 +86,10 @@ export default function HomePanel() {
     if (swapWith < 0 || swapWith >= userGroups.length) return;
     const next = [...userGroups];
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
-    try {
-      await runGroupsCommand(() => reorderGroups(next.map((g) => g.id)));
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    }
+    groupsCommand.run(() => reorderGroups(next.map((g) => g.id)), { key: 'move' });
   };
 
-  const handleAddGroup = async () => {
-    try {
-      await runGroupsCommand(createGroup);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    }
-  };
+  const handleAddGroup = () => groupsCommand.run(createGroup, { key: 'add' });
 
   const userGroupIds = groups.filter((g) => !g.builtin).map((g) => g.id);
   const onlyUngrouped = userGroupIds.length === 0;
@@ -211,11 +201,11 @@ export default function HomePanel() {
 
       {addLinkOpen && <ManualLinkModal open tile={null} onClose={() => setAddLinkOpen(false)} />}
       <AlertDialog
-        open={!!errorMsg}
+        open={!!groupsCommand.errors[0]}
         title="Home action failed"
-        message={errorMsg || ''}
+        message={groupsCommand.errors[0] ? errorText(groupsCommand.errors[0].error) : ''}
         tone="error"
-        onClose={() => setErrorMsg(null)}
+        onClose={() => groupsCommand.dismiss(groupsCommand.errors[0]?.key)}
       />
     </div>
   );

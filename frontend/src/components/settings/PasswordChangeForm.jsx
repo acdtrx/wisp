@@ -1,40 +1,36 @@
 import { useState } from 'react';
 import { Loader2, Key } from 'lucide-react';
 import { changePassword } from '../../api/auth.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 export default function PasswordChangeForm() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const change = useCommand();
+  const saving = change.busy;
   const [success, setSuccess] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError(null);
     setSuccess(false);
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
+      change.fail('New passwords do not match');
       return;
     }
     if (newPassword.length < 1) {
-      setError('New password cannot be empty');
+      change.fail('New password cannot be empty');
       return;
     }
-    setSaving(true);
-    try {
-      await changePassword(currentPassword, newPassword);
-      setSuccess(true);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    change.run(() => changePassword(currentPassword, newPassword), {
+      onDone: () => {
+        setSuccess(true);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      },
+    });
   };
 
   return (
@@ -82,9 +78,7 @@ export default function PasswordChangeForm() {
         {success && (
           <p className="text-sm text-status-running">Password updated.</p>
         )}
-        {error && (
-          <p className="text-sm text-status-stopped">{error}</p>
-        )}
+        <ErrorBanner error={change.error} onDismiss={change.dismiss} />
         <button
           type="submit"
           disabled={saving || !currentPassword || !newPassword || !confirmPassword}

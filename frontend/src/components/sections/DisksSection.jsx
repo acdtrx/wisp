@@ -28,12 +28,12 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
 import { awaitVmChange } from '../../store/vmStore.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import {
   detachDiskFromVM,
   attachISO,
   ejectISO,
 } from '../../api/vms.js';
-import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -81,6 +81,13 @@ function guessImageTypeFromFileName(name) {
 /** Narrow filename column — keeps the table balanced vs Size. */
 const imageColClass = 'min-w-0 max-w-28 w-28';
 
+const DISK_VERBS = { detach: 'unmount', eject: 'eject the ISO from', iso: 'attach the ISO to' };
+/** A row command's error, named by what it did to which slot (`detach-sdb`). */
+const diskErrorPrefix = (key) => {
+  const [verb, slot] = String(key).split('-');
+  return `Couldn't ${DISK_VERBS[verb] ?? verb} ${slot}`;
+};
+
 export default function DisksSection({
   vmConfig,
   isCreating,
@@ -99,8 +106,11 @@ export default function DisksSection({
   const vmBusy = !!busyReason;
   const vmName = vmConfig.name;
 
-  const [loading, setLoading] = useState(null);
-  const [error, setError] = useState(null);
+  /* The row commands, named by action and slot (`detach-sdb`, `iso-sdc`), each with its
+   * error. They take the VM's lock, so one runs at a time: the rows disable the others
+   * while it runs (`loading`, the one in flight). */
+  const op = useCommand();
+  const loading = op.running[0] ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerContext, setPickerContext] = useState(null);
   /* The disk is snapshotted when the editor opens so a background refresh of
@@ -137,17 +147,8 @@ export default function DisksSection({
       resizeGB: null,
     };
 
-  async function executeDiskOperation(actionName, fn, afterSuccess) {
-    setLoading(actionName);
-    setError(null);
-    try {
-      await awaitVmChange(vmName, fn);
-      if (typeof afterSuccess === 'function') afterSuccess();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setLoading(null);
-    }
+  function executeDiskOperation(actionName, fn, afterSuccess) {
+    op.run(() => awaitVmChange(vmName, fn), { key: actionName, onDone: afterSuccess });
   }
 
   function openPicker(context) {
@@ -194,7 +195,6 @@ export default function DisksSection({
   }
 
   function openDiskEditor(slot) {
-    setError(null);
     const existing = slot === 'sda' ? sda : sdb;
     setEditor({ open: true, slot, disk: existing || null });
   }
@@ -423,8 +423,8 @@ export default function DisksSection({
         title="Disks"
         titleIcon={<HardDrive size={14} strokeWidth={2} />}
         helpText="Add disks or attach an ISO from the header. Original images are never modified — copies are created for new VMs."
-        error={error}
-        onDismissError={() => setError(null)}
+        commands={[op]}
+        errorPrefix={diskErrorPrefix}
         headerAction={headerActions}
       >
         <DataTableScroll>
@@ -526,8 +526,8 @@ export default function DisksSection({
       title="Disks"
       titleIcon={<HardDrive size={14} strokeWidth={2} />}
       helpText="Add or edit a block disk in a form — the VM must be stopped to add, resize, re-bus, or detach one. ISO attach, change, and eject work while it runs."
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[op]}
+        errorPrefix={diskErrorPrefix}
       headerAction={headerActions}
     >
       <DataTableScroll>

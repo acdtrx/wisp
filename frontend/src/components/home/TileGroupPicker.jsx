@@ -5,6 +5,7 @@ import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const NO_GROUPS = [];
 
@@ -19,41 +20,21 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
   const assignTile = useHomeStore((s) => s.assignTile);
   const createGroup = useHomeStore((s) => s.createGroup);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const command = useCommand();
+  const busy = command.busy;
   const anchorRef = useRef(null);
   const popRef = useRef(null);
   const close = useCallback(() => setOpen(false), []);
   const popStyle = usePopover(open, { anchorRef, popRef, onClose: close, align: 'start', side: 'top' });
 
-  const pick = async (groupId) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await assignTile({ tileId, groupId });
-      setOpen(false);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const pick = (groupId) => command.run(() => assignTile({ tileId, groupId }), { key: 'pick', onDone: () => setOpen(false) });
 
-  const pickNew = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      /* Move the tile into the new group so "New group…" behaves like the
-       * sidebar's create-and-assign. */
-      const groupId = await createGroup();
-      await assignTile({ tileId, groupId });
-      setOpen(false);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  /* Move the tile into the new group so "New group…" behaves like the sidebar's
+   * create-and-assign. */
+  const pickNew = () => command.run(async () => {
+    const groupId = await createGroup();
+    await assignTile({ tileId, groupId });
+  }, { key: 'new', onDone: () => setOpen(false) });
 
   return (
     <div className="relative">
@@ -113,11 +94,11 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
         document.body,
       )}
       <AlertDialog
-        open={!!errorMsg}
+        open={!!command.errors[0]}
         title="Couldn't move tile"
-        message={errorMsg || ''}
+        message={command.errors[0] ? errorText(command.errors[0].error) : ''}
         tone="error"
-        onClose={() => setErrorMsg(null)}
+        onClose={() => command.dismiss(command.errors[0]?.key)}
       />
     </div>
   );

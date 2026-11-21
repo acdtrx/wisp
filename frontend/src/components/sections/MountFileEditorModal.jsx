@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import { putMountFileContent } from '../../api/containers.js';
 import { awaitContainerChange } from '../../store/containerStore.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const contentText = (data) => (typeof data?.content === 'string' ? data.content : '');
 
@@ -26,30 +26,24 @@ export default function MountFileEditorModal({
   /* Save only over the file as read: not while it loads, after a failed read, or once
    * the mount (or its container) is gone. */
   const canSave = content.data != null;
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
+  const save = useCommand();
+  const saving = save.busy;
 
   const handleClose = useCallback(() => {
     if (saving) return;
     onClose();
   }, [onClose, saving]);
 
+  const { dismiss: dismissSave } = save;
   useEffect(() => {
-    if (open) setSaveError(null);
-  }, [open, containerName, mountName]);
+    if (open) dismissSave();
+  }, [open, containerName, mountName, dismissSave]);
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!containerName || !mountName) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await awaitContainerChange(containerName, () => putMountFileContent(containerName, mountName, text));
-      onClose();
-    } catch (err) {
-      setSaveError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    save.run(() => awaitContainerChange(containerName, () => putMountFileContent(containerName, mountName, text)), {
+      onDone: onClose,
+    });
   };
 
   return (
@@ -107,7 +101,7 @@ export default function MountFileEditorModal({
             />
           )}
         </RecordGate>
-        <ErrorBanner className="mt-2" error={saveError} onDismiss={() => setSaveError(null)} />
+        <ErrorBanner className="mt-2" error={save.error} onDismiss={save.dismiss} />
       </div>
     </Modal>
   );

@@ -10,8 +10,8 @@ import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { getVmIcon } from '../shared/vmIcons.jsx';
 import { useHomeStore } from '../../store/homeStore.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const DEFAULT_ICON_ID = 'globe';
 
@@ -28,8 +28,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
   const [url, setUrl] = useState(tile?.url || '');
   const [iconId, setIconId] = useState(tile?.iconId || DEFAULT_ICON_ID);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const trimmedName = name.trim();
   const trimmedUrl = url.trim();
@@ -39,20 +38,12 @@ export default function ManualLinkModal({ open, tile, onClose }) {
     iconId !== (tile?.iconId || DEFAULT_ICON_ID);
   const valid = trimmedName.length > 0 && /^https?:\/\/\S+$/i.test(trimmedUrl);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!valid || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      if (tile) await updateManualTile(tile.id, { name: trimmedName, url: trimmedUrl, iconId });
-      else await addManualTile({ name: trimmedName, url: trimmedUrl, iconId });
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    if (!valid) return;
+    save.run(() => (tile
+      ? updateManualTile(tile.id, { name: trimmedName, url: trimmedUrl, iconId })
+      : addManualTile({ name: trimmedName, url: trimmedUrl, iconId })), { onDone: onClose });
   };
 
   const Icon = getVmIcon(iconId).component;
@@ -66,19 +57,19 @@ export default function ManualLinkModal({ open, tile, onClose }) {
         subtitle="A tile for anything with a URL — on this host or elsewhere."
         size="sm"
         height="cap"
-        closeOnEscape={!saving}
+        closeOnEscape={!save.busy}
         footer={
           <>
-            <button type="button" onClick={onClose} className={formModalNeutralBtn} disabled={saving}>
+            <button type="button" onClick={onClose} className={formModalNeutralBtn} disabled={save.busy}>
               Cancel
             </button>
             <button
               type="submit"
               form="manual-link-form"
               className={formModalPrimaryBtn}
-              disabled={!valid || !dirty || saving}
+              disabled={!valid || !dirty || save.busy}
             >
-              {saving && <Loader2 size={13} className="animate-spin" aria-hidden />}
+              {save.busy && <Loader2 size={13} className="animate-spin" aria-hidden />}
               {tile ? 'Save' : 'Add'}
             </button>
           </>
@@ -121,7 +112,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
               <span>{getVmIcon(iconId).name}</span>
             </button>
           </FormField>
-          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+          <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
         </form>
       </Modal>
       <IconPickerModal

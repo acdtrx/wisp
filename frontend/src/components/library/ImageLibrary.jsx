@@ -11,7 +11,6 @@ import {
   startDownloadHaos,
   startDownloadArchCloud,
 } from '../../api/library.js';
-import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { checkContainerImageUpdates, deleteContainerImage } from '../../api/containers.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useJobProgress } from '../../hooks/useJobProgress.js';
@@ -87,7 +86,7 @@ function LibraryTableHead({ mode, compactPicker }) {
   );
 }
 
-function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onCheckUpdate, checkState }) {
+function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onCheckUpdate, checkState, deleting = false }) {
   const thisChecking = checkState?.running && checkState.currentRef === row.name;
   const anyChecking = !!checkState?.running;
   return (
@@ -121,11 +120,11 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
             Select
           </button>
         ) : (
-          <DataTableRowActions>
+          <DataTableRowActions forceVisible={deleting || thisChecking}>
             <button
               type="button"
               onClick={() => onCheckUpdate?.(row)}
-              disabled={anyChecking}
+              disabled={anyChecking || deleting}
               className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
               title="Check this image for updates"
               aria-label={`Check image ${row.name} for updates`}
@@ -137,11 +136,12 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
             <button
               type="button"
               onClick={() => onDelete(row)}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped"
+              disabled={deleting || thisChecking}
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-50"
               title="Delete"
               aria-label={`Delete image ${row.name}`}
             >
-              <Trash2 size={14} aria-hidden />
+              {deleting ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
             </button>
           </DataTableRowActions>
         )}
@@ -172,7 +172,7 @@ function TypeBadge({ type }) {
   );
 }
 
-function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
+function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy = false }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(file.name);
   const inputRef = useRef(null);
@@ -249,11 +249,12 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
             Select
           </button>
         ) : (
-          <DataTableRowActions forceVisible={editing}>
+          <DataTableRowActions forceVisible={editing || busy}>
             <button
               type="button"
               onClick={() => { setEditValue(file.name); setEditing(true); }}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary"
+              disabled={busy}
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
               title="Rename"
               aria-label={`Rename ${file.name}`}
             >
@@ -262,11 +263,12 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
             <button
               type="button"
               onClick={() => onDelete(file)}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped"
+              disabled={busy}
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-50"
               title="Delete"
               aria-label={`Delete ${file.name}`}
             >
-              <Trash2 size={14} aria-hidden />
+              {busy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
             </button>
           </DataTableRowActions>
         )}
@@ -282,7 +284,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (pickerKind === 'container') return FILTERS_PICKER_CONTAINER;
     return FILTERS_PICKER;
   }, [isPageLike, pickerKind]);
-  const bgJobs = useBackgroundJobsStore((s) => s.jobs);
   /* The image update check: a job, busy until it ended and the update status and the
    * images, read again after it, have landed. Its progress (the latest `checking` and
    * `skipped` events) shows on the status line; its result names the containers it
@@ -324,34 +325,41 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   }, [needFiles, library.data, filter]);
   const containerImages = needImages ? images.data ?? NO_ROWS : NO_ROWS;
   const loading = (needFiles && library.status === 'loading') || (needImages && images.status === 'loading');
-  const readError = (needFiles && library.error) || (needImages && images.error) || null;
-  const [error, setError] = useState(null);
+  /* A read that failed before it had data: its error state shows instead of the table. */
+  const readFailed = (needFiles && library.status === 'error' && library.data == null)
+    || (needImages && images.status === 'error' && images.data == null);
+  /* A row's delete and rename, keyed by the file or image: rows run in parallel, each
+   * error in the section. The delete's confirm closes at once; the row shows it. */
+  const removal = useCommand();
+  const rename = useCommand();
+  const fileBusy = (name) => removal.isBusy(`file:${name}`) || rename.isBusy(name);
 
-  const [uploading, setUploading] = useState(false);
+  const upload = useCommand();
+  const uploading = upload.busy;
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState(null);
 
   /** @type {[{ kind: 'file', name: string } | { kind: 'oci', ref: string }] | null} */
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const [urlModalOpen, setUrlModalOpen] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+  /* The URL check's answer: `ok`, or the server's reason it can't be downloaded. */
   const [urlCheckResult, setUrlCheckResult] = useState(null);
-  const [urlChecking, setUrlChecking] = useState(false);
+  const urlCheck = useCommand();
+  const urlChecking = urlCheck.busy;
+  /* A download (from the URL, or a preset) is a job: busy until it ended; its
+   * progress shows from its job. */
+  const urlDownload = useCommand();
   const [urlJobId, setUrlJobId] = useState(null);
-  const [urlDownloadError, setUrlDownloadError] = useState(null);
+  const urlDownloading = urlDownload.busy;
+  const urlDownloadProgress = useJobProgress(urlDownloading ? urlJobId : null)?.percent ?? 0;
 
-  const [presetJobId, setPresetJobId] = useState(null);
-  const [presetError, setPresetError] = useState(null);
-
-  const urlRow = urlJobId ? bgJobs[urlJobId] : null;
-  const urlDownloading = urlRow?.status === 'running';
-  const urlDownloadProgress = urlRow?.percent ?? 0;
-
-  const presetRow = presetJobId ? bgJobs[presetJobId] : null;
-  const presetDownloading = presetJobId && presetRow?.status === 'running';
-  const presetProgress = presetRow?.percent ?? 0;
-  const presetPhase = presetRow?.step === 'decompressing' ? 'decompressing' : null;
+  const preset = useCommand();
+  const [presetJob, setPresetJob] = useState({ jobId: null, title: null });
+  const presetDownloading = preset.busy;
+  const presetProgressRow = useJobProgress(presetDownloading ? presetJob.jobId : null);
+  const presetProgress = presetProgressRow?.percent ?? 0;
+  const presetPhase = presetProgressRow?.step === 'decompressing' ? 'decompressing' : null;
 
   const fileInputRef = useRef(null);
 
@@ -381,19 +389,11 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     return merged;
   }, [isPageLike, filter, files, containerImages]);
 
-  const handleUpload = async (file) => {
-    setUploading(true);
+  /* Done once the list holds the file: it arrives on the `library` cue. */
+  const handleUpload = (file) => {
     setUploadProgress(0);
-    setUploadError(null);
-    try {
-      /* Done once the list holds the file: it arrives on the `library` cue. */
-      await sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => uploadFile(file, setUploadProgress));
-    } catch (err) {
-      setUploadError(errorText(err));
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
+    upload.run(() => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => uploadFile(file, setUploadProgress)))
+      .then(() => setUploadProgress(0));
   };
 
   const handleFileInput = (e) => {
@@ -402,99 +402,64 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     e.target.value = '';
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteTarget) return;
-    try {
-      if (deleteTarget.kind === 'oci') {
-        /* The removal reaches the list on the `images` cue. */
-        await awaitJob((await deleteContainerImage(deleteTarget.ref)).jobId);
-      } else {
-        await sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => deleteFile(deleteTarget.name));
-      }
-      setDeleteTarget(null);
-    } catch (err) {
-      setError(errorText(err));
-      setDeleteTarget(null);
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    if (target.kind === 'oci') {
+      /* A job: busy until it ended. */
+      removal.run(() => deleteContainerImage(target.ref), {
+        job: true, key: `oci:${target.ref}`,
+      });
+    } else {
+      removal.run(() => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => deleteFile(target.name)), { key: `file:${target.name}` });
     }
   };
 
-  const handleRename = async (oldName, newName) => {
-    try {
-      await sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => renameFile(oldName, newName));
-    } catch (err) {
-      setError(errorText(err));
-    }
-  };
+  const handleRename = (oldName, newName) => rename.run(
+    () => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => renameFile(oldName, newName)),
+    { key: oldName },
+  );
 
-  const handleUrlCheck = async () => {
+  const handleUrlCheck = () => {
     const url = urlInput.trim();
     if (!url) return;
-    setUrlChecking(true);
     setUrlCheckResult(null);
-    try {
-      const result = await checkDownloadUrl(url);
-      setUrlCheckResult(result);
-    } catch (err) {
-      setUrlCheckResult({ ok: false, error: err.code, detail: errorText(err) });
-    } finally {
-      setUrlChecking(false);
-    }
+    urlCheck.run(() => checkDownloadUrl(url), { onDone: setUrlCheckResult });
   };
 
-  const handleUrlDownload = async () => {
+  const handleUrlDownload = () => {
     const url = urlInput.trim();
     if (!url) return;
-    setUrlDownloadError(null);
-    try {
-      const { jobId } = await startDownloadFromUrl(url);
-      setUrlJobId(jobId);
-      await awaitJob(jobId);
-      setUrlModalOpen(false);
-      setUrlInput('');
-      setUrlCheckResult(null);
-    } catch (err) {
-      setUrlDownloadError(errorText(err));
-    } finally {
-      setUrlJobId(null);
-    }
-  };
-
-  const closeUrlModal = () => {
-    setUrlModalOpen(false);
-    setUrlInput('');
-    setUrlCheckResult(null);
-    setUrlDownloadError(null);
-    setUrlJobId(null);
-  };
-
-  /* Only the download still shown applies its outcome: a newer one ignores it. */
-  const runPresetDownload = async ({ jobId }) => {
-    setPresetError(null);
-    setPresetJobId(jobId);
-    let error = null;
-    try {
-      await awaitJob(jobId);
-    } catch (err) {
-      error = errorText(err);
-    }
-    setPresetJobId((current) => {
-      if (current !== jobId) return current;
-      if (error) queueMicrotask(() => setPresetError(error));
-      return null;
+    urlDownload.run(() => startDownloadFromUrl(url), {
+      job: true,
+      onAck: ({ jobId }) => setUrlJobId(jobId),
+      onDone: () => {
+        setUrlModalOpen(false);
+        setUrlInput('');
+        setUrlCheckResult(null);
+      },
     });
   };
 
-  const handlePresetSelect = async (presetId) => {
-    try {
-      let result;
-      if (presetId === 'ubuntu') result = await startDownloadUbuntuCloud();
-      else if (presetId === 'arch') result = await startDownloadArchCloud();
-      else if (presetId === 'haos') result = await startDownloadHaos();
-      else return;
-      await runPresetDownload(result);
-    } catch (err) {
-      setPresetError(errorText(err));
-    }
+  /* Closing the dialog leaves a download running: its progress stays in the jobs tray. */
+  const closeUrlModal = () => {
+    setUrlModalOpen(false);
+    if (urlDownloading) return;
+    setUrlInput('');
+    setUrlCheckResult(null);
+    urlCheck.dismiss();
+    urlDownload.dismiss();
+  };
+
+  const PRESET_STARTS = { ubuntu: startDownloadUbuntuCloud, arch: startDownloadArchCloud, haos: startDownloadHaos };
+  const handlePresetSelect = (presetId) => {
+    const start = PRESET_STARTS[presetId];
+    if (!start) return;
+    preset.run(start, {
+      job: true,
+      onAck: ({ jobId, title }) => setPresetJob({ jobId, title }),
+    });
   };
 
   const libraryHeaderAction = (
@@ -562,10 +527,12 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       title="Image Library"
       titleIcon={<Images size={14} strokeWidth={2} />}
       headerAction={libraryHeaderAction}
-      error={error || (readError ? `Couldn't load the library: ${errorText(readError)}` : undefined)}
-      onDismissError={() => setError(null)}
+      commands={[removal, rename]}
+      errorPrefix={(key, command) => (command === rename ? `Couldn't rename ${key}` : `Couldn't delete ${String(key).replace(/^(file|oci):/, '')}`)}
     >
-          {(uploading || uploadError || presetError || presetDownloading) && (
+          {needFiles && <RecordError record={library} what="library" className="mb-3" />}
+          {needImages && <RecordError record={images} what="container images" className="mb-3" />}
+          {(uploading || upload.error || preset.error || presetDownloading) && (
             <div className="mb-4 border-b border-surface-border pb-4">
               {uploading && (
                 <div className="max-w-md">
@@ -583,7 +550,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               {presetDownloading && (
                 <div className={`max-w-md ${uploading ? 'mt-3' : ''}`}>
                   <div className="mb-1 text-xs font-medium text-text-secondary">
-                    {presetRow?.title ?? 'Download'}…{' '}
+                    {presetJob.title ?? 'Download'}…{' '}
                     {presetPhase === 'decompressing' ? 'Uncompressing…' : `${presetProgress}%`}
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-border">
@@ -594,12 +561,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                   </div>
                 </div>
               )}
-              {uploadError && (
-                <p className={`text-xs text-status-stopped ${uploading || presetDownloading ? 'mt-2' : ''}`}>{uploadError}</p>
-              )}
-              {presetError && (
-                <p className={`text-xs text-status-stopped ${uploading || presetDownloading || uploadError ? 'mt-2' : ''}`}>{presetError}</p>
-              )}
+              <ErrorBanner className={uploading || presetDownloading ? 'mt-2' : ''} error={upload.error} prefix="Upload" onDismiss={upload.dismiss} />
+              <ErrorBanner className="mt-2" error={preset.error} prefix="Download" onDismiss={preset.dismiss} />
             </div>
           )}
 
@@ -638,8 +601,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           )}
           {loading ? (
           <p className="py-8 text-center text-sm text-text-muted">Loading…</p>
-        ) : readError && files.length === 0 && containerImages.length === 0 ? (
-          // The load failed (its error shows above): not an empty library.
+        ) : readFailed ? (
+          // The read failed (its error state shows above): not an empty library.
           null
         ) : isOciView ? (
           containerImages.length === 0 ? (
@@ -667,6 +630,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                       onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
                       onCheckUpdate={(r) => startImageUpdateCheck(r.name)}
                       checkState={checkState}
+                      deleting={removal.isBusy(`oci:${row.name}`)}
                     />
                   ))}
                 </tbody>
@@ -699,6 +663,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                         onSelect={onSelect}
                         onDelete={(f) => setDeleteTarget({ kind: 'file', name: f.name })}
                         onRename={handleRename}
+                        busy={fileBusy(row.file.name)}
                       />
                     ) : (
                       <ContainerImageRow
@@ -710,6 +675,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                         onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
                         onCheckUpdate={(r) => startImageUpdateCheck(r.name)}
                         checkState={checkState}
+                        deleting={removal.isBusy(`oci:${row.oci.name}`)}
                       />
                     ),
                   )}
@@ -739,6 +705,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                     onSelect={onSelect}
                     onDelete={(f) => setDeleteTarget({ kind: 'file', name: f.name })}
                     onRename={handleRename}
+                    busy={fileBusy(file.name)}
                   />
                 ))}
               </tbody>
@@ -776,7 +743,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             <input
               type="url"
               value={urlInput}
-              onChange={(e) => { setUrlInput(e.target.value); setUrlCheckResult(null); setUrlDownloadError(null); }}
+              onChange={(e) => { setUrlInput(e.target.value); setUrlCheckResult(null); }}
               placeholder="https://..."
               className="input-field flex-1"
             />
@@ -789,16 +756,19 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               {urlChecking ? '…' : 'Check'}
             </button>
           </div>
-          {urlCheckResult && (
-            <div className={`mb-3 rounded-sm px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-status-running-soft text-status-running' : 'bg-status-stopped-soft text-status-stopped'}`}>
-              {urlCheckResult.ok
-                ? `OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`
-                : errorText(urlCheckResult)}
+          {urlCheckResult?.ok && (
+            <div className="mb-3 rounded-sm bg-status-running-soft px-3 py-2 text-xs text-status-running">
+              {`OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`}
             </div>
           )}
-          {urlDownloadError && (
-            <p className="mb-3 text-xs text-status-stopped">{urlDownloadError}</p>
-          )}
+          {/* The server's reason the URL can't be downloaded, or the check's own failure. */}
+          <ErrorBanner
+            className="mb-3"
+            error={urlCheckResult && !urlCheckResult.ok ? errorText(urlCheckResult) : null}
+            onDismiss={() => setUrlCheckResult(null)}
+          />
+          <ErrorBanner className="mb-3" error={urlCheck.error} prefix="URL check" onDismiss={urlCheck.dismiss} />
+          <ErrorBanner className="mb-3" error={urlDownload.error} onDismiss={urlDownload.dismiss} />
           {urlDownloading && (
             <div className="mb-3">
               <div className="mb-1 text-xs text-text-secondary">Downloading… {urlDownloadProgress}%</div>

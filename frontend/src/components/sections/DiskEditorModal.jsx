@@ -18,10 +18,10 @@ import {
 import { formatSize } from '../../utils/formatters.js';
 import { awaitVmChange } from '../../store/vmStore.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'disk-editor-form';
 
@@ -112,15 +112,14 @@ export default function DiskEditorModal({
   onClose,
 }) {
   const [form, setForm] = useState(() => formFromDisk(null, 'virtio'));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const isEdit = disk != null;
 
   useEffect(() => {
     if (!open) return;
     setForm(formFromDisk(disk, defaultBus));
-    setError(null);
+    save.dismiss();
   }, [open, disk]);
 
   const setField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
@@ -145,13 +144,13 @@ export default function DiskEditorModal({
   const invalid = !!(sizeError || resizeError || imageError)
     || (!isAttach && sizeValue == null);
   const dirty = isEdit ? busChanged || sizeChanged : true;
-  const canSave = !invalid && dirty && !saving;
+  const canSave = !invalid && dirty && !save.busy;
 
-  const handleSave = async () => {
+  /* One command, of one to two requests in the order the inline editors used, each
+   * resolving once the VM's new config is in. */
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    setError(null);
-    try {
+    save.run(async () => {
       const command = (send) => awaitVmChange(vmName, send);
       if (isEdit) {
         if (busChanged) await command(() => updateDiskBus(vmName, slot, form.bus));
@@ -162,12 +161,7 @@ export default function DiskEditorModal({
       } else {
         await command(() => createDiskOnVM(vmName, slot, Math.max(1, parseInt(form.sizeGB, 10) || 32), form.bus));
       }
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    }, { onDone: onClose });
   };
 
   const busField = (
@@ -195,14 +189,14 @@ export default function DiskEditorModal({
       subtitle={`${slot} · ${vmName}`}
       size="md"
       height="cap"
-      closeOnEscape={!saving}
+      closeOnEscape={!save.busy}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
             Cancel
           </button>
           <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {isEdit ? 'Save' : isAttach ? 'Attach' : 'Create'}
           </button>
         </>
@@ -276,7 +270,7 @@ export default function DiskEditorModal({
 
         {busField}
 
-        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
     </Modal>
   );

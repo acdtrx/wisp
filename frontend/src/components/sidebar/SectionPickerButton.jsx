@@ -5,6 +5,7 @@ import { useSectionsStore, MAIN_SECTION_ID, selectSectionId } from '../../store/
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 /**
  * Tiny popover trigger used inside a workload row in organize mode.
@@ -18,38 +19,16 @@ export default function SectionPickerButton({ type, name, disabled }) {
   const createAndAssign = useSectionsStore((s) => s.createAndAssign);
   const currentSectionId = useSectionsStore((s) => selectSectionId(s.data, type, name));
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const command = useCommand();
+  const busy = command.busy;
   const anchorRef = useRef(null);
   const popRef = useRef(null);
   const close = useCallback(() => setOpen(false), []);
   const popStyle = usePopover(open, { anchorRef, popRef, onClose: close, align: 'end' });
 
-  const pick = async (sectionId) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await assignWorkload({ type, name, sectionId });
-      setOpen(false);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const pick = (sectionId) => command.run(() => assignWorkload({ type, name, sectionId }), { key: 'pick', onDone: () => setOpen(false) });
 
-  const pickNew = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await createAndAssign({ type, name });
-      setOpen(false);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const pickNew = () => command.run(() => createAndAssign({ type, name }), { key: 'new', onDone: () => setOpen(false) });
 
   return (
     <div className="relative">
@@ -116,11 +95,11 @@ export default function SectionPickerButton({ type, name, disabled }) {
         document.body,
       )}
       <AlertDialog
-        open={!!errorMsg}
+        open={!!command.errors[0]}
         title="Couldn't move workload"
-        message={errorMsg || ''}
+        message={command.errors[0] ? errorText(command.errors[0].error) : ''}
         tone="error"
-        onClose={() => setErrorMsg(null)}
+        onClose={() => command.dismiss(command.errors[0]?.key)}
       />
     </div>
   );

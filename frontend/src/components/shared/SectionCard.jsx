@@ -1,11 +1,11 @@
 import { ChevronDown, ChevronRight, Lock, Loader2, Save } from 'lucide-react';
 import HelpIcon from './HelpIcon.jsx';
-import ErrorBanner from './ErrorBanner.jsx';
+import CommandErrors from './CommandErrors.jsx';
 
 /**
  * The card every form section sits in (docs/specs/UI.md, SectionCard). A section's
- * error shows in the section, below the header, and is dismissed with
- * `onDismissError`.
+ * errors — its command hooks' (`commands`), one banner per failed key — show in the
+ * section, below the header, each dismissed on its own.
  */
 export default function SectionCard({
   title,
@@ -22,8 +22,9 @@ export default function SectionCard({
   onToggleCollapse,
   locked,
   lockedMessage,
-  error,
-  onDismissError,
+  commands = [],
+  errorPrefix,
+  showsError,
   headerAction,
 }) {
   return (
@@ -80,7 +81,7 @@ export default function SectionCard({
         </div>
       </div>
 
-      <ErrorBanner className="mx-5 mb-3" error={error} onDismiss={onDismissError} />
+      <CommandErrors className="mx-5 mb-3" commands={commands} prefix={errorPrefix} shows={showsError} />
 
       {(!collapsible || !collapsed) && (
         <div className="border-t border-surface-border px-5 py-4">

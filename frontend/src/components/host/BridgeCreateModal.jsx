@@ -8,10 +8,9 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { createManagedNetworkBridge } from '../../api/host.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
-import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'bridge-create-form';
 
@@ -24,8 +23,8 @@ const FORM_ID = 'bridge-create-form';
 export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
   const [baseBridge, setBaseBridge] = useState('');
   const [vlanId, setVlanId] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const create = useCommand();
+  const submitting = create.busy;
 
   const parents = Array.isArray(eligibleParents) ? eligibleParents : [];
 
@@ -33,7 +32,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
     if (!open) return;
     setBaseBridge(parents[0] || '');
     setVlanId('');
-    setError(null);
+    create.dismiss();
     // parents comes fresh from the section on every open; keying the reset on
     // `open` alone avoids resetting the form while the user types.
   }, [open]);
@@ -46,18 +45,12 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
 
   const canCreate = !!bridgePreview && !submitting;
 
-  const handleCreate = async () => {
+  /* A job: busy until it ended. */
+  const handleCreate = () => {
     if (!canCreate) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await awaitJob((await createManagedNetworkBridge(baseBridge, Number(vlanId))).jobId);
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSubmitting(false);
-    }
+    create.run(() => createManagedNetworkBridge(baseBridge, Number(vlanId)), {
+      job: true, onDone: onClose,
+    });
   };
 
   return (
@@ -124,7 +117,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
             Bridge name:{' '}
             <span className="font-mono text-text-secondary">{bridgePreview || '—'}</span>
           </p>
-          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+          <ErrorBanner className="mt-3" error={create.error} onDismiss={create.dismiss} />
         </form>
       )}
     </Modal>

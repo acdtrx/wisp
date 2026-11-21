@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
 
-import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import { useJobProgress } from '../../hooks/useJobProgress.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import { getAppList } from '../../apps/appRegistry.js';
-import { errorText } from '../../api/errors.js';
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -28,10 +29,11 @@ export default function CreateContainerPanel() {
     image: '',
   });
 
-  const [creating, setCreating] = useState(false);
+  /* The create: a job, busy until it ended; its progress shows by the Create button. */
+  const create = useCommand();
+  const creating = create.busy;
   const [createJobId, setCreateJobId] = useState(null);
-  const row = useBackgroundJobsStore((s) => (createJobId ? s.jobs[createJobId] : null));
-  const [createError, setCreateError] = useState(null);
+  const row = useJobProgress(createJobId);
 
   /* The create job outlives this panel (it keeps running in the jobs
    * tray), so its completion only opens the new workload while the user is
@@ -62,28 +64,20 @@ export default function CreateContainerPanel() {
     setForm((prev) => ({ ...prev, ...changes }));
   };
 
-  const handleCreate = async () => {
-    setCreating(true);
-    setCreateError(null);
-
+  const handleCreate = () => {
     const spec = {
       name: form.name.trim(),
       image: form.image.trim(),
     };
     if (selectedApp) spec.app = selectedApp;
 
-    try {
-      const { jobId } = await createContainer(spec);
-      setCreateJobId(jobId);
-      await awaitJob(jobId);
-      setCreating(false);
-      setCreateJobId(null);
-      if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
-    } catch (err) {
-      setCreateError(errorText(err));
-      setCreating(false);
-      setCreateJobId(null);
-    }
+    create.run(() => createContainer(spec), {
+      job: true,
+      onAck: ({ jobId }) => setCreateJobId(jobId),
+      onDone: () => {
+        if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
+      },
+    }).then(() => setCreateJobId(null));
   };
 
   const config = {
@@ -138,11 +132,7 @@ export default function CreateContainerPanel() {
           />
         </div>
 
-        {createError && (
-          <div className="mt-4 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-4 py-3">
-            <p className="text-sm font-medium text-status-stopped">{createError}</p>
-          </div>
-        )}
+        <ErrorBanner className="mt-4" error={create.error} onDismiss={create.dismiss} />
 
         <div className="sticky bottom-0 mt-6 flex items-center justify-end gap-3 border-t border-surface-border bg-surface pt-4 pb-2">
           {creating && progressStep && (

@@ -9,7 +9,7 @@ import IconPickerModal from '../shared/IconPickerModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
-import { useBusyCommand } from '../../hooks/useBusyCommand.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import TileGroupPicker from './TileGroupPicker.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
@@ -40,21 +40,17 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
   const [draftName, setDraftName] = useState(tile.name);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, runCommand] = useBusyCommand();
-  const [errorMsg, setErrorMsg] = useState(null);
+  const command = useCommand();
+  const busy = command.busy;
 
   const Icon = getVmIcon(tile.iconId).component;
   const external = tile.workload == null;
   const lit = !external && LIT_STATES.has(tile.workload.state);
   const updateAvailable = tile.workload?.updateAvailable === true;
 
-  const run = async (action) => {
-    try {
-      await runCommand(action);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    }
-  };
+  /* The tile's commands (rename, hide, move, icon, remove), each its own key: the
+   * home layout takes one write at a time, so all are disabled while one runs. */
+  const run = (key, action) => command.run(action, { key });
 
   /* A manual tile owns its name outright; a derived tile keeps its derived name
    * and carries the user's choice as an override, so a renamed Caddy host still
@@ -63,7 +59,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
     const name = draftName.trim();
     setRenaming(false);
     if (!name || name === tile.name) return;
-    run(() =>
+    run('rename', () =>
       tile.kind === 'manual'
         ? updateManualTile(tile.id, { name })
         : setTileOverride({ tileId: tile.id, name }),
@@ -182,7 +178,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
           <div className="flex items-center gap-0.5 border-t border-surface-border pt-2">
             <button
               type="button"
-              onClick={() => run(() => setTileOverride({ tileId: tile.id, hidden: !tile.hidden }))}
+              onClick={() => run('hide', () => setTileOverride({ tileId: tile.id, hidden: !tile.hidden }))}
               disabled={busy}
               className={editBtn}
               title={tile.hidden ? 'Show tile' : 'Hide tile'}
@@ -205,7 +201,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
               <>
                 <button
                   type="button"
-                  onClick={() => run(() => assignTile({ tileId: tile.id, groupId, index: index - 1 }))}
+                  onClick={() => run('move', () => assignTile({ tileId: tile.id, groupId, index: index - 1 }))}
                   disabled={busy || !canMoveLeft}
                   className={editBtn}
                   title="Move earlier"
@@ -215,7 +211,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
                 </button>
                 <button
                   type="button"
-                  onClick={() => run(() => assignTile({ tileId: tile.id, groupId, index: index + 1 }))}
+                  onClick={() => run('move', () => assignTile({ tileId: tile.id, groupId, index: index + 1 }))}
                   disabled={busy || !canMoveRight}
                   className={editBtn}
                   title="Move later"
@@ -290,7 +286,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
       <IconPickerModal
         open={iconPickerOpen}
         currentIconId={tile.iconId}
-        onSelect={(iconId) => run(() => setTileOverride({ tileId: tile.id, iconId }))}
+        onSelect={(iconId) => run('icon', () => setTileOverride({ tileId: tile.id, iconId }))}
         onClose={() => setIconPickerOpen(false)}
       />
       <ConfirmDialog
@@ -300,16 +296,16 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
         confirmLabel="Remove"
         onConfirm={() => {
           setConfirmDelete(false);
-          run(() => removeManualTile(tile.id));
+          run('remove', () => removeManualTile(tile.id));
         }}
         onCancel={() => setConfirmDelete(false)}
       />
       <AlertDialog
-        open={!!errorMsg}
+        open={!!command.errors[0]}
         title="Home action failed"
-        message={errorMsg || ''}
+        message={command.errors[0] ? errorText(command.errors[0].error) : ''}
         tone="error"
-        onClose={() => setErrorMsg(null)}
+        onClose={() => command.dismiss(command.errors[0]?.key)}
       />
     </div>
   );

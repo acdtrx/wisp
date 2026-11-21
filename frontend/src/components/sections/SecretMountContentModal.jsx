@@ -12,8 +12,8 @@ import { putMountFileContent } from '../../api/containers.js';
 import { awaitContainerChange } from '../../store/containerStore.js';
 import { formatSize } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
+import CommandErrors from '../shared/CommandErrors.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'secret-mount-content-form';
 
@@ -27,32 +27,26 @@ const FORM_ID = 'secret-mount-content-form';
  */
 export default function SecretMountContentModal({ open, containerName, mount, onClose }) {
   const [text, setText] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
   const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setText('');
-    setError(null);
+    save.dismiss('replace');
+    save.dismiss('clear');
     setConfirmClear(false);
   }, [open, mount?.name]);
 
-  const writeContent = async (content) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await awaitContainerChange(containerName, () => putMountFileContent(containerName, mount.name, content));
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  /* Replace and clear: two commands of the one content write (one at a time: both
+   * controls are disabled while either runs). */
+  const writeContent = (content, key) => save.run(
+    () => awaitContainerChange(containerName, () => putMountFileContent(containerName, mount.name, content)),
+    { key, onDone: onClose },
+  );
 
   const isSet = !!mount?.isSet;
-  const canSave = text !== '' && !saving;
+  const canSave = text !== '' && !save.busy;
   const status = isSet
     ? `Set${Number.isFinite(mount?.sizeBytes) ? ` · ${formatSize(mount.sizeBytes)}` : ''} — the current content is never shown.`
     : 'Not set — the file is empty.';
@@ -67,7 +61,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
         size="md"
         height="cap"
         /* A nested confirm is the top layer — Escape must close only it. */
-        closeOnEscape={!saving}
+        closeOnEscape={!save.busy}
         footer={(
           <>
             {isSet && (
@@ -75,18 +69,18 @@ export default function SecretMountContentModal({ open, containerName, mount, on
                 <button
                   type="button"
                   onClick={() => setConfirmClear(true)}
-                  disabled={saving}
+                  disabled={save.busy}
                   className={`${formModalNeutralBtn} hover:text-status-stopped hover:bg-status-stopped-soft`}
                 >
                   Clear
                 </button>
               </div>
             )}
-            <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+            <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
               Cancel
             </button>
             <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-              {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+              {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
               Save
             </button>
           </>
@@ -94,7 +88,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
       >
         <form
           id={FORM_ID}
-          onSubmit={(e) => { e.preventDefault(); if (canSave) writeContent(text); }}
+          onSubmit={(e) => { e.preventDefault(); if (canSave) writeContent(text, 'replace'); }}
           className="space-y-3"
         >
           <p className="rounded-md border border-surface-border bg-surface px-3 py-2 text-xs text-text-secondary">
@@ -117,7 +111,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
               className="input-field min-h-32 w-full resize-y font-mono text-xs leading-relaxed"
             />
           </FormField>
-          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+          <CommandErrors className="mt-3" commands={[save]} prefix={(key) => (key === 'clear' ? "Couldn't clear the secret" : undefined)} />
         </form>
       </Modal>
 
@@ -125,7 +119,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
         open={confirmClear}
         title="Clear secret file?"
         confirmLabel="Clear"
-        onConfirm={() => { setConfirmClear(false); writeContent(''); }}
+        onConfirm={() => { setConfirmClear(false); writeContent('', 'clear'); }}
         onCancel={() => setConfirmClear(false)}
       >
         <p>

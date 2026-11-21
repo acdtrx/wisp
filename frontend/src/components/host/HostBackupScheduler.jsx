@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { CalendarClock } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
@@ -9,9 +8,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
 import { backupDestinations } from '../../utils/backupDestinations.js';
-import { errorText } from '../../api/errors.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const DEFAULT_SCHEDULE = {
   enabled: false,
@@ -43,9 +40,8 @@ function clampInt(value, min, max, fallback) {
 export default function HostBackupScheduler() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setForm, dirty, save } = useForm(settingsRecord, fromSettings);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const { form, setForm, dirty, saving, save } = useForm(settingsRecord, fromSettings);
+  const command = useCommand();
 
   /* Local, plus the mount chosen in the Backup section above (when set). */
   const destinationOptions = settings ? backupDestinations(settings) : [];
@@ -64,28 +60,15 @@ export default function HostBackupScheduler() {
     });
   };
 
-  const handleSave = async () => {
-    setError(null);
-    setSaving(true);
-    try {
-      await save(async (sent) => {
-        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
-          backupSchedule: {
-            enabled: sent.enabled,
-            time: sent.time,
-            destinationIds: sent.destinationIds,
-            retainDays: clampInt(sent.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
-            retainWeeks: clampInt(sent.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
-          },
-        }));
-        return true;
-      });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleSave = () => save((sent) => command.run(() => updateSettings({
+        backupSchedule: {
+          enabled: sent.enabled,
+          time: sent.time,
+          destinationIds: sent.destinationIds,
+          retainDays: clampInt(sent.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
+          retainWeeks: clampInt(sent.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
+        },
+      })));
 
   const controlHeightClass = 'h-9 py-0 leading-normal';
 
@@ -97,8 +80,7 @@ export default function HostBackupScheduler() {
       onSave={handleSave}
       saving={saving}
       isDirty={dirty}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[command]}
     >
       <RecordGate record={settingsRecord} what="settings">
         {() => (

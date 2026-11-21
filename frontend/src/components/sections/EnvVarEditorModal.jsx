@@ -10,8 +10,8 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'env-var-editor-form';
 
@@ -68,8 +68,7 @@ function buildEnvPatch(form, row) {
  */
 export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubmit, onClose }) {
   const [form, setForm] = useState(() => formFromRow(null));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
   const [pendingGenerate, setPendingGenerate] = useState(null); // { value, replacing }
   const [genCopied, setGenCopied] = useState(false);
 
@@ -78,7 +77,7 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
   useEffect(() => {
     if (!open) return;
     setForm(formFromRow(row));
-    setError(null);
+    save.dismiss();
     setPendingGenerate(null);
     setGenCopied(false);
   }, [open, row]);
@@ -93,7 +92,7 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
     && !duplicate
     && !secretNeedsValue
     && Object.keys(patch).length > 0
-    && !saving;
+    && !save.busy;
 
   /* Renaming a secret re-creates it under the new key: the old key is removed
    * and the new one is written with whatever the value field holds. */
@@ -126,18 +125,9 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await onSubmit({ envPatch: patch });
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    save.run(() => onSubmit({ envPatch: patch }), { onDone: onClose });
   };
 
   const keyHint = duplicate
@@ -162,14 +152,14 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
         size="md"
         height="cap"
         /* A nested confirm is the top layer — Escape must close only it. */
-        closeOnEscape={!saving}
+        closeOnEscape={!save.busy}
         footer={(
           <>
-            <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+            <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
               Cancel
             </button>
             <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-              {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+              {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
               Save
             </button>
           </>
@@ -226,7 +216,7 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
             checked={form.secret}
             onChange={(e) => setForm((f) => ({ ...f, secret: e.target.checked }))}
           />
-          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+          <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
         </form>
       </Modal>
 

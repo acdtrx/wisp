@@ -5,7 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -26,8 +26,10 @@ export default function ContainerDevicesSection({ config, onSave }) {
 
   const gpus = useRecord(RECORD.HOST_GPUS);
   const hostGpus = gpus.data ? (Array.isArray(gpus.data.gpus) ? gpus.data.gpus : []) : null;
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  /* Adding and removing the GPU: two commands of one device list (one at a time: both
+   * are disabled while either runs). */
+  const save = useCommand();
+  const saving = save.busy;
   const [picking, setPicking] = useState(false);
   const [pickValue, setPickValue] = useState('');
 
@@ -36,42 +38,26 @@ export default function ContainerDevicesSection({ config, onSave }) {
     : null;
   const hostGpuMissing = !!currentGpu && Array.isArray(hostGpus) && !matchedHostGpu;
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     if (!pickValue) return;
-    setError(null);
-    setSaving(true);
-    try {
-      await onSave({ devices: [{ type: 'gpu', device: pickValue }] });
-      setPicking(false);
-      setPickValue('');
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    save.run(() => onSave({ devices: [{ type: 'gpu', device: pickValue }] }), {
+      key: 'add',
+      onDone: () => {
+        setPicking(false);
+        setPickValue('');
+      },
+    });
   };
 
-  const handleRemove = async () => {
-    setError(null);
-    setSaving(true);
-    try {
-      await onSave({ devices: [] });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleRemove = () => save.run(() => onSave({ devices: [] }), { key: 'remove' });
 
   const startPick = () => {
-    setError(null);
     setPicking(true);
     setPickValue(hostGpus?.[0]?.device || '');
   };
   const cancelPick = () => {
     setPicking(false);
     setPickValue('');
-    setError(null);
   };
 
   const addDisabled = !Array.isArray(hostGpus) || hostGpus.length === 0 || saving;
@@ -98,8 +84,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
       titleIcon={<Cpu size={12} />}
       helpText="Share a host GPU (Intel/AMD render node) with the container for hardware acceleration like media transcoding. Restart the container to apply changes."
       requiresRestart={!!config.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
       headerAction={headerAction}
     >
       {/* The host's GPUs, for the picker: their read's error state (a Retry before they

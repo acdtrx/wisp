@@ -38,9 +38,16 @@
 - **Settings forms keep their unsaved edits through another section's save** — each follows its own values only.
 - **The Software page shows a failed settings read**, with a Retry before they loaded; the update card shows only its own status read's failure.
 - **Backup destination pickers wait for the settings** — they show a loading line, or the settings' error with a Retry, instead of offering Local alone; an unlabelled backup mount is called Network everywhere.
-- **The container backup dialog shows the backup's progress** like the VM's, instead of closing once it started; it follows a backup already running when it opens, and a backup cut short (cancelled) is shown as not done.
+- **The container backup dialog shows the backup's progress** like the VM's, instead of closing once it started; it follows a backup already running when it opens.
+- **A job cut short (cancelled) is a failure for every command that runs as one**, shown with its message, not as done.
 - **The image update check's flagged containers show as that check's result** ("Your check flagged …") beside the status line, which shows the stored status only; a check running when the page opens is followed to its end. A check that ended while the page was away shows only in the stored status: how many containers it flagged needs the server to keep it (backlog).
 - **Section, modal and feed errors use one banner, which can be dismissed** over data already shown; a feed with nothing shown offers a Retry. A dropped device, USB or log stream shows as a status line while it reconnects, not as an error.
+- **Every inline error stays until it is dismissed or its command runs again**; a re-read of other data or opening an editor no longer clears it. Commands on different rows run side by side, each failure in its own banner.
+- **Every control of a row is disabled while a command on that row runs** — an SMB share's mount, test, edit and remove, a drive's, a container mount's edit while it uploads, an environment variable's edit while it is removed, an image's check and delete, a backup's restores and delete. Removing a NIC disables every NIC's edit and remove until it lands: each re-sends the whole list.
+- **A network bridge's delete error shows in the Network Bridges section**, not above the page.
+- **A failed SMB connection test shows as a dismissible error** in the share dialog.
+- **An install that does not finish can be dismissed**, which stops waiting for the backend.
+- **A Retry shows its read on its way** ("Retrying…").
 - **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
 
 ## 2026-11-17

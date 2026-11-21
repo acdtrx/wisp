@@ -4,7 +4,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import { LinuxIcon, WindowsIcon } from '../shared/vmIcons.jsx';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const OS_ICONS = { Linux: LinuxIcon, Windows: WindowsIcon };
 
@@ -29,8 +29,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
   };
   const [form, setForm] = useState(defaults);
   const [original, setOriginal] = useState(defaults);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const init = useCallback(() => {
     const data = {
@@ -43,7 +42,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
     };
     setForm(data);
     setOriginal(data);
-    setError(null);
   }, [vmConfig?.name, vmConfig?.vcpus, vmConfig?.memoryMiB, vmConfig?.osCategory, vmConfig?.autostart]);
 
   // Overview: full reset when VM / server data changes. Create: avoid re-init on every
@@ -94,24 +92,15 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
     if (isCreating && onFormChange) onFormChange({ memoryUnit: nextUnit });
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const changes = {};
-      const name = (form.name ?? '').trim();
-      if (name !== original.name) changes.name = name;
-      if (form.osType !== original.osType) changes.osType = form.osType;
-      if (form.vcpus !== original.vcpus) changes.vcpus = form.vcpus;
-      if (form.memoryMiB !== original.memoryMiB) changes.memoryMiB = form.memoryMiB;
-      if (form.autostart !== original.autostart) changes.autostart = form.autostart;
-
-      await onSave(changes);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+  const handleSave = () => {
+    const changes = {};
+    const name = (form.name ?? '').trim();
+    if (name !== original.name) changes.name = name;
+    if (form.osType !== original.osType) changes.osType = form.osType;
+    if (form.vcpus !== original.vcpus) changes.vcpus = form.vcpus;
+    if (form.memoryMiB !== original.memoryMiB) changes.memoryMiB = form.memoryMiB;
+    if (form.autostart !== original.autostart) changes.autostart = form.autostart;
+    save.run(() => onSave(changes));
   };
 
   return (
@@ -120,10 +109,9 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       isDirty={isCreating ? false : isDirty}
       onSave={isCreating ? undefined : handleSave}
       saveDisabledReason={isCreating ? undefined : busyReason}
-      saving={saving}
+      saving={save.busy}
       requiresRestart={!!vmConfig.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
     >
       <div className="space-y-0">
         <div className="flex items-end gap-4 flex-wrap">

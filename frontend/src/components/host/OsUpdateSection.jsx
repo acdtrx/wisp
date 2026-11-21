@@ -1,15 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Package, AlertCircle, RotateCcw, RefreshCw, Loader2 } from 'lucide-react';
 import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { checkForUpdates, performUpgrade } from '../../api/host.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { errorText } from '../../api/errors.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { useBusyCommand } from '../../hooks/useBusyCommand.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -33,11 +32,9 @@ function isBusyError(err) {
 
 const BUSY_MESSAGE = 'Another package manager operation is running on the host. Try again in a moment.';
 
-/** Run the package check (or join the one running) and resolve with its result, `{ count }`, or
- *  with nothing when it was cancelled (cut at shutdown). */
-async function runPackageCheck() {
-  return awaitJob((await checkForUpdates()).jobId);
-}
+/* The package check and the upgrade are jobs that change the package list: each is
+ * busy until its job ended. */
+const PACKAGE_JOB = { job: true };
 
 export default function OsUpdateSection({ onRequestRestart }) {
   const stats = useStatsStore((s) => s.data);
@@ -47,85 +44,55 @@ export default function OsUpdateSection({ onRequestRestart }) {
   const rebootRequired = !!stats?.rebootRequired;
   const rebootReasons = stats?.rebootReasons ?? [];
 
-  const [checking, setChecking] = useState(false);
-  const [upgrading, setUpgrading] = useState(false);
+  /* Check and upgrade: two commands, each with its error; apt runs one at a time, so
+   * the card disables both while either runs. An UPDATE_BUSY failure (apt held
+   * elsewhere) shows as a soft "try again" status, not as an error. */
+  const op = useCommand();
+  const checking = op.isBusy('check');
+  const upgrading = op.isBusy('upgrade');
   const [manualCount, setManualCount] = useState(null);
-  const [updateError, setUpdateError] = useState(null);
-  const [busyMessage, setBusyMessage] = useState(null);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
-  const [upgradeError, setUpgradeError] = useState(null);
+  const busyFailure = op.errors.find(({ error }) => isBusyError(error))?.error ?? null;
+  const busyMessage = busyFailure ? `${BUSY_MESSAGE} (${errorText(busyFailure)})` : null;
+  const hardFailure = op.errors.some(({ error }) => !isBusyError(error));
 
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [refreshingPackages, runRefresh] = useBusyCommand();
-  const [refreshError, setRefreshError] = useState(null);
+  const refresh = useCommand();
 
-  const handleCheckUpdates = useCallback(async () => {
-    setUpdateError(null);
-    setBusyMessage(null);
+  const handleCheckUpdates = () => {
     setUpgradeSuccess(false);
-    setChecking(true);
-    try {
-      const result = await runPackageCheck();
-      if (!result) return;
-      setManualCount(result.count);
-    } catch (err) {
-      if (isBusyError(err)) {
-        setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
-      } else {
-        setUpdateError(errorText(err));
-      }
-    } finally {
-      setChecking(false);
-    }
-  }, []);
-
-  const handleUpgrade = useCallback(async () => {
-    setUpgradeError(null);
-    setBusyMessage(null);
-    setUpgradeSuccess(false);
-    setUpgrading(true);
-    try {
-      await awaitJob((await performUpgrade()).jobId);
-      setUpgradeSuccess(true);
-      setManualCount(0);
-    } catch (err) {
-      if (isBusyError(err)) {
-        setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
-      } else {
-        setUpgradeError(errorText(err));
-      }
-    } finally {
-      setUpgrading(false);
-    }
-  }, []);
-
-  const openDetails = useCallback(() => {
-    setRefreshError(null);
-    setDetailsOpen(true);
-  }, []);
-
-  /* Run the check: the list is read again when the stats say the check ran. */
-  const handleRefreshPackages = useCallback(() => {
-    setRefreshError(null);
-    runRefresh(async () => {
-      try {
-        await runPackageCheck();
-      } catch (err) {
-        setRefreshError(isBusyError(err) ? BUSY_MESSAGE : errorText(err));
-      }
+    op.run(checkForUpdates, {
+      ...PACKAGE_JOB,
+      key: 'check',
+      onDone: (result) => setManualCount(result.count),
     });
-  }, [runRefresh]);
+  };
+
+  const handleUpgrade = () => {
+    setUpgradeSuccess(false);
+    op.run(performUpgrade, {
+      ...PACKAGE_JOB,
+      key: 'upgrade',
+      onDone: () => {
+        setUpgradeSuccess(true);
+        setManualCount(0);
+      },
+    });
+  };
+
+  const openDetails = () => setDetailsOpen(true);
+
+  const handleRefreshPackages = () => refresh.run(checkForUpdates, PACKAGE_JOB);
 
   const count = manualCount ?? (pendingUpdates > 0 ? pendingUpdates : 0);
   const available = count > 0;
 
-  /* Status precedence: error > busy > success > pending count > up-to-date.
-   * Busy is rendered with the warn style (amber) — informational, not red. */
+  /* Status precedence: busy > success > pending count > up-to-date (an error shows in
+   * the card's error slot). Busy is rendered with the warn style (amber) —
+   * informational, not red. */
   let status = null;
-  if (upgradeError) {
-    status = { type: 'error', message: upgradeError };
-  } else if (updateError) {
-    status = { type: 'error', message: updateError };
+  if (hardFailure) {
+    status = null;
   } else if (busyMessage) {
     status = { type: 'warn', message: busyMessage };
   } else if (upgradeSuccess) {
@@ -160,6 +127,8 @@ export default function OsUpdateSection({ onRequestRestart }) {
         updateBusyLabel="Upgrading…"
         details={available ? { label: 'View packages', onClick: openDetails } : null}
         status={status}
+        commands={[op]}
+        showsError={(error) => !isBusyError(error)}
         lastChecked={updatesLastChecked}
         autoCheckLabel="Checked hourly"
       >
@@ -195,8 +164,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
         <PackagesDialog
           onClose={() => setDetailsOpen(false)}
           onRefresh={handleRefreshPackages}
-          refreshing={refreshingPackages}
-          refreshError={refreshError}
+          refresh={refresh}
         />
       )}
     </>
@@ -205,7 +173,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
 
 /** The upgradable packages, as the last check found them: read while this dialog is
  *  open, and again whenever a check ran (the stats say when). */
-function PackagesDialog({ onClose, onRefresh, refreshing, refreshError }) {
+function PackagesDialog({ onClose, onRefresh, refresh }) {
   const record = useRecord(RECORD.OS_UPDATE_PACKAGES);
   const data = record.data;
   const packages = data?.packages ?? null;
@@ -231,17 +199,21 @@ function PackagesDialog({ onClose, onRefresh, refreshing, refreshError }) {
           <button
             type="button"
             onClick={onRefresh}
-            disabled={refreshing}
+            disabled={refresh.busy}
             title="Refresh package list"
             aria-label="Refresh package list"
             className="rounded-md border border-surface-border bg-surface-card p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
           >
-            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {refresh.busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
           </button>
         )
       }
     >
-      <ErrorBanner className="mb-2" error={refreshError} />
+      <ErrorBanner
+        className="mb-2"
+        error={isBusyError(refresh.error) ? BUSY_MESSAGE : refresh.error}
+        onDismiss={refresh.dismiss}
+      />
       {record.data != null && <RecordError record={record} what="package list" className="mb-2" />}
       <RecordGate record={record} what="package list">
         {(found) => (found.packages.length === 0 ? (

@@ -10,8 +10,8 @@ import {
 import NicModelPills from './NicModelPills.jsx';
 import { randomMac } from '../../utils/randomMac.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'nic-editor-form';
 
@@ -34,8 +34,7 @@ function formFromNic(nic, bridges) {
  */
 export default function NicEditorModal({ open, nic, index, bridges = [], onSubmit, onClose }) {
   const [form, setForm] = useState(() => formFromNic(null, []));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const isEdit = nic != null;
 
@@ -44,30 +43,21 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
     /* `bridges` is read once, when the modal opens: a late host-bridge refresh
      * must not reset a form in progress. */
     setForm(formFromNic(nic, bridges));
-    setError(null);
+    save.dismiss();
   }, [open, nic]);
 
   const dirty = !isEdit
     || form.source !== (nic.source || '')
     || form.model !== (nic.model || 'virtio')
     || form.mac !== (nic.mac || '');
-  const canSave = dirty && !saving;
+  const canSave = dirty && !save.busy;
 
   /* cloud-init writes the network config against the first NIC's MAC. */
   const macBreaksCloudInit = isEdit && index === 0 && form.mac !== (nic.mac || '');
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await onSubmit({ source: form.source, model: form.model, mac: form.mac });
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    save.run(() => onSubmit({ source: form.source, model: form.model, mac: form.mac }), { onDone: onClose });
   };
 
   return (
@@ -78,14 +68,14 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
       subtitle={`net${index} · bridged`}
       size="md"
       height="cap"
-      closeOnEscape={!saving}
+      closeOnEscape={!save.busy}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
             Cancel
           </button>
           <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
             Save
           </button>
         </>
@@ -152,7 +142,7 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
             </button>
           </div>
         </FormField>
-        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
     </Modal>
   );

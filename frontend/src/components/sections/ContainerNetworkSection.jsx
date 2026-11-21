@@ -17,7 +17,8 @@ import {
 import { awaitContainerChange } from '../../store/containerStore.js';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import CommandErrors from '../shared/CommandErrors.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 
@@ -101,55 +102,59 @@ export default function ContainerNetworkSection({
   const [originalMac, setOriginalMac] = useState(() => net.mac || '');
   const [interfaceDraft, setInterfaceDraft] = useState(() => net.interface || '');
   const [originalInterface, setOriginalInterface] = useState(() => net.interface || '');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
+  /* A service's save or removal, from the editor modal. */
+  const serviceCmd = useCommand();
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !isCreating && !!config.pendingRestart;
   /* The bridges a container can join, kept current as bridges are made or removed. */
   const bridgesRecord = useRecord(RECORD.HOST_BRIDGES);
   const bridges = bridgesRecord.data ?? NO_BRIDGES;
 
-  /** Service editor strip state: { port: number|null, hasExisting, portEditable, draft, saving, error } */
+  /** Service editor strip state: { port: number|null, hasExisting, portEditable, draft } */
   const [strip, setStrip] = useState(null);
   const servicesEnabled = !isCreating && config.localDns === true;
   const pills = isCreating ? [] : buildPortPills(config.exposedPorts, config.services);
 
   const closeStrip = useCallback(() => setStrip(null), []);
   const handleStripClose = useCallback(() => {
-    if (!strip?.saving) closeStrip();
-  }, [strip, closeStrip]);
+    if (!serviceCmd.busy) closeStrip();
+  }, [serviceCmd.busy, closeStrip]);
   const openStripForPort = (port, service) => {
+    serviceCmd.dismiss();
+    serviceCmd.dismiss('delete');
     if (service) {
       setStrip({
         port, hasExisting: true, portEditable: false,
-        draft: draftFromService(service), saving: false, error: null,
+        draft: draftFromService(service),
       });
     } else {
       const suggested = suggestTypeForPort(port);
       setStrip({
         port, hasExisting: false, portEditable: false,
-        draft: emptyDraft(port, suggested), saving: false, error: null,
+        draft: emptyDraft(port, suggested),
       });
     }
   };
   const openStripForAdd = () => {
+    serviceCmd.dismiss();
+    serviceCmd.dismiss('delete');
     setStrip({
       port: null, hasExisting: false, portEditable: true,
-      draft: emptyDraft(null, null), saving: false, error: null,
+      draft: emptyDraft(null, null),
     });
   };
   const updateDraft = (patch) => {
-    setStrip((s) => (s ? { ...s, draft: { ...s.draft, ...patch }, error: null } : s));
+    setStrip((s) => (s ? { ...s, draft: { ...s.draft, ...patch } } : s));
   };
   const setTypeChoice = (value) => {
     if (value === '__custom__') {
-      setStrip((s) => (s ? { ...s, draft: { ...s.draft, typeSelect: value }, error: null } : s));
+      setStrip((s) => (s ? { ...s, draft: { ...s.draft, typeSelect: value } } : s));
       return;
     }
     const defaults = DEFAULT_TXT_FOR_TYPE[value] || {};
     setStrip((s) => (s ? {
       ...s,
-      error: null,
       draft: {
         ...s.draft,
         typeSelect: value,
@@ -167,19 +172,18 @@ export default function ContainerNetworkSection({
       const next = s.draft.txtPairs.map((pair, i) => (
         i === idx ? (which === 'k' ? [value, pair[1]] : [pair[0], value]) : pair
       ));
-      return { ...s, draft: { ...s.draft, txtPairs: next }, error: null };
+      return { ...s, draft: { ...s.draft, txtPairs: next } };
     });
   };
   const addTxtPair = () => {
     setStrip((s) => (s ? {
-      ...s, draft: { ...s.draft, txtPairs: [...s.draft.txtPairs, ['', '']] }, error: null,
+      ...s, draft: { ...s.draft, txtPairs: [...s.draft.txtPairs, ['', '']] },
     } : s));
   };
   const removeTxtPair = (idx) => {
     setStrip((s) => (s ? {
       ...s,
       draft: { ...s.draft, txtPairs: s.draft.txtPairs.filter((_, i) => i !== idx) },
-      error: null,
     } : s));
   };
 
@@ -187,14 +191,14 @@ export default function ContainerNetworkSection({
     if (!strip) return;
     const type = effectiveType(strip.draft);
     if (!isValidServiceType(type)) {
-      setStrip({ ...strip, error: 'Type must look like _name._tcp or _name._udp' });
+      serviceCmd.fail('Type must look like _name._tcp or _name._udp');
       return;
     }
     let port = strip.port;
     if (strip.portEditable) {
       const parsed = parseInt(strip.draft.port, 10);
       if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-        setStrip({ ...strip, error: 'Port must be an integer between 1 and 65535' });
+        serviceCmd.fail('Port must be an integer between 1 and 65535');
         return;
       }
       port = parsed;
@@ -206,26 +210,17 @@ export default function ContainerNetworkSection({
       setStrip(null);
       return;
     }
-    setStrip({ ...strip, saving: true, error: null });
-    try {
-      await awaitContainerChange(config.name, () => (strip.hasExisting
-        ? updateContainerService(config.name, port, { type, txt })
-        : addContainerService(config.name, { port, type, txt })));
-      setStrip(null);
-    } catch (err) {
-      setStrip((s) => (s ? { ...s, saving: false, error: errorText(err) } : s));
-    }
+    serviceCmd.run(() => awaitContainerChange(config.name, () => (strip.hasExisting
+      ? updateContainerService(config.name, port, { type, txt })
+      : addContainerService(config.name, { port, type, txt }))), { onDone: () => setStrip(null) });
   };
 
-  const handleStripDelete = async () => {
+  const handleStripDelete = () => {
     if (!strip || !strip.hasExisting || strip.port == null) return;
-    setStrip({ ...strip, saving: true, error: null });
-    try {
-      await awaitContainerChange(config.name, () => removeContainerService(config.name, strip.port));
-      setStrip(null);
-    } catch (err) {
-      setStrip((s) => (s ? { ...s, saving: false, error: errorText(err) } : s));
-    }
+    serviceCmd.run(() => awaitContainerChange(config.name, () => removeContainerService(config.name, strip.port)), {
+      key: 'delete',
+      onDone: () => setStrip(null),
+    });
   };
 
   const syncFromConfig = useCallback(() => {
@@ -235,7 +230,6 @@ export default function ContainerNetworkSection({
     const iface = config.network?.interface || '';
     setInterfaceDraft(iface);
     setOriginalInterface(iface);
-    setError(null);
   }, [config.name, config.network?.mac, config.network?.interface]);
 
   useEffect(() => {
@@ -282,9 +276,7 @@ export default function ContainerNetworkSection({
       setOriginalInterface(interfaceDraft.trim());
       return;
     }
-    setSaving(true);
-    setError(null);
-    try {
+    save.run(async () => {
       const changes = {};
       const networkChanges = {};
       if (macEditable && norm(macDraft) !== norm(originalMac)) {
@@ -299,11 +291,7 @@ export default function ContainerNetworkSection({
       await onSave(changes);
       setOriginalMac(macDraft.trim());
       setOriginalInterface(interfaceDraft.trim());
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   return (
@@ -314,9 +302,8 @@ export default function ContainerNetworkSection({
       lockedMessage="Stop the container to edit network settings"
       isDirty={isDirty}
       onSave={handleSave}
-      saving={saving}
-      error={error}
-      onDismissError={() => setError(null)}
+      saving={save.busy}
+      commands={[save]}
       requiresRestart={requiresRestart}
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
@@ -440,15 +427,11 @@ export default function ContainerNetworkSection({
                   : ''
             }
             size="xl"
-            closeOnEscape={!strip?.saving}
+            closeOnEscape={!serviceCmd.busy}
           >
             {strip && (
               <>
-              {strip.error && (
-                <div className="mb-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1 text-[11px] text-status-stopped">
-                  {strip.error}
-                </div>
-              )}
+              <CommandErrors className="mb-2" commands={[serviceCmd]} prefix={(key) => (key === 'delete' ? "Couldn't remove the service" : undefined)} />
 
               <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
                 {strip.portEditable && (
@@ -543,7 +526,7 @@ export default function ContainerNetworkSection({
                     <button
                       type="button"
                       onClick={handleStripDelete}
-                      disabled={strip.saving}
+                      disabled={serviceCmd.busy}
                       className="rounded-md border border-status-stopped/30 px-2 py-1 text-[11px] font-medium text-status-stopped hover:bg-status-stopped-soft disabled:opacity-50"
                     >
                       Remove advertisement
@@ -554,7 +537,7 @@ export default function ContainerNetworkSection({
                   <button
                     type="button"
                     onClick={closeStrip}
-                    disabled={strip.saving}
+                    disabled={serviceCmd.busy}
                     className="rounded-md border border-surface-border px-2.5 py-1 text-[11px] font-medium text-text-secondary hover:bg-surface-card disabled:opacity-50"
                   >
                     Cancel
@@ -562,10 +545,10 @@ export default function ContainerNetworkSection({
                   <button
                     type="button"
                     onClick={handleStripSave}
-                    disabled={strip.saving}
+                    disabled={serviceCmd.busy}
                     className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                   >
-                    {strip.saving ? <Loader2 size={11} className="animate-spin" /> : null}
+                    {serviceCmd.busy ? <Loader2 size={11} className="animate-spin" /> : null}
                     Save
                   </button>
                 </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Braces, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
@@ -15,7 +15,7 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import EnvVarEditorModal from './EnvVarEditorModal.jsx';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const MASK = '••••••••';
 
@@ -41,44 +41,27 @@ const truncate = (s, n) => {
 };
 
 export default function ContainerEnvSection({ config, onSave }) {
-  const [error, setError] = useState(null);
+  /* A row's remove, keyed by the variable: rows remove in parallel, each with its error. */
+  const remove = useCommand();
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !!config.pendingRestart;
-  const [deletingKey, setDeletingKey] = useState(null);
   /* The row is snapshotted when the editor opens so a background refresh of
    * `config.env` can't reset the open form. */
   const [editor, setEditor] = useState({ open: false, row: null });
 
   const rows = useMemo(() => rowsFromEnv(config.env), [config.env]);
 
-  useEffect(() => {
-    setError(null);
-  }, [config.env]);
-
   /* Save path for the editor modal: it builds the `envPatch` (whole-`env`-map
    * exception, see docs/FRONTEND-RULES.md), this owns the API call and the
    * restart badge. Failures propagate so the modal can show them and stay open. */
-  const submitEnvPatch = async ({ envPatch }) => {
-    setError(null);
-    await onSave({ envPatch });
-  };
+  const submitEnvPatch = ({ envPatch }) => onSave({ envPatch });
 
-  const removeRow = async (row) => {
-    setError(null);
-    setDeletingKey(row.key);
-    try {
-      await onSave({ envPatch: { [row.key]: null } });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setDeletingKey(null);
-    }
-  };
+  const removeRow = (row) => remove.run(() => onSave({ envPatch: { [row.key]: null } }), { key: row.key });
 
   const headerAdd = (
     <button
       type="button"
-      onClick={() => { setError(null); setEditor({ open: true, row: null }); }}
+      onClick={() => setEditor({ open: true, row: null })}
       className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
       title="Add environment variable"
       aria-label="Add environment variable"
@@ -93,8 +76,8 @@ export default function ContainerEnvSection({ config, onSave }) {
       title="Environment Variables"
       helpText="Add or edit variables in a form. Marking a value as secret hides it — secrets are never read back, only overwritten. The dice generates a random secret, with a one-time copy."
       requiresRestart={requiresRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[remove]}
+      errorPrefix={(key) => `Couldn't remove ${key}`}
       headerAction={headerAdd}
     >
       <DataTableScroll>
@@ -147,10 +130,11 @@ export default function ContainerEnvSection({ config, onSave }) {
                     )}
                   </DataTableTd>
                   <DataTableTd dense align="right">
-                    <DataTableRowActions forceVisible={deletingKey === row.key}>
+                    <DataTableRowActions forceVisible={remove.isBusy(row.key)}>
                       <button
                         type="button"
-                        onClick={() => { setError(null); setEditor({ open: true, row }); }}
+                        onClick={() => setEditor({ open: true, row })}
+                        disabled={remove.isBusy(row.key)}
                         className={rowActionIconBtn}
                         title="Edit"
                         aria-label={`Edit ${row.key}`}
@@ -160,12 +144,12 @@ export default function ContainerEnvSection({ config, onSave }) {
                       <button
                         type="button"
                         onClick={() => removeRow(row)}
-                        disabled={deletingKey === row.key}
+                        disabled={remove.isBusy(row.key)}
                         className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                         title="Remove variable"
                         aria-label={`Remove ${row.key}`}
                       >
-                        {deletingKey === row.key ? (
+                        {remove.isBusy(row.key) ? (
                           <Loader2 size={14} className="animate-spin" aria-hidden />
                         ) : (
                           <Trash2 size={14} aria-hidden />

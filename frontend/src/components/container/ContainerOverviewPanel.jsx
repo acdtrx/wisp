@@ -1,5 +1,5 @@
 import {
-  useState, useEffect, lazy, Suspense,
+  Fragment, useState, useEffect, lazy, Suspense,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -305,8 +305,10 @@ export default function ContainerOverviewPanel({ name: routeName }) {
               </div>
             )}
           >
+          {/* Keyed by the workload: a section's own state (its commands' errors) is this
+              workload's. */}
           {() => (
-          <>
+          <Fragment key={name}>
           <ContainerGeneralSection config={config} onSave={handleSectionSave} />
           {config.metadata?.app && getAppEntry(config.metadata.app) ? (
             <AppConfigWrapper
@@ -322,7 +324,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
           )}
           <ContainerNetworkSection config={config} onSave={handleSectionSave} />
           <ContainerDevicesSection config={config} onSave={handleSectionSave} />
-          </>
+          </Fragment>
           )}
           </RecordGate>
         </div>

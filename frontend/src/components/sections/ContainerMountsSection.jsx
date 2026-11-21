@@ -39,12 +39,11 @@ import {
   uploadMountZip,
 } from '../../api/containers.js';
 import { formatSize } from '../../utils/formatters.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { awaitContainerChange } from '../../store/containerStore.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import RecordError from '../shared/RecordError.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { errorText } from '../../api/errors.js';
 
 const addBtn =
   'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
@@ -111,9 +110,10 @@ export default function ContainerMountsSection({ config }) {
   const settings = useRecord(RECORD.SETTINGS).data;
   const status = useRecord(RECORD.HOST_MOUNT_STATUS);
   const storageStatus = status.data;
-  const [busyRowName, setBusyRowName] = useState(null);
-  const [deletingRowName, setDeletingRowName] = useState(null);
-  const [error, setError] = useState(null);
+  /* A row's upload and removal: separate commands keyed by the mount, so rows run in
+   * parallel and each keeps its error. */
+  const upload = useCommand();
+  const removal = useCommand();
   /* The mount is snapshotted when the editor opens so a background refresh of
    * `config.mounts` can't reset the open form; `kind` drives the create path. */
   const [editor, setEditor] = useState({ open: false, kind: 'file', mount: null });
@@ -129,8 +129,8 @@ export default function ContainerMountsSection({ config }) {
   const mountsKey = useMemo(() => JSON.stringify(config.mounts || []), [config.mounts]);
   const rows = useMemo(() => rowsFromServerMounts(config.mounts), [mountsKey]);
 
+  /* Another container: its errors and its open row are not this one's. */
   useEffect(() => {
-    setError(null);
     setExpandedName(null);
   }, [config.name]);
 
@@ -139,8 +139,8 @@ export default function ContainerMountsSection({ config }) {
    * and can take seconds for large trees), so no command waits for its re-read (the
    * record table says so: store/records.js). Best-effort: without it, or once the
    * container is gone, the Size column shows em-dashes. */
-  const usage = useRecord(RECORD.CONTAINER_MOUNT_USAGE, (config.mounts || []).length > 0 ? config.name : null);
-  const mountUsage = usage.data?.mounts ?? null;
+  const usageRecord = useRecord(RECORD.CONTAINER_MOUNT_USAGE, (config.mounts || []).length > 0 ? config.name : null);
+  const mountUsage = usageRecord.data?.mounts ?? null;
 
   const usageByName = useMemo(() => {
     const map = new Map();
@@ -159,48 +159,28 @@ export default function ContainerMountsSection({ config }) {
   const colCount = runAsRoot ? 9 : 8;
 
   const openCreate = (kind) => {
-    setError(null);
     setEditor({ open: true, kind, mount: null });
   };
 
   const openEdit = (row) => {
-    setError(null);
     setEditor({ open: true, kind: row.type, mount: (config.mounts || []).find((m) => m.name === row.name) || row });
   };
 
   const closeEditor = () => setEditor({ open: false, kind: 'file', mount: null });
 
-  const handleRemove = async (row) => {
-    setError(null);
-    setDeletingRowName(row.name);
-    try {
-      await awaitContainerChange(config.name, async () =>
-        awaitJob((await removeContainerMount(config.name, row.name)).jobId));
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setDeletingRowName(null);
-    }
-  };
+  /* The removal is a job: busy until it ended. */
+  const handleRemove = (row) => removal.run(() => removeContainerMount(config.name, row.name), {
+    job: true, key: row.name,
+  });
 
-  const runUploadForRow = async (row, uploadFn) => {
-    setBusyRowName(row.name);
-    setError(null);
-    try {
-      await awaitContainerChange(config.name, () => uploadFn(row.name));
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusyRowName(null);
-    }
-  };
+  const runUploadForRow = (row, send, options = {}) => upload.run(send, { ...options, key: row.name });
 
   const handleFileUpload = (row, e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     if (row.type !== 'file') return;
-    runUploadForRow(row, (mn) => uploadMountFile(config.name, mn, file));
+    runUploadForRow(row, () => awaitContainerChange(config.name, () => uploadMountFile(config.name, row.name, file)));
   };
 
   const handleZipUpload = (row, e) => {
@@ -209,7 +189,9 @@ export default function ContainerMountsSection({ config }) {
     if (!file) return;
     if (row.type !== 'directory') return;
     // The upload answers once received; the extract is a job.
-    runUploadForRow(row, async (mn) => awaitJob((await uploadMountZip(config.name, mn, file)).jobId));
+    runUploadForRow(row, () => uploadMountZip(config.name, row.name, file), {
+      job: true,
+    });
   };
 
   const headerAdds = (
@@ -279,12 +261,12 @@ export default function ContainerMountsSection({ config }) {
       title="Mounts"
       helpText="Add or edit a mount in a form. Deletes and uploads apply to one row at a time. A secret file mount is write-only — its content can be replaced or cleared, never read back. On phones, tap a row to reach its actions."
       requiresRestart={!!config.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[upload, removal]}
+      errorPrefix={(name, command) => `Couldn't ${command === upload ? 'upload to' : 'remove'} ${name}`}
       headerAction={headerAdds}
     >
       <div className="space-y-3">
-        <RecordError record={usage} what="mount sizes" />
+        <RecordError record={usageRecord} what="mount sizes" />
         <RecordError record={status} what="storage mount status" />
         <DataTableScroll>
           <DataTable>
@@ -330,8 +312,8 @@ export default function ContainerMountsSection({ config }) {
                 </tr>
               )}
               {rows.map((row) => {
-                const rowBusy = busyRowName === row.name;
-                const rowDeleting = deletingRowName === row.name;
+                const rowBusy = upload.isBusy(row.name);
+                const rowDeleting = removal.isBusy(row.name);
                 const expanded = expandedName === row.name;
                 const src = sourceInfo(row);
                 const size = usageText(row);
@@ -422,7 +404,7 @@ export default function ContainerMountsSection({ config }) {
                     <button
                       type="button"
                       onClick={() => openEdit(row)}
-                      disabled={rowDeleting}
+                      disabled={rowBusy || rowDeleting}
                       className={rowActionIconBtn}
                       title="Edit"
                       aria-label={`Edit mount ${row.name}`}

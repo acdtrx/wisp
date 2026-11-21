@@ -1,4 +1,4 @@
-import { Loader2, RefreshCw, ArrowUpCircle, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Loader2, RefreshCw, ArrowUpCircle, CheckCircle, Clock } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 
 function formatRelativeTime(isoString) {
@@ -28,6 +28,8 @@ export default function UpdateCard({
   updateBusyLabel = 'Updating…',
   details = null,
   status = null,
+  commands = [],
+  showsError,
   lastChecked = null,
   autoCheckLabel = null,
   children = null,
@@ -42,7 +44,7 @@ export default function UpdateCard({
   const showFooter = status || lastCheckedLabel || autoCheckLabel;
 
   return (
-    <SectionCard title={title} titleIcon={titleIcon}>
+    <SectionCard title={title} titleIcon={titleIcon} commands={commands} showsError={showsError}>
       {/* Below lg the description sits above the buttons instead of beside them */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="min-w-0 flex-1 text-sm text-text-secondary">{description}</div>
@@ -84,12 +86,6 @@ export default function UpdateCard({
 
       {showFooter && (
         <div className="mt-2 flex items-center gap-2 text-xs">
-          {status?.type === 'error' && (
-            <>
-              <AlertCircle size={13} className="shrink-0 text-status-stopped" />
-              <span className="text-status-stopped">{status.message}</span>
-            </>
-          )}
           {status?.type === 'success' && (
             <>
               <CheckCircle size={13} className="shrink-0 text-status-running" />

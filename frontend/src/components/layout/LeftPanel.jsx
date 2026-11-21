@@ -17,9 +17,9 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
-import { useBusyCommand } from '../../hooks/useBusyCommand.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { errorText } from '../../api/errors.js';
 import { CONNECTION } from '../../store/streamStore.js';
 
 const FILTER_OPTIONS = [
@@ -42,8 +42,8 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
   const deleteSection = useSectionsStore((s) => s.deleteSection);
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(section.name);
-  const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const command = useCommand();
+  const busy = command.busy;
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -62,33 +62,18 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
     setDraftName(section.name);
     setEditing(true);
   };
-  const submitRename = async () => {
+  const submitRename = () => {
     const name = draftName.trim();
     if (!name || name === section.name) {
       setEditing(false);
       return;
     }
-    setBusy(true);
-    try {
-      await renameSection(section.id, name);
-      setEditing(false);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    command.run(() => renameSection(section.id, name), { key: 'rename', onDone: () => setEditing(false) });
   };
   const handleDelete = () => setConfirmDelete(true);
-  const performDelete = async () => {
+  const performDelete = () => {
     setConfirmDelete(false);
-    setBusy(true);
-    try {
-      await deleteSection(section.id);
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    } finally {
-      setBusy(false);
-    }
+    command.run(() => deleteSection(section.id), { key: 'delete' });
   };
 
   return (
@@ -190,11 +175,11 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
       onCancel={() => setConfirmDelete(false)}
     />
     <AlertDialog
-      open={!!errorMsg}
+      open={!!command.errors[0]}
       title="Section action failed"
-      message={errorMsg || ''}
+      message={command.errors[0] ? errorText(command.errors[0].error) : ''}
       tone="error"
-      onClose={() => setErrorMsg(null)}
+      onClose={() => command.dismiss(command.errors[0]?.key)}
     />
     </>
   );
@@ -363,10 +348,10 @@ export default function LeftPanel() {
 
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
   /* A section create or move in flight, until its frame lands: a second one would
    * act on the sections as they were (the same default name, a stale order). */
-  const [sectionsBusy, runSectionsCommand] = useBusyCommand();
+  const sectionsCommand = useCommand();
+  const sectionsBusy = sectionsCommand.busy;
 
   useEffect(() => {
     connectVMs();
@@ -451,7 +436,7 @@ export default function LeftPanel() {
   const isHostSelected = location.pathname === '/' || location.pathname.startsWith('/host');
   const openHost = () => navigate('/host/overview');
 
-  const handleMoveSection = async (id, direction) => {
+  const handleMoveSection = (id, direction) => {
     /* Build the new order from the user-defined sections only — Main is
      * implicit and always rendered first, never part of the persisted order. */
     const userSections = sections.filter((s) => s.id !== MAIN_SECTION_ID);
@@ -461,20 +446,10 @@ export default function LeftPanel() {
     if (swapWith < 0 || swapWith >= userSections.length) return;
     const next = [...userSections];
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
-    try {
-      await runSectionsCommand(() => reorderSections(next.map((s) => s.id)));
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    }
+    sectionsCommand.run(() => reorderSections(next.map((s) => s.id)), { key: 'move' });
   };
 
-  const handleCreateAndAssign = async ({ type, name }) => {
-    try {
-      await runSectionsCommand(() => createAndAssign({ type, name }));
-    } catch (err) {
-      setErrorMsg(errorText(err));
-    }
-  };
+  const handleCreateAndAssign = ({ type, name }) => sectionsCommand.run(() => createAndAssign({ type, name }), { key: 'create' });
 
   return (
     <>
@@ -694,11 +669,11 @@ export default function LeftPanel() {
         </button>
       </div>
       <AlertDialog
-        open={!!errorMsg}
+        open={!!sectionsCommand.errors[0]}
         title="Section action failed"
-        message={errorMsg || ''}
+        message={sectionsCommand.errors[0] ? errorText(sectionsCommand.errors[0].error) : ''}
         tone="error"
-        onClose={() => setErrorMsg(null)}
+        onClose={() => sectionsCommand.dismiss(sectionsCommand.errors[0]?.key)}
       />
       </aside>
     </>

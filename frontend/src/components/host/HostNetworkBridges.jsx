@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Loader2, Plus, Trash2, Network } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
@@ -15,44 +15,30 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import BridgeCreateModal from './BridgeCreateModal.jsx';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import { deleteManagedNetworkBridge } from '../../api/host.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { errorText } from '../../api/errors.js';
 import RecordError from '../shared/RecordError.jsx';
 
 const NO_BRIDGES = [];
 
-export default function HostNetworkBridges({ onError }) {
-  const [deletingName, setDeletingName] = useState(null);
+export default function HostNetworkBridges() {
+  /* A bridge's delete, keyed by its name: a job, busy until it ended. Its error shows
+   * in this section. */
+  const remove = useCommand();
   const [createOpen, setCreateOpen] = useState(false);
   /* The managed bridges, read again when a create or delete settles (any tab). */
   const bridges = useRecord(RECORD.NETWORK_BRIDGES);
   const managed = Array.isArray(bridges.data?.managed) ? bridges.data.managed : NO_BRIDGES;
   const eligibleParents = Array.isArray(bridges.data?.eligibleParents) ? bridges.data.eligibleParents : NO_BRIDGES;
 
-  const reportError = useCallback((value) => {
-    if (typeof onError === 'function') onError(value);
-  }, [onError]);
+  const onDelete = (name) => remove.run(() => deleteManagedNetworkBridge(name), {
+    job: true, key: name,
+  });
 
-  const onDelete = async (name) => {
-    setDeletingName(name);
-    reportError(null);
-    try {
-      await awaitJob((await deleteManagedNetworkBridge(name)).jobId);
-    } catch (err) {
-      reportError(errorText(err));
-    } finally {
-      setDeletingName(null);
-    }
-  };
-
-  const openCreate = () => {
-    reportError(null);
-    setCreateOpen(true);
-  };
+  const openCreate = () => setCreateOpen(true);
 
   const headerAdd = (
     <button
@@ -73,6 +59,8 @@ export default function HostNetworkBridges({ onError }) {
       titleIcon={<Network size={14} strokeWidth={2} />}
       helpText="Bridges are how VMs and containers connect to networks. Add one from the header. The host handles VLAN tagging — guests connect untagged."
       headerAction={headerAdd}
+      commands={[remove]}
+      errorPrefix={(name) => `Couldn't delete ${name}`}
     >
       <div className="space-y-4">
         {bridges.data != null && <RecordError record={bridges} what="network bridges" />}
@@ -112,16 +100,16 @@ export default function HostNetworkBridges({ onError }) {
                       <DataTableTd dense className="hidden tabular-nums text-sm text-text-secondary sm:table-cell">{item.vlanId}</DataTableTd>
                       <DataTableTd dense className="hidden text-sm text-text-secondary sm:table-cell">{item.present ? 'present' : 'missing'}</DataTableTd>
                       <DataTableTd dense align="right">
-                        <DataTableRowActions forceVisible={deletingName === item.name}>
+                        <DataTableRowActions forceVisible={remove.isBusy(item.name)}>
                           <button
                             type="button"
                             onClick={() => onDelete(item.name)}
-                            disabled={deletingName === item.name}
+                            disabled={remove.isBusy(item.name)}
                             className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                             title={`Delete ${item.name}`}
                             aria-label={`Delete bridge ${item.name}`}
                           >
-                            {deletingName === item.name ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+                            {remove.isBusy(item.name) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                           </button>
                         </DataTableRowActions>
                       </DataTableTd>

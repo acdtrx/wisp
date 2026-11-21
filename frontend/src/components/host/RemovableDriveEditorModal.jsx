@@ -12,9 +12,9 @@ import { randomId } from '../../utils/randomId.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -61,20 +61,18 @@ function formFromDrive(drive) {
  * Modal form editor for one removable drive (see docs/FRONTEND-RULES.md § Modal
  * form editor). Two entry points: edit an adopted drive (`drive` set) or
  * adopt a detected one (`adoptDisk` set — form prefilled from the device).
- * UUID and filesystem are identity, shown read-only. Calls `onSaved` after a
- * successful save so the parent can refresh settings and mount status.
+ * UUID and filesystem are identity, shown read-only.
  */
-export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onClose, onSaved }) {
+export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onClose }) {
   const [form, setForm] = useState(() => formFromDrive({}));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const isEdit = drive != null;
 
   useEffect(() => {
     if (!open) return;
     setForm(drive ? formFromDrive(drive) : formFromDetectedDisk(adoptDisk || {}));
-    setError(null);
+    save.dismiss();
   }, [open, drive, adoptDisk]);
 
   const trimmedPath = form.mountPath.trim();
@@ -84,13 +82,11 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
     || trimmedPath !== (drive.mountPath || '').trim()
     || form.readOnly !== (drive.readOnly === true)
     || form.autoMount !== (drive.autoMount !== false);
-  const canSave = pathOk && dirty && !saving;
+  const canSave = pathOk && dirty && !save.busy;
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    setError(null);
-    try {
+    save.run(async () => {
       if (!isEdit) {
         /* Saved once the settings store holds it: the mount list is read from there. */
         await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => addMount({
@@ -111,13 +107,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
         if (form.readOnly !== (drive.readOnly === true)) patch.readOnly = form.readOnly;
         if (Object.keys(patch).length > 0) await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => patchMount(form.id, patch));
       }
-      await onSaved?.();
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    }, { onDone: onClose });
   };
 
   const adoptDeviceName = adoptDisk
@@ -132,14 +122,14 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
       subtitle={isEdit ? drive.label || shortUuid(drive.uuid) : `${adoptDeviceName} · ${adoptDisk?.devPath || ''}`}
       size="md"
       height="cap"
-      closeOnEscape={!saving}
+      closeOnEscape={!save.busy}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
             Cancel
           </button>
           <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {isEdit ? 'Save' : 'Adopt'}
           </button>
         </>
@@ -200,7 +190,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
             onChange={(e) => setForm((f) => ({ ...f, autoMount: e.target.checked }))}
           />
         </div>
-        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
     </Modal>
   );

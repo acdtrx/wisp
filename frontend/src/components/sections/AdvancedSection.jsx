@@ -4,7 +4,7 @@ import { Lock } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FIRMWARE_OPTIONS = [
   { value: 'bios', label: 'BIOS' },
@@ -73,14 +73,12 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
   };
   const [form, setForm] = useState(defaults);
   const [original, setOriginal] = useState(defaults);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const init = useCallback(() => {
     const data = advancedFormFromVmConfig(vmConfig);
     setForm(data);
     setOriginal(data);
-    setError(null);
   }, [
     vmConfig?.firmware, vmConfig?.machineType, vmConfig?.cpuMode, vmConfig?.videoModel,
     vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.bootMenu, vmConfig?.memBalloon,
@@ -127,23 +125,16 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
     });
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const changes = {};
-      for (const key of Object.keys(form)) {
-        if (JSON.stringify(form[key]) !== JSON.stringify(original[key])) {
-          changes[key] = form[key];
-        }
+  const handleSave = () => {
+    const changes = {};
+    for (const key of Object.keys(form)) {
+      if (JSON.stringify(form[key]) !== JSON.stringify(original[key])) {
+        changes[key] = form[key];
       }
-      await onSave(changes);
-      if (Object.keys(changes).length > 0) setOriginal(form);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
     }
+    save.run(() => onSave(changes), {
+      onDone: () => { if (Object.keys(changes).length > 0) setOriginal(form); },
+    });
   };
 
   return (
@@ -152,13 +143,12 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
       isDirty={isCreating ? false : isDirty}
       onSave={isCreating ? undefined : handleSave}
       saveDisabledReason={isCreating ? undefined : busyReason}
-      saving={saving}
+      saving={save.busy}
       requiresRestart={!!vmConfig.pendingRestart}
       collapsible
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed(!collapsed)}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">

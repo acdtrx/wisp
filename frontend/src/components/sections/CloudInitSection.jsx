@@ -5,7 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
 import { awaitVmChange } from '../../store/vmStore.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -66,9 +66,12 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
     return { ...DEFAULTS, hostname };
   });
   const [editing, setEditing] = useState(isCreating);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [fetchingKeys, setFetchingKeys] = useState(false);
+  /* Save and remove write the VM's cloud-init (one at a time: both are disabled while
+   * either runs); the GitHub key lookup is a command of its own. */
+  const op = useCommand();
+  const keyLookup = useCommand();
+  const fetchingKeys = keyLookup.busy;
+  const saving = op.busy;
   const [ghUsername, setGhUsername] = useState('');
   const [ghKeys, setGhKeys] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
@@ -132,66 +135,43 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
     }
     setEditing(true);
     setCollapsed(false);
-    setError(null);
   };
 
-  const cancelEditing = () => {
-    setEditing(false);
-    setError(null);
+  const cancelEditing = () => setEditing(false);
+
+  const handleSave = () => {
+    // A blank password keeps the one on file ("Leave blank to keep
+    // unchanged"): the API reads '' as no password and 'set' as keep.
+    const password = form.password || (config?.password === 'set' ? 'set' : '');
+    op.run(() => awaitVmChange(vmName, () => updateCloudInit(vmName, { ...form, password })), {
+      key: 'save', onDone: () => setEditing(false),
+    });
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      // A blank password keeps the one on file ("Leave blank to keep
-      // unchanged"): the API reads '' as no password and 'set' as keep.
-      const password = form.password || (config?.password === 'set' ? 'set' : '');
-      await awaitVmChange(vmName, () => updateCloudInit(vmName, { ...form, password }));
-      setEditing(false);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleDelete = () => op.run(() => awaitVmChange(vmName, () => deleteCloudInit(vmName)), {
+    key: 'delete', onDone: () => setEditing(false),
+  });
 
-  const handleDelete = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await awaitVmChange(vmName, () => deleteCloudInit(vmName));
-      setEditing(false);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleFetchGithubKeys = async () => {
-    if (!ghUsername.trim()) return;
-    setFetchingKeys(true);
-    setError(null);
-    try {
-      const data = await fetchGithubKeys(ghUsername.trim());
-      const keys = data.keys || [];
-      setGhKeys(keys);
-      if (keys.length > 0) {
-        updateField('sshKey', keys[0]);
-        updateField('sshKeySource', `github:${ghUsername.trim()}`);
-      }
-    } catch (err) {
-      setError(`GitHub keys: ${errorText(err)}`);
-    } finally {
-      setFetchingKeys(false);
-    }
+  const handleFetchGithubKeys = () => {
+    const user = ghUsername.trim();
+    if (!user) return;
+    keyLookup.run(() => fetchGithubKeys(user), {
+      onDone: (data) => {
+        const keys = data.keys || [];
+        setGhKeys(keys);
+        if (keys.length > 0) {
+          updateField('sshKey', keys[0]);
+          updateField('sshKeySource', `github:${user}`);
+        }
+      },
+    });
   };
 
   // For create mode, return inline form fields only
   if (isCreating) {
     return (
-      <SectionCard title="Cloud-Init" error={error} onDismissError={() => setError(null)}>
+      <SectionCard title="Cloud-Init" commands={[op, keyLookup]}
+      errorPrefix={(key, command) => (command === keyLookup ? 'GitHub keys' : undefined)}>
         <EditForm
           form={form}
           updateField={updateField}
@@ -217,8 +197,8 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       collapsible
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed(!collapsed)}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[op, keyLookup]}
+      errorPrefix={(key, command) => (command === keyLookup ? 'GitHub keys' : undefined)}
     >
       {!editing ? (
         <div className="space-y-3">

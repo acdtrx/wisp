@@ -20,7 +20,7 @@ import {
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -46,15 +46,13 @@ function parseAppConfig(config) {
 export default function CaddyAppSection({ config, onSave }) {
   const [form, setForm] = useState(() => parseAppConfig(config));
   const [original, setOriginal] = useState(() => parseAppConfig(config));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
   const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setError(null);
   }, [config?.metadata?.appConfig?.domain, config?.metadata?.appConfig?.email, JSON.stringify(config?.metadata?.appConfig?.hosts), config?.metadata?.appConfig?.cloudflareDnsEnabled, config?.metadata?.appConfig?.cloudflareApiToken?.isSet]);
 
   const isDirty = useCallback(() => {
@@ -95,10 +93,7 @@ export default function CaddyAppSection({ config, onSave }) {
     }));
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
+  const handleSave = () => save.run(async () => {
       const appConfig = {
         domain: form.domain.trim(),
         email: form.email.trim(),
@@ -114,12 +109,7 @@ export default function CaddyAppSection({ config, onSave }) {
         appConfig.cloudflareApiToken = '';
       }
       await onSave(appConfig);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  });
 
   const dirty = isDirty();
 
@@ -128,11 +118,10 @@ export default function CaddyAppSection({ config, onSave }) {
       title="Caddy Reverse Proxy Configuration"
       titleIcon={<Globe size={14} />}
       onSave={handleSave}
-      saving={saving}
+      saving={save.busy}
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
     >
       <div className="space-y-4">
         {/* TLS fields — single row */}

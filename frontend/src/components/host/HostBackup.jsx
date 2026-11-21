@@ -1,12 +1,9 @@
-import { useState } from 'react';
 import { Archive } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import { updateSettings } from '../../api/settings.js';
 import RecordGate from '../shared/RecordGate.jsx';
-import { errorText } from '../../api/errors.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
@@ -19,27 +16,13 @@ const formFromSettings = (settings) => ({
 export default function HostBackup() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setField, dirty, save } = useForm(settingsRecord, formFromSettings);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings);
+  const command = useCommand();
 
-  const handleSave = async () => {
-    setError(null);
-    setSaving(true);
-    try {
-      await save(async (sent) => {
-        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
-          backupLocalPath: sent.backupLocalPath.trim(),
-          backupMountId: sent.backupMountId ? sent.backupMountId : null,
-        }));
-        return true;
-      });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleSave = () => save((sent) => command.run(() => updateSettings({
+    backupLocalPath: sent.backupLocalPath.trim(),
+    backupMountId: sent.backupMountId ? sent.backupMountId : null,
+  })));
 
   const networkOptions = (settings?.mounts || []).filter((m) => m.type === 'smb');
 
@@ -53,8 +36,7 @@ export default function HostBackup() {
       onSave={handleSave}
       saving={saving}
       isDirty={dirty}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[command]}
     >
       <RecordGate record={settingsRecord} what="settings">
         {() => (

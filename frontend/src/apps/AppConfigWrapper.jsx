@@ -7,10 +7,11 @@ import AlertDialog from '../components/shared/AlertDialog.jsx';
 import ConfirmDialog from '../components/shared/ConfirmDialog.jsx';
 import { getAppEntry } from './appRegistry.js';
 import { errorText } from '../api/errors.js';
+import { useCommand } from '../hooks/useCommand.js';
 
 export default function AppConfigWrapper({ config, onSave, onEject }) {
   const [ejectOpen, setEjectOpen] = useState(false);
-  const [ejectError, setEjectError] = useState(null);
+  const eject = useCommand();
 
   const appEntry = getAppEntry(config.metadata?.app);
   if (!appEntry) return null;
@@ -19,13 +20,9 @@ export default function AppConfigWrapper({ config, onSave, onEject }) {
 
   const handleAppSave = (appConfig) => onSave({ appConfig });
 
-  const handleEject = async () => {
+  const handleEject = () => {
     setEjectOpen(false);
-    try {
-      await onEject();
-    } catch (err) {
-      setEjectError(errorText(err));
-    }
+    eject.run(onEject);
   };
 
   return (
@@ -59,11 +56,11 @@ export default function AppConfigWrapper({ config, onSave, onEject }) {
         </p>
       </ConfirmDialog>
       <AlertDialog
-        open={!!ejectError}
+        open={!!eject.error}
         title="Eject failed"
-        message={ejectError || ''}
+        message={eject.error ? errorText(eject.error) : ''}
         tone="error"
-        onClose={() => setEjectError(null)}
+        onClose={eject.dismiss}
       />
     </>
   );

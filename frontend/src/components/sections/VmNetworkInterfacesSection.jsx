@@ -20,7 +20,7 @@ import NicEditorModal from './NicEditorModal.jsx';
 import NicModelPills from './NicModelPills.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 
@@ -65,8 +65,9 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
   /* The row is snapshotted when the editor opens so a background refresh of
    * `vmConfig.nics` can't reset the open form; `idx` is null when adding. */
   const [editor, setEditor] = useState({ open: false, idx: null, nic: null });
-  const [removingIdx, setRemovingIdx] = useState(null);
-  const [error, setError] = useState(null);
+  /* A NIC's removal, keyed by its MAC. Each re-sends the whole `nics` array, so one
+   * runs at a time: the other rows' removes are disabled meanwhile. */
+  const remove = useCommand();
 
   useEffect(() => {
     setNics(initNicsFromConfig(vmConfig.nics));
@@ -102,7 +103,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
 
   const openEditor = (idx) => {
     if (networkLocked) return;
-    setError(null);
     setEditor({ open: true, idx, nic: idx === null ? null : nics[idx] });
   };
 
@@ -119,30 +119,20 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     const next = idx === null
       ? [...nics, { _key: randomId(), type: 'bridge', ...fields }]
       : nics.map((n, i) => (i === idx ? { ...n, ...fields } : n));
-    setError(null);
     const result = await onSave({ nics: normalizeNicsForApi(next) });
     setNics(next);
     return result;
   };
 
-  const removeNicAt = async (idx) => {
+  const removeNicAt = (idx) => {
     if (nics.length <= 1) return;
-    setError(null);
     const next = nics.filter((_, i) => i !== idx);
     if (isCreating) {
       setNics(next);
       syncNicsToParent(next);
       return;
     }
-    setRemovingIdx(idx);
-    try {
-      await onSave({ nics: normalizeNicsForApi(next) });
-      setNics(next);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setRemovingIdx(null);
-    }
+    remove.run(() => onSave({ nics: normalizeNicsForApi(next) }), { key: nics[idx].mac, onDone: () => setNics(next) });
   };
 
   /* Create stays desktop-oriented (UI.md § Responsive behavior): its draft rows
@@ -170,8 +160,8 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
           : 'Add or edit an interface in a form; every change re-saves the whole NIC list. Editing requires the VM to be stopped.'
       }
       requiresRestart={!!vmConfig.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[remove]}
+      errorPrefix={(mac) => `Couldn't remove the NIC ${mac}`}
       headerAction={headerAdd}
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
@@ -205,7 +195,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               </tr>
             )}
             {nics.map((nic, idx) => {
-              const removing = removingIdx === idx;
+              const removing = remove.isBusy(nic.mac);
 
               return (
                 <tr key={nic._key} className={dataTableInteractiveRowClass}>
@@ -282,7 +272,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         <button
                           type="button"
                           onClick={() => openEditor(idx)}
-                          disabled={networkLocked}
+                          disabled={networkLocked || remove.busy}
                           className={rowActionIconBtn}
                           title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to edit NICs' : 'Edit'}
                           aria-label={`Edit NIC net${idx}`}
@@ -294,7 +284,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         <button
                           type="button"
                           onClick={() => removeNicAt(idx)}
-                          disabled={networkLocked || removing}
+                          disabled={networkLocked || remove.busy}
                           className={`${isCreating ? draftIconBtn : rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                           title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to remove NICs' : 'Remove NIC'}
                           aria-label={`Remove NIC net${idx}`}

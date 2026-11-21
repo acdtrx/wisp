@@ -14,7 +14,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
 import RecordGate from '../../components/shared/RecordGate.jsx';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -89,8 +89,8 @@ export default function JellyfinAppSection({ config, onSave }) {
   /* A failed read of the host's GPUs shows once, in the Devices section: here the
    * choice is only unavailable. */
   const gpuUnknown = gpus.data == null && gpus.status === 'error';
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
+  const saving = save.busy;
 
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
@@ -99,7 +99,6 @@ export default function JellyfinAppSection({ config, onSave }) {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setError(null);
   }, [JSON.stringify(config?.metadata?.appConfig)]);
 
   const dirty = useMemo(() => (
@@ -170,36 +169,27 @@ export default function JellyfinAppSection({ config, onSave }) {
       : { ...f, libraries: [...f.libraries, { rowId: makeRowId(), ...values }] }));
   }, [editor.rowId]);
 
-  const handleSave = useCallback(async () => {
-    setError(null);
-    setSaving(true);
-    try {
-      const appConfig = {
-        libraries: form.libraries.map((lib) => ({
-          label: (lib.label || '').trim(),
-          sourceId: lib.sourceId,
-          subPath: (lib.subPath || '').trim(),
-        })),
-        gpuEnabled: form.gpuEnabled,
-        publishedUrl: form.publishedUrl,
-      };
-      await onSave(appConfig);
-      setOriginal(form);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  }, [form, onSave]);
+  const handleSave = () => save.run(async () => {
+    const appConfig = {
+      libraries: form.libraries.map((lib) => ({
+        label: (lib.label || '').trim(),
+        sourceId: lib.sourceId,
+        subPath: (lib.subPath || '').trim(),
+      })),
+      gpuEnabled: form.gpuEnabled,
+      publishedUrl: form.publishedUrl,
+    };
+    await onSave(appConfig);
+    setOriginal(form);
+  });
 
   return (
     <SectionCard
       title="Jellyfin"
       requiresRestart={!!config?.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
       onSave={handleSave}
-      saving={saving}
+      saving={save.busy}
       isDirty={dirty && !hasRowErrors}
     >
       <RecordGate record={settingsRecord} what="storage settings">

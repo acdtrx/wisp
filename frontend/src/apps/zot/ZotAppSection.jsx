@@ -21,7 +21,7 @@ import {
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -61,8 +61,7 @@ function parseAppConfig(config) {
 export default function ZotAppSection({ config, onSave }) {
   const [form, setForm] = useState(() => parseAppConfig(config));
   const [original, setOriginal] = useState(() => parseAppConfig(config));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
   const [showPasswords, setShowPasswords] = useState({});
   const [showSecret, setShowSecret] = useState(false);
 
@@ -71,7 +70,6 @@ export default function ZotAppSection({ config, onSave }) {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setError(null);
     setShowPasswords({});
     setShowSecret(false);
   }, [appConfigSig]);
@@ -124,10 +122,7 @@ export default function ZotAppSection({ config, onSave }) {
     setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
+  const handleSave = () => save.run(async () => {
       const users = form.users.map((u) => {
         // Omit the password when untouched — the backend recovers the stored hash by
         // username. A renamed user reads as new and is rejected without a password.
@@ -154,12 +149,7 @@ export default function ZotAppSection({ config, onSave }) {
       }
 
       await onSave({ users, externalUrl: form.externalUrl.trim(), oidc });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  });
 
   const dirty = isDirty();
   const callbackUrl = form.externalUrl.trim()
@@ -185,11 +175,10 @@ export default function ZotAppSection({ config, onSave }) {
       titleIcon={<Container size={14} />}
       helpText="The registry listens on port 5000. With no users and no SSO it allows anonymous push and pull — add users or enable OIDC to require authentication. Anonymous pull stays enabled either way."
       onSave={handleSave}
-      saving={saving}
+      saving={save.busy}
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
-      error={error}
-      onDismissError={() => setError(null)}
+      commands={[save]}
       headerAction={addUserButton}
     >
       <div className="space-y-5">

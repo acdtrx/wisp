@@ -27,17 +27,18 @@ import {
 } from '../../api/backups.js';
 import { sendAndAwaitTopic } from '../../api/events.js';
 import {
-  useBackgroundJobsStore, awaitJob, workloadBusyJob, workloadBackupJob, workloadBusyReason,
+  useBackgroundJobsStore, workloadBusyJob, workloadBackupJob, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
-import { errorText } from '../../api/errors.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import CommandErrors from '../shared/CommandErrors.jsx';
 import { JOB_KIND, TOPIC } from '../../../../shared/wireNames.js';
 import { useBackupsStore } from '../../store/backupsStore.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
@@ -134,10 +135,13 @@ function groupStatusLine(group, scheduleEnabled) {
   };
 }
 
+/** A backup's key for its commands: kind, workload, destination and timestamp. */
+const backupKey = (b) => [b.kind, b.name, b.destinationId, b.timestamp].join('|');
+
 export default function BackupsPanel() {
   const vms = useVmStore((s) => s.data) ?? NO_WORKLOADS;
   const containers = useContainerStore((s) => s.data) ?? NO_WORKLOADS;
-  const bgJobs = useBackgroundJobsStore((s) => s.jobs);
+  const jobs = useBackgroundJobsStore((s) => s.jobs);
 
   /* The backup lists are records, read again on every `backups` frame (an attempt, a
    * delete, a prune — from anywhere). */
@@ -166,20 +170,25 @@ export default function BackupsPanel() {
   /* Restore as new (inline strip) */
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [restoreName, setRestoreName] = useState('');
-  const [restoreSaving, setRestoreSaving] = useState(false);
-  const [restoreError, setRestoreError] = useState(null);
+  /* Each command keyed by the backup (or, in place, by the workload): backups run in
+   * parallel, each with its error. */
+  const restore = useCommand();
 
   /* Restore in place (confirm dialog) */
   const [inPlaceTarget, setInPlaceTarget] = useState(null);
   const [inPlaceName, setInPlaceName] = useState('');
   const [inPlaceSafety, setInPlaceSafety] = useState(true);
-  const [inPlaceSaving, setInPlaceSaving] = useState(false);
-  const [inPlaceError, setInPlaceError] = useState(null);
+  const inPlace = useCommand();
 
   /* Delete (confirm dialog) */
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteSaving, setDeleteSaving] = useState(false);
-  const [deleteError, setDeleteError] = useState(null);
+  const remove = useCommand();
+
+  /* What a backup's command is about (what its error names, and its workload's card),
+   * held by the command hook with its key. */
+  const aboutOf = (backup, group) => ({ backup: `the backup ${backup.timestamp} of ${backup.name}`, workload: group.name, group: group.key });
+  /** Whether a restore in place of the workload of `group` is under way (one at a time). */
+  const inPlaceRunning = (group) => inPlace.running.some((key) => inPlace.aboutOf(key)?.group === group.key);
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -227,7 +236,7 @@ export default function BackupsPanel() {
 
   const subjectOf = (group) => ({ type: group.kind, name: group.name });
   /** The running backup or restore-in-place of a workload: what the card shows. */
-  const activeJobFor = (group) => workloadBackupJob(bgJobs, subjectOf(group));
+  const activeJobFor = (group) => workloadBackupJob(jobs, subjectOf(group));
 
   const isWorkloadStopped = (group) => (
     group.kind === 'vm'
@@ -255,33 +264,21 @@ export default function BackupsPanel() {
 
   /* ── Restore as new ── */
 
-  const handleRestoreAsNew = async () => {
-    if (!restoreTarget || !restoreName.trim() || restoreSaving) return;
-    setRestoreError(null);
-    setRestoreSaving(true);
-    try {
-      const { backup } = restoreTarget;
-      const newName = restoreName.trim();
-      if (backup.kind === 'container') {
-        const job = await restoreContainerBackup(
-          { destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp },
-          newName,
-        );
-        await awaitJob(job.jobId);
-      } else {
-        const job = await restoreBackup(
-          { destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp },
-          newName,
-        );
-        await awaitJob(job.jobId);
-      }
-      setRestoreTarget(null);
-      setRestoreName('');
-    } catch (err) {
-      setRestoreError(errorText(err));
-    } finally {
-      setRestoreSaving(false);
-    }
+  /* A job: busy until it ended; the new workload arrives on its list topic. */
+  const handleRestoreAsNew = () => {
+    if (!restoreTarget || !restoreName.trim()) return;
+    const { group, backup } = restoreTarget;
+    const newName = restoreName.trim();
+    restore.run(() => (backup.kind === 'container'
+      ? restoreContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp }, newName)
+      : restoreBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp }, newName)), {
+      job: true,
+      key: backupKey(backup), about: aboutOf(backup, group),
+      onDone: () => {
+        setRestoreTarget(null);
+        setRestoreName('');
+      },
+    });
   };
 
   /* ── Restore in place (containers only) ── */
@@ -290,47 +287,34 @@ export default function BackupsPanel() {
     setInPlaceTarget({ group, backup });
     setInPlaceName('');
     setInPlaceSafety(true);
-    setInPlaceError(null);
+    inPlace.dismiss('confirm');
   };
 
-  const handleInPlaceConfirm = async () => {
-    if (!inPlaceTarget || inPlaceSaving) return;
+  /* The confirm stays open until the restore is acked, then the job's progress shows on
+   * the workload's card. */
+  const handleInPlaceConfirm = () => {
+    if (!inPlaceTarget) return;
     const { group, backup } = inPlaceTarget;
     if (inPlaceName.trim() !== group.name) {
-      setInPlaceError(`Type "${group.name}" to confirm`);
+      inPlace.fail(`Type "${group.name}" to confirm`, 'confirm');
       return;
     }
-    setInPlaceError(null);
-    setInPlaceSaving(true);
-    try {
-      const target = { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
-      await restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety });
-      setInPlaceTarget(null);
-    } catch (err) {
-      setInPlaceError(errorText(err));
-    } finally {
-      setInPlaceSaving(false);
-    }
+    const target = { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
+    inPlace.run(() => restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety }), { key: backupKey(backup), about: aboutOf(backup, group) })
+      .then(() => setInPlaceTarget(null));
   };
 
   /* ── Delete ── */
 
-  const handleDeleteConfirm = async () => {
-    if (!deleteTarget || deleteSaving) return;
-    setDeleteError(null);
-    setDeleteSaving(true);
-    try {
-      const { backup } = deleteTarget;
-      /* The delete answers 204; the lists re-read on the `backups` frame it announces. */
-      await sendAndAwaitTopic(TOPIC.BACKUPS, () => (backup.kind === 'container'
-        ? deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp })
-        : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp })));
-      setDeleteTarget(null);
-    } catch (err) {
-      setDeleteError(errorText(err));
-    } finally {
-      setDeleteSaving(false);
-    }
+  /* The delete answers 204; the lists re-read on the `backups` frame it announces. */
+  const handleDeleteConfirm = () => {
+    if (!deleteTarget) return;
+    const { group, backup } = deleteTarget;
+    remove.run(() => sendAndAwaitTopic(TOPIC.BACKUPS, () => (backup.kind === 'container'
+      ? deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp })
+      : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp }))), {
+      key: backupKey(backup), about: aboutOf(backup, group),
+    }).then(() => setDeleteTarget(null));
   };
 
   /* ── Rendering ── */
@@ -339,7 +323,7 @@ export default function BackupsPanel() {
     const isOpen = expanded.has(group.key);
     const activeJob = activeJobFor(group);
     /* Any job on the workload (a start, a delete…) holds it: its commands would be refused. */
-    const busyJob = workloadBusyJob(bgJobs, subjectOf(group));
+    const busyJob = workloadBusyJob(jobs, subjectOf(group));
     const stopped = isWorkloadStopped(group);
     const { dotClass, text: statusText } = groupStatusLine(group, !!schedule?.enabled);
     const backupDisabled = !group.live || !!busyJob
@@ -438,7 +422,10 @@ export default function BackupsPanel() {
                   <tbody>
                     {group.backups.map((b) => {
                       const iso = backupTsToIso(b.timestamp);
-                      const inPlaceDisabled = !group.live || !stopped || !!busyJob;
+                      /* Every control of the row is disabled while a command on it runs. */
+                      const k = backupKey(b);
+                      const rowBusy = restore.isBusy(k) || remove.isBusy(k) || inPlace.isBusy(k);
+                      const inPlaceDisabled = !group.live || !stopped || !!busyJob || rowBusy || inPlaceRunning(group);
                       const inPlaceTitle = !group.live
                         ? 'Workload no longer exists — restore as new instead'
                         : !stopped
@@ -456,7 +443,7 @@ export default function BackupsPanel() {
                           <DataTableTd><DestinationBadge label={b.destinationLabel} /></DataTableTd>
                           <DataTableTd className="text-sm text-text-secondary">{b.sizeBytes != null ? formatSize(b.sizeBytes) : '—'}</DataTableTd>
                           <DataTableTd align="right">
-                            <DataTableRowActions>
+                            <DataTableRowActions forceVisible={rowBusy}>
                               {group.kind === 'container' && (
                                 <button
                                   type="button"
@@ -466,12 +453,13 @@ export default function BackupsPanel() {
                                   title={inPlaceTitle}
                                   aria-label={`Restore ${group.name} in place from ${b.timestamp}`}
                                 >
-                                  <ArchiveRestore size={14} aria-hidden />
+                                  {inPlace.isBusy(k) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ArchiveRestore size={14} aria-hidden />}
                                 </button>
                               )}
                               <button
                                 type="button"
-                                onClick={() => { setRestoreTarget({ group, backup: b }); setRestoreName(''); setRestoreError(null); }}
+                                onClick={() => { setRestoreTarget({ group, backup: b }); setRestoreName(''); }}
+                                disabled={rowBusy}
                                 className={rowActionIconBtn}
                                 title={group.kind === 'container' ? 'Restore as new container' : 'Restore as new VM'}
                                 aria-label={`Restore ${group.name} backup ${b.timestamp} as new`}
@@ -480,12 +468,13 @@ export default function BackupsPanel() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => { setDeleteTarget({ group, backup: b }); setDeleteError(null); }}
+                                onClick={() => setDeleteTarget({ group, backup: b })}
+                                disabled={rowBusy}
                                 className={`${rowActionIconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
                                 title="Delete backup"
                                 aria-label={`Delete backup ${b.timestamp} of ${group.name}`}
                               >
-                                <Trash2 size={14} aria-hidden />
+                                {remove.isBusy(k) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                               </button>
                             </DataTableRowActions>
                           </DataTableTd>
@@ -502,7 +491,7 @@ export default function BackupsPanel() {
                 <p className="text-sm font-medium text-text-primary">
                   Restore &ldquo;{group.name}&rdquo; ({restoreTarget.backup.timestamp}) as new {group.kind === 'container' ? 'container' : 'VM'}
                 </p>
-                {restoreError && <p className="mt-1 text-xs text-status-stopped">{restoreError}</p>}
+                <ErrorBanner className="mt-1" error={restore.errorOf(backupKey(restoreTarget.backup))} onDismiss={() => restore.dismiss(backupKey(restoreTarget.backup))} />
                 <input
                   type="text"
                   value={restoreName}
@@ -513,7 +502,7 @@ export default function BackupsPanel() {
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { setRestoreTarget(null); setRestoreName(''); setRestoreError(null); }}
+                    onClick={() => { setRestoreTarget(null); setRestoreName(''); }}
                     className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
                   >
                     Cancel
@@ -521,10 +510,10 @@ export default function BackupsPanel() {
                   <button
                     type="button"
                     onClick={handleRestoreAsNew}
-                    disabled={!restoreName.trim() || restoreSaving}
+                    disabled={!restoreName.trim() || restore.isBusy(backupKey(restoreTarget.backup))}
                     className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                   >
-                    {restoreSaving ? 'Restoring…' : 'Restore'}
+                    {restore.isBusy(backupKey(restoreTarget.backup)) ? 'Restoring…' : 'Restore'}
                   </button>
                 </div>
               </div>
@@ -548,6 +537,13 @@ export default function BackupsPanel() {
       <div className="flex-1 space-y-3 px-4 py-4 lg:px-6 lg:py-5">
         <RecordError record={settingsRecord} what="settings" />
         <ErrorBanner error={statusError} prefix="Couldn't load the last backup attempts" onDismiss={dismissStatusError} />
+        <CommandErrors
+          commands={[remove, inPlace]}
+          shows={(error) => typeof error !== 'string'}
+          prefix={(key, command, about) => (command === remove
+            ? `Couldn't delete ${about?.backup ?? 'the backup'}`
+            : `Couldn't restore ${about?.workload ?? 'the container'} in place`)}
+        />
         <RecordError record={vmList} what="VM backups" />
         <RecordError record={ctList} what="container backups" />
         {loading ? (
@@ -580,7 +576,7 @@ export default function BackupsPanel() {
       <ConfirmDialog
         open={!!inPlaceTarget}
         title={inPlaceTarget ? `Restore ${inPlaceTarget.group.name} in place` : ''}
-        confirmLabel={inPlaceSaving ? 'Starting…' : 'Restore in place'}
+        confirmLabel="Restore in place"
         onConfirm={handleInPlaceConfirm}
         onCancel={() => setInPlaceTarget(null)}
       >
@@ -612,7 +608,7 @@ export default function BackupsPanel() {
                 className="input-field w-full max-w-xs"
               />
             </div>
-            {inPlaceError && <p className="text-xs text-status-stopped">{inPlaceError}</p>}
+            <ErrorBanner error={inPlace.errorOf('confirm')} onDismiss={() => inPlace.dismiss('confirm')} />
           </div>
         )}
       </ConfirmDialog>
@@ -620,9 +616,9 @@ export default function BackupsPanel() {
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete backup"
-        confirmLabel={deleteSaving ? 'Deleting…' : 'Delete'}
+        confirmLabel="Delete"
         onConfirm={handleDeleteConfirm}
-        onCancel={() => { setDeleteTarget(null); setDeleteError(null); }}
+        onCancel={() => setDeleteTarget(null)}
       >
         {deleteTarget && (
           <div className="space-y-2 px-4 py-4 text-sm text-text-secondary">
@@ -631,7 +627,6 @@ export default function BackupsPanel() {
               <span className="font-medium text-text-primary">{deleteTarget.group.name}</span> from {deleteTarget.backup.destinationLabel || 'backup storage'}?
             </p>
             <p className="text-xs text-text-muted">This cannot be undone.</p>
-            {deleteError && <p className="text-xs text-status-stopped">{deleteError}</p>}
           </div>
         )}
       </ConfirmDialog>

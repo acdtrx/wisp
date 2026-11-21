@@ -1,4 +1,6 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import {
+  Fragment, useState, useEffect, lazy, Suspense,
+} from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play, Square, Zap, RotateCcw, Pause, PlayCircle,
@@ -329,8 +331,10 @@ export default function OverviewPanel({ name: routeName }) {
 
         {/* Sections */}
         <RecordGate record={record} what="VM" loading={<SectionSkeleton count={5} />}>
+          {/* Keyed by the workload: a section's own state (its commands' errors) is this
+              workload's. */}
           {() => (
-          <>
+          <Fragment key={name}>
             <GeneralSection
               vmConfig={vmConfig}
               isCreating={false}
@@ -366,7 +370,7 @@ export default function OverviewPanel({ name: routeName }) {
                 busyReason={busyHint}
               />
             )}
-          </>
+          </Fragment>
           )}
         </RecordGate>
       </div>

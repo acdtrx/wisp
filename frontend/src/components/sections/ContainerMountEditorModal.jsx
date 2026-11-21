@@ -11,8 +11,8 @@ import {
 import { addContainerMount, updateContainerMount } from '../../api/containers.js';
 import { awaitContainerChange } from '../../store/containerStore.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { errorText } from '../../api/errors.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { useCommand } from '../../hooks/useCommand.js';
 
 const FORM_ID = 'container-mount-editor-form';
 
@@ -164,7 +164,7 @@ function buildPatch(form, prev) {
  * form editor). Two entry points like RemovableDriveEditorModal: create — the
  * header Add that was tapped passes its `kind` (`file` | `directory` | `tmpfs`)
  * — or edit, with the saved `mount` row. Saves through the row-scoped mount
- * APIs, then `onSaved` (parent refresh) before closing; stays open on failure.
+ * APIs, then closes; stays open on failure.
  */
 export default function ContainerMountEditorModal({
   open,
@@ -174,19 +174,17 @@ export default function ContainerMountEditorModal({
   mounts = [],
   storageMounts = [],
   runAsRoot = false,
-  onSaved,
   onClose,
 }) {
   const [form, setForm] = useState(() => formFromMount(null, 'file'));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const save = useCommand();
 
   const isEdit = mount != null;
 
   useEffect(() => {
     if (!open) return;
     setForm(formFromMount(mount, kind));
-    setError(null);
+    save.dismiss();
   }, [open, mount, kind]);
 
   const isTmpfs = form.type === 'tmpfs';
@@ -223,7 +221,7 @@ export default function ContainerMountEditorModal({
   const invalid = !!(pathError || nameError || sizeError || subPathError || ownerError);
   const patch = isEdit ? buildPatch(form, mount) : null;
   const dirty = isEdit ? Object.keys(patch).length > 0 : true;
-  const canSave = trimmedName !== '' && trimmedPath !== '' && !invalid && dirty && !saving;
+  const canSave = trimmedName !== '' && trimmedPath !== '' && !invalid && dirty && !save.busy;
 
   const setField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -239,11 +237,9 @@ export default function ContainerMountEditorModal({
     setField(field, v === '' ? '' : Number(v));
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setSaving(true);
-    setError(null);
-    try {
+    save.run(async () => {
       if (isEdit) {
         if (Object.keys(patch).length > 0) {
           await awaitContainerChange(containerName, () => updateContainerMount(containerName, mount.name, patch));
@@ -251,13 +247,7 @@ export default function ContainerMountEditorModal({
       } else {
         await awaitContainerChange(containerName, () => addContainerMount(containerName, buildCreatePayload(form)));
       }
-      await onSaved?.();
-      onClose();
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setSaving(false);
-    }
+    }, { onDone: onClose });
   };
 
   const meta = KIND_META[form.type] || KIND_META.file;
@@ -271,14 +261,14 @@ export default function ContainerMountEditorModal({
       subtitle={isEdit ? `${mount.name} · ${containerName}` : meta.subtitle}
       size="md"
       height="cap"
-      closeOnEscape={!saving}
+      closeOnEscape={!save.busy}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
             Cancel
           </button>
           <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
+            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {isEdit ? 'Save' : 'Add'}
           </button>
         </>
@@ -436,7 +426,7 @@ export default function ContainerMountEditorModal({
           </FormField>
         )}
 
-        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
+        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
     </Modal>
   );

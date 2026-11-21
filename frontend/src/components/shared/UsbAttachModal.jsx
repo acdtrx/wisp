@@ -22,9 +22,10 @@ const attachIconBtn =
  * @param {() => void} props.onClose
  * @param {Array<{ bus: string, device: string, vendorId: string, productId: string, name: string }>} props.devices - Host devices not yet attached to the VM
  * @param {(vendorId: string, productId: string) => void | Promise<void>} props.onAttach
- * @param {string | null} props.actionLoadingKey - `${vendorId}:${productId}` while that attach is in flight, or null
+ * @param {(key: string) => boolean} props.isBusy - whether the attach of `${vendorId}:${productId}` is in flight
+ * @param {boolean} props.anyBusy - an attach or detach is in flight (the VM's lock: the others wait)
  */
-export default function UsbAttachModal({ open, onClose, devices, onAttach, actionLoadingKey }) {
+export default function UsbAttachModal({ open, onClose, devices, onAttach, isBusy, anyBusy }) {
   const list = Array.isArray(devices) ? devices : [];
 
   return (
@@ -60,7 +61,7 @@ export default function UsbAttachModal({ open, onClose, devices, onAttach, actio
                 )}
                 {list.map((dev) => {
                   const key = `${dev.vendorId}:${dev.productId}`;
-                  const loading = actionLoadingKey === key;
+                  const loading = isBusy(key);
                   return (
                     <tr key={`${dev.bus}-${dev.device}`} className={dataTableInteractiveRowClass}>
                       <DataTableTd dense className="text-sm font-medium text-text-primary">{dev.name}</DataTableTd>
@@ -75,7 +76,7 @@ export default function UsbAttachModal({ open, onClose, devices, onAttach, actio
                           <button
                             type="button"
                             onClick={() => onAttach(dev.vendorId, dev.productId)}
-                            disabled={actionLoadingKey != null}
+                            disabled={anyBusy}
                             className={attachIconBtn}
                             title="Attach"
                             aria-label={`Attach ${dev.name}`}
