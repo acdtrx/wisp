@@ -7,7 +7,6 @@ import { hasOpenLayer } from '../../lib/layers.js';
 import { useFollowRename } from '../../hooks/useFollowRename.js';
 
 const ContainerOverviewPanel = lazy(() => import('./ContainerOverviewPanel.jsx'));
-const ContainerStatsBar = lazy(() => import('./ContainerStatsBar.jsx'));
 
 export default function ContainerRoute() {
   const { name } = useParams();
@@ -53,8 +52,9 @@ export default function ContainerRoute() {
     <Suspense
       fallback={<Loading />}
     >
-      <ContainerOverviewPanel name={decodedName} />
-      <ContainerStatsBar name={decodedName} />
+      {/* Keyed by the container: what the page holds (its actions' errors, an open
+          dialog) is this container's. */}
+      <ContainerOverviewPanel key={decodedName} name={decodedName} />
     </Suspense>
   );
 }

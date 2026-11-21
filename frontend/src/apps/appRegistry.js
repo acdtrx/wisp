@@ -1,10 +1,11 @@
 /**
- * Frontend app registry — maps app IDs to their UI components and metadata.
+ * Frontend app registry — maps app IDs to their groups on the container page and their
+ * metadata.
  */
-import CaddyAppSection from './caddy/CaddyAppSection.jsx';
-import ZotAppSection from './zot/ZotAppSection.jsx';
-import TinySambaAppSection from './tinySamba/TinySambaAppSection.jsx';
-import JellyfinAppSection from './jellyfin/JellyfinAppSection.jsx';
+import CaddyGroups from './caddy/CaddyGroups.jsx';
+import ZotGroups from './zot/ZotGroups.jsx';
+import TinySambaGroups from './tinySamba/TinySambaGroups.jsx';
+import JellyfinGroups from './jellyfin/JellyfinGroups.jsx';
 
 const APP_REGISTRY = {
   'caddy-reverse-proxy': {
@@ -12,33 +13,33 @@ const APP_REGISTRY = {
     description: 'HTTPS reverse proxy with Let\'s Encrypt and Cloudflare DNS',
     defaultImage: 'caddy:latest',
     allowCustomImage: true,
-    component: CaddyAppSection,
+    Groups: CaddyGroups,
   },
   'zot-registry': {
     label: 'Zot OCI Registry',
     description: 'Private OCI container image registry',
     defaultImage: 'ghcr.io/project-zot/zot-linux-amd64:latest',
     allowCustomImage: true,
-    component: ZotAppSection,
+    Groups: ZotGroups,
   },
   'jellyfin': {
     label: 'Jellyfin',
     description: 'Self-hosted media server with optional GPU-accelerated transcoding',
     defaultImage: 'jellyfin/jellyfin:latest',
     allowCustomImage: true,
-    component: JellyfinAppSection,
+    Groups: JellyfinGroups,
   },
   'tiny-samba': {
     label: 'Tiny Samba',
     description: 'Lightweight SMB file server with declarative shares + users',
     defaultImage: 'ghcr.io/acdtrx/tiny-samba:latest',
     allowCustomImage: true,
-    component: TinySambaAppSection,
+    Groups: TinySambaGroups,
   },
 };
 
 export function getAppEntry(appId) {
-  return APP_REGISTRY[appId] || null;
+  return Object.hasOwn(APP_REGISTRY, appId ?? '') ? APP_REGISTRY[appId] : null;
 }
 
 export function getAppList() {
