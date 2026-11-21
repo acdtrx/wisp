@@ -5,6 +5,7 @@ import VMStatsBar from './VMStatsBar.jsx';
 import { useVm, useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { hasOpenLayer } from '../../lib/layers.js';
+import { useFollowRename } from '../../hooks/useFollowRename.js';
 
 export default function VmRoute() {
   const { name } = useParams();
@@ -26,6 +27,9 @@ export default function VmRoute() {
       deselectVM();
     };
   }, [decodedName, gone, selectVM, deselectVM, deselectContainer]);
+
+  /* A rename made elsewhere: the gone page follows the VM's uuid to its new name. */
+  useFollowRename('vm', decodedName, record, useVmStore((s) => s.data));
 
   useEffect(() => {
     const handler = (e) => {

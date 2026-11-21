@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { useContainer, useContainerStore } from '../../store/containerStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { hasOpenLayer } from '../../lib/layers.js';
+import { useFollowRename } from '../../hooks/useFollowRename.js';
 
 const ContainerOverviewPanel = lazy(() => import('./ContainerOverviewPanel.jsx'));
 const ContainerStatsBar = lazy(() => import('./ContainerStatsBar.jsx'));
@@ -28,6 +29,9 @@ export default function ContainerRoute() {
       deselectContainer();
     };
   }, [decodedName, gone, selectContainer, deselectContainer, deselectVM]);
+
+  /* A rename made elsewhere: the gone page follows the container's uuid to its new name. */
+  useFollowRename('container', decodedName, record, useContainerStore((s) => s.data));
 
   useEffect(() => {
     const handler = (e) => {

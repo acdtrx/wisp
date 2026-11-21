@@ -8,3 +8,15 @@ export function renamedPath(pathname, kind, name, target) {
   if (pathname !== page && !pathname.startsWith(`${page}/`)) return null;
   return `/${kind}/${encodeURIComponent(target)}${pathname.slice(page.length)}`;
 }
+
+/**
+ * Where a workload page goes when its record is gone (`gone`) and the workload it showed,
+ * by its `uuid` (the record's, last seen), is in the list under another name: that name,
+ * or null — the gone page stays (clients follow a workload by its uuid, settled
+ * 2026-11-16).
+ */
+export function renamedElsewhere({ gone, uuid, name, list }) {
+  if (!gone || !uuid || !Array.isArray(list)) return null;
+  const match = list.find((w) => w.uuid === uuid);
+  return match && match.name !== name ? match.name : null;
+}

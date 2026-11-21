@@ -31,7 +31,7 @@
 - **A workload's error bar clears when its next action begins**, as the error-handling spec says; an action that fails again shows its new error.
 - **The open VM page no longer closes on an empty VM list**, which is what an unreachable libvirt answers; the container page already stayed open.
 - **A VM or container that is gone says so** — deleted elsewhere or never there, its page shows "No VM named …" with a way back, instead of spinning or closing.
-- **After a rename saved from its page, the page goes to the new name** on the tab it then shows, only while it still shows the workload. A rename made in another tab is not followed: the page shows the workload as gone, with its link back.
+- **After a rename saved from its page, the page goes to the new name** on the tab it then shows, only while it still shows the workload. A rename made in another tab is followed too: the page, finding the old name gone, goes to the name the list gives the workload's uuid.
 - **Bridge pickers show a bridge made or removed elsewhere** without a reload.
 - **A failed refresh keeps what was shown** — every view shows its read's error over the data it already had (dismissible), or as its error state with a Retry; a record shown in several places is read once.
 - **A form shows the server's values while it is not edited; once edited it keeps your values** until Save succeeds or the edit is undone, whatever is saved elsewhere meanwhile (the last save wins). Save is on after any change to the values the form started from.
