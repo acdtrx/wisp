@@ -16,17 +16,47 @@ const HELP =
 
 /* The client secret is write-only: never read back, so its saved value is empty. */
 const formFromSettings = (settings) => ({
-  enabled: settings.oidc.enabled === true,
-  issuer: settings.oidc.issuer || '',
-  clientId: settings.oidc.clientId || '',
+  enabled: settings.oidc?.enabled === true,
+  issuer: settings.oidc?.issuer || '',
+  clientId: settings.oidc?.clientId || '',
   clientSecret: '',
 });
+
+/* What Save sends: the issuer and client trimmed; the secret only when one was typed
+ * (an empty field keeps the saved one, which the API never returns to echo back). */
+function oidcSent(form) {
+  const update = { enabled: form.enabled, issuer: form.issuer.trim(), clientId: form.clientId.trim() };
+  if (form.clientSecret) update.clientSecret = form.clientSecret;
+  return update;
+}
+
+/** Whether the values need the client secret typed again: the saved secret belongs to
+ *  the saved issuer and client (`settings`), and the backend refuses to reuse it for a
+ *  different one. */
+function secretOwed(form, settings) {
+  const oidc = settings?.oidc;
+  return !!oidc?.hasClientSecret && !!form.issuer.trim() && !!form.clientId.trim()
+    && (form.issuer.trim() !== (oidc.issuer || '').trim() || form.clientId.trim() !== (oidc.clientId || '').trim());
+}
+
+/** What keeps the values from being saved: a changed identity with no secret typed. */
+const oidcProblems = (form, settings) => (secretOwed(form, settings) && !form.clientSecret
+  ? { 'issuer,clientId': 'Re-enter the client secret when changing the issuer or client ID' }
+  : {});
+
+/** The callback URL for an advertised URL (none, or one that is no URL: this origin). */
+function callbackUrl(advertisedUrl) {
+  try {
+    return new URL('/api/auth/oidc/callback', advertisedUrl || window.location.origin).href;
+  } catch {
+    return `${window.location.origin}/api/auth/oidc/callback`;
+  }
+}
 
 export default function OidcSettings() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, saved, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings);
-  const hasSecret = !!settings?.oidc?.hasClientSecret;
+  const { form, setField, dirty, saving, blocked, save } = useForm(settingsRecord, formFromSettings, oidcSent, { problems: oidcProblems });
   const command = useCommand();
   const [copied, setCopied] = useState(false);
   const enabled = form?.enabled ?? false;
@@ -38,17 +68,10 @@ export default function OidcSettings() {
   // one the backend sends: the advertised URL's origin when set, else the
   // origin the admin is reaching Wisp on right now.
   const advertisedUrl = settings?.advertisedUrl;
-  // The saved secret belongs to the saved issuer + client; the backend refuses
-  // to reuse it for a different one, so a changed identity needs it re-entered.
-  const secretRequired =
-    hasSecret &&
-    !!issuer.trim() &&
-    !!clientId.trim() &&
-    (issuer.trim() !== (saved?.issuer || '').trim() || clientId.trim() !== (saved?.clientId || '').trim());
+  const secretRequired = form != null && secretOwed(form, settings);
+  const hasSecret = !!settings?.oidc?.hasClientSecret;
 
-  const redirectUri = advertisedUrl
-    ? new URL('/api/auth/oidc/callback', advertisedUrl).href
-    : `${window.location.origin}/api/auth/oidc/callback`;
+  const redirectUri = callbackUrl(advertisedUrl);
 
   const copyRedirect = async () => {
     try {
@@ -61,20 +84,8 @@ export default function OidcSettings() {
   };
 
   const handleSave = () => {
-    if (secretRequired && !clientSecret) {
-      command.fail('Re-enter the client secret when changing the issuer or client ID');
-      return;
-    }
-    const oidcUpdate = {
-      enabled,
-      issuer: issuer.trim(),
-      clientId: clientId.trim(),
-    };
-    // Only send the secret when the admin typed a new one — an empty field
-    // keeps the saved secret (the API never returns it to echo back), as
-    // long as issuer and client ID are unchanged.
-    if (clientSecret) oidcUpdate.clientSecret = clientSecret;
-    save(() => command.run(() => updateOidcSettings(oidcUpdate)));
+    if (blocked) return;
+    save((oidcUpdate) => command.run(() => updateOidcSettings(oidcUpdate)));
   };
 
   return (
@@ -84,6 +95,7 @@ export default function OidcSettings() {
       helpText={HELP}
       onSave={handleSave}
       saving={saving}
+      saveDisabledReason={blocked ?? undefined}
       isDirty={dirty}
       commands={[command]}
     >

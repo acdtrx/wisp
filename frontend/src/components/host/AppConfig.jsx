@@ -21,19 +21,22 @@ function formFromSettings(settings) {
   };
 }
 
+/* What Save sends: the paths and name trimmed; no name is null (the server's default
+ * name), and no URL is null (back to the default announcement). */
+const appConfigSent = (form) => ({
+  serverName: form.serverName.trim() || null,
+  vmsPath: form.vmsPath.trim(),
+  imagePath: form.imagePath.trim(),
+  discoveryEnabled: form.discoveryEnabled,
+  advertisedUrl: form.advertisedUrl.trim() || null,
+});
+
 export default function AppConfig() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
-  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings);
+  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings, appConfigSent);
   const command = useCommand();
 
-  const handleSave = () => save((sent) => command.run(() => updateSettings({
-        serverName: sent.serverName.trim() || undefined,
-        vmsPath: sent.vmsPath.trim(),
-        imagePath: sent.imagePath.trim(),
-        discoveryEnabled: sent.discoveryEnabled,
-        // explicit null clears back to the default announcement
-        advertisedUrl: sent.advertisedUrl.trim() || null,
-      })));
+  const handleSave = () => save((body) => command.run(() => updateSettings(body)));
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">

@@ -7,7 +7,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
-import { backupDestinations } from '../../utils/backupDestinations.js';
+import { backupDestinations, destinationOrder } from '../../utils/backupDestinations.js';
 import { useCommand } from '../../hooks/useCommand.js';
 
 const DEFAULT_SCHEDULE = {
@@ -37,10 +37,21 @@ function clampInt(value, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
+/* What Save sends: the destinations in their order, the retention clamped to its range. */
+const scheduleSent = (form, settings) => ({
+  backupSchedule: {
+    enabled: form.enabled,
+    time: form.time,
+    destinationIds: destinationOrder(form.destinationIds, settings?.mounts),
+    retainDays: clampInt(form.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
+    retainWeeks: clampInt(form.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
+  },
+});
+
 export default function HostBackupScheduler() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setForm, dirty, saving, save } = useForm(settingsRecord, fromSettings);
+  const { form, setForm, dirty, saving, save } = useForm(settingsRecord, fromSettings, scheduleSent);
   const command = useCommand();
 
   /* Local, plus the mount chosen in the Backup section above (when set). */
@@ -60,15 +71,7 @@ export default function HostBackupScheduler() {
     });
   };
 
-  const handleSave = () => save((sent) => command.run(() => updateSettings({
-        backupSchedule: {
-          enabled: sent.enabled,
-          time: sent.time,
-          destinationIds: sent.destinationIds,
-          retainDays: clampInt(sent.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
-          retainWeeks: clampInt(sent.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
-        },
-      })));
+  const handleSave = () => save((body) => command.run(() => updateSettings(body)));
 
   const controlHeightClass = 'h-9 py-0 leading-normal';
 

@@ -13,16 +13,16 @@ const formFromSettings = (settings) => ({
   backupMountId: settings.backupMountId ?? '',
 });
 
+/* What Save sends: the local path trimmed; no network mount is null. */
+const backupSent = (form) => ({ backupLocalPath: form.backupLocalPath.trim(), backupMountId: form.backupMountId || null });
+
 export default function HostBackup() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings);
+  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings, backupSent);
   const command = useCommand();
 
-  const handleSave = () => save((sent) => command.run(() => updateSettings({
-    backupLocalPath: sent.backupLocalPath.trim(),
-    backupMountId: sent.backupMountId ? sent.backupMountId : null,
-  })));
+  const handleSave = () => save((body) => command.run(() => updateSettings(body)));
 
   const networkOptions = (settings?.mounts || []).filter((m) => m.type === 'smb');
 

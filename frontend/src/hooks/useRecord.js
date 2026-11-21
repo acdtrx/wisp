@@ -31,9 +31,11 @@ export function useRecord(kind, id) {
   );
   return useMemo(() => ({
     ...snapshot,
+    /** The id the record is read by (null when nothing is read). */
+    id: idle ? null : JSON.parse(idKey),
     reload: () => records.reload(kind, JSON.parse(idKey)),
     /** A new read, sent now (a command's, or a form's after its save): resolves whether it answered. */
     reread: () => (kind == null ? Promise.resolve(true) : records.reread(kind, JSON.parse(idKey))),
     dismiss: () => records.dismiss(kind, JSON.parse(idKey)),
-  }), [snapshot, kind, idKey]);
+  }), [snapshot, kind, idKey, idle]);
 }

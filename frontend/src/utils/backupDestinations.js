@@ -11,3 +11,19 @@ export function backupDestinations(settings) {
   if (mount?.mountPath) dests.push({ id: mount.id, label: mount.label?.trim() || 'Network', path: mount.mountPath });
   return dests;
 }
+
+/**
+ * The destinations in the order a backup writes them: Local first, then the mounts in
+ * the settings' order (the server stops at the first that fails, so Local is never
+ * skipped for a mount's failure); an id the settings no longer list keeps its place
+ * after them. The order they were ticked in is no change.
+ */
+export function destinationOrder(ids, mounts) {
+  const list = Array.isArray(ids) ? ids : [];
+  const known = (Array.isArray(mounts) ? mounts : []).filter((m) => m && list.includes(m.id)).map((m) => m.id);
+  return [
+    ...(list.includes('local') ? ['local'] : []),
+    ...known,
+    ...list.filter((id) => id !== 'local' && !known.includes(id)),
+  ];
+}

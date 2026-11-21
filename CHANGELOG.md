@@ -50,7 +50,10 @@
 - **A failed SMB connection test shows as a dismissible error** in the share dialog.
 - **An install that does not finish can be dismissed**, which stops waiting for the backend.
 - **A Retry shows its read on its way** ("Retrying…").
+- **The backup schedule saves Local first, then the network mount**: a backup writes them in that order, so a failing mount never skips Local; ticking a destination off and on again is no change.
+- **Clearing the server name in App Config restores the default name**, instead of being ignored.
 - **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
+- **SSO's Save is off, with its reason, while a changed issuer or client ID waits for the client secret** (it was on, and said so only when clicked).
 
 ## 2026-11-17
 
