@@ -577,12 +577,14 @@ export async function addSshKey({ key, name }) {
 /**
  * Add a GitHub user's keys (`keys`, the lines GitHub lists) to Wisp's list, named
  * "<user> on GitHub", "<user> on GitHub 2" and so on. A key already in the list is
- * skipped and counted; a line that is no key Wisp takes is skipped. Returns
- * `{ added, alreadyListed }`, `added` the new keys' ids.
+ * skipped and counted, and so is a line that is no key Wisp takes (unreadable, or of a
+ * type it does not take). Returns `{ added, alreadyListed, skipped }`, `added` the new
+ * keys' ids.
  */
 export async function importSshKeys(user, keys) {
   const reads = keys.map(readSshKey).filter((read) => !read.problem);
-  let result = { added: [], alreadyListed: 0 };
+  const skipped = keys.length - reads.length;
+  let result = { added: [], alreadyListed: 0, skipped };
   await commitSettings((fromFile) => {
     const listed = new Set(fromFile.sshKeys.map((k) => readSshKey(k.key).identity));
     const fresh = [];
@@ -594,7 +596,7 @@ export async function importSshKeys(user, keys) {
         fresh.push(read);
       }
     }
-    result = { added: [], alreadyListed };
+    result = { added: [], alreadyListed, skipped };
     if (fresh.length === 0) return null;
     assertRoomFor(fromFile.sshKeys, fresh.length);
     const entries = fresh.map((read, i) => ({
@@ -603,7 +605,7 @@ export async function importSshKeys(user, keys) {
       key: read.key,
       default: false,
     }));
-    result = { added: entries.map((e) => e.id), alreadyListed };
+    result = { added: entries.map((e) => e.id), alreadyListed, skipped };
     return { ...fromFile, sshKeys: [...fromFile.sshKeys, ...entries] };
   });
   return result;

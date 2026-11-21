@@ -73,10 +73,12 @@ export default async function sshKeysRoutes(fastify) {
       response: {
         201: {
           type: 'object',
-          required: ['added', 'alreadyListed'],
+          required: ['added', 'alreadyListed', 'skipped'],
           properties: {
             added: { type: 'array', items: { type: 'string' } },
             alreadyListed: { type: 'integer' },
+            // Lines GitHub listed that are no key Wisp takes: unreadable, or another type.
+            skipped: { type: 'integer' },
           },
           additionalProperties: false,
         },

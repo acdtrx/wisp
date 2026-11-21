@@ -22,11 +22,11 @@ const GITHUB_USER = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /** What an import did, in words. */
-function importText(user, { added, alreadyListed }) {
-  if (added.length === 0 && alreadyListed === 0) return `${user} has no public keys on GitHub.`;
-  const parts = [];
-  if (added.length) parts.push(`Added ${plural(added.length, 'key', 'keys')} from ${user}`);
+function importText(user, { added, alreadyListed, skipped }) {
+  if (added.length === 0 && alreadyListed === 0 && skipped === 0) return `${user} has no public keys on GitHub.`;
+  const parts = [added.length ? `Added ${plural(added.length, 'key', 'keys')} from ${user}` : `Added no key from ${user}`];
   if (alreadyListed) parts.push(`${plural(alreadyListed, 'was', 'were')} already in the list`);
+  if (skipped) parts.push(`${plural(skipped, 'was', 'were')} skipped: unreadable, or of a type Wisp does not take`);
   return `${parts.join('; ')}.`;
 }
 

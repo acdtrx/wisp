@@ -48,8 +48,11 @@ test('a GitHub import adds the new keys under generic names and counts those alr
   const result = await settings.importSshKeys('octo', [ED.split(' ').slice(0, 2).join(' '), BARE, ONE.split(' ').slice(0, 2).join(' '), 'garbage']);
   assert.equal(result.alreadyListed, 1);
   assert.equal(result.added.length, 2);
+  assert.equal(result.skipped, 1);
   assert.deepEqual(stored().map((k) => k.name), ['fixture@wisp', 'octo on GitHub', 'octo on GitHub 2']);
-  assert.deepEqual(await settings.importSshKeys('octo', [BARE]), { added: [], alreadyListed: 1 });
+  assert.deepEqual(await settings.importSshKeys('octo', [BARE]), { added: [], alreadyListed: 1, skipped: 0 });
+  // Keys all of a type Wisp does not take: none added, each counted as skipped.
+  assert.deepEqual(await settings.importSshKeys('old', ['ssh-dss AAAAB3NzaC1kc3M=', 'ssh-dss AAAAB3NzaC1kc3N=']), { added: [], alreadyListed: 0, skipped: 2 });
 });
 
 test('a key is renamed and made a default, each alone; a missing id is SSH_KEY_NOT_FOUND', async () => {
