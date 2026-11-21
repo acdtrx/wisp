@@ -7,6 +7,14 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**The import check misreads a destructured dynamic import with a name holding
+"import".** `scripts/check-imports.mjs` marks a `const { … } = await import('…')` as read
+by the position of the first `import` in the statement, so a destructured name such as
+`importSshKeys` points it at the name and the real `import(` is reported as unreadable;
+`backend/src/lib/settingsSshKeys.test.js` reads the module by member for that reason
+(found building workload pages milestone 4, 2026-11-21). **Revisit trigger:** the next
+test or module that needs such a name destructured.
+
 **VM edits define back XML read without the secure flag.** Every change the manager
 saves by reading the inactive definition and defining it again (`updateVMConfig`, the
 Wisp prefs, disks, CDs, USB and the restart flag in `backend/src/lib/vmManager/linux/`)

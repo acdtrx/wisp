@@ -3,6 +3,9 @@
 ## 2026-11-20
 
 ### New Features
+- **Wisp keeps a list of SSH keys** (Host, App Config, SSH keys): add one by pasting it, import a GitHub user's keys, rename one, mark the defaults for new VMs, remove one. A VM keeps its own copy of the keys it was given, so removing a key from the list changes no VM.
+- **First boot setup and New VM take several SSH keys, picked from the list**: New VM preselects the defaults, a key pasted there is added to the list, and the VM page names a VM's keys by the list's names ("1 other key" for the rest). The GitHub import moves from first boot setup to the settings page.
+- **API: `GET /api/settings` carries `sshKeys`** (each with its name, key, default, type and fingerprint), written by `POST /api/settings/ssh-keys`, `POST /api/settings/ssh-keys/github`, `PATCH` and `DELETE /api/settings/ssh-keys/:id`. `GET /api/github/keys/:username` is gone, and a first boot setup no longer takes `sshKeySource` (migration `0013` removes it from stored setups).
 - **The container page in groups** — a container's settings show as text in groups (Image, Environment, Storage, Network, Limits and restarts, Start-up and backups, Advanced; an app's own groups first), each changed in a small form with its own Save, or by a switch or a button that acts at once. Its figures (address, local name, uptime, CPU, memory) sit at the top instead of a bar at the bottom, and Kill, Rename, Change icon, Back up now, Eject and Delete are in a More menu.
 - **An app container's rows are saved one at a time** — a Caddy site, a Zot or Samba user, a Samba share, a Jellyfin library is added, edited or removed on its own; Jellyfin's GPU switch acts at once.
 - **Removing stored data asks first** — removing a mount kept on the host, or a Samba share kept on the host (also when it moves to a storage mount), names the files that go before it acts.
