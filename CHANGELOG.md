@@ -13,10 +13,12 @@
 - **A VM's technical settings are in Expert settings**, from the System group, and all of them need the VM shut off: boot order and menu, video, console protocol, guest agent, memory balloon and the random number device could be changed on a running VM before.
 - **First boot setup has no on/off switch any more**: Save turns it on and rebuilds its disk ("Regenerate ISO" is gone), Remove takes it away after asking. It can be edited on a phone.
 - **New VM is a short form**: a name, what it runs (Linux image, Linux installer, Windows 11, Other), the image, a size and a disk, and for a Linux image the user, a password and an SSH key. The server sets the rest from the VM's profile; a Windows 11 VM gets the library's VirtIO driver ISO in its second CD.
-- **A VM remembers its profile** (Linux, Windows 11, Other) and the page shows it, instead of guessing Windows from a name with "win" in it. Existing VMs get one at the update, from their Hyper-V settings; a VM restored from an older backup gets one the same way.
+- **A VM remembers its profile** (Linux, Windows 11, Other) and the page shows it, instead of guessing Windows from a name with "win" in it. Existing VMs get one at the update, from their Hyper-V settings.
 - **A VM made from a Linux image starts with package update off**, as first boot setup on the VM page does.
 - **A VM whose name is no host name** (a dot, an underscore, past 63 characters) gets first boot setup: its host name is made from the name instead of failing.
 - **API: `POST /api/vms` takes a required `profile`** (`linux`, `windows-11`, `other`) in place of `template` and `osVariant`; a VM's list row, its detail and MCP's deployment overview carry `profile` in place of `osCategory`.
+- **A backup made before VM profiles can't be restored**: the restore says so and asks for a new backup of the VM.
+- **API: a first boot setup only for a Linux VM**: `POST /api/vms` with `cloudInit` and `PUT /api/vms/:name/cloudinit` answer `INVALID_REQUEST` for a Windows 11, Other or profile-less VM.
 - **One install and update path that ends usable** — install and every update run the same re-runnable setup, which ends with VM and container networking working. Setup makes the bridge `br0` on the host's uplink through netplan, keeps the host's address and DHCP lease, checks the result, and puts the original back when the check fails or the step is stopped. The original netplan file is kept under `/var/lib/wisp/network-before-bridge`, and `docs/specs/DEPLOYMENT.md` gives a four-command recovery for the console.
 - **Supported hosts are netplan hosts** — Debian or Ubuntu with systemd 254 or newer (Debian 13, Ubuntu 24.04 and later), the network run by netplan with the networkd renderer, a plain Ethernet uplink on DHCP or a static address. Any other host is refused before anything changes, with a code and a remedy listed in `docs/specs/DEPLOYMENT.md`. **These hosts no longer update:** releases older than v2.0.2; Arch; systemd older than 254 (Debian 12, Ubuntu 22.04); and a host whose network NetworkManager, plain systemd-networkd or ifupdown runs, including one an earlier release bridged with `nmcli` or networkd files. Their update is refused and rolls back, and the host stays on its release until netplan runs its network.
 - **A host without KVM installs** — it runs containers, and setup's last lines say how to turn virtualization on.
@@ -34,6 +36,7 @@
 - **VMs are no longer published by Wisp** — a guest announces its own `.local` name: cloud-init installs `avahi-daemon` by default, and Windows and macOS guests announce theirs. The VM's Local DNS setting is gone, and `localDns` leaves the VM API (a request that sends it answers 400) and MCP's answers, with a VM's `mdnsName` in the deployment overview and `mdnsHostname` in the VM stats stream.
 
 ### Bug Fixes
+- **Creating a VM, adding a disk image or inserting an ISO from the library works on a host whose image library is not `/var/lib/wisp/images`**: the page sends the file's name, and the server finds it in the library.
 - **A container mount named with `%`** can be edited and removed (it answered 500, or acted on another mount).
 - **An unreachable containerd is an error** — a create, rename or restore no longer reads it as "name is free" or "image not local".
 - **A failed Eject shows its error**, and the image-update job shows in the tray.
