@@ -144,24 +144,22 @@ export default function ContainerNetworkSection({ config, onSave }) {
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+        {/* Locked, both fields stay the form's values, disabled (workloadLocks.js). */}
         <Field label="Interface">
-          {editable ? (
-            <select
-              value={form.interface}
-              onChange={(e) => setField('interface', e.target.value)}
-              className="input-field h-8 min-w-[130px] max-w-[180px]"
-            >
-              {!form.interface && <option value="">{bridgeChoice(bridgesRecord)}</option>}
-              {bridges.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-              {form.interface && !bridges.includes(form.interface) && (
-                <option value={form.interface}>{form.interface}</option>
-              )}
-            </select>
-          ) : (
-            <span className="text-sm text-text-primary font-mono">{net.interface || '—'}</span>
-          )}
+          <select
+            value={form.interface}
+            onChange={(e) => setField('interface', e.target.value)}
+            disabled={!editable}
+            className="input-field h-8 min-w-[130px] max-w-[180px]"
+          >
+            {!form.interface && <option value="">{bridgeChoice(bridgesRecord)}</option>}
+            {bridges.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+            {form.interface && !bridges.includes(form.interface) && (
+              <option value={form.interface}>{form.interface}</option>
+            )}
+          </select>
         </Field>
         <Field label="Type">
           <span className="text-sm text-text-primary font-medium">{net.type}</span>
@@ -176,28 +174,24 @@ export default function ContainerNetworkSection({ config, onSave }) {
           </Field>
         )}
         <Field label="MAC Address">
-          {editable ? (
-            <>
-              <input
-                type="text"
-                value={form.mac}
-                onChange={(e) => setField('mac', e.target.value)}
-                className="input-field h-8 w-[200px] shrink-0 font-mono text-[11px]"
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                onClick={() => setField('mac', randomMac())}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-surface-border text-text-muted hover:bg-surface hover:text-text-secondary transition-colors duration-150"
-                title="Randomize MAC"
-              >
-                <Shuffle size={13} />
-              </button>
-            </>
-          ) : (
-            <span className="text-sm text-text-primary font-mono">{net.mac || '—'}</span>
-          )}
+          <input
+            type="text"
+            value={form.mac}
+            onChange={(e) => setField('mac', e.target.value)}
+            disabled={!editable}
+            className="input-field h-8 w-[200px] shrink-0 font-mono text-[11px]"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            onClick={() => setField('mac', randomMac())}
+            disabled={!editable}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-surface-border text-text-muted hover:bg-surface hover:text-text-secondary transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
+            title="Randomize MAC"
+          >
+            <Shuffle size={13} />
+          </button>
         </Field>
         <Field label="Status">
           <span className={`text-sm font-medium ${isUp ? 'text-status-running' : 'text-text-muted'}`}>
