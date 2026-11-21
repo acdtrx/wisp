@@ -20,11 +20,7 @@ mock.module(new URL('./downloads/index.js', import.meta.url).href, {
     },
   },
 });
-mock.module(new URL('./vmManager/index.js', import.meta.url).href, {
-  namedExports: { attachISO() {}, ejectISO() {}, getVMXML() {}, parseVMFromXML() {} },
-});
-
-const { fetchGithubKeys } = await import('./cloudInit.js');
+const { fetchGithubKeys } = await import('./githubKeys.js');
 
 beforeEach(() => {
   requests.length = 0;

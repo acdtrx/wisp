@@ -193,6 +193,7 @@ Each code a client can receive, with its status.
 | `SECTION_NOT_FOUND` | 404 | No sidebar section with that id |
 | `HOME_NOT_FOUND` | 404 | No home-page group or tile with that id |
 | `TOKEN_NOT_FOUND` | 404 | No API token with that id |
+| `SSH_KEY_NOT_FOUND` | 404 | No key with that id in Wisp's list |
 | `GITHUB_KEYS_NOT_FOUND` | 404 | GitHub answered 404 for that user: no such user |
 | `METHOD_NOT_ALLOWED` | 405 | The path takes another method (`GET` or `DELETE /mcp`) |
 | `PAYLOAD_TOO_LARGE` | 413 | The body, or the multipart parts, exceed their limit |
@@ -226,6 +227,7 @@ Each code a client can receive, with its status.
 | `NETWORK_BRIDGE_IN_USE` | 409 | Workloads use the bridge |
 | `SECTION_DUPLICATE` | 409 | A sidebar section by that name exists |
 | `HOME_DUPLICATE` | 409 | A home-page group or tile like it exists |
+| `SSH_KEY_DUPLICATE` | 409 | The key is already in Wisp's list |
 | `UPDATE_BUSY` | 409 | An OS update check or upgrade runs, or the package manager is locked |
 | `UPDATE_NOT_AVAILABLE` | 409 | No Wisp update is available to install |
 | `UPDATE_JOBS_ACTIVE` | 409 | Other jobs that must finish run; the Wisp update install waits for them unless forced |
@@ -287,6 +289,7 @@ Each code a client can receive, with its status.
 | `INVALID_VLAN_ID` | 422 | The VLAN id is out of range |
 | `SECTION_INVALID` | 422 | The sidebar section or assignment is invalid |
 | `HOME_INVALID` | 422 | The home-page group or tile is invalid |
+| `SSH_KEY_INVALID` | 422 | The text is not one SSH public key |
 | `RATE_LIMITED` | 429 | Too many attempts from this address; the detail says when to retry |
 | `INTERNAL_ERROR` | 500 | An error without a code: a fault on the server |
 | `CONFIG_INVALID` | 500 | `wisp-config.json` fails its strict read |

@@ -1,6 +1,4 @@
 {
-  "route": "GET /api/settings",
-  "status": 200,
   "body": {
     "advertisedUrl": null,
     "backupLocalPath": "/var/lib/wisp/backups",
@@ -25,7 +23,19 @@
       "issuer": ""
     },
     "serverName": "host-a",
+    "sshKeys": [
+      {
+        "default": true,
+        "fingerprint": "SHA256:08v9wPeCkNSKo9EepvUoAXugCkwFSCwf3lcjau08ZMw",
+        "id": "5b0e8f0e-6f5e-4c55-9d43-0a3c7f1f2b11",
+        "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOdeLqkpOO/B1Vr7+UA2R1RUQaJ6mBzBR3/Wgr9wnsEQ fixture@wisp",
+        "name": "fixture@wisp",
+        "type": "ed25519"
+      }
+    ],
     "updateChannel": "beta",
     "vmsPath": "/var/lib/wisp/vms"
-  }
+  },
+  "route": "GET /api/settings",
+  "status": 200
 }

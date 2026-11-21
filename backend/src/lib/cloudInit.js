@@ -22,9 +22,8 @@ import { createHash } from 'node:crypto';
 import { dump as yamlDump } from 'js-yaml';
 
 import { getVMBasePath } from './paths.js';
-import { createAppError, wrapAppError } from './appErrors.js';
+import { createAppError } from './appErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
-import { ssrfSafeFetch } from './downloads/index.js';
 import {
   attachISO,
   ejectISO,
@@ -36,10 +35,6 @@ const execFile = promisify(execFileCb);
 
 /** A seed ISO is a few KB: building one past 20 s means the tool hung (CODING-RULES §6). */
 const ISO_BUILD_TIMEOUT_MS = 20_000;
-/** One small text reply: 10 s over its DNS lookup, the request and the body. */
-const GITHUB_KEYS_TIMEOUT_MS = 10_000;
-/** A user's keys are a few KB; past 256 KiB the answer is not a key list. */
-const GITHUB_KEYS_MAX_BODY_BYTES = 256 * 1024;
 
 // ─── Password Hashing ───────────────────────────
 
@@ -426,36 +421,4 @@ export async function updateCloudInit(vmName, config, log) {
     log?.warn?.({ err: err.message, vm: vmName }, '[cloudInit] Could not hot-swap cloud-init disk');
   }
   announceCloudInitChange(vmName);
-}
-
-// ─── GitHub SSH keys ────────────────────────────
-
-/**
- * The public SSH keys GitHub lists for `username`, a GitHub login. Through the
- * SSRF guard: a redirect is followed only while each target resolves to a
- * public address.
- */
-export async function fetchGithubKeys(username) {
-  const signal = AbortSignal.timeout(GITHUB_KEYS_TIMEOUT_MS);
-  const unavailable = (err) => wrapAppError('GITHUB_KEYS_UNAVAILABLE', 'Failed to fetch GitHub keys', err);
-  let res;
-  try {
-    res = await ssrfSafeFetch(`https://github.com/${username}.keys`, { signal, maxBodyBytes: GITHUB_KEYS_MAX_BODY_BYTES });
-  } catch (err) {
-    throw unavailable(err);
-  }
-  // Only GitHub's own 404 says the user is unknown: a 429 or a 5xx says nothing about the user.
-  if (res.status === 404) {
-    throw createAppError('GITHUB_KEYS_NOT_FOUND', `No keys found for "${username}"`);
-  }
-  if (!res.ok) {
-    throw createAppError('GITHUB_KEYS_UNAVAILABLE', `GitHub answered HTTP ${res.status}`, `HTTP ${res.status}`);
-  }
-  let text;
-  try {
-    text = await res.text();
-  } catch (err) {
-    throw unavailable(err);
-  }
-  return text.trim().split('\n').filter(Boolean);
 }

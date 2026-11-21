@@ -17,6 +17,7 @@
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { createAppError } from './appErrors.js';
+import { MAX_SSH_KEYS, MAX_SSH_KEY_NAME, readSshKey, validSshKeyName } from './sshKeys.js';
 
 // Storage mounts must live under this prefix. Constraining the mountPath stops
 // an authenticated admin from mounting a hostile share over /etc, /usr, /home,
@@ -50,13 +51,14 @@ const TOP_KEYS = new Set([
   '_comment', // the shipped example's note; never written back
   'serverName', ...PATH_KEYS, 'mounts', 'backupMountId', 'backupSchedule', 'sections',
   'assignments', 'homepage', 'discoveryEnabled', 'advertisedUrl', 'updateChannel', 'oidc',
-  'trustedProxies', 'apiTokens',
+  'trustedProxies', 'apiTokens', 'sshKeys',
 ]);
 const MOUNT_KEYS = {
   smb: new Set(['id', 'type', 'label', 'mountPath', 'autoMount', 'share', 'username', 'password']),
   disk: new Set(['id', 'type', 'label', 'mountPath', 'autoMount', 'uuid', 'fsType', 'readOnly']),
 };
 const SCHEDULE_KEYS = new Set(['enabled', 'time', 'destinationIds', 'retainDays', 'retainWeeks']);
+const SSH_KEY_KEYS = new Set(['id', 'name', 'key', 'default']);
 
 /** A fresh copy of every key's default — the parse of a missing file. */
 export function defaultConfig() {
@@ -78,6 +80,7 @@ export function defaultConfig() {
     oidc: { enabled: false, issuer: '', clientId: '', clientSecret: '' },
     trustedProxies: [],
     apiTokens: [],
+    sshKeys: [],
   };
 }
 
@@ -509,6 +512,29 @@ function parseApiTokens(arr) {
   });
 }
 
+/** Wisp's SSH keys: each a valid public key, held once, under a unique id. */
+function parseSshKeys(arr) {
+  const list = expectArray(arr, 'sshKeys');
+  if (list.length > MAX_SSH_KEYS) throw configInvalid('sshKeys', `holds more than ${MAX_SSH_KEYS} keys`);
+  const ids = new Set();
+  const keys = new Map();
+  return list.map((k, i) => {
+    const where = `sshKeys[${i}]`;
+    expectObject(k, where);
+    rejectUnknownKeys(k, SSH_KEY_KEYS, where);
+    const id = expectId(k.id, `${where}.id`);
+    if (ids.has(id)) throw configInvalid(`${where}.id`, `duplicate id "${id}"`);
+    ids.add(id);
+    const name = validSshKeyName(k.name);
+    if (!name) throw configInvalid(`${where}.name`, `must be 1–${MAX_SSH_KEY_NAME} characters`);
+    const read = readSshKey(expectString(k.key, `${where}.key`));
+    if (read.problem) throw configInvalid(`${where}.key`, read.problem);
+    if (keys.has(read.identity)) throw configInvalid(`${where}.key`, `the same key as sshKeys[${keys.get(read.identity)}]`);
+    keys.set(read.identity, i);
+    return { id, name, key: read.key, default: expectBoolean(k.default, `${where}.default`) };
+  });
+}
+
 /**
  * Parse the decoded wisp-config.json. Returns every key (defaults for the
  * missing ones); throws CONFIG_INVALID naming the first bad key.
@@ -562,6 +588,7 @@ export function parseWispConfig(data) {
   if (data.oidc !== undefined) out.oidc = parseOidc(data.oidc);
   if (data.trustedProxies !== undefined) out.trustedProxies = parseTrustedProxyList(data.trustedProxies);
   if (data.apiTokens !== undefined) out.apiTokens = parseApiTokens(data.apiTokens);
+  if (data.sshKeys !== undefined) out.sshKeys = parseSshKeys(data.sshKeys);
   return out;
 }
 

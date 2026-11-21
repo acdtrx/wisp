@@ -42,6 +42,7 @@ export const ERROR_STATUS = Object.freeze({
   SECTION_NOT_FOUND: 404,
   HOME_NOT_FOUND: 404,
   TOKEN_NOT_FOUND: 404,
+  SSH_KEY_NOT_FOUND: 404,
   GITHUB_KEYS_NOT_FOUND: 404,
 
   // 405 / 413 / 414 / 415: the framework refuses the request's form.
@@ -79,6 +80,7 @@ export const ERROR_STATUS = Object.freeze({
   NETWORK_BRIDGE_IN_USE: 409,
   SECTION_DUPLICATE: 409,
   HOME_DUPLICATE: 409,
+  SSH_KEY_DUPLICATE: 409,
   UPDATE_BUSY: 409,
   UPDATE_NOT_AVAILABLE: 409,
   UPDATE_JOBS_ACTIVE: 409,
@@ -142,6 +144,7 @@ export const ERROR_STATUS = Object.freeze({
   INVALID_VLAN_ID: 422,
   SECTION_INVALID: 422,
   HOME_INVALID: 422,
+  SSH_KEY_INVALID: 422,
 
   // 429: too many attempts.
   RATE_LIMITED: 429,

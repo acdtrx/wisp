@@ -27,6 +27,7 @@ import consoleRoutes from './routes/console.js';
 import containerConsoleRoutes from './routes/containerConsole.js';
 import settingsRoutes from './routes/settings.js';
 import mountsRoutes from './routes/mounts.js';
+import sshKeysRoutes from './routes/sshKeys.js';
 import sectionsRoutes from './routes/sections.js';
 import homepageRoutes from './routes/homepage.js';
 import backupsRoutes from './routes/backups.js';
@@ -241,6 +242,7 @@ export async function buildApp(log) {
   app.register(cloudInitRoutes, { prefix: '/api' });
   app.register(settingsRoutes, { prefix: '/api' });
   app.register(mountsRoutes, { prefix: '/api' });
+  app.register(sshKeysRoutes, { prefix: '/api' });
   app.register(sectionsRoutes, { prefix: '/api' });
   app.register(homepageRoutes, { prefix: '/api' });
   app.register(backupsRoutes, { prefix: '/api' });

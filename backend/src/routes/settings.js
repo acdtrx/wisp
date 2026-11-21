@@ -38,6 +38,23 @@ const settingsResponseProps = {
     },
     additionalProperties: false,
   },
+  // Public keys: no secret here. `type` and `fingerprint` are read from `key`.
+  sshKeys: {
+    type: 'array',
+    items: {
+      type: 'object',
+      required: ['id', 'name', 'key', 'default', 'type', 'fingerprint'],
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        key: { type: 'string' },
+        default: { type: 'boolean' },
+        type: { type: 'string' },
+        fingerprint: { type: 'string' },
+      },
+      additionalProperties: false,
+    },
+  },
 };
 
 export default async function settingsRoutes(fastify) {

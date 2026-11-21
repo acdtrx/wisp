@@ -17,6 +17,9 @@ import {
 import { getMountStatus } from './storage/index.js';
 import { createAppError } from './appErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
+import {
+  MAX_SSH_KEYS, defaultSshKeyName, parseSshKey, readSshKey, sshKeyFingerprint, validSshKeyName,
+} from './sshKeys.js';
 
 export { MOUNT_ROOT, MAIN_SECTION_ID, UNGROUPED_GROUP_ID } from './configSchema.js';
 
@@ -117,6 +120,7 @@ export async function getSettings() {
     advertisedUrl: fromFile.advertisedUrl,
     updateChannel: fromFile.updateChannel,
     oidc: oidcForApi(fromFile.oidc),
+    sshKeys: fromFile.sshKeys.map(sshKeyForApi),
   };
 }
 
@@ -343,6 +347,7 @@ async function persistSettings(state) {
     oidc: state.oidc,
     trustedProxies: state.trustedProxies,
     apiTokens: state.apiTokens,
+    sshKeys: state.sshKeys,
   });
   // 0600: the file holds secrets (SMB passwords, OIDC client secret). Without an
   // explicit mode the atomic temp file lands at the umask default (usually 0644),
@@ -525,6 +530,111 @@ export async function removeMount(mountId) {
   });
   announceMountsChange();
   return { mounts: written.mounts.map(mountForApi) };
+}
+
+// ─── SSH keys ───────────────────────────────────
+
+/** A key as `GET /api/settings` shows it: as stored, with its type and fingerprint. */
+function sshKeyForApi(k) {
+  const read = readSshKey(k.key);
+  return { id: k.id, name: k.name, key: k.key, default: k.default, type: read.type, fingerprint: sshKeyFingerprint(read) };
+}
+
+/** Refuse a key already in the list (the same type and data), naming the one it is. */
+function assertNotListed(list, read) {
+  const same = list.find((k) => readSshKey(k.key).identity === read.identity);
+  if (same) throw createAppError('SSH_KEY_DUPLICATE', `This key is already in Wisp's list, as "${same.name}"`);
+}
+
+const sshKeyNotFound = (id) => createAppError('SSH_KEY_NOT_FOUND', `No SSH key with id "${id}" in Wisp's list`);
+
+function assertRoomFor(list, count) {
+  if (list.length + count > MAX_SSH_KEYS) {
+    throw createAppError('INVALID_REQUEST', `Wisp's list holds at most ${MAX_SSH_KEYS} SSH keys`);
+  }
+}
+
+/**
+ * Add one public key to Wisp's list, not as a default. Its name is `name` when one is
+ * given, else the key's comment, else one from its type. Returns `{ id }`.
+ */
+export async function addSshKey({ key, name }) {
+  const read = parseSshKey(key);
+  const given = typeof name === 'string' && name.trim() ? validSshKeyName(name) : null;
+  if (typeof name === 'string' && name.trim() && !given) {
+    throw createAppError('INVALID_REQUEST', 'A key’s name is up to 64 characters, with no control characters');
+  }
+  const id = randomUUID();
+  await commitSettings((fromFile) => {
+    assertNotListed(fromFile.sshKeys, read);
+    assertRoomFor(fromFile.sshKeys, 1);
+    const entry = { id, name: given ?? defaultSshKeyName(read), key: read.key, default: false };
+    return { ...fromFile, sshKeys: [...fromFile.sshKeys, entry] };
+  });
+  return { id };
+}
+
+/**
+ * Add a GitHub user's keys (`keys`, the lines GitHub lists) to Wisp's list, named
+ * "<user> on GitHub", "<user> on GitHub 2" and so on. A key already in the list is
+ * skipped and counted; a line that is no key Wisp takes is skipped. Returns
+ * `{ added, alreadyListed }`, `added` the new keys' ids.
+ */
+export async function importSshKeys(user, keys) {
+  const reads = keys.map(readSshKey).filter((read) => !read.problem);
+  let result = { added: [], alreadyListed: 0 };
+  await commitSettings((fromFile) => {
+    const listed = new Set(fromFile.sshKeys.map((k) => readSshKey(k.key).identity));
+    const fresh = [];
+    let alreadyListed = 0;
+    for (const read of reads) {
+      if (listed.has(read.identity)) alreadyListed += 1;
+      else {
+        listed.add(read.identity);
+        fresh.push(read);
+      }
+    }
+    result = { added: [], alreadyListed };
+    if (fresh.length === 0) return null;
+    assertRoomFor(fromFile.sshKeys, fresh.length);
+    const entries = fresh.map((read, i) => ({
+      id: randomUUID(),
+      name: `${user} on GitHub${i === 0 ? '' : ` ${i + 1}`}`.slice(0, 64),
+      key: read.key,
+      default: false,
+    }));
+    result = { added: entries.map((e) => e.id), alreadyListed };
+    return { ...fromFile, sshKeys: [...fromFile.sshKeys, ...entries] };
+  });
+  return result;
+}
+
+/** Rename a key of Wisp's list, or make it a default for new VMs or not (either alone, or both). */
+export async function updateSshKey(id, { name, default: isDefault }) {
+  let newName;
+  if (name !== undefined) {
+    newName = validSshKeyName(name);
+    if (!newName) throw createAppError('INVALID_REQUEST', 'A key’s name is 1 to 64 characters, with no control characters');
+  }
+  await commitSettings((fromFile) => {
+    if (!fromFile.sshKeys.some((k) => k.id === id)) throw sshKeyNotFound(id);
+    return {
+      ...fromFile,
+      sshKeys: fromFile.sshKeys.map((k) => (k.id !== id ? k : {
+        ...k,
+        ...(newName !== undefined ? { name: newName } : {}),
+        ...(isDefault !== undefined ? { default: isDefault } : {}),
+      })),
+    };
+  });
+}
+
+/** Remove a key from Wisp's list. No VM changes: each keeps its own copy. */
+export async function removeSshKey(id) {
+  await commitSettings((fromFile) => {
+    if (!fromFile.sshKeys.some((k) => k.id === id)) throw sshKeyNotFound(id);
+    return { ...fromFile, sshKeys: fromFile.sshKeys.filter((k) => k.id !== id) };
+  });
 }
 
 /**
