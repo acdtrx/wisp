@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { usePopover } from '../../lib/popover.js';
 
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { useDiscoveryStore } from '../../store/discoveryStore.js';
 
 /**
@@ -25,7 +26,7 @@ function peerHostLabel(peer) {
   }
 }
 export default function ServerSwitcher() {
-  const serverName = useSettingsStore((s) => s.settings?.serverName ?? 'My Server');
+  const serverName = useRecord(RECORD.SETTINGS).data?.serverName ?? 'My Server';
   const peers = useDiscoveryStore((s) => s.data);
   const connect = useDiscoveryStore((s) => s.connect);
   const disconnect = useDiscoveryStore((s) => s.disconnect);

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useVmStore } from '../../store/vmStore.js';
+import { useVm } from '../../store/vmStore.js';
 import ConsoleToolbar from './ConsoleToolbar.jsx';
 import VNCConsole from './VNCConsole.jsx';
 
@@ -11,7 +11,8 @@ export default function ConsolePanel({ vmName }) {
   const consoleApiRef = useRef(null);
   const prevVmStateRef = useRef(undefined);
 
-  const vmState = useVmStore((s) => s.config?.state);
+  const { config, seed } = useVm(vmName);
+  const vmState = (config ?? seed)?.state;
 
   const handleConnect = useCallback(() => setConsoleConnected(true), []);
   const handleDisconnect = useCallback(() => setConsoleConnected(false), []);

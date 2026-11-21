@@ -40,8 +40,9 @@ import {
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
-import { useSettingsStore } from '../../store/settingsStore.js';
-import SettingsGate from '../../components/shared/SettingsGate.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordGate from '../../components/shared/RecordGate.jsx';
 import { errorText } from '../../api/errors.js';
 
 const iconBtn =
@@ -108,8 +109,8 @@ function isValidUid(value) {
 }
 
 export default function TinySambaAppSection({ config, onSave }) {
-  const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const settings = settingsRecord.data;
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
   const [form, setForm] = useState(() => parseAppConfig(config));
@@ -122,10 +123,6 @@ export default function TinySambaAppSection({ config, onSave }) {
   const [serverOpen, setServerOpen] = useState(true);
   const [usersOpen, setUsersOpen] = useState(true);
   const [sharesOpen, setSharesOpen] = useState(true);
-
-  useEffect(() => {
-    if (!settings) loadSettings().catch(() => {});
-  }, [settings, loadSettings]);
 
   // Reset on appConfig identity change. We hash users / shares at the field level rather than
   // trusting object identity because the parent containerStore replaces the full config object
@@ -369,233 +366,237 @@ export default function TinySambaAppSection({ config, onSave }) {
       requiresRestart={!!config?.pendingRestart}
       error={error}
     >
-      <SettingsGate label="storage settings">
-      <div className="space-y-4">
-        {/* ── Server ─────────────────────────────────────────────── */}
-        <div className={subHeader} onClick={() => setServerOpen((v) => !v)}>
-          <span className={subHeaderTitle}>
-            {serverOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <ServerIcon size={12} />
-            Server
-          </span>
-        </div>
-        {serverOpen && (
-          <div className="flex items-end gap-4 flex-wrap">
-            <div className="min-w-[120px] flex-1">
-              <label className="text-xs font-medium text-text-secondary mb-1.5 block">Workgroup</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="WORKGROUP"
-                maxLength={15}
-                value={form.server.workgroup}
-                onChange={(e) => updateServer('workgroup', e.target.value)}
-              />
-            </div>
-            <div className="min-w-[120px] flex-1">
-              <label className="text-xs font-medium text-text-secondary mb-1.5 block">NetBIOS name</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="tiny-samba"
-                maxLength={15}
-                value={form.server.netbiosName}
-                onChange={(e) => updateServer('netbiosName', e.target.value)}
-              />
-            </div>
-            <div className="w-32">
-              <label className="text-xs font-medium text-text-secondary mb-1.5 block" title="UID inside the container that owns share data on disk">
-                Data UID
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={5}
-                className={`input-field text-right ${isValidUid(form.server.dataUid) ? '' : 'border-status-stopped'}`}
-                value={form.server.dataUid}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-9]/g, '');
-                  updateServer('dataUid', v === '' ? '' : Number(v));
-                }}
-              />
-            </div>
-            <div className="w-32">
-              <label className="text-xs font-medium text-text-secondary mb-1.5 block">Min protocol</label>
-              <select
-                className="input-field"
-                value={form.server.minProtocol}
-                onChange={(e) => updateServer('minProtocol', e.target.value)}
-              >
-                {PROTOCOLS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div className="min-w-[180px]">
-              <label
-                className="text-xs font-medium text-text-secondary mb-1.5 block"
-                title="Apple SMB extensions: nicer macOS Finder icon and faster browse. Shares on exFAT/FAT drives get them turned off automatically."
-              >
-                Apple extensions
-              </label>
-              <select
-                className="input-field"
-                value={form.server.iconModel === ICON_MODEL_DISABLED ? ICON_MODEL_DISABLED : ICON_MODEL_DEFAULT}
-                onChange={(e) => updateServer('iconModel', e.target.value)}
-              >
-                <option value={ICON_MODEL_DEFAULT}>On (Time Capsule icon)</option>
-                <option value={ICON_MODEL_DISABLED}>Off (disable AAPL/streams_xattr)</option>
-              </select>
-            </div>
-          </div>
-        )}
+      <RecordGate record={settingsRecord} what="storage settings">
+        {() => (
+          <>
+            <div className="space-y-4">
+              {/* ── Server ─────────────────────────────────────────────── */}
+              <div className={subHeader} onClick={() => setServerOpen((v) => !v)}>
+                <span className={subHeaderTitle}>
+                  {serverOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  <ServerIcon size={12} />
+                  Server
+                </span>
+              </div>
+              {serverOpen && (
+                <div className="flex items-end gap-4 flex-wrap">
+                  <div className="min-w-[120px] flex-1">
+                    <label className="text-xs font-medium text-text-secondary mb-1.5 block">Workgroup</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="WORKGROUP"
+                      maxLength={15}
+                      value={form.server.workgroup}
+                      onChange={(e) => updateServer('workgroup', e.target.value)}
+                    />
+                  </div>
+                  <div className="min-w-[120px] flex-1">
+                    <label className="text-xs font-medium text-text-secondary mb-1.5 block">NetBIOS name</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="tiny-samba"
+                      maxLength={15}
+                      value={form.server.netbiosName}
+                      onChange={(e) => updateServer('netbiosName', e.target.value)}
+                    />
+                  </div>
+                  <div className="w-32">
+                    <label className="text-xs font-medium text-text-secondary mb-1.5 block" title="UID inside the container that owns share data on disk">
+                      Data UID
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={5}
+                      className={`input-field text-right ${isValidUid(form.server.dataUid) ? '' : 'border-status-stopped'}`}
+                      value={form.server.dataUid}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^0-9]/g, '');
+                        updateServer('dataUid', v === '' ? '' : Number(v));
+                      }}
+                    />
+                  </div>
+                  <div className="w-32">
+                    <label className="text-xs font-medium text-text-secondary mb-1.5 block">Min protocol</label>
+                    <select
+                      className="input-field"
+                      value={form.server.minProtocol}
+                      onChange={(e) => updateServer('minProtocol', e.target.value)}
+                    >
+                      {PROTOCOLS.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div className="min-w-[180px]">
+                    <label
+                      className="text-xs font-medium text-text-secondary mb-1.5 block"
+                      title="Apple SMB extensions: nicer macOS Finder icon and faster browse. Shares on exFAT/FAT drives get them turned off automatically."
+                    >
+                      Apple extensions
+                    </label>
+                    <select
+                      className="input-field"
+                      value={form.server.iconModel === ICON_MODEL_DISABLED ? ICON_MODEL_DISABLED : ICON_MODEL_DEFAULT}
+                      onChange={(e) => updateServer('iconModel', e.target.value)}
+                    >
+                      <option value={ICON_MODEL_DEFAULT}>On (Time Capsule icon)</option>
+                      <option value={ICON_MODEL_DISABLED}>Off (disable AAPL/streams_xattr)</option>
+                    </select>
+                  </div>
+                </div>
+          )}
 
-        {/* ── Users ──────────────────────────────────────────────── */}
-        <div className={subHeader} onClick={() => setUsersOpen((v) => !v)}>
-          <span className={subHeaderTitle}>
-            {usersOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <UserPlus size={12} />
-            Users
-          </span>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); addUser(); }}
-            className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-            title="Add user"
-            aria-label="Add user"
-          >
-            <Plus size={14} aria-hidden />
-            <UserPlus size={14} aria-hidden />
-          </button>
-        </div>
-        {usersOpen && (
-          <DataTableScroll>
-            <DataTable>
-              <thead>
-                <tr className={dataTableHeadRowClass}>
-                  <DataTableTh dense className="w-1/3">Name</DataTableTh>
-                  <DataTableTh dense>Password</DataTableTh>
-                  <DataTableTh dense align="right" className="w-12">Actions</DataTableTh>
-                </tr>
-              </thead>
-              <tbody>
-                {form.users.length === 0 && (
-                  <tr className={dataTableBodyRowClass}>
-                    <td colSpan={3} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
-                      No users yet. Add at least one to expose authenticated shares.
-                    </td>
+          {/* ── Users ──────────────────────────────────────────────── */}
+          <div className={subHeader} onClick={() => setUsersOpen((v) => !v)}>
+            <span className={subHeaderTitle}>
+              {usersOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <UserPlus size={12} />
+              Users
+            </span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); addUser(); }}
+              className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+              title="Add user"
+              aria-label="Add user"
+            >
+              <Plus size={14} aria-hidden />
+              <UserPlus size={14} aria-hidden />
+            </button>
+          </div>
+          {usersOpen && (
+            <DataTableScroll>
+              <DataTable>
+                <thead>
+                  <tr className={dataTableHeadRowClass}>
+                    <DataTableTh dense className="w-1/3">Name</DataTableTh>
+                    <DataTableTh dense>Password</DataTableTh>
+                    <DataTableTh dense align="right" className="w-12">Actions</DataTableTh>
                   </tr>
-                )}
-                {form.users.map((user) => (
-                  <tr key={user.id} className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="w-1/3">
-                      <input
-                        type="text"
-                        className="input-field w-full min-w-0 text-xs"
-                        placeholder="alice"
-                        value={user.name}
-                        onChange={(e) => updateUser(user.id, 'name', e.target.value)}
-                      />
-                    </DataTableTd>
-                    <DataTableTd dense>
-                      <div className="flex items-center gap-1">
+                </thead>
+                <tbody>
+                  {form.users.length === 0 && (
+                    <tr className={dataTableBodyRowClass}>
+                      <td colSpan={3} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
+                        No users yet. Add at least one to expose authenticated shares.
+                      </td>
+                    </tr>
+                  )}
+                  {form.users.map((user) => (
+                    <tr key={user.id} className={dataTableInteractiveRowClass}>
+                      <DataTableTd dense className="w-1/3">
                         <input
-                          type={showPasswords[user.id] ? 'text' : 'password'}
-                          className="input-field flex-1 min-w-0 text-xs"
-                          placeholder={user.hasPassword && !user.passwordDirty ? 'Set (leave empty to keep)' : 'plaintext or $NT$<32 hex>'}
-                          value={user.password}
-                          onChange={(e) => updateUser(user.id, 'password', e.target.value)}
+                          type="text"
+                          className="input-field w-full min-w-0 text-xs"
+                          placeholder="alice"
+                          value={user.name}
+                          onChange={(e) => updateUser(user.id, 'name', e.target.value)}
                         />
-                        <button
-                          type="button"
-                          className={iconBtn}
-                          onClick={() => toggleShowPassword(user.id)}
-                          title={showPasswords[user.id] ? 'Hide' : 'Show'}
-                          aria-label={showPasswords[user.id] ? 'Hide password' : 'Show password'}
-                        >
-                          {showPasswords[user.id] ? <EyeOff size={13} /> : <Eye size={13} />}
-                        </button>
-                      </div>
-                    </DataTableTd>
-                    <DataTableTd dense align="right">
-                      <DataTableRowActions forceVisible>
-                        <button
-                          type="button"
-                          className={iconBtn}
-                          onClick={() => removeUser(user.id)}
-                          title="Remove user"
-                          aria-label="Remove user"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </DataTableRowActions>
-                    </DataTableTd>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
-          </DataTableScroll>
-        )}
+                      </DataTableTd>
+                      <DataTableTd dense>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type={showPasswords[user.id] ? 'text' : 'password'}
+                            className="input-field flex-1 min-w-0 text-xs"
+                            placeholder={user.hasPassword && !user.passwordDirty ? 'Set (leave empty to keep)' : 'plaintext or $NT$<32 hex>'}
+                            value={user.password}
+                            onChange={(e) => updateUser(user.id, 'password', e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className={iconBtn}
+                            onClick={() => toggleShowPassword(user.id)}
+                            title={showPasswords[user.id] ? 'Hide' : 'Show'}
+                            aria-label={showPasswords[user.id] ? 'Hide password' : 'Show password'}
+                          >
+                            {showPasswords[user.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                        </div>
+                      </DataTableTd>
+                      <DataTableTd dense align="right">
+                        <DataTableRowActions forceVisible>
+                          <button
+                            type="button"
+                            className={iconBtn}
+                            onClick={() => removeUser(user.id)}
+                            title="Remove user"
+                            aria-label="Remove user"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </DataTableRowActions>
+                      </DataTableTd>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            </DataTableScroll>
+          )}
 
-        {/* ── Shares ─────────────────────────────────────────────── */}
-        <div className={subHeader} onClick={() => setSharesOpen((v) => !v)}>
-          <span className={subHeaderTitle}>
-            {sharesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <Folder size={12} />
-            Shares
-          </span>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); addShare(); }}
-            className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-            title="Add share"
-            aria-label="Add share"
-          >
-            <Plus size={14} aria-hidden />
-            <Folder size={14} aria-hidden />
-          </button>
-        </div>
-        {sharesOpen && (
-          <div className="space-y-2">
-            {form.shares.length === 0 && (
-              <p className="text-xs text-text-muted px-1 py-2">
-                No shares configured. Add one to expose a directory over SMB.
-              </p>
-            )}
-            {form.shares.map((share) => (
-              <ShareRow
-                key={share.id}
-                share={share}
-                storageMounts={storageMounts}
-                declaredUserNames={declaredUserNames}
-                onUpdate={updateShare}
-                onRemove={removeShare}
-                onToggleExpanded={toggleShareExpanded}
-                onSetAccess={setShareAccess}
-              />
-            ))}
+          {/* ── Shares ─────────────────────────────────────────────── */}
+          <div className={subHeader} onClick={() => setSharesOpen((v) => !v)}>
+            <span className={subHeaderTitle}>
+              {sharesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <Folder size={12} />
+              Shares
+            </span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); addShare(); }}
+              className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+              title="Add share"
+              aria-label="Add share"
+            >
+              <Plus size={14} aria-hidden />
+              <Folder size={14} aria-hidden />
+            </button>
           </div>
-        )}
-      </div>
+          {sharesOpen && (
+            <div className="space-y-2">
+              {form.shares.length === 0 && (
+                <p className="text-xs text-text-muted px-1 py-2">
+                  No shares configured. Add one to expose a directory over SMB.
+                </p>
+              )}
+              {form.shares.map((share) => (
+                <ShareRow
+                  key={share.id}
+                  share={share}
+                  storageMounts={storageMounts}
+                  declaredUserNames={declaredUserNames}
+                  onUpdate={updateShare}
+                  onRemove={removeShare}
+                  onToggleExpanded={toggleShareExpanded}
+                  onSetAccess={setShareAccess}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
-      <ConfirmDialog
-        open={!!pendingDataLoss}
-        title="Delete share data?"
-        confirmLabel="Delete and save"
-        onConfirm={confirmDataLoss}
-        onCancel={() => setPendingDataLoss(null)}
-      >
-        <p>
-          Saving permanently deletes the files of {pendingDataLoss?.names.length === 1 ? 'this share' : 'these shares'} from
-          the container&rsquo;s local storage — removed, or moved to a storage mount:
-        </p>
-        <ul className="mt-2 list-disc pl-5 font-mono text-xs text-text-primary">
-          {pendingDataLoss?.names.map((n) => <li key={n}>{n}</li>)}
-        </ul>
-        <p className="mt-2 text-xs text-text-muted">
-          This cannot be undone. Data already on a storage mount is never touched.
-        </p>
-      </ConfirmDialog>
-      </SettingsGate>
+        <ConfirmDialog
+          open={!!pendingDataLoss}
+          title="Delete share data?"
+          confirmLabel="Delete and save"
+          onConfirm={confirmDataLoss}
+          onCancel={() => setPendingDataLoss(null)}
+        >
+          <p>
+            Saving permanently deletes the files of {pendingDataLoss?.names.length === 1 ? 'this share' : 'these shares'} from
+            the container&rsquo;s local storage — removed, or moved to a storage mount:
+          </p>
+          <ul className="mt-2 list-disc pl-5 font-mono text-xs text-text-primary">
+            {pendingDataLoss?.names.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+          <p className="mt-2 text-xs text-text-muted">
+            This cannot be undone. Data already on a storage mount is never touched.
+          </p>
+        </ConfirmDialog>
+          </>
+        )}
+      </RecordGate>
     </SectionCard>
   );
 }

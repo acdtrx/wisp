@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Copy, Check, Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
-import { getVMXML } from '../../api/vms.js';
-import { errorText } from '../../api/errors.js';
+import RecordGate from '../shared/RecordGate.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordError from '../shared/RecordError.jsx';
 
 function highlightXml(xml) {
   if (!xml) return null;
@@ -62,21 +64,10 @@ function highlightXml(xml) {
 }
 
 export default function XMLModal({ open, vmName, onClose }) {
-  const [xml, setXml] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState(null);
+  /* Read while the modal is open, and again when the VM changes. */
+  const record = useRecord(RECORD.VM_XML, open ? vmName : null);
+  const xml = record.data?.xml || '';
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!open || !vmName) return;
-    setLoading(true);
-    setCopied(false);
-    setLoadError(null);
-    getVMXML(vmName)
-      .then((data) => setXml(data.xml || ''))
-      .catch((err) => { setXml(''); setLoadError(errorText(err)); })
-      .finally(() => setLoading(false));
-  }, [open, vmName]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(xml).then(() => {
@@ -104,17 +95,22 @@ export default function XMLModal({ open, vmName, onClose }) {
       }
     >
       <div className="h-full overflow-auto p-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 size={20} className="animate-spin text-text-muted" />
-          </div>
-        ) : loadError ? (
-          <p className="py-12 text-center text-xs text-status-stopped" role="alert">Couldn't load the domain XML: {loadError}</p>
-        ) : (
-          <pre className="text-xs leading-relaxed font-mono text-text-primary whitespace-pre overflow-x-auto">
-            {highlightXml(xml)}
-          </pre>
-        )}
+        {record.data != null && <RecordError record={record} what="domain XML" className="mb-2" />}
+        <RecordGate
+          record={record}
+          what="domain XML"
+          loading={(
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={20} className="animate-spin text-text-muted" />
+            </div>
+          )}
+        >
+          {(data) => (
+            <pre className="text-xs leading-relaxed font-mono text-text-primary whitespace-pre overflow-x-auto">
+              {highlightXml(data.xml || '')}
+            </pre>
+          )}
+        </RecordGate>
       </div>
     </Modal>
   );

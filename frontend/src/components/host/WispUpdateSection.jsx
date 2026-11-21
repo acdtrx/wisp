@@ -7,13 +7,12 @@ import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
-import { useKindChanges } from '../../hooks/useChanges.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import {
-  getUpdateStatus,
   checkForWispUpdate,
   installWispUpdate,
 } from '../../api/updates.js';
@@ -62,10 +61,13 @@ export default function WispUpdateSection() {
   /* SSE-driven badge data (current/latest/available/lastChecked); hydrate on
    * first mount via /updates/status because the SSE may not have ticked yet. */
   const wispUpdate = useStatsStore((s) => s.data?.wispUpdate ?? null);
-  const [hydrated, setHydrated] = useState(null);
-  const [notes, setNotes] = useState(null);
-  const [publishedAt, setPublishedAt] = useState(null);
-  const [repo, setRepo] = useState(null);
+  /* The full status (notes, repo, …), read again on every check from any tab, the
+   * hourly poll included. */
+  const statusRecord = useRecord(RECORD.WISP_UPDATE);
+  const hydrated = statusRecord.data;
+  const notes = hydrated?.notes ?? null;
+  const publishedAt = hydrated?.publishedAt ?? null;
+  const repo = hydrated?.repo ?? null;
 
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -94,48 +96,13 @@ export default function WispUpdateSection() {
 
   /* The configured update channel lives in settings; the check result never
    * echoes it back (see spec/UPDATES.md). */
-  const channel = useSettingsStore((s) => s.settings?.updateChannel ?? 'stable');
-  const settingsLoaded = useSettingsStore((s) => s.settings != null);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const channel = settingsRecord.data?.updateChannel ?? 'stable';
   /* The channel just chosen, shown until the settings reload carries it. */
   const [pendingChannel, setPendingChannel] = useState(null);
   useEffect(() => {
     setPendingChannel(null);
   }, [channel]);
-
-  const applyStatus = useCallback((s) => {
-    setHydrated(s);
-    setNotes(s.notes ?? null);
-    setPublishedAt(s.publishedAt ?? null);
-    setRepo(s.repo ?? null);
-  }, []);
-
-  /* Reads are numbered: only the newest one sent applies, or reports its failure. */
-  const statusReadsSent = useRef(0);
-  const refreshFromServer = useCallback(async () => {
-    const request = ++statusReadsSent.current;
-    try {
-      const status = await getUpdateStatus();
-      if (request === statusReadsSent.current) applyStatus(status);
-    } catch (err) {
-      if (request === statusReadsSent.current) setError(errorText(err));
-    }
-  }, [applyStatus]);
-
-  useEffect(() => {
-    refreshFromServer();
-  }, [refreshFromServer]);
-  /* A check from any tab, the hourly poll, or a reconnect re-reads the status. */
-  useKindChanges(CHANGE_KIND.WISP_UPDATE, refreshFromServer);
-
-  /* The Software tab can be the first page opened, so the settings store may
-   * still be empty — the channel select needs it. */
-  useEffect(() => {
-    if (settingsLoaded) return;
-    loadSettings().catch((err) => {
-      setError(errorText(err));
-    });
-  }, [settingsLoaded, loadSettings]);
 
   const current = wispUpdate?.current ?? hydrated?.current ?? null;
   const latest = wispUpdate?.latest ?? hydrated?.latest ?? null;
@@ -271,9 +238,13 @@ export default function WispUpdateSection() {
   const releaseUrl = repo && latest ? `https://github.com/${repo}/releases/tag/v${latest}` : null;
   const publishedLabel = formatRelativeTime(publishedAt);
 
+  /* A command's error first, then a failed read of the status (a failed read of the
+   * settings is the page's notice). */
+  const readError = statusRecord.error;
+  const shownError = error ?? (readError ? `Couldn't load the update status: ${errorText(readError)}` : null);
   let status = null;
-  if (error && !installing) {
-    status = { type: 'error', message: error };
+  if (shownError && !installing) {
+    status = { type: 'error', message: shownError };
   } else if (available && latest && !installing) {
     status = { type: 'warn', message: `v${latest} available` };
   } else if (lastChecked && !available && !installing && !checking) {

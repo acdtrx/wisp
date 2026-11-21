@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSettingsStore } from '../store/settingsStore.js';
+import { RECORD } from '../store/records.js';
+import { useRecord } from './useRecord.js';
 
 /**
- * Keeps a settings form in step with the settings store (specs/SETTINGS.md,
+ * Keeps a settings form in step with the settings record (specs/SETTINGS.md,
  * Saving and live updates).
  *
  * `reset(settings)` seeds the form. It runs on the first settings, on every load
@@ -17,8 +18,9 @@ import { useSettingsStore } from '../store/settingsStore.js';
  * landed and reset it.
  */
 export function useSettingsForm(reset) {
-  const settings = useSettingsStore((s) => s.settings);
-  const loadCount = useSettingsStore((s) => s.loadCount);
+  const record = useRecord(RECORD.SETTINGS);
+  const settings = record.data;
+  const loadCount = record.reads;
   const [sent, setSent] = useState(null);
   const seededFrom = useRef(null);
   const pending = useRef(false);

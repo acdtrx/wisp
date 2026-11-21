@@ -51,6 +51,23 @@ export function withErrorsRenamed(errors, from, to) {
   return next;
 }
 
+/**
+ * The renames one list frame shows against the one before: a name the new list no
+ * longer has, whose uuid it lists under another name. `[from, to]` pairs.
+ */
+export function renamesBetween(previous, list) {
+  if (!Array.isArray(previous) || !Array.isArray(list)) return [];
+  const names = new Set(list.map((w) => w.name));
+  const byUuid = new Map(list.filter((w) => w.uuid).map((w) => [w.uuid, w.name]));
+  const renames = [];
+  for (const w of previous) {
+    if (names.has(w.name) || !w.uuid) continue;
+    const to = byUuid.get(w.uuid);
+    if (to && to !== w.name) renames.push([w.name, to]);
+  }
+  return renames;
+}
+
 export function withBusy(actions, name, action) {
   const next = { ...actions };
   if (action) next[name] = action;

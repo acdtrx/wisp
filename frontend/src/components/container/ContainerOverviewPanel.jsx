@@ -3,16 +3,15 @@ import {
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2, X,
+  Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2,
 } from 'lucide-react';
 
-import { useContainerStore, runContainerCommand } from '../../store/containerStore.js';
+import { useContainer, useContainerStore, runContainerCommand } from '../../store/containerStore.js';
 import {
   useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
 import { updateContainer, ejectContainerApp } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
-import { getSettings } from '../../api/settings.js';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
@@ -29,8 +28,23 @@ import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import { getAppEntry } from '../../apps/appRegistry.js';
 import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
 import { errorText } from '../../api/errors.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { backupDestinations } from '../../utils/backupDestinations.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import WorkloadGone from '../shared/WorkloadGone.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import RecordError from '../shared/RecordError.jsx';
 
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
+
+function TabSpinner() {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <Loader2 size={24} className="animate-spin text-text-muted" />
+    </div>
+  );
+}
 
 function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading }) {
   const base = 'flex shrink-0 items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
@@ -53,11 +67,10 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
   );
 }
 
-export default function ContainerOverviewPanel() {
-  const config = useContainerStore((s) => s.config);
-  const loading = useContainerStore((s) => s.configLoading);
-  const actionLoading = useContainerStore((s) => s.actions[s.selected] ?? null);
-  const selectedContainer = useContainerStore((s) => s.selected);
+export default function ContainerOverviewPanel({ name: routeName }) {
+  const { record, config: loadedConfig, seed } = useContainer(routeName);
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const actionLoading = useContainerStore((s) => s.actions[routeName] ?? null);
   const errors = useContainerStore((s) => s.errors);
   const dismissError = useContainerStore((s) => s.dismissError);
   const reportActionError = useContainerStore((s) => s.reportActionError);
@@ -76,12 +89,11 @@ export default function ContainerOverviewPanel() {
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
-  const [backupDestinations, setBackupDestinations] = useState([]);
   const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
   const [backupJobId, setBackupJobId] = useState(null);
   const [backupError, setBackupError] = useState(null);
 
-  const containerName = config?.name ?? '';
+  const containerName = routeName;
   // A job on this container holds the backend's per-container operation lock
   // (every lifecycle action, delete and edit → 409 CONTAINER_BUSY), so it
   // blocks the conflicting actions here.
@@ -110,30 +122,23 @@ export default function ContainerOverviewPanel() {
     setBackupModalOpen(false);
   }, [containerName]);
 
-  /* The error page: the select read left no config. */
-  const selectError = selectedContainer ? errors[`select:${selectedContainer}`] : null;
-  if (!config && selectError && !loading) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm font-medium text-status-stopped">{selectError.message}</p>
-        <button
-          type="button"
-          onClick={() => { dismissError('select', selectedContainer); navigate('/host/overview'); }}
-          className="text-xs text-text-muted hover:text-text-secondary"
-        >
-          Go to Host overview
-        </button>
-      </div>
-    );
-  }
+  if (record.status === 'gone') return <WorkloadGone what="container" name={routeName} />;
 
-  /* Full-page spinner only when there is no seed at all (deep link before the
-   * list arrived). With a seed the header renders instantly and the body below
-   * carries its own spinner until the full config lands. */
+  /* The header may paint from the list item while the config loads; the body is the
+   * record's alone, behind its gate (loading, its error with a Retry). With neither,
+   * the page is the gate. */
+  const config = loadedConfig ?? seed;
   if (!config) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-text-muted" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
+        <RecordGate record={record} what={`container ${routeName}`} loading={<Loader2 size={24} className="animate-spin text-text-muted" />}>
+          {() => null}
+        </RecordGate>
+        {record.status === 'error' && (
+          <button type="button" onClick={() => navigate('/host/overview')} className="text-xs text-text-muted hover:text-text-secondary">
+            Go to Host overview
+          </button>
+        )}
       </div>
     );
   }
@@ -143,15 +148,13 @@ export default function ContainerOverviewPanel() {
   const isStopped = state === 'stopped' || state === 'unknown';
   /* Stopped but waiting out a restart-policy backoff: Stop cancels the restart. */
   const restartScheduled = isStopped && !!config.scheduledRestart;
-  const name = config.name;
+  const name = routeName;
   const iconColorClass = CONTAINER_STATE_ICON_COLOR[state] || CONTAINER_STATE_ICON_COLOR.unknown;
   const iconId = config.iconId || getDefaultContainerIconId();
   const IconComp = getVmIcon(iconId).component;
 
-  /* The banner: this container's action and refresh errors, and the list's. */
-  const bannerErrors = Object.values(errors).filter(
-    (e) => e.vm === name && (e.owner === 'action' || e.owner === 'refresh'),
-  );
+  /* The bar: this container's action error, and a failed re-read of its config. */
+  const actionError = errors[`action:${name}`] ?? null;
 
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
@@ -163,15 +166,6 @@ export default function ContainerOverviewPanel() {
     setBackupError(null);
     setBackupJobId(backupJob?.kind === JOB_KIND.CONTAINER_BACKUP ? backupJob.jobId : null);
     setBackupSelectedIds(['local']);
-    getSettings().then((s) => {
-      const dests = [{ id: 'local', label: 'Local', path: s.backupLocalPath || '/var/lib/wisp/backups' }];
-      if (s.backupMountId) {
-        const m = (s.mounts || []).find((x) => x.id === s.backupMountId);
-        const p = m && m.mountPath;
-        if (m && p) dests.push({ id: m.id, label: m.label || 'Network', path: p });
-      }
-      setBackupDestinations(dests);
-    }).catch(() => setBackupDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', fallback: true }]));
   };
 
   /* A rename is followed from the request: the server takes the name as sent (after
@@ -183,6 +177,8 @@ export default function ContainerOverviewPanel() {
     await runContainerCommand(target, () => updateContainer(name, changes));
     if (!renamed) return;
     useContainerStore.getState().followRename(name, target);
+    /* The page follows only if it still shows this container: the user may have moved on. */
+    if (useContainerStore.getState().selected !== name) return;
     navigate(`/container/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
   };
 
@@ -294,14 +290,12 @@ export default function ContainerOverviewPanel() {
       </div>
 
       {/* Each error stays until dismissed */}
-      {bannerErrors.map((e) => (
-        <div key={`${e.owner}:${e.vm ?? ''}`} className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
-          <span className="min-w-0 flex-1">{e.message}</span>
-          <button type="button" onClick={() => dismissError(e.owner, e.vm)} className="shrink-0 rounded-sm p-2 lg:p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss" aria-label="Dismiss error">
-            <X size={14} />
-          </button>
-        </div>
-      ))}
+      {actionError && (
+        <ErrorBanner className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" error={actionError.message} onDismiss={() => dismissError('action', name)} />
+      )}
+      {record.data != null && (
+        <RecordError className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" record={record} what="container" />
+      )}
 
       {config.updateAvailable && (
         <div className="shrink-0 border-b border-status-warning/30 bg-status-warning-soft px-4 py-2 text-xs text-status-warning">
@@ -310,26 +304,37 @@ export default function ContainerOverviewPanel() {
       )}
 
       {activeTab === 'console' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <Suspense fallback={(
-            <div className="flex flex-1 items-center justify-center">
-              <Loader2 size={24} className="animate-spin text-text-muted" />
+        /* Every tab's body is the record's: behind its gate, like the overview's. */
+        <RecordGate record={record} what="container" loading={<TabSpinner />}>
+          {() => (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <Suspense fallback={<TabSpinner />}>
+                <ContainerConsolePanel containerName={name} />
+              </Suspense>
             </div>
           )}
-          >
-            <ContainerConsolePanel containerName={name} />
-          </Suspense>
-        </div>
+        </RecordGate>
       ) : activeTab === 'logs' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <ContainerLogsSection containerName={name} />
-        </div>
-      ) : loading ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-text-muted">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
+        <RecordGate record={record} what="container" loading={<TabSpinner />}>
+          {() => (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ContainerLogsSection containerName={name} />
+            </div>
+          )}
+        </RecordGate>
       ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
+          <RecordGate
+            record={record}
+            what="container"
+            loading={(
+              <div className="flex justify-center py-8 text-text-muted">
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+            )}
+          >
+          {() => (
+          <>
           <ContainerGeneralSection config={config} onSave={handleSectionSave} />
           {config.metadata?.app && getAppEntry(config.metadata.app) ? (
             <AppConfigWrapper
@@ -345,6 +350,9 @@ export default function ContainerOverviewPanel() {
           )}
           <ContainerNetworkSection config={config} onSave={handleSectionSave} />
           <ContainerDevicesSection config={config} onSave={handleSectionSave} />
+          </>
+          )}
+          </RecordGate>
         </div>
       )}
 
@@ -386,7 +394,7 @@ export default function ContainerOverviewPanel() {
           name={name}
           subjectLabel="Container"
           backupStarted={!!backupJobId}
-          destinations={backupDestinations}
+          destinations={backupDestinations(settingsRecord)}
           selectedIds={backupSelectedIds}
           onToggleDestination={(id) => {
             setBackupSelectedIds((prev) => (

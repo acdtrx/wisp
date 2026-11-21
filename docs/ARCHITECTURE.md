@@ -37,6 +37,12 @@
 - The URL is the source of truth for the active view and tab: tab buttons and list items
   navigate rather than set store state, so a refresh restores the same view (routes:
   [`specs/UI.md`](specs/UI.md), View Switching).
+- **How server state reaches a view**, three ways: a store that mirrors a topic of the
+  events stream (the lists, sections, home, stats, jobs); a record, read with
+  `GET` while a view shows it and again when the stream names it (a `changes` cue, or
+  a topic's frame), shared by every view that shows it; and a scoped stream, open
+  while its view is on screen (a workload's stats and logs, disks, USB, a job's
+  progress). The rules: `FRONTEND-RULES.md`, Data.
 - **Boot probe:** protected routes gate on one `GET /api/host`, aborted after 5 s — a dead
   VPN swallows the connection rather than refusing it — and any failure renders the Server
   Unreachable screen ([`specs/UI.md`](specs/UI.md)). Once ready the gate stops probing; a

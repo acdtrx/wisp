@@ -1,5 +1,6 @@
-import { Loader2 } from 'lucide-react';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import RecordGate from './RecordGate.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 
 /**
  * Renders its children once the settings have loaded; until then a loading
@@ -7,32 +8,6 @@ import { useSettingsStore } from '../../store/settingsStore.js';
  * a Save would write back over the real settings.
  */
 export default function SettingsGate({ children, label = 'settings' }) {
-  const settings = useSettingsStore((s) => s.settings);
-  const error = useSettingsStore((s) => s.error);
-  const loading = useSettingsStore((s) => s.loading);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const dismissError = useSettingsStore((s) => s.dismissError);
-  if (settings) return children;
-  if (error && !loading) {
-    return (
-      <p className="text-xs text-status-stopped" role="alert">
-        Couldn't load the {label}: {error}{' '}
-        <button
-          type="button"
-          onClick={() => {
-            dismissError();
-            loadSettings().catch(() => {});
-          }}
-          className="font-medium underline"
-        >
-          Retry
-        </button>
-      </p>
-    );
-  }
-  return (
-    <p className="flex items-center gap-2 text-xs text-text-muted">
-      <Loader2 size={14} className="animate-spin" aria-hidden /> Loading {label}…
-    </p>
-  );
+  const record = useRecord(RECORD.SETTINGS);
+  return <RecordGate record={record} what={label}>{() => children}</RecordGate>;
 }

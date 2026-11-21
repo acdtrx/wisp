@@ -4,14 +4,18 @@ import HostBackup from './HostBackup.jsx';
 import HostBackupScheduler from './HostBackupScheduler.jsx';
 import HostStorage from './HostStorage.jsx';
 import HostNetworkBridges from './HostNetworkBridges.jsx';
-import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
+import RecordError from '../shared/RecordError.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 
 export default function HostMgmt() {
   const [bridgeError, setBridgeError] = useState(null);
+  /* One notice for the page's settings cards, when a re-read of the settings failed. */
+  const settingsRecord = useRecord(RECORD.SETTINGS);
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
-      <SettingsRefreshNotice />
+      {settingsRecord.data != null && <RecordError record={settingsRecord} what="settings" />}
 
       {bridgeError && (
         <div className="flex items-center justify-between gap-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-xs text-status-stopped">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   File,
@@ -35,19 +35,16 @@ import ContainerMountEditorModal, {
 } from './ContainerMountEditorModal.jsx';
 import {
   removeContainerMount,
-  getContainerMountUsage,
   uploadMountFile,
   uploadMountZip,
 } from '../../api/containers.js';
 import { formatSize } from '../../utils/formatters.js';
-import { useSettingsStore } from '../../store/settingsStore.js';
-import { getMountStatus } from '../../api/settings.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { runContainerCommand } from '../../store/containerStore.js';
-import { useChanges, useKindChanges } from '../../hooks/useChanges.js';
-import LoadHint from '../shared/LoadHint.jsx';
+import RecordError from '../shared/RecordError.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const addBtn =
   'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
@@ -110,8 +107,10 @@ function MountTypeIcon({ type }) {
 }
 
 export default function ContainerMountsSection({ config }) {
-  const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  /* The storage mounts a mount can take its data from (settings), and which are mounted. */
+  const settings = useRecord(RECORD.SETTINGS).data;
+  const status = useRecord(RECORD.HOST_MOUNT_STATUS);
+  const storageStatus = status.data;
   const [busyRowName, setBusyRowName] = useState(null);
   const [deletingRowName, setDeletingRowName] = useState(null);
   const [error, setError] = useState(null);
@@ -121,10 +120,6 @@ export default function ContainerMountsSection({ config }) {
   const [fileEditor, setFileEditor] = useState({ open: false, mountName: '' });
   /* Secret file mounts never open the text editor — only this write-only dialog. */
   const [secretEditor, setSecretEditor] = useState({ open: false, mount: null });
-  const [storageStatus, setStorageStatus] = useState([]);
-  const [usageFailed, setUsageFailed] = useState(false);
-  const [statusFailed, setStatusFailed] = useState(false);
-  const [mountUsage, setMountUsage] = useState(null);
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedName, setExpandedName] = useState(null);
 
@@ -139,56 +134,19 @@ export default function ContainerMountsSection({ config }) {
     setExpandedName(null);
   }, [config.name]);
 
-  /* Host-side disk usage per mount — one on-demand snapshot per mounts change, and again when
-   * the container's change cue says its content may have changed (an upload, a content edit);
-   * not a live feed (sizing walks the data dir and can take seconds for large trees), and no
-   * command waits for it. Best-effort: on failure the Size column just shows em-dashes. */
-  const [usageCue, setUsageCue] = useState(0);
-  useChanges(CHANGE_KIND.CONTAINER, config.name, () => { setUsageCue((n) => n + 1); });
-  useEffect(() => {
-    let cancelled = false;
-    if (!config.name || (config.mounts || []).length === 0) {
-      setMountUsage(null);
-      return undefined;
-    }
-    getContainerMountUsage(config.name)
-      .then((res) => { if (!cancelled) { setMountUsage(res.mounts || []); setUsageFailed(false); } })
-      .catch(() => { if (!cancelled) { setMountUsage([]); setUsageFailed(true); } });
-    return () => { cancelled = true; };
-  }, [config.name, mountsKey, usageCue]);
+  /* Host-side disk usage per mount, read again on the container's change cue (an
+   * upload, a content edit, a mounts change); not a live feed (sizing walks the data dir
+   * and can take seconds for large trees), so no command waits for its re-read (the
+   * record table says so: store/records.js). Best-effort: without it, or once the
+   * container is gone, the Size column shows em-dashes. */
+  const usage = useRecord(RECORD.CONTAINER_MOUNT_USAGE, (config.mounts || []).length > 0 ? config.name : null);
+  const mountUsage = usage.data?.mounts ?? null;
 
   const usageByName = useMemo(() => {
     const map = new Map();
     for (const u of mountUsage || []) map.set(u.name, u);
     return map;
   }, [mountUsage]);
-
-  /* Settings store holds the storage-mount catalogue and is cheap to (re)load; the mount-status
-   * endpoint tells us which ones are currently mounted so we can warn on orphan references. */
-  const statusReadsSent = useRef(0);
-  const refreshStorageStatus = useCallback(() => {
-    const request = ++statusReadsSent.current; // only the newest read applies
-    return getMountStatus()
-      .then((list) => {
-        if (request !== statusReadsSent.current) return;
-        setStorageStatus(Array.isArray(list) ? list : []);
-        setStatusFailed(false);
-      })
-      .catch(() => {
-        if (request !== statusReadsSent.current) return;
-        setStorageStatus([]);
-        setStatusFailed(true);
-      });
-  }, []);
-  /* A host mount or unmount (any tab, the auto-mount too) changes the status. */
-  useKindChanges(CHANGE_KIND.HOST_MOUNTS, refreshStorageStatus);
-
-  useEffect(() => {
-    if (!settings) {
-      loadSettings().catch(() => {});
-    }
-    refreshStorageStatus();
-  }, [settings, loadSettings, refreshStorageStatus]);
 
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
   const storageStatusById = useMemo(() => {
@@ -211,10 +169,6 @@ export default function ContainerMountsSection({ config }) {
   };
 
   const closeEditor = () => setEditor({ open: false, kind: 'file', mount: null });
-
-  const handleSaved = () => {
-    refreshStorageStatus();
-  };
 
   const handleRemove = async (row) => {
     setError(null);
@@ -329,8 +283,8 @@ export default function ContainerMountsSection({ config }) {
       headerAction={headerAdds}
     >
       <div className="space-y-3">
-        {usageFailed && <LoadHint what="the mount sizes" />}
-        {statusFailed && <LoadHint what="the storage mount status" />}
+        <RecordError record={usage} what="mount sizes" />
+        <RecordError record={status} what="storage mount status" />
         <DataTableScroll>
           <DataTable>
             <thead>
@@ -598,7 +552,6 @@ export default function ContainerMountsSection({ config }) {
         mounts={config.mounts || []}
         storageMounts={storageMounts}
         runAsRoot={runAsRoot}
-        onSaved={handleSaved}
         onClose={closeEditor}
       />
 

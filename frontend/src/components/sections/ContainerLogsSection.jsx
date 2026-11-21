@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowDown, Circle, Download, Eraser, MapPin, RefreshCw, Search } from 'lucide-react';
 import { openStream } from '../../api/sse.js';
-import { listContainerRuns } from '../../api/containers.js';
-import { useContainerStore } from '../../store/containerStore.js';
 import { randomId } from '../../utils/randomId.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { isErrorFrame } from '../../store/streamStore.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordError from '../shared/RecordError.jsx';
+
+const NO_RUNS = [];
 
 const CLIENT_BUFFER_HARD_LIMIT = 5000;
 const CLIENT_BUFFER_TRIM_TO = 4000;
@@ -51,13 +54,13 @@ function nowClock() {
 }
 
 export default function ContainerLogsSection({ containerName }) {
-  const containerState = useContainerStore((s) => (
-    s.selected === containerName ? s.config?.state : null
-  ));
-
-  const [runs, setRuns] = useState([]);
-  const [runsLoading, setRunsLoading] = useState(false);
-  const [runsError, setRunsError] = useState(null);
+  /* The runs are a record: read again when the container's state changes (a run
+   * starts or ends with it), and on Refresh. */
+  const runsRecord = useRecord(RECORD.CONTAINER_RUNS, containerName);
+  const runs = runsRecord.data?.runs ?? NO_RUNS;
+  /* Refresh joins a read on its way, and spins while one is. */
+  const runsLoading = runsRecord.reading;
+  const refetchRuns = runsRecord.reload;
   /** The selected run's log stream: 'connecting' until its first frame, 'ready', or 'error'. */
   const [streamState, setStreamState] = useState('connecting');
   const [streamError, setStreamError] = useState(null);
@@ -70,33 +73,6 @@ export default function ContainerLogsSection({ containerName }) {
 
   const logRef = useRef(null);
   const closeSseRef = useRef(null);
-  /** Only the newest runs request may apply — an older one (previous container, or a
-   *  refetch overtaken by the next state transition) would select a run of the wrong list. */
-  const runsSeqRef = useRef(0);
-
-  const refetchRuns = useCallback(async () => {
-    const seq = ++runsSeqRef.current;
-    setRunsLoading(true);
-    let next;
-    let failure = null;
-    try {
-      ({ runs: next } = await listContainerRuns(containerName));
-    } catch (err) {
-      failure = errorText(err);
-    }
-    if (seq !== runsSeqRef.current) return;
-    // A failed refetch keeps the runs already shown.
-    if (!failure) setRuns(next || []);
-    setRunsError(failure);
-    setRunsLoading(false);
-  }, [containerName]);
-
-  // Initial fetch + refetch whenever the container transitions state.
-  // State comes from the containers list / stats SSE, so this is event-driven.
-  useEffect(() => {
-    refetchRuns();
-  }, [refetchRuns, containerState]);
-
   // Pick the newest run when the list updates, provided the user hasn't pinned an older one.
   useEffect(() => {
     if (!runs.length) {
@@ -241,7 +217,7 @@ export default function ContainerLogsSection({ containerName }) {
             className="max-w-88 truncate rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-xs text-text-primary outline-hidden focus:border-accent transition-colors duration-150 disabled:opacity-50"
           >
             {runs.length === 0 && (
-              <option value="">{runsError ? 'Runs unavailable' : runsLoading ? 'Loading runs…' : 'No runs yet'}</option>
+              <option value="">{runsRecord.error ? 'Runs unavailable' : runsLoading ? 'Loading runs…' : 'No runs yet'}</option>
             )}
             {runs.map((r) => (
               <option key={r.runId} value={r.runId}>{runLabel(r)}</option>
@@ -321,13 +297,14 @@ export default function ContainerLogsSection({ containerName }) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto bg-surface-sidebar p-4 font-mono text-xs leading-5 text-text-primary"
       >
+        <RecordError record={runsRecord} what="runs" className="mb-2 font-sans" />
         {streamState === 'error' && (
           <div className="mb-2 text-status-stopped" role="alert">{streamError}</div>
         )}
         {filtered.length === 0 ? (
           <span className="text-text-muted">
             {!selectedRunId
-              ? (runsError ? `Couldn't load the runs: ${runsError}` : runsLoading ? 'Loading runs…' : 'No logs available.')
+              ? (runsRecord.error ? null : runsLoading ? 'Loading runs…' : 'No logs available.')
               : streamState === 'connecting' ? 'Loading logs…'
                 : streamState === 'error' ? null
                   : 'No logs for this run.'}

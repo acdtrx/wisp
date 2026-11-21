@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   Trash2,
@@ -27,21 +27,23 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
-import { useSettingsStore } from '../../store/settingsStore.js';
-import { useKindChanges } from '../../hooks/useChanges.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import {
   deleteMount,
-  getMountStatus,
   mountMount,
   unmountMount,
   checkMountConnection,
 } from '../../api/settings.js';
-import SettingsGate from '../shared/SettingsGate.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import RecordError from '../shared/RecordError.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+
+const NO_STATUS = [];
 
 /* Same geometry as rowActionIconBtn but color-neutral, for tinted (mount/check) states. */
 const tintedActionBtnBase =
@@ -70,7 +72,8 @@ function shortUuid(u) {
 }
 
 export default function HostStorage() {
-  const settings = useSettingsStore((s) => s.settings);
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const settings = settingsRecord.data;
   const disks = useDiskStore((s) => s.data);
   const connectDisks = useDiskStore((s) => s.connect);
   const disconnectDisks = useDiskStore((s) => s.disconnect);
@@ -83,32 +86,11 @@ export default function HostStorage() {
     return () => disconnectDisks();
   }, [connectDisks, disconnectDisks]);
 
-  const [mountStatus, setMountStatus] = useState([]);
-  const [mountStatusError, setMountStatusError] = useState(null);
+  /* Which mounts are mounted, read again on every mount, unmount, add, edit and
+   * removal (any tab, the auto-mount included). */
+  const status = useRecord(RECORD.HOST_MOUNT_STATUS);
+  const mountStatus = status.data ?? NO_STATUS;
   const [error, setError] = useState(null);
-
-  /* Reads are numbered: only the newest one sent applies. */
-  const statusReadsSent = useRef(0);
-  const refreshStatus = useCallback(() => {
-    const request = ++statusReadsSent.current;
-    return getMountStatus()
-      .then((list) => {
-        if (request !== statusReadsSent.current) return;
-        setMountStatus(Array.isArray(list) ? list : []);
-        setMountStatusError(null);
-      })
-      // Rows then read as not mounted: say the status is unknown.
-      .catch((err) => {
-        if (request !== statusReadsSent.current) return;
-        setMountStatus([]);
-        setMountStatusError(errorText(err));
-      });
-  }, []);
-
-  useEffect(() => { refreshStatus(); }, [refreshStatus]);
-  /* A mount added, edited or removed, a mount or unmount — from any tab, the
-   * auto-mount included — or a reconnect re-reads the status. */
-  useKindChanges(CHANGE_KIND.HOST_MOUNTS, refreshStatus);
 
   const smbSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'smb'), [settings]);
   const diskSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'disk'), [settings]);
@@ -125,26 +107,29 @@ export default function HostStorage() {
 
   return (
     <SectionCard title="Storage" titleIcon={<Server size={14} strokeWidth={2} />} error={error}>
-      <SettingsGate label="storage settings">
-      <div className="space-y-6">
-        {mountStatusError && (
-          <p className="text-[11px] text-text-muted" role="status">Couldn't load the mount status ({mountStatusError}); the dots below may be wrong.</p>
-        )}
-        <SmbMountsSection
-          smbSaved={smbSaved}
-          mountStatus={mountStatus}
-          onError={setError}
-        />
+      <RecordGate record={settingsRecord} what="storage settings">
+        {() => (
+          <div className="space-y-6">
+            {status.status === 'loading' && (
+              <p className="text-[11px] text-text-muted" role="status">Loading the mount status…</p>
+            )}
+            <RecordError record={status} what="mount status" />
+            <SmbMountsSection
+              smbSaved={smbSaved}
+              mountStatus={mountStatus}
+              onError={setError}
+            />
 
-        <RemovableDrivesSection
-          diskSaved={diskSaved}
-          detectedDisks={disks}
-          unadoptedDetected={unadoptedDetected}
-          onError={setError}
-          diskStreamError={diskStreamError}
-        />
-      </div>
-      </SettingsGate>
+            <RemovableDrivesSection
+              diskSaved={diskSaved}
+              detectedDisks={disks}
+              unadoptedDetected={unadoptedDetected}
+              onError={setError}
+              diskStreamError={diskStreamError}
+            />
+          </div>
+        )}
+      </RecordGate>
     </SectionCard>
   );
 }

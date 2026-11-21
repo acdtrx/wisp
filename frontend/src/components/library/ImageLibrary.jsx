@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Upload, Trash2, Pencil, Check, X, HardDrive, Disc, FileQuestion, Link, Loader2, Package, Images, RefreshCw } from 'lucide-react';
 
 import {
-  listFiles,
   deleteFile,
   renameFile,
   uploadFile,
@@ -14,8 +13,9 @@ import {
 } from '../../api/library.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
-import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
-import { useKindChanges } from '../../hooks/useChanges.js';
+import { deleteContainerImage } from '../../api/containers.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import Modal from '../shared/Modal.jsx';
@@ -34,6 +34,8 @@ import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+
+const NO_ROWS = [];
 
 const FILTERS_PAGE = [
   { key: 'all', label: 'All' },
@@ -284,16 +286,27 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   const skipped = checkEvents?.skipped ?? null;
   const checkState = { running: imageUpdateCheck.running, currentRef: checking?.ref ?? null };
   const startImageUpdateCheck = useContainerStore((s) => s.startImageUpdateCheck);
-  const refreshImageUpdateStatus = useContainerStore((s) => s.refreshImageUpdateStatus);
-
-  const [files, setFiles] = useState([]);
-  const [containerImages, setContainerImages] = useState([]);
   const [filter, setFilter] = useState(() => {
     if (mode === 'picker' && pickerKind === 'container') return 'container';
     if (mode === 'picker' && defaultFilter === 'container') return 'all';
     return defaultFilter;
   });
-  const [loading, setLoading] = useState(true);
+  /* The library's files and containerd's images are records, read as the filter needs
+   * them and again on their cues (an upload, rename, delete or download; an image
+   * pulled, updated or deleted — by any tab, a container create or the update check).
+   * The files are read whole and filtered here. */
+  const needFiles = filter !== 'container';
+  const needImages = filter === 'container' || (isPageLike && filter === 'all');
+  const library = useRecord(needFiles ? RECORD.LIBRARY : null);
+  const images = useRecord(needImages ? RECORD.CONTAINER_IMAGES : null);
+  const updateStatus = useRecord(isPageLike ? RECORD.IMAGE_UPDATE_STATUS : null).data;
+  const files = useMemo(() => {
+    const all = needFiles ? library.data ?? NO_ROWS : NO_ROWS;
+    return filter === 'iso' || filter === 'disk' ? all.filter((f) => f.type === filter) : all;
+  }, [needFiles, library.data, filter]);
+  const containerImages = needImages ? images.data ?? NO_ROWS : NO_ROWS;
+  const loading = (needFiles && library.status === 'loading') || (needImages && images.status === 'loading');
+  const readError = (needFiles && library.error) || (needImages && images.error) || null;
   const [error, setError] = useState(null);
 
   const [uploading, setUploading] = useState(false);
@@ -336,47 +349,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     }
   }, [mode, pickerKind, filter]);
 
-  /** Only the newest list request may apply: switching filter while the previous
-   *  filter's request is still in flight must not let that late response repaint the list. */
-  const fetchSeqRef = useRef(0);
-
-  /* `initial`: a new view (mount, filter switch) shows the loading state and drops
-   * the last error. A re-read on a cue keeps both: an error stays until dismissed. */
-  const fetchFiles = useCallback(async ({ initial = false } = {}) => {
-    const seq = ++fetchSeqRef.current;
-    if (initial) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      if (filter === 'container') {
-        const data = await listContainerImages();
-        if (seq !== fetchSeqRef.current) return;
-        setContainerImages(data);
-        setFiles([]);
-      } else if (isPageLike && filter === 'all') {
-        const [fileData, ociData] = await Promise.all([
-          listFiles(undefined),
-          listContainerImages(),
-        ]);
-        if (seq !== fetchSeqRef.current) return;
-        setFiles(fileData);
-        setContainerImages(ociData);
-      } else {
-        const apiFilter = filter === 'all' ? undefined : filter;
-        const data = await listFiles(apiFilter);
-        if (seq !== fetchSeqRef.current) return;
-        setFiles(data);
-        setContainerImages([]);
-      }
-    } catch (err) {
-      if (seq !== fetchSeqRef.current) return;
-      setError(errorText(err));
-    } finally {
-      if (seq === fetchSeqRef.current) setLoading(false);
-    }
-  }, [filter, isPageLike]);
-
   const mergedAllRows = useMemo(() => {
     if (!isPageLike || filter !== 'all') return null;
     const merged = [
@@ -390,21 +362,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     });
     return merged;
   }, [isPageLike, filter, files, containerImages]);
-
-  useEffect(() => {
-    fetchFiles({ initial: true });
-  }, [fetchFiles]);
-  /* An image pulled, updated or deleted — by any tab, a container create or
-   * the update check — or a reconnect re-reads the list. */
-  const rereadList = useCallback(() => fetchFiles(), [fetchFiles]);
-  useKindChanges(CHANGE_KIND.IMAGES, rereadList);
-  /* A library file uploaded, renamed, deleted or downloaded — by any tab — too. */
-  useKindChanges(CHANGE_KIND.LIBRARY, rereadList);
-
-  /** Fetch cached update-check status once on mount so the "Checked X ago" line is populated. */
-  useEffect(() => {
-    refreshImageUpdateStatus();
-  }, [refreshImageUpdateStatus]);
 
   const handleUpload = async (file) => {
     setUploading(true);
@@ -587,7 +544,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       title="Image Library"
       titleIcon={<Images size={14} strokeWidth={2} />}
       headerAction={libraryHeaderAction}
-      error={error || undefined}
+      error={error || (readError ? `Couldn't load the library: ${errorText(readError)}` : undefined)}
     >
           {(uploading || uploadError || presetError || presetDownloading) && (
             <div className="mb-4 border-b border-surface-border pb-4">
@@ -637,10 +594,10 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                     {checking?.total ? ` (${checking.index}/${checking.total})` : ''}
                     {skipped ? ` · skipped ${shortDigest(skipped.ref)}: ${errorText(skipped)}` : ''}
                   </>
-                ) : imageUpdateCheck.lastCheckedAt ? (
+                ) : updateStatus?.lastCheckedAt ? (
                   <>
-                    Checked {formatRelativeTime(imageUpdateCheck.lastCheckedAt)}
-                    {` · ${imageUpdateCheck.imagesUpdated} update${imageUpdateCheck.imagesUpdated === 1 ? '' : 's'} found`}
+                    Checked {formatRelativeTime(updateStatus.lastCheckedAt)}
+                    {` · ${updateStatus.imagesUpdated || 0} update${updateStatus.imagesUpdated === 1 ? '' : 's'} found`}
                     {imageUpdateCheck.flaggedContainers > 0
                       ? ` · ${imageUpdateCheck.flaggedContainers} container${imageUpdateCheck.flaggedContainers === 1 ? '' : 's'} flagged`
                       : ''}
@@ -656,7 +613,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           )}
           {loading ? (
           <p className="py-8 text-center text-sm text-text-muted">Loading…</p>
-        ) : error && files.length === 0 && containerImages.length === 0 ? (
+        ) : readError && files.length === 0 && containerImages.length === 0 ? (
           // The load failed (its error shows above): not an empty library.
           null
         ) : isOciView ? (

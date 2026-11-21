@@ -10,10 +10,10 @@ import { Cpu, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
 import HelpIcon from '../../components/shared/HelpIcon.jsx';
-import { useSettingsStore } from '../../store/settingsStore.js';
-import { getHostGpus } from '../../api/host.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
-import SettingsGate from '../../components/shared/SettingsGate.jsx';
+import RecordGate from '../../components/shared/RecordGate.jsx';
 import { errorText } from '../../api/errors.js';
 
 const iconBtn =
@@ -79,29 +79,21 @@ function librariesEqual(a, b) {
 }
 
 export default function JellyfinAppSection({ config, onSave }) {
-  const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const settings = settingsRecord.data;
 
   const [form, setForm] = useState(() => parseAppConfig(config));
   const [original, setOriginal] = useState(() => parseAppConfig(config));
-  const [hostGpus, setHostGpus] = useState(null);
-  const [gpuError, setGpuError] = useState(null);
+  const gpus = useRecord(RECORD.HOST_GPUS);
+  const hostGpus = gpus.data ? (Array.isArray(gpus.data.gpus) ? gpus.data.gpus : []) : (gpus.error ? [] : null);
+  /* A failed read of the host's GPUs shows once, in the Devices section: here the
+   * choice is only unavailable. */
+  const gpuUnknown = gpus.data == null && gpus.status === 'error';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
-  useEffect(() => {
-    if (!settings) loadSettings().catch(() => {});
-  }, [settings, loadSettings]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getHostGpus()
-      .then((res) => { if (!cancelled) setHostGpus(Array.isArray(res?.gpus) ? res.gpus : []); })
-      .catch((err) => { if (!cancelled) { setHostGpus([]); setGpuError(errorText(err)); } });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     const parsed = parseAppConfig(config);
@@ -209,125 +201,129 @@ export default function JellyfinAppSection({ config, onSave }) {
       saving={saving}
       isDirty={dirty && !hasRowErrors}
     >
-      <SettingsGate label="storage settings">
-      <div className="space-y-4">
-        <div>
-          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
-            <Folder size={12} />
-            Media libraries
-            <HelpIcon
-              size={12}
-              text="Each library mounts a Storage source (Host Mgmt → Storage) at /media/<label>. Add the matching libraries inside Jellyfin's Dashboard pointing to those paths."
-            />
-          </div>
-          {form.libraries.length === 0 ? (
-            <p className="text-[11px] text-text-muted">
-              No libraries configured. Add one to mount a Storage source at <code>/media/&lt;label&gt;</code> inside the container.
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {form.libraries.map((lib) => {
-                const err = rowError(lib);
-                const source = storageMounts.find((m) => m.id === lib.sourceId);
-                return (
-                  <div key={lib.rowId} className="space-y-0.5">
-                    <div className="flex items-center gap-2 rounded-md border border-surface-border px-2.5 py-1.5">
-                      <span className="shrink-0 font-mono text-xs text-text-primary">/media/{(lib.label || '?').trim() || '?'}</span>
-                      <span className="min-w-0 flex-1 truncate text-[11px] text-text-muted">
-                        {source ? (source.label || source.id) : lib.sourceId || '—'}
-                        {lib.subPath ? ` / ${lib.subPath}` : ''}
-                      </span>
-                      <button
-                        type="button"
-                        className={iconBtn}
-                        title="Edit library"
-                        aria-label="Edit library"
-                        onClick={() => setEditor({ open: true, rowId: lib.rowId })}
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
-                        title="Remove library"
-                        aria-label="Remove library"
-                        onClick={() => removeLibrary(lib.rowId)}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    {err && (
-                      <p className="text-[11px] text-status-stopped">{err}</p>
-                    )}
+      <RecordGate record={settingsRecord} what="storage settings">
+        {() => (
+          <>
+            <div className="space-y-4">
+              <div>
+                <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+                  <Folder size={12} />
+                  Media libraries
+                  <HelpIcon
+                    size={12}
+                    text="Each library mounts a Storage source (Host Mgmt → Storage) at /media/<label>. Add the matching libraries inside Jellyfin's Dashboard pointing to those paths."
+                  />
+                </div>
+                {form.libraries.length === 0 ? (
+                  <p className="text-[11px] text-text-muted">
+                    No libraries configured. Add one to mount a Storage source at <code>/media/&lt;label&gt;</code> inside the container.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {form.libraries.map((lib) => {
+                      const err = rowError(lib);
+                      const source = storageMounts.find((m) => m.id === lib.sourceId);
+                      return (
+                        <div key={lib.rowId} className="space-y-0.5">
+                          <div className="flex items-center gap-2 rounded-md border border-surface-border px-2.5 py-1.5">
+                            <span className="shrink-0 font-mono text-xs text-text-primary">/media/{(lib.label || '?').trim() || '?'}</span>
+                            <span className="min-w-0 flex-1 truncate text-[11px] text-text-muted">
+                              {source ? (source.label || source.id) : lib.sourceId || '—'}
+                              {lib.subPath ? ` / ${lib.subPath}` : ''}
+                            </span>
+                            <button
+                              type="button"
+                              className={iconBtn}
+                              title="Edit library"
+                              aria-label="Edit library"
+                              onClick={() => setEditor({ open: true, rowId: lib.rowId })}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
+                              title="Remove library"
+                              aria-label="Remove library"
+                              onClick={() => removeLibrary(lib.rowId)}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                          {err && (
+                            <p className="text-[11px] text-status-stopped">{err}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                )}
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    className={iconBtn}
+                    title="Add library"
+                    aria-label="Add library"
+                    onClick={() => setEditor({ open: true, rowId: null })}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <JellyfinLibraryEditorModal
+                open={editor.open}
+                library={editingLibrary}
+                storageMounts={storageMounts}
+                validateLabel={validateModalLabel}
+                validateSubPath={isValidSubPath}
+                onApply={applyLibrary}
+                onClose={() => setEditor({ open: false, rowId: null })}
+              />
+
+              <div>
+                <label className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted" htmlFor="jellyfin-published-url">
+                  Published server URL
+                  <HelpIcon
+                    size={12}
+                    text="Address Jellyfin advertises to clients (apps, browsers). Defaults to the container's mDNS hostname."
+                  />
+                </label>
+                <input
+                  id="jellyfin-published-url"
+                  type="text"
+                  placeholder="http://jellyfin.local:8096"
+                  value={form.publishedUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, publishedUrl: e.target.value }))}
+                  className="input-field text-xs"
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-3 rounded-md border border-surface-border bg-surface-card px-3 py-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[12px] font-medium text-text">
+                    <Cpu size={12} className="text-text-muted" />
+                    Hardware acceleration
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-text-muted">
+                    {gpuAvailable
+                      ? `Expose the host GPU (${gpuLabel}) to Jellyfin. After enabling, turn on hardware acceleration in Jellyfin's Dashboard → Playback (VAAPI / device /dev/dri/renderD128).`
+                      : hostGpus == null ? 'Checking the host for a GPU…'
+                        : gpuUnknown ? 'Unavailable: the host GPUs could not be listed (see Devices).'
+                          : 'No supported GPU detected on the host (Intel/AMD render nodes only in v1).'}
+                  </p>
+                </div>
+                <Toggle
+                  checked={form.gpuEnabled}
+                  onChange={(v) => setForm((f) => ({ ...f, gpuEnabled: v }))}
+                  disabled={!gpuAvailable || saving}
+                />
+              </div>
+
             </div>
-          )}
-          <div className="mt-2">
-            <button
-              type="button"
-              className={iconBtn}
-              title="Add library"
-              aria-label="Add library"
-              onClick={() => setEditor({ open: true, rowId: null })}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-        </div>
-
-        <JellyfinLibraryEditorModal
-          open={editor.open}
-          library={editingLibrary}
-          storageMounts={storageMounts}
-          validateLabel={validateModalLabel}
-          validateSubPath={isValidSubPath}
-          onApply={applyLibrary}
-          onClose={() => setEditor({ open: false, rowId: null })}
-        />
-
-        <div>
-          <label className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted" htmlFor="jellyfin-published-url">
-            Published server URL
-            <HelpIcon
-              size={12}
-              text="Address Jellyfin advertises to clients (apps, browsers). Defaults to the container's mDNS hostname."
-            />
-          </label>
-          <input
-            id="jellyfin-published-url"
-            type="text"
-            placeholder="http://jellyfin.local:8096"
-            value={form.publishedUrl}
-            onChange={(e) => setForm((f) => ({ ...f, publishedUrl: e.target.value }))}
-            className="input-field text-xs"
-          />
-        </div>
-
-        <div className="flex items-start justify-between gap-3 rounded-md border border-surface-border bg-surface-card px-3 py-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 text-[12px] font-medium text-text">
-              <Cpu size={12} className="text-text-muted" />
-              Hardware acceleration
-            </div>
-            <p className="mt-0.5 text-[11px] text-text-muted">
-              {gpuAvailable
-                ? `Expose the host GPU (${gpuLabel}) to Jellyfin. After enabling, turn on hardware acceleration in Jellyfin's Dashboard → Playback (VAAPI / device /dev/dri/renderD128).`
-                : hostGpus == null ? 'Checking the host for a GPU…'
-                  : gpuError ? `Couldn't check the host for a GPU: ${gpuError}`
-                    : 'No supported GPU detected on the host (Intel/AMD render nodes only in v1).'}
-            </p>
-          </div>
-          <Toggle
-            checked={form.gpuEnabled}
-            onChange={(v) => setForm((f) => ({ ...f, gpuEnabled: v }))}
-            disabled={!gpuAvailable || saving}
-          />
-        </div>
-
-      </div>
-      </SettingsGate>
+          </>
+        )}
+      </RecordGate>
     </SectionCard>
   );
 }

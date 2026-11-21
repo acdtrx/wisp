@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Loader2, Trash2, ChevronDown, ChevronRight, Plus, Archive, ArchiveRestore, CopyPlus,
 } from 'lucide-react';
 
 import BackupModal from '../shared/BackupModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
+import RecordError from '../shared/RecordError.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -18,22 +18,21 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import {
   startBackup,
-  listBackups,
   restoreBackup,
   deleteBackup,
   startContainerBackup,
-  listContainerBackups,
   restoreContainerBackup,
   restoreContainerBackupInPlace,
   deleteContainerBackup,
 } from '../../api/backups.js';
-import { sendAndAwaitTopic, subscribeTopic } from '../../api/events.js';
+import { sendAndAwaitTopic } from '../../api/events.js';
 import {
   useBackgroundJobsStore, awaitJob, workloadBusyJob, workloadBackupJob, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { errorText } from '../../api/errors.js';
 import { JOB_KIND, TOPIC } from '../../../../shared/wireNames.js';
@@ -43,6 +42,7 @@ import { useBackupsStore } from '../../store/backupsStore.js';
  * progress (qemu holds the disks) — the backend refuses a backup then. */
 const VM_STOPPED_STATES = ['shutoff', 'nostate'];
 const NO_WORKLOADS = [];
+const NO_BACKUPS = [];
 
 /** Backup dir timestamps are ISO with `:` swapped to `-` (2026-05-08T06-30-00). */
 function backupTsToIso(ts) {
@@ -138,8 +138,13 @@ export default function BackupsPanel() {
   const containers = useContainerStore((s) => s.data) ?? NO_WORKLOADS;
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
-  const [vmBackups, setVmBackups] = useState([]);
-  const [ctBackups, setCtBackups] = useState([]);
+  /* The backup lists are records, read again on every `backups` frame (an attempt, a
+   * delete, a prune — from anywhere). */
+  const vmList = useRecord(RECORD.VM_BACKUPS);
+  const ctList = useRecord(RECORD.CONTAINER_BACKUPS);
+  const vmBackups = vmList.data ?? NO_BACKUPS;
+  const ctBackups = ctList.data ?? NO_BACKUPS;
+  const loading = vmList.status === 'loading' || ctList.status === 'loading';
   const status = useBackupsStore((s) => s.data);
   const statusError = useBackupsStore((s) => s.error);
   const connectStatus = useBackupsStore((s) => s.connect);
@@ -148,8 +153,9 @@ export default function BackupsPanel() {
     connectStatus();
     return () => disconnectStatus();
   }, [connectStatus, disconnectStatus]);
-  const settings = useSettingsStore((s) => s.settings);
-  const settingsError = useSettingsStore((s) => s.error);
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const settings = settingsRecord.data;
+  const settingsError = settingsRecord.error;
   const schedule = settings?.backupSchedule || null;
   const destinations = useMemo(() => {
     if (!settings) {
@@ -163,8 +169,6 @@ export default function BackupsPanel() {
     }
     return dests;
   }, [settings, settingsError]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
 
   /* Back up now (BackupModal) */
@@ -190,47 +194,6 @@ export default function BackupsPanel() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
-
-  /* Reads are numbered: only the newest one sent applies. A burst of `backups`
-   * frames (retention prunes one backup per frame) must not let a slow earlier
-   * read show a pruned backup again. */
-  const listReadsSent = useRef(0);
-  const fetchLists = useCallback((initial = false) => {
-    const request = ++listReadsSent.current;
-    if (initial) setLoading(true);
-    setError(null);
-    return Promise.allSettled([listBackups(), listContainerBackups()])
-      .then(([vmRes, ctRes]) => {
-        if (request !== listReadsSent.current) return;
-        // A failed refetch keeps the list already shown.
-        if (vmRes.status === 'fulfilled') setVmBackups(Array.isArray(vmRes.value) ? vmRes.value : []);
-        if (ctRes.status === 'fulfilled') setCtBackups(Array.isArray(ctRes.value) ? ctRes.value : []);
-        const errs = [vmRes, ctRes]
-          .filter((r) => r.status === 'rejected')
-          .map((r) => errorText(r.reason));
-        if (errs.length) setError(errs.join('; '));
-      })
-      .finally(() => { if (initial) setLoading(false); });
-  }, []);
-
-  useEffect(() => {
-    fetchLists(true);
-  }, [fetchLists]);
-
-  /* Each `backups` frame (the status, above) is also the cue that the backup lists
-   * changed (scheduler run, job finished, delete). */
-  const firstFrameRef = useRef(true);
-  useEffect(() => {
-    const unsubscribe = subscribeTopic(TOPIC.BACKUPS, () => {
-      if (firstFrameRef.current) {
-        firstFrameRef.current = false;
-        return undefined;
-      }
-      /* Returned, so a delete waiting on the frame waits for the lists too. */
-      return fetchLists();
-    });
-    return unsubscribe;
-  }, [fetchLists]);
 
   const groups = useMemo(() => {
     const map = new Map();
@@ -341,7 +304,6 @@ export default function BackupsPanel() {
       }
       setRestoreTarget(null);
       setRestoreName('');
-      fetchLists();
     } catch (err) {
       setRestoreError(errorText(err));
     } finally {
@@ -611,24 +573,21 @@ export default function BackupsPanel() {
       </div>
 
       <div className="flex-1 space-y-3 px-4 py-4 lg:px-6 lg:py-5">
-        <SettingsRefreshNotice />
+        <RecordError record={settingsRecord} what="settings" />
         {statusError && (
           <div className="rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped" role="alert">
             Couldn't load the last backup attempts: {statusError}
           </div>
         )}
-        {error && (
-          <div className="rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped">
-            {error}
-          </div>
-        )}
+        <RecordError record={vmList} what="VM backups" />
+        <RecordError record={ctList} what="container backups" />
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-text-muted">
             <Loader2 size={16} className="animate-spin" />
             Loading…
           </div>
         ) : visibleGroups.length === 0 ? (
-          error ? null : <p className="text-sm text-text-muted">
+          vmList.error || ctList.error ? null : <p className="text-sm text-text-muted">
             No backups yet. Back up a VM or container from its page and it will appear here.
           </p>
         ) : (

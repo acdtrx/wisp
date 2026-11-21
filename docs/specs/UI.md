@@ -143,7 +143,9 @@ The center panel content is controlled by the URL. `AppLayout` is a shell that r
 
 `/host/home` is the app's landing page: `/`, a bare `/host`, and any unknown path all land there, as does a host tab id that doesn't exist. The top-bar brand (glyph + wordmark) is a button back to `/host/home` from anywhere. Escape from a VM/container view and the "back to host" actions still go to `/host/overview` — those mean "leave this workload", not "go home"; the left panel's Host row likewise opens `/host/overview`, the host's own page.
 
-VM/container selection is derived from the URL: the VM and container routes read `:name` from the path and select that workload while they are mounted, deselecting it when they unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state. A config response that lands after the selection moved on is dropped (see [ERROR-HANDLING.md](ERROR-HANDLING.md) § Stale responses), so switching quickly from A to B always ends on B.
+VM/container selection is derived from the URL: the VM and container routes read `:name` from the path and select that workload while they are mounted, deselecting it when they unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state. A page shows the workload its URL names, so switching quickly from A to B always ends on B (see [ERROR-HANDLING.md](ERROR-HANDLING.md) § Stale responses).
+
+**A workload that is gone** (settled 2026-11-20): when the server answers that the workload a page names does not exist — deleted from another tab, by an agent, or never there (a mistyped or stale URL) — the page says so ("No VM named `x`", "No container named `x`") with a way back to the host overview. It never spins and never leaves on its own. While the workload's configuration loads, the header paints from its list entry and the sections wait. A workload renamed elsewhere is followed: the URL moves to the new name, but only while the page still shows the old one.
 
 ---
 
@@ -535,6 +537,7 @@ Used in Image Library, Backups, and other DataTable-based lists. On **Host** tab
 
 ## Loading States
 
+- Every view that reads has a loading, an empty and an error state (settled 2026-11-20): a loading line or skeleton until its first read answers; its own empty text when the read holds nothing; its read's error, with a Retry when nothing is shown yet, or dismissible above the data already shown, which stays.
 - Async operations show a spinner (`Loader2` icon with `animate-spin`)
 - Action buttons show spinner and disable during the operation
 - Section save buttons show spinner while saving

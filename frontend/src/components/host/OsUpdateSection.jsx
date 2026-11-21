@@ -3,10 +3,16 @@ import { Package, AlertCircle, RotateCcw, RefreshCw, Loader2 } from 'lucide-reac
 import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
-import { checkForUpdates, performUpgrade, listUpgradablePackages } from '../../api/host.js';
+import { checkForUpdates, performUpgrade } from '../../api/host.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { errorText } from '../../api/errors.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { useBusyCommand } from '../../hooks/useBusyCommand.js';
+import RecordGate from '../shared/RecordGate.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import RecordError from '../shared/RecordError.jsx';
 
 function formatBytes(b) {
   if (!b || b <= 0) return null;
@@ -50,11 +56,8 @@ export default function OsUpdateSection({ onRequestRestart }) {
   const [upgradeError, setUpgradeError] = useState(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [packagesLoading, setPackagesLoading] = useState(false);
-  const [packagesError, setPackagesError] = useState(null);
-  const [packages, setPackages] = useState(null);
-  const [downloadBytes, setDownloadBytes] = useState(0);
-  const [packagesAt, setPackagesAt] = useState(null);
+  const [refreshingPackages, runRefresh] = useBusyCommand();
+  const [refreshError, setRefreshError] = useState(null);
 
   const handleCheckUpdates = useCallback(async () => {
     setUpdateError(null);
@@ -64,16 +67,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     try {
       const result = await runPackageCheck();
       if (!result) return;
-      const { count: newCount } = result;
-      /* Invalidate the locally-rendered package list only if the count
-       * actually changed — otherwise the cached list is still accurate and
-       * the modal can keep opening instantly. The backend cache is updated
-       * regardless (the same apt invocation produces both count + list). */
-      if (manualCount != null && newCount !== manualCount) {
-        setPackages(null);
-        setPackagesError(null);
-      }
-      setManualCount(newCount);
+      setManualCount(result.count);
     } catch (err) {
       if (isBusyError(err)) {
         setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
@@ -83,7 +77,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     } finally {
       setChecking(false);
     }
-  }, [manualCount]);
+  }, []);
 
   const handleUpgrade = useCallback(async () => {
     setUpgradeError(null);
@@ -94,9 +88,6 @@ export default function OsUpdateSection({ onRequestRestart }) {
       await awaitJob((await performUpgrade()).jobId);
       setUpgradeSuccess(true);
       setManualCount(0);
-      setPackages([]);
-      setDownloadBytes(0);
-      setPackagesAt(null);
     } catch (err) {
       if (isBusyError(err)) {
         setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
@@ -108,36 +99,22 @@ export default function OsUpdateSection({ onRequestRestart }) {
     }
   }, []);
 
-  const fetchPackages = useCallback(async ({ refresh = false } = {}) => {
-    setPackagesError(null);
-    setPackagesLoading(true);
-    try {
-      if (refresh) await runPackageCheck();
-      const data = await listUpgradablePackages();
-      setPackages(data.packages);
-      setDownloadBytes(data.downloadBytes);
-      setPackagesAt(data.checkedAt);
-    } catch (err) {
-      if (isBusyError(err)) {
-        setPackagesError(BUSY_MESSAGE);
-      } else {
-        setPackagesError(errorText(err));
-      }
-    } finally {
-      setPackagesLoading(false);
-    }
+  const openDetails = useCallback(() => {
+    setRefreshError(null);
+    setDetailsOpen(true);
   }, []);
 
-  const openDetails = useCallback(() => {
-    setDetailsOpen(true);
-    /* Lazy-load on first open or after upgrade clears the list: the backend
-     * answers with what the last check (hourly, or any trigger) found. */
-    if (packages == null && !packagesLoading) fetchPackages();
-  }, [packages, packagesLoading, fetchPackages]);
-
+  /* Run the check: the list is read again when the stats say the check ran. */
   const handleRefreshPackages = useCallback(() => {
-    fetchPackages({ refresh: true });
-  }, [fetchPackages]);
+    setRefreshError(null);
+    runRefresh(async () => {
+      try {
+        await runPackageCheck();
+      } catch (err) {
+        setRefreshError(isBusyError(err) ? BUSY_MESSAGE : errorText(err));
+      }
+    });
+  }, [runRefresh]);
 
   const count = manualCount ?? (pendingUpdates > 0 ? pendingUpdates : 0);
   const available = count > 0;
@@ -167,16 +144,6 @@ export default function OsUpdateSection({ onRequestRestart }) {
   }
 
   const description = 'Install pending OS package updates.';
-
-  /* Compose the modal subtitle: package count + size, and when the check
-   * the list comes from ran, so the user knows when to refresh. */
-  let modalSubtitle = null;
-  if (packages != null) {
-    const parts = [`${packages.length} package${packages.length !== 1 ? 's' : ''}`];
-    if (downloadBytes > 0) parts.push(`${formatBytes(downloadBytes)} to download`);
-    parts.push(packagesAt ? `checked ${formatRelativeTime(packagesAt)}` : 'not checked yet');
-    modalSubtitle = parts.join(' · ');
-  }
 
   return (
     <>
@@ -224,36 +191,62 @@ export default function OsUpdateSection({ onRequestRestart }) {
         )}
       </UpdateCard>
 
-      <UpdateDetailsModal
-        open={detailsOpen}
-        title="Upgradable packages"
-        subtitle={modalSubtitle}
-        onClose={() => setDetailsOpen(false)}
-        headerAction={
-          packages != null && !packagesLoading && (
-            <button
-              type="button"
-              onClick={handleRefreshPackages}
-              disabled={packagesLoading}
-              title="Refresh package list"
-              aria-label="Refresh package list"
-              className="rounded-md border border-surface-border bg-surface-card p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
-            >
-              {packagesLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            </button>
-          )
-        }
-      >
-        {packagesLoading && (
-          <p className="text-xs text-text-muted">Loading…</p>
-        )}
-        {packagesError && (
-          <p className="text-xs text-status-stopped">{packagesError}</p>
-        )}
-        {!packagesLoading && !packagesError && packages != null && packages.length === 0 && (
+      {detailsOpen && (
+        <PackagesDialog
+          onClose={() => setDetailsOpen(false)}
+          onRefresh={handleRefreshPackages}
+          refreshing={refreshingPackages}
+          refreshError={refreshError}
+        />
+      )}
+    </>
+  );
+}
+
+/** The upgradable packages, as the last check found them: read while this dialog is
+ *  open, and again whenever a check ran (the stats say when). */
+function PackagesDialog({ onClose, onRefresh, refreshing, refreshError }) {
+  const record = useRecord(RECORD.OS_UPDATE_PACKAGES);
+  const data = record.data;
+  const packages = data?.packages ?? null;
+
+  /* The subtitle: package count + size, and when the check the list comes from ran,
+   * so the user knows when to refresh. */
+  let subtitle = null;
+  if (packages != null) {
+    const parts = [`${packages.length} package${packages.length !== 1 ? 's' : ''}`];
+    if (data.downloadBytes > 0) parts.push(`${formatBytes(data.downloadBytes)} to download`);
+    parts.push(data.checkedAt ? `checked ${formatRelativeTime(data.checkedAt)}` : 'not checked yet');
+    subtitle = parts.join(' · ');
+  }
+
+  return (
+    <UpdateDetailsModal
+      open
+      title="Upgradable packages"
+      subtitle={subtitle}
+      onClose={onClose}
+      headerAction={
+        packages != null && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="Refresh package list"
+            aria-label="Refresh package list"
+            className="rounded-md border border-surface-border bg-surface-card p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
+          >
+            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+          </button>
+        )
+      }
+    >
+      <ErrorBanner className="mb-2" error={refreshError} />
+      {record.data != null && <RecordError record={record} what="package list" className="mb-2" />}
+      <RecordGate record={record} what="package list">
+        {(found) => (found.packages.length === 0 ? (
           <p className="text-xs text-text-muted">No upgradable packages.</p>
-        )}
-        {!packagesLoading && !packagesError && packages != null && packages.length > 0 && (
+        ) : (
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-surface-card text-left text-text-muted">
               <tr>
@@ -263,7 +256,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
               </tr>
             </thead>
             <tbody className="text-text-secondary">
-              {packages.map((p) => (
+              {found.packages.map((p) => (
                 <tr key={p.name} className="border-t border-surface-border">
                   <td className="py-1 pr-3 font-mono text-text-primary">{p.name}</td>
                   <td className="py-1 pr-3 font-mono text-text-muted">{p.from || '—'}</td>
@@ -272,8 +265,8 @@ export default function OsUpdateSection({ onRequestRestart }) {
               ))}
             </tbody>
           </table>
-        )}
-      </UpdateDetailsModal>
-    </>
+        ))}
+      </RecordGate>
+    </UpdateDetailsModal>
   );
 }

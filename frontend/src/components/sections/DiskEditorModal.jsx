@@ -3,13 +3,13 @@ import RadioPills from '../shared/RadioPills.jsx';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
+import RecordError from '../shared/RecordError.jsx';
 import {
   FormField,
   FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
-import { listFiles } from '../../api/library.js';
 import {
   attachDiskToVM,
   createDiskOnVM,
@@ -20,6 +20,8 @@ import { formatSize } from '../../utils/formatters.js';
 import { runVMCommand } from '../../store/vmStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 
 const FORM_ID = 'disk-editor-form';
 
@@ -62,6 +64,34 @@ function positiveNumber(value) {
   return Number.isNaN(n) || n <= 0 ? null : n;
 }
 
+/** The library's disk images (the picker's Disk filter), read while this select shows. */
+function LibraryDiskSelect({ value, onChange }) {
+  const library = useRecord(RECORD.LIBRARY);
+  const images = (library.data ?? []).filter((f) => f.type === 'disk');
+  const loading = library.status === 'loading';
+  return (
+    <>
+      <select
+        id="disk-editor-image"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={loading}
+        ref={autoFocusField}
+        className="input-field"
+      >
+        {/* "None in the library" only for a read that succeeded empty. */}
+        <option value="">{loading ? 'Loading…' : library.data == null ? 'Library unavailable' : images.length ? 'Select…' : 'No disk images in the library'}</option>
+        {images.map((file) => (
+          <option key={file.name} value={libraryImagePath(file)}>
+            {`${file.name} · ${formatSize(file.size)}`}
+          </option>
+        ))}
+      </select>
+      <RecordError record={library} what="library" className="mt-1" />
+    </>
+  );
+}
+
 /**
  * Modal form editor for one VM block disk (see docs/FRONTEND-RULES.md § Modal form
  * editor). Two entry points: edit — the `disk` row (`sda` / `sdb`) with its size
@@ -82,8 +112,6 @@ export default function DiskEditorModal({
   onClose,
 }) {
   const [form, setForm] = useState(() => formFromDisk(null, 'virtio'));
-  const [images, setImages] = useState([]);
-  const [imagesLoading, setImagesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -94,28 +122,6 @@ export default function DiskEditorModal({
     setForm(formFromDisk(disk, defaultBus));
     setError(null);
   }, [open, disk]);
-
-  /* The attach-existing select needs the library's disk images — the same list
-   * the picker shows under its Disk filter. Fetched when the add modal opens. */
-  useEffect(() => {
-    if (!open || isEdit) return undefined;
-    let cancelled = false;
-    setImagesLoading(true);
-    listFiles('disk')
-      .then((files) => {
-        if (!cancelled) setImages(Array.isArray(files) ? files : []);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setImages([]);
-          setError(errorText(err));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setImagesLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [open, isEdit]);
 
   const setField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -222,21 +228,7 @@ export default function DiskEditorModal({
             htmlFor="disk-editor-image"
             hint={imageError || 'Disk images from the library; the original file is attached as-is.'}
           >
-            <select
-              id="disk-editor-image"
-              value={form.imagePath}
-              onChange={(e) => setField('imagePath', e.target.value)}
-              disabled={imagesLoading}
-              ref={autoFocusField}
-              className="input-field"
-            >
-              <option value="">{imagesLoading ? 'Loading…' : 'Select…'}</option>
-              {images.map((file) => (
-                <option key={file.name} value={libraryImagePath(file)}>
-                  {`${file.name} · ${formatSize(file.size)}`}
-                </option>
-              ))}
-            </select>
+            <LibraryDiskSelect value={form.imagePath} onChange={(value) => setField('imagePath', value)} />
           </FormField>
         )}
 

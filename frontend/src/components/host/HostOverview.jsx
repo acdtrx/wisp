@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment } from 'react';
 import { CircuitBoard, Cpu, Gpu, HardDrive, Loader2, MemoryStick, Network, Package, Usb } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import {
@@ -10,11 +10,12 @@ import {
   DataTableTd,
   dataTableCellPadX,
 } from '../shared/DataTableChrome.jsx';
-import { useHostStore } from '../../store/hostStore.js';
 import { useStatsStore } from '../../store/statsStore.js';
-import { getHostInfo } from '../../api/host.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordGate from '../shared/RecordGate.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
-import { errorText } from '../../api/errors.js';
+import RecordError from '../shared/RecordError.jsx';
 
 function formatBytes(bytes) {
   if (bytes >= 1024 ** 4) return `${formatDecimal(bytes / 1024 ** 4)} TB`;
@@ -336,14 +337,13 @@ function CoreUsageGrid({ title, cores }) {
 }
 
 export default function HostOverview() {
-  const { hardware, hardwareError, fetchHardware } = useHostStore();
+  const hardwareRecord = useRecord(RECORD.HOST_HARDWARE);
+  const hardware = hardwareRecord.data;
+  /* The hardware read's failure shows once, in the CPU card; the other cards show
+   * their loading line until it answers, and nothing in its place after a failure. */
+  const hardwareLoading = hardwareRecord.status === 'loading';
   const stats = useStatsStore((s) => s.data);
   const statsError = useStatsStore((s) => s.error);
-
-  useEffect(() => {
-    /* hardwareError in store handles display; swallow to avoid unhandled rejection */
-    fetchHardware().catch(() => {});
-  }, [fetchHardware]);
 
   if (!stats) {
     return (
@@ -380,7 +380,7 @@ export default function HostOverview() {
     <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
       {/* CPU */}
       <SectionCard title="CPU" titleIcon={<Cpu size={14} strokeWidth={2} />}>
-        {hardwareError && <p className="text-sm text-status-stopped mb-2">{hardwareError}</p>}
+        <RecordError record={hardwareRecord} what="hardware" className="mb-2" />
         <p className="text-sm text-text-secondary mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
           {hardware?.cpu && (
             <>
@@ -498,17 +498,16 @@ export default function HostOverview() {
             </div>
           </div>
         )}
-        {!hardware && !hardwareError && (
+        {hardwareLoading && (
           <p className="text-sm text-text-muted">Loading storage info…</p>
         )}
-        {hardware && !hardware.filesystems?.length && !hardwareError && (
+        {hardware && !hardware.filesystems?.length && (
           <p className="text-sm text-text-muted">No local filesystem mounts listed.</p>
         )}
       </SectionCard>
 
       {/* Network */}
       <SectionCard title="Network" titleIcon={<Network size={14} strokeWidth={2} />}>
-        {hardwareError && <p className="text-sm text-status-stopped mb-2">{hardwareError}</p>}
         {hardware?.network?.length > 0 ? (
           <>
             {/* Phones: two-line stacked rows (name/speed/state, then MAC) — no horizontal scroll */}
@@ -551,9 +550,9 @@ export default function HostOverview() {
               </DataTableScroll>
             </div>
           </>
-        ) : hardware && !hardwareError ? (
+        ) : hardware ? (
           <p className="text-sm text-text-muted">No network interfaces listed.</p>
-        ) : !hardwareError ? (
+        ) : hardwareLoading ? (
           <p className="text-sm text-text-muted">Loading network info…</p>
         ) : null}
       </SectionCard>
@@ -566,7 +565,7 @@ export default function HostOverview() {
       {/* Hardware inventory (PCI + DMI) */}
       <HostHardwareInventorySection
         hardwareLoaded={hardware != null}
-        hardwareError={hardwareError}
+        hardwareLoading={hardwareLoading}
         pciDevices={hardware?.pciDevices}
         system={hardware?.system}
         pciTempByAddress={buildPciTempByAddress(thermalZones)}
@@ -581,7 +580,7 @@ export default function HostOverview() {
 
 function HostHardwareInventorySection({
   hardwareLoaded,
-  hardwareError,
+  hardwareLoading,
   pciDevices,
   system,
   pciTempByAddress,
@@ -766,7 +765,6 @@ function HostHardwareInventorySection({
 
   return (
     <SectionCard title="Hardware" titleIcon={<CircuitBoard size={14} strokeWidth={2} />}>
-      {hardwareError && <p className="text-sm text-status-stopped mb-2">{hardwareError}</p>}
       {showSummaryLine && (
         <p className="text-sm text-text-secondary mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
           {hasDmiSummary && [system.boardVendor, system.boardName].filter(Boolean).length > 0 && (
@@ -879,32 +877,29 @@ function HostHardwareInventorySection({
           </DataTable>
         </DataTableScroll>
       ) : (
-        <p className={`text-sm ${hardwareError ? 'text-status-stopped' : 'text-text-muted'}`}>
-          {hardwareError ? 'Could not load hardware inventory.' : hardwareLoaded ? 'No hardware inventory listed.' : 'Loading hardware inventory…'}
-        </p>
+        (hardwareLoaded || hardwareLoading) && (
+          <p className="text-sm text-text-muted">
+            {hardwareLoaded ? 'No hardware inventory listed.' : 'Loading hardware inventory…'}
+          </p>
+        )
       )}
     </SectionCard>
   );
 }
 
 function HostSoftwareBlock() {
-  const [hostInfo, setHostInfo] = useState(null);
-  const [hostInfoError, setHostInfoError] = useState(null);
-  const load = useCallback(() => {
-    setHostInfoError(null);
-    getHostInfo().then(setHostInfo).catch((err) => setHostInfoError(errorText(err)));
-  }, []);
-  useEffect(() => { load(); }, [load]);
+  const record = useRecord(RECORD.HOST_INFO);
+  return (
+    <>
+      {record.data != null && <RecordError record={record} what="host information" className="mb-2" />}
+      <RecordGate record={record} what="host information" loading={<p className="text-sm text-text-muted">Loading…</p>}>
+        {(hostInfo) => <HostSoftwareRows hostInfo={hostInfo} />}
+      </RecordGate>
+    </>
+  );
+}
 
-  if (!hostInfo && hostInfoError) {
-    return (
-      <p className="text-sm text-status-stopped" role="alert">
-        Couldn't load host information: {hostInfoError}{' '}
-        <button type="button" onClick={load} className="font-medium underline">Retry</button>
-      </p>
-    );
-  }
-  if (!hostInfo) return <p className="text-sm text-text-muted">Loading…</p>;
+function HostSoftwareRows({ hostInfo }) {
 
   const osLabel = hostInfo.osRelease?.prettyName ?? (hostInfo.osRelease ? [hostInfo.osRelease.id, hostInfo.osRelease.versionId].filter(Boolean).join(' ') : null);
   const label = (name) => <span className="text-text-muted text-[11px] font-medium uppercase">{name}</span>;

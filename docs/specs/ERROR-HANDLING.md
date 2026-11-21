@@ -511,10 +511,13 @@ errors).
 
 ### Stale responses for a previous selection
 
-Selecting a VM or container fetches its config asynchronously. The stores (`vmStore`,
-`containerStore`) bump a selection sequence number on every selection change (select,
-deselect, rename-follow) and drop any `getVM` / `getContainer` response — success or error
-— that comes back after the selection changed, so a slow response for the
-previously-selected workload never overwrites the current one. The same
-newest-request-wins guard applies to the container Logs run list and to the Image
-Library's per-filter list fetch.
+Every record a view shows (a workload's configuration, the settings, a list) is read
+through one cache, which holds the one guard (settled 2026-11-20): every read is
+numbered; an answer is applied only when it is newer than the last one applied, so a view
+never shows an older answer after a newer one; a failure counts only when it is the
+newest read sent, so a failed read that a newer read has replaced shows nothing; a
+failure keeps the data already shown, and an older answer landing after the newest
+failed keeps that failure. A read is aborted when nothing shows its record any more,
+and a page shows only the workload its URL names, so a slow answer for the
+previously-selected workload never reaches the current one. A 404 is the record being
+gone, not an error.

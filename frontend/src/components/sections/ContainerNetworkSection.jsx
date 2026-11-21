@@ -6,7 +6,6 @@ import {
 import SectionCard from '../shared/SectionCard.jsx';
 import Modal from '../shared/Modal.jsx';
 import { randomMac } from '../../utils/randomMac.js';
-import { getHostBridges } from '../../api/vms.js';
 import { isVlanLikeBridgeName } from '../../utils/bridgeNames.js';
 import {
   KNOWN_SERVICE_TYPES, DEFAULT_TXT_FOR_TYPE, isValidServiceType,
@@ -16,8 +15,13 @@ import {
   addContainerService, updateContainerService, removeContainerService,
 } from '../../api/containers.js';
 import { runContainerCommand } from '../../store/containerStore.js';
-import LoadHint from '../shared/LoadHint.jsx';
+import RecordError from '../shared/RecordError.jsx';
+import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { errorText } from '../../api/errors.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+
+const NO_BRIDGES = [];
 
 function serviceProto(type) {
   return typeof type === 'string' && type.endsWith('._udp') ? 'udp' : 'tcp';
@@ -101,8 +105,9 @@ export default function ContainerNetworkSection({
   const [error, setError] = useState(null);
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !isCreating && !!config.pendingRestart;
-  const [bridgesFailed, setBridgesFailed] = useState(false);
-  const [bridges, setBridges] = useState([]);
+  /* The bridges a container can join, kept current as bridges are made or removed. */
+  const bridgesRecord = useRecord(RECORD.HOST_BRIDGES);
+  const bridges = bridgesRecord.data ?? NO_BRIDGES;
 
   /** Service editor strip state: { port: number|null, hasExisting, portEditable, draft, saving, error } */
   const [strip, setStrip] = useState(null);
@@ -241,28 +246,19 @@ export default function ContainerNetworkSection({
     setStrip(null);
   }, [config.name]);
 
+  /* Create flow: the first plain bridge is the default, once the bridges are known. */
   useEffect(() => {
-    getHostBridges()
-      .then((b) => {
-        setBridges(b);
-        setBridgesFailed(false);
-        if (isCreating && !config.network?.interface && b.length > 0) {
-          const pick = b.find((name) => !isVlanLikeBridgeName(name)) ?? b[0];
-          setInterfaceDraft(pick);
-          setOriginalInterface(pick);
-          onFormChange?.({
-            network: {
-              ...(config.network || {}),
-              interface: pick,
-            },
-          });
-        }
-      })
-      .catch(() => {
-        setBridges([]);
-        setBridgesFailed(true);
-      });
-  }, [isCreating, config.network?.interface, onFormChange]);
+    if (!isCreating || config.network?.interface || bridges.length === 0) return;
+    const pick = bridges.find((name) => !isVlanLikeBridgeName(name)) ?? bridges[0];
+    setInterfaceDraft(pick);
+    setOriginalInterface(pick);
+    onFormChange?.({
+      network: {
+        ...(config.network || {}),
+        interface: pick,
+      },
+    });
+  }, [isCreating, config.network?.interface, onFormChange, bridges]);
 
   const norm = (s) => (s || '').trim().toLowerCase();
   const normInterface = (s) => (s || '').trim();
@@ -322,7 +318,7 @@ export default function ContainerNetworkSection({
       error={error}
       requiresRestart={requiresRestart}
     >
-      {bridgesFailed && <LoadHint what="the host bridges" className="mb-2" />}
+      <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         <Field label="Interface">
           {interfaceEditable ? (
@@ -331,7 +327,7 @@ export default function ContainerNetworkSection({
               onChange={(e) => applyInterfaceDraft(e.target.value)}
               className="input-field h-8 min-w-[130px] max-w-[180px]"
             >
-              {!interfaceDraft && <option value="">Select…</option>}
+              {!interfaceDraft && <option value="">{bridgeChoice(bridgesRecord)}</option>}
               {bridges.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}

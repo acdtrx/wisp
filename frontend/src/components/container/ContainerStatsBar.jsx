@@ -1,12 +1,13 @@
-import { useContainerStore, useContainerStatsStore } from '../../store/containerStore.js';
+import { useContainer, useContainerStatsStore } from '../../store/containerStore.js';
 import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal, formatUptimeMs, formatLanIpHost } from '../../utils/formatters.js';
 import { liveData } from '../../store/streamStore.js';
 
-export default function ContainerStatsBar() {
+export default function ContainerStatsBar({ name }) {
   /* Live stats only: none while the stream is down or its gather failed. */
   const stats = useContainerStatsStore(liveData);
-  const config = useContainerStore((s) => s.config);
+  const { config: loaded, seed } = useContainer(name);
+  const config = loaded ?? seed;
 
   if (!config) return null;
 

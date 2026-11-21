@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
-import { getCloudInit, updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
+import { updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
 import { runVMCommand } from '../../store/vmStore.js';
-import { useChanges } from '../../hooks/useChanges.js';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordGate from '../shared/RecordGate.jsx';
+import RecordError from '../shared/RecordError.jsx';
 
 /** API returns `{ enabled: false }` when no cloud-init.json exists. */
 function isBareCloudInitPlaceholder(data) {
@@ -45,12 +47,11 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
   const vmName = vmConfig.name;
 
   const [collapsed, setCollapsed] = useState(!isCreating);
-  const [config, setConfig] = useState(null);
+  const cloudInit = useRecord(RECORD.VM_CLOUD_INIT, isCreating ? null : vmName);
+  const config = cloudInit.data && !isBareCloudInitPlaceholder(cloudInit.data) ? cloudInit.data : null;
   /* Until the first read lands, and when it fails, nothing may offer to
    * configure cloud-init: a failed read is not "no configuration", and
    * Configure would overwrite the real one. */
-  const [loading, setLoading] = useState(!isCreating);
-  const [loadError, setLoadError] = useState(null);
   const [form, setForm] = useState(() => {
     const hostname = (initialCloudInit?.hostname) || vmConfig.name || '';
     if (initialCloudInit && typeof initialCloudInit === 'object') {
@@ -72,32 +73,6 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
   const [ghKeys, setGhKeys] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
   const prevVmNameRef = useRef(vmName);
-  /* Each read is numbered; only one newer than the last applied lands, so two quick
-   * re-reads can't apply out of order. */
-  const readsRef = useRef({ sent: 0, applied: 0 });
-
-  const loadConfig = useCallback(async () => {
-    if (isCreating) return;
-    const reads = readsRef.current;
-    const read = ++reads.sent;
-    setLoading(true);
-    try {
-      const data = await getCloudInit(vmName);
-      if (read <= reads.applied) return;
-      reads.applied = read;
-      setConfig(isBareCloudInitPlaceholder(data) ? null : data);
-      setLoadError(null);
-    } catch (err) {
-      if (read <= reads.applied) return;
-      setLoadError(errorText(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [vmName, isCreating]);
-
-  useEffect(() => { loadConfig(); }, [loadConfig]);
-  useChanges(CHANGE_KIND.VM, isCreating ? null : vmName, loadConfig);
-
   // In create mode, keep hostname prefilled with VM name when name changes (until user edits hostname)
   useEffect(() => {
     if (!isCreating || vmName === prevVmNameRef.current) return;
@@ -246,23 +221,19 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
     >
       {!editing ? (
         <div className="space-y-3">
-          {loading && !hasConfig && !loadError ? (
-            <div className="flex items-center gap-2 py-4 text-xs text-text-muted">
-              <Loader2 size={14} className="animate-spin" /> Loading cloud-init…
-            </div>
-          ) : loadError ? (
-            <div className="flex flex-col items-center gap-3 py-4">
-              <AlertCircle size={24} className="text-status-stopped" aria-hidden />
-              <p className="text-xs text-status-stopped">Couldn't load the cloud-init configuration: {loadError}</p>
-              <button
-                type="button"
-                onClick={loadConfig}
-                disabled={loading}
-                className="flex items-center gap-1.5 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface disabled:opacity-50 transition-colors duration-150"
-              >
-                {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Retry
-              </button>
-            </div>
+          {cloudInit.data != null && <RecordError record={cloudInit} what="cloud-init configuration" />}
+          {cloudInit.data == null ? (
+            <RecordGate
+              record={cloudInit}
+              what="cloud-init configuration"
+              loading={(
+                <div className="flex items-center gap-2 py-4 text-xs text-text-muted">
+                  <Loader2 size={14} className="animate-spin" /> Loading cloud-init…
+                </div>
+              )}
+            >
+              {() => null}
+            </RecordGate>
           ) : hasConfig ? (
             <>
               <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">

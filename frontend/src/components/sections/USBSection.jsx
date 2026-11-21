@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, Loader2, Plus, Unplug, Usb } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import UsbAttachModal from '../shared/UsbAttachModal.jsx';
-import { getVMUSB, attachUSBToVM, detachUSBFromVM } from '../../api/vms.js';
+import { attachUSBToVM, detachUSBFromVM } from '../../api/vms.js';
 import { runVMCommand } from '../../store/vmStore.js';
-import { useChanges } from '../../hooks/useChanges.js';
 import { useUsbStore } from '../../store/usbStore.js';
 import {
   DataTableScroll,
@@ -19,7 +18,11 @@ import {
   dataTableEmptyCellClass,
 } from '../shared/DataTableChrome.jsx';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordError from '../shared/RecordError.jsx';
+
+const NO_DEVICES = [];
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-status-stopped transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -32,51 +35,18 @@ export default function USBSection({ vmConfig, busyReason }) {
   const connectUsb = useUsbStore((s) => s.connect);
   const disconnectUsb = useUsbStore((s) => s.disconnect);
 
-  const [attachedDevices, setAttachedDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [attachedError, setAttachedError] = useState(null);
+  const vmName = vmConfig?.name;
+  const attached = useRecord(RECORD.VM_USB, vmName);
+  const attachedDevices = attached.data ?? NO_DEVICES;
+  const loading = attached.status === 'loading';
   const [actionLoading, setActionLoading] = useState(null);
   const [error, setError] = useState(null);
   const [attachModalOpen, setAttachModalOpen] = useState(false);
-  const abortRef = useRef(null);
-  /* Each read is numbered; only one newer than the last applied lands, so two quick
-   * re-reads can't apply out of order. */
-  const readsRef = useRef({ sent: 0, applied: 0 });
-
-  const vmName = vmConfig?.name;
 
   useEffect(() => {
     connectUsb();
     return () => disconnectUsb();
   }, [connectUsb, disconnectUsb]);
-
-  const fetchAttachedOnly = useCallback(async (signal) => {
-    const reads = readsRef.current;
-    const read = ++reads.sent;
-    try {
-      const attached = vmName ? await getVMUSB(vmName) : [];
-      if (signal?.aborted || read <= reads.applied) return;
-      reads.applied = read;
-      setAttachedDevices(attached);
-      setAttachedError(null);
-      setLoading(false);
-    } catch (err) {
-      if (signal?.aborted || read <= reads.applied) return;
-      // A failure is not "nothing attached": keep what was shown and say so.
-      setAttachedError(errorText(err));
-      setLoading(false);
-    }
-  }, [vmName]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setLoading(true);
-    fetchAttachedOnly(controller.signal);
-    return () => controller.abort();
-  }, [fetchAttachedOnly]);
-
-  useChanges(CHANGE_KIND.VM, vmName, () => fetchAttachedOnly(abortRef.current?.signal));
 
   const handleAttach = async (vendorId, productId) => {
     const key = `${vendorId}:${productId}`;
@@ -171,13 +141,13 @@ export default function USBSection({ vmConfig, busyReason }) {
         actionLoadingKey={actionLoading}
       />
 
-      {attachedError && (
-        <p className="py-1 text-xs text-status-stopped" role="alert">Couldn't load the attached devices: {attachedError}</p>
-      )}
+      <RecordError record={attached} what="attached devices" className="my-1" />
       {hostError && (
         <p className="py-1 text-xs text-status-stopped" role="alert">{hostError}</p>
       )}
-      {showSpinner && !(hostError && hostLoading) ? (
+      {/* Without the attached list (its read failed: the error state above; or the VM is
+          gone: the page says so), no table that would read as "none attached". */}
+      {attached.data == null && !loading ? null : showSpinner && !(hostError && hostLoading) ? (
         <p className="text-xs text-text-muted py-2">Loading USB devices…</p>
       ) : hostLoading ? null : hostList.length === 0 && attachedDevices.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">

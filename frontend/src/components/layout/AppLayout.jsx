@@ -2,13 +2,14 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import TopBar from './TopBar';
 import LeftPanel from './LeftPanel';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 
 export default function AppLayout() {
-  const connectSettings = useSettingsStore((s) => s.connect);
-  const disconnectSettings = useSettingsStore((s) => s.disconnect);
-  const settings = useSettingsStore((s) => s.settings);
+  /* The settings are read while the app shell shows, so every view that shows them
+   * finds them read. */
+  const settings = useRecord(RECORD.SETTINGS).data;
 
   useEffect(() => {
     if (!settings) {
@@ -23,11 +24,6 @@ export default function AppLayout() {
       document.title = 'Wisp';
     };
   }, [settings]);
-
-  useEffect(() => {
-    connectSettings();
-    return disconnectSettings;
-  }, [connectSettings, disconnectSettings]);
 
   /* The jobs topic feeds the tray and every workload's busy state. */
   const connectJobs = useBackgroundJobsStore((s) => s.connect);

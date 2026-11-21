@@ -89,13 +89,6 @@ answers 409 or 404. Closing it means waiting for the cue's re-read as well as th
 (found in the command-acks milestone 5 review, 2026-11-16). **Revisit trigger:** a user
 seeing that 409 or 404 after a delete or unmount.
 
-**A VM deleted elsewhere leaves its open tab on an endless spinner.** When another tab or
-an MCP agent deletes the VM a tab has open, the list's auto-deselect nulls the config, and
-the tab stays on `/vm/<name>` with the loading spinner: nothing navigates away or says the
-VM is gone. Predates command-acks (found in its milestone 3 review, 2026-11-16).
-**Revisit trigger:** the next work on the VM detail page, or a user left on a spinner after
-a delete.
-
 **A stale `vms` frame can undo a same-tab VM rename.** After a rename, the renaming tab
 follows it at once (`followRename`, then `navigate`, in `OverviewPanel.jsx`). A `vms`
 frame whose list was computed before libvirt's rename, arriving after that, shows the old
@@ -113,11 +106,6 @@ longer reads an empty frame as "everything was deleted" (found 2026-11-20, phase
 It belongs with phase 5's "strict manager" ruling (C-5, V-8): a list that cannot be read
 fails. **Revisit trigger:** phase 5, or a user seeing an empty sidebar while libvirt or
 containerd is down.
-
-**A VM rename navigates even after the user moved on.** `handleSectionSave` in
-`OverviewPanel.jsx` navigates to the renamed VM once the save resolves, even if the user
-opened another VM while it ran. Predates command-acks (found in its milestone 3 review,
-2026-11-16). **Revisit trigger:** a user pulled back to a VM they had left.
 
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens

@@ -201,7 +201,8 @@ Why here: graded "strained", and it needs phase 3's job and error shapes.
 - Topic and kind names as shared constants on both sides, with a check; an unknown job
   kind no longer empties the tray (D-7).
 - `vmStore` and `containerStore` on one shared base (D-5).
-- Inline errors can be dismissed; the SSE twin is merged; wrappers take a `signal`;
+- Inline errors can be dismissed, through one `ErrorBanner` (moved here from phase 6);
+  the SSE twin is merged; wrappers take a `signal`;
   `hostStore` and the unused exports go; bridge pickers follow their topic (D-9).
 - Backlog, where the shared code closes them: "A VM deleted elsewhere leaves its open tab
   on an endless spinner", "The VM General section renders the list seed", "A VM rename
@@ -258,7 +259,7 @@ test host.
 Why here: "workable", low risk, large in files touched. After phase 4, which edits the
 same files.
 
-- Primitives: Button, IconButton, Badge, Tabs, Field, ErrorBanner, ProgressBar,
+- Primitives: Button, IconButton, Badge, Tabs, Field, ProgressBar,
   SubHeading; every caller converted (U-1, U-2). A check fails a raw `<button>` outside
   them.
 - `DisksSection.jsx` and `VmNetworkInterfacesSection.jsx` each split into a create and a

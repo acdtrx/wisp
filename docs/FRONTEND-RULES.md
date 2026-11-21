@@ -21,6 +21,15 @@ holds the UI library's rules.
     (`store/workloadStore.js`) with a spec each. The wire's names (topics, change
     kinds, job kinds) come from `shared/wireNames.js`, never a bare string (ESLint),
     and the functions that take one refuse a name not in it.
+  - Applied: read a record through `useRecord(kind, id)` (`hooks/useRecord.js`) and the
+    one table of record kinds (`store/records.js`), which says once per kind how it is
+    read and the cues it is read again on (a `changes` kind, or a topic). A record is
+    read while something shows it, once for everyone showing it, again on its cues and
+    when the events stream reconnects, and aborted when nothing shows it; every read
+    wrapper in `api/` takes a `signal`. The hook answers `{ data, status, error,
+    reload, dismiss }`, `status` one of loading, ready, error, gone (a 404 is gone, not
+    an error); the stale-answer guard is the cache's alone
+    (`specs/ERROR-HANDLING.md`, Stale responses).
   - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
     its new state (its topic's next frame, or the `changes` reference and the re-read it
     triggers), so a section or modal closes onto fresh data; a command error ends it at
@@ -44,6 +53,14 @@ holds the UI library's rules.
 ## Errors
 
 - Keep an error shown to the user visible until the user dismisses it.
+  - Applied: show an error through `ErrorBanner` (`components/shared/ErrorBanner.jsx`),
+    a record's through `RecordError`.
+  - Applied: a command's error stays until the user dismisses it or runs that command
+    again.
+  - Applied: a failed read is the view's error state: it stays until a read succeeds or
+    the user dismisses it, and it never hides data that was already shown. With no data
+    shown, the error state is the view itself, with a Retry; a dismiss exists only where
+    data is shown under the banner.
 
 ## Design
 
@@ -392,7 +409,7 @@ Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with t
 - **[ContainerMountsSection.jsx](../frontend/src/components/sections/ContainerMountsSection.jsx)** — Row-scoped mount API; read-only rows at every breakpoint. Three header adds (`Plus`+`File` / `Plus`+`Folder` / `Plus`+`MemoryStick`) and row `Pencil` open **[ContainerMountEditorModal.jsx](../frontend/src/components/sections/ContainerMountEditorModal.jsx)** — one modal with two entry points (create with the tapped `kind`, or edit the row) like `RemovableDriveEditorModal`, its fields switching on the mount kind. Edit-file / Upload / Zip-upload stay row actions, so the set reaches five: below `sm` the Actions column hides and the buttons move into the tap-to-expand strip, with every other column stacked under the container path.
 - **[ContainerEnvSection.jsx](../frontend/src/components/sections/ContainerEnvSection.jsx)** — Read-only rows at every breakpoint; header `Plus`+`Braces` and row `Pencil` open **[EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx)**; two row actions (Edit, Remove) fit on phones, so the Actions column stays visible (HostNetworkBridges style, no tap-to-expand strip); the generate-secret `ConfirmDialog` is nested inside the editor modal.
 - **[VmNetworkInterfacesSection.jsx](../frontend/src/components/sections/VmNetworkInterfacesSection.jsx)** — Read-only rows at every breakpoint on the detail page; header `Plus`+`Network` and row `Pencil` open **[NicEditorModal.jsx](../frontend/src/components/sections/NicEditorModal.jsx)**; two row actions (Edit, Remove) fit on phones, so the Actions column stays visible and the Model / MAC columns collapse under the bridge instead. The `networkLocked` (VM running) state **disables** Add / Edit / Remove rather than hiding them, with the lock note visible at every width. The `isCreating` branch keeps its inline draft rows, so the model picker lives in its own file ([NicModelPills.jsx](../frontend/src/components/sections/NicModelPills.jsx)) shared by both.
-- **[DisksSection.jsx](../frontend/src/components/sections/DisksSection.jsx)** — Fixed slot model (`sda`/`sdb` block disks, `sdc`/`sdd` CD-ROMs, `sde` cloud-init seed), so rows are hand-written rather than mapped. Detail page: read-only rows at every breakpoint; header **`Plus`+`HardDrive`** and row `Pencil` open **[DiskEditorModal.jsx](../frontend/src/components/sections/DiskEditorModal.jsx)** — one modal with two entry points (edit the disk's size + bus, or add the second disk as a new volume or an attached library image). Mutations stay the row-scoped disk APIs, in the order the inline editors used (`updateDiskBus` then `resizeDisk`; `attachDiskToVM` then the optional `resizeDisk`). **No nested picker** (settled 2026-08-25): attach-existing uses a plain `select` fed by `listFiles('disk')`, while ISO attach/change keeps opening `ImageLibraryModal` directly from the row — the picker *is* that flow's form, so nesting it inside an editor modal would stack two dialogs for no gain. Two row actions fit on phones, so the Actions column stays visible and Size / Image / Image type / Bus collapse under the slot label instead. The `isCreating` branch keeps its inline draft rows (create stays desktop-oriented).
+- **[DisksSection.jsx](../frontend/src/components/sections/DisksSection.jsx)** — Fixed slot model (`sda`/`sdb` block disks, `sdc`/`sdd` CD-ROMs, `sde` cloud-init seed), so rows are hand-written rather than mapped. Detail page: read-only rows at every breakpoint; header **`Plus`+`HardDrive`** and row `Pencil` open **[DiskEditorModal.jsx](../frontend/src/components/sections/DiskEditorModal.jsx)** — one modal with two entry points (edit the disk's size + bus, or add the second disk as a new volume or an attached library image). Mutations stay the row-scoped disk APIs, in the order the inline editors used (`updateDiskBus` then `resizeDisk`; `attachDiskToVM` then the optional `resizeDisk`). **No nested picker** (settled 2026-08-25): the attach select lists the library's disk images, while ISO attach/change keeps opening `ImageLibraryModal` directly from the row — the picker *is* that flow's form, so nesting it inside an editor modal would stack two dialogs for no gain. Two row actions fit on phones, so the Actions column stays visible and Size / Image / Image type / Bus collapse under the slot label instead. The `isCreating` branch keeps its inline draft rows (create stays desktop-oriented).
 - **[ContainerNetworkSection.jsx](../frontend/src/components/sections/ContainerNetworkSection.jsx)** — Pill row of exposed ports; a pill (or the trailing dashed `+` pill for non-EXPOSE ports) opens a **`Modal`** for per-port mDNS service editing (`Radio` icon inside pill when configured, no color encoding).
 - **[HostStorage.jsx](../frontend/src/components/host/HostStorage.jsx)** — Row-scoped mount API (`/api/host/mounts`) for SMB + adopted removable drives; `DataTable` chrome with **read-only rows** — create/edit/adopt go through `SmbShareEditorModal` / `RemovableDriveEditorModal`; mount state as a **status dot before the label** (no Status column); on phones the Actions column is hidden and actions **expand under the row text on tap**; combined mount/unmount with mounted-state background; SMB **Check** uses green/red on the shield button (errors on hover); separate "Detected drives" table rendered only when non-empty, visible at all breakpoints.
 - **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Collapsible per-workload cards (custom rich headers on the SectionCard visual tokens); per-backup icon actions on row hover; typed-name `ConfirmDialog` for container restore-in-place.

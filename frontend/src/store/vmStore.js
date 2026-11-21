@@ -1,12 +1,12 @@
 import * as vmApi from '../api/vms.js';
 import { CHANGE_KIND, TOPIC } from '../../../shared/wireNames.js';
+import { RECORD } from './records.js';
 import { createWorkloadStore } from './workloadStore.js';
 
 const vms = createWorkloadStore({
-  noun: 'VM',
   listTopic: TOPIC.VMS,
   changeKind: CHANGE_KIND.VM,
-  get: (name) => vmApi.getVM(name),
+  record: RECORD.VM,
   seed: (item) => ({
     name: item.name, uuid: item.uuid, state: item.state, stateCode: item.stateCode, vcpus: item.vcpus,
     memoryMiB: item.memoryMiB, osCategory: item.osCategory, iconId: item.iconId, pendingRestart: item.pendingRestart ?? null,
@@ -30,8 +30,11 @@ const vms = createWorkloadStore({
   }),
 });
 
-/** The VMs (`data`: the `vms` topic's list), the selected VM's config, and the VM commands. */
+/** The VMs (`data`: the `vms` topic's list), the VM a page shows, and the VM commands. */
 export const useVmStore = vms.useStore;
+
+/** VM `name` as its page shows it: its config record, with the list's live fields over it. */
+export const useVm = vms.useWorkload;
 
 /** The selected VM's stats, from its scoped stream. */
 export const useVmStatsStore = vms.useStatsStore;

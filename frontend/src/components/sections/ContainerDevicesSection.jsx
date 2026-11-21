@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Cpu, Check, X, Loader2, AlertTriangle } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
-import { getHostGpus } from '../../api/host.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import RecordError from '../shared/RecordError.jsx';
 import { errorText } from '../../api/errors.js';
 
 const iconBtn =
@@ -22,25 +24,12 @@ export default function ContainerDevicesSection({ config, onSave }) {
   const devices = Array.isArray(config?.devices) ? config.devices : [];
   const currentGpu = devices.find((d) => d?.type === 'gpu') || null;
 
-  const [hostGpus, setHostGpus] = useState(null);
-  const [loadError, setLoadError] = useState(null);
+  const gpus = useRecord(RECORD.HOST_GPUS);
+  const hostGpus = gpus.data ? (Array.isArray(gpus.data.gpus) ? gpus.data.gpus : []) : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [picking, setPicking] = useState(false);
   const [pickValue, setPickValue] = useState('');
-
-  const loadGpus = useCallback(async () => {
-    setLoadError(null);
-    try {
-      const res = await getHostGpus();
-      setHostGpus(Array.isArray(res?.gpus) ? res.gpus : []);
-    } catch (err) {
-      setLoadError(errorText(err));
-      setHostGpus(null);
-    }
-  }, []);
-
-  useEffect(() => { loadGpus(); }, [loadGpus]);
 
   const matchedHostGpu = currentGpu && Array.isArray(hostGpus)
     ? hostGpus.find((g) => g.device === currentGpu.device) || null
@@ -109,14 +98,15 @@ export default function ContainerDevicesSection({ config, onSave }) {
       titleIcon={<Cpu size={12} />}
       helpText="Share a host GPU (Intel/AMD render node) with the container for hardware acceleration like media transcoding. Restart the container to apply changes."
       requiresRestart={!!config.pendingRestart}
-      error={error || loadError}
+      error={error}
       headerAction={headerAction}
     >
+      {/* The host's GPUs, for the picker: their read's error state (a Retry before they
+          loaded, a dismiss over them); the configured device shows regardless. */}
+      <RecordError record={gpus} what="host GPUs" className="mb-2" />
       {!currentGpu && !picking && (
         <div className="rounded-md border border-dashed border-surface-border px-3 py-3 text-xs text-text-muted">
-          {loadError
-            ? 'No devices configured. The host GPUs could not be listed.'
-            : Array.isArray(hostGpus) && hostGpus.length === 0
+          {Array.isArray(hostGpus) && hostGpus.length === 0
               ? 'No supported GPUs detected on the host. Intel and AMD render nodes (/dev/dri/renderD*) are supported in v1.'
               : 'No devices configured.'}
         </div>

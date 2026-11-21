@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useContainerStore } from '../../store/containerStore.js';
+import { useContainer } from '../../store/containerStore.js';
 import ContainerConsoleToolbar from './ContainerConsoleToolbar.jsx';
 import ContainerConsole from './ContainerConsole.jsx';
 
@@ -11,7 +11,8 @@ export default function ContainerConsolePanel({ containerName }) {
   const consoleApiRef = useRef(null);
   const prevStateRef = useRef(undefined);
 
-  const state = useContainerStore((s) => s.config?.state);
+  const { config, seed } = useContainer(containerName);
+  const state = (config ?? seed)?.state;
   const isRunning = state === RUNNING_STATE;
 
   const handleConnect = useCallback(() => setConsoleConnected(true), []);

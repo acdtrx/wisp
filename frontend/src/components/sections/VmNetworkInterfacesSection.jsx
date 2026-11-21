@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Lock, Network, Shuffle, Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
-import { getHostBridges } from '../../api/vms.js';
 import { randomMac } from '../../utils/randomMac.js';
 import { randomId } from '../../utils/randomId.js';
 import {
@@ -19,8 +18,13 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import NicEditorModal from './NicEditorModal.jsx';
 import NicModelPills from './NicModelPills.jsx';
-import LoadHint from '../shared/LoadHint.jsx';
+import RecordError from '../shared/RecordError.jsx';
+import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { errorText } from '../../api/errors.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+
+const NO_BRIDGES = [];
 
 /** Compact icon button for the create-flow draft rows (desktop-only layout). */
 const draftIconBtn =
@@ -53,7 +57,9 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
   const networkLocked = (!isStopped && !isCreating) || vmBusy;
 
   const [nics, setNics] = useState(() => initNicsFromConfig(vmConfig.nics));
-  const [bridges, setBridges] = useState([]);
+  /* The bridges a NIC can take, kept current as bridges are made or removed. */
+  const bridgesRecord = useRecord(RECORD.HOST_BRIDGES);
+  const bridges = bridgesRecord.data ?? NO_BRIDGES;
   const nicsSignature = JSON.stringify(vmConfig.nics || []);
 
   /* The row is snapshotted when the editor opens so a background refresh of
@@ -61,16 +67,10 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
   const [editor, setEditor] = useState({ open: false, idx: null, nic: null });
   const [removingIdx, setRemovingIdx] = useState(null);
   const [error, setError] = useState(null);
-  const [bridgesFailed, setBridgesFailed] = useState(false);
 
   useEffect(() => {
     setNics(initNicsFromConfig(vmConfig.nics));
   }, [nicsSignature]);
-
-  useEffect(() => {
-    /* Non-fatal: the NIC section works with an empty bridge list, and says so */
-    getHostBridges().then((b) => { setBridges(b); setBridgesFailed(false); }).catch(() => setBridgesFailed(true));
-  }, []);
 
   const syncNicsToParent = (nextNics) => {
     if (isCreating && onFormChange) onFormChange({ nics: nextNics });
@@ -173,7 +173,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       error={error}
       headerAction={headerAdd}
     >
-      {bridgesFailed && <LoadHint what="the host bridges" className="mb-2" />}
+      <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
       <DataTableScroll>
         <DataTable>
           <thead>
@@ -218,7 +218,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         onChange={(e) => updateNic(idx, 'source', e.target.value)}
                         className="input-field h-8 w-full min-w-24 max-w-44 text-xs"
                       >
-                        {!nic.source && <option value="">Select…</option>}
+                        {!nic.source && <option value="">{bridgeChoice(bridgesRecord)}</option>}
                         {bridges.map((b) => (
                           <option key={b} value={b}>
                             {b}

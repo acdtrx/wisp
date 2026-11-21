@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Loader2, Plus, Trash2, Network } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
@@ -16,51 +16,26 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import BridgeCreateModal from './BridgeCreateModal.jsx';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
-import { useKindChanges } from '../../hooks/useChanges.js';
-import {
-  listManagedNetworkBridges,
-  deleteManagedNetworkBridge,
-} from '../../api/host.js';
+import { deleteManagedNetworkBridge } from '../../api/host.js';
+import RecordGate from '../shared/RecordGate.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import RecordError from '../shared/RecordError.jsx';
+
+const NO_BRIDGES = [];
 
 export default function HostNetworkBridges({ onError }) {
-  const [loading, setLoading] = useState(true);
   const [deletingName, setDeletingName] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [managed, setManaged] = useState([]);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [eligibleParents, setEligibleParents] = useState([]);
+  /* The managed bridges, read again when a create or delete settles (any tab). */
+  const bridges = useRecord(RECORD.NETWORK_BRIDGES);
+  const managed = Array.isArray(bridges.data?.managed) ? bridges.data.managed : NO_BRIDGES;
+  const eligibleParents = Array.isArray(bridges.data?.eligibleParents) ? bridges.data.eligibleParents : NO_BRIDGES;
 
   const reportError = useCallback((value) => {
     if (typeof onError === 'function') onError(value);
   }, [onError]);
-
-  /* Reads are numbered: only the newest one sent applies, or reports its failure. */
-  const readsSent = useRef(0);
-  const refresh = useCallback(async () => {
-    const request = ++readsSent.current;
-    try {
-      const data = await listManagedNetworkBridges();
-      if (request !== readsSent.current) return;
-      setManaged(Array.isArray(data.managed) ? data.managed : []);
-      setEligibleParents(Array.isArray(data.eligibleParents) ? data.eligibleParents : []);
-      setLoadFailed(false);
-    } catch (err) {
-      if (request !== readsSent.current) return;
-      setLoadFailed(true); // the error shows on the card; the list shown stays
-      reportError(errorText(err));
-    } finally {
-      if (request === readsSent.current) setLoading(false);
-    }
-  }, [reportError]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-  /* A bridge create or delete from any tab (announced when its job settles), or a
-   * reconnect, re-reads the list. */
-  useKindChanges(CHANGE_KIND.NETWORK_BRIDGES, refresh);
 
   const onDelete = async (name) => {
     setDeletingName(name);
@@ -100,62 +75,63 @@ export default function HostNetworkBridges({ onError }) {
       headerAction={headerAdd}
     >
       <div className="space-y-4">
-        {loading ? (
-          <p className="text-xs text-text-muted">Loading…</p>
-        ) : (
-          <DataTableScroll>
-            <DataTable>
-              <thead>
-                <tr className={dataTableHeadRowClass}>
-                  <DataTableTh dense className="w-48">Name</DataTableTh>
-                  <DataTableTh dense className="hidden sm:table-cell">Parent</DataTableTh>
-                  <DataTableTh dense className="hidden sm:table-cell">VLAN Id</DataTableTh>
-                  <DataTableTh dense className="hidden sm:table-cell">Status</DataTableTh>
-                  <DataTableTh dense align="right">Actions</DataTableTh>
-                </tr>
-              </thead>
-              <tbody>
-                {managed.length === 0 && (
-                  <tr className={dataTableBodyRowClass}>
-                    <td colSpan={5} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
-                      {loadFailed ? "Couldn't load the bridges." : 'No managed VLAN bridges yet.'}
-                    </td>
+        {bridges.data != null && <RecordError record={bridges} what="network bridges" />}
+        <RecordGate record={bridges} what="network bridges">
+          {() => (
+            <DataTableScroll>
+              <DataTable>
+                <thead>
+                  <tr className={dataTableHeadRowClass}>
+                    <DataTableTh dense className="w-48">Name</DataTableTh>
+                    <DataTableTh dense className="hidden sm:table-cell">Parent</DataTableTh>
+                    <DataTableTh dense className="hidden sm:table-cell">VLAN Id</DataTableTh>
+                    <DataTableTh dense className="hidden sm:table-cell">Status</DataTableTh>
+                    <DataTableTh dense align="right">Actions</DataTableTh>
                   </tr>
+                </thead>
+                <tbody>
+                  {managed.length === 0 && (
+                    <tr className={dataTableBodyRowClass}>
+                      <td colSpan={5} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
+                        No managed VLAN bridges yet.
+                      </td>
+                    </tr>
                 )}
-                {managed.map((item) => (
-                  <tr key={item.name} className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="w-48 font-mono text-sm text-text-primary">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span>{item.name}</span>
-                        <span className="font-sans text-xs text-text-muted sm:hidden">{item.baseBridge}</span>
-                      </div>
-                      <div className="mt-0.5 font-sans text-xs text-text-muted sm:hidden">
-                        VLAN {item.vlanId} · {item.present ? 'present' : 'missing'}
-                      </div>
-                    </DataTableTd>
-                    <DataTableTd dense className="hidden font-mono text-sm text-text-secondary sm:table-cell">{item.baseBridge}</DataTableTd>
-                    <DataTableTd dense className="hidden tabular-nums text-sm text-text-secondary sm:table-cell">{item.vlanId}</DataTableTd>
-                    <DataTableTd dense className="hidden text-sm text-text-secondary sm:table-cell">{item.present ? 'present' : 'missing'}</DataTableTd>
-                    <DataTableTd dense align="right">
-                      <DataTableRowActions forceVisible={deletingName === item.name}>
-                        <button
-                          type="button"
-                          onClick={() => onDelete(item.name)}
-                          disabled={deletingName === item.name}
-                          className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
-                          title={`Delete ${item.name}`}
-                          aria-label={`Delete bridge ${item.name}`}
-                        >
-                          {deletingName === item.name ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                        </button>
-                      </DataTableRowActions>
-                    </DataTableTd>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
-          </DataTableScroll>
-        )}
+                  {managed.map((item) => (
+                    <tr key={item.name} className={dataTableInteractiveRowClass}>
+                      <DataTableTd dense className="w-48 font-mono text-sm text-text-primary">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span>{item.name}</span>
+                          <span className="font-sans text-xs text-text-muted sm:hidden">{item.baseBridge}</span>
+                        </div>
+                        <div className="mt-0.5 font-sans text-xs text-text-muted sm:hidden">
+                          VLAN {item.vlanId} · {item.present ? 'present' : 'missing'}
+                        </div>
+                      </DataTableTd>
+                      <DataTableTd dense className="hidden font-mono text-sm text-text-secondary sm:table-cell">{item.baseBridge}</DataTableTd>
+                      <DataTableTd dense className="hidden tabular-nums text-sm text-text-secondary sm:table-cell">{item.vlanId}</DataTableTd>
+                      <DataTableTd dense className="hidden text-sm text-text-secondary sm:table-cell">{item.present ? 'present' : 'missing'}</DataTableTd>
+                      <DataTableTd dense align="right">
+                        <DataTableRowActions forceVisible={deletingName === item.name}>
+                          <button
+                            type="button"
+                            onClick={() => onDelete(item.name)}
+                            disabled={deletingName === item.name}
+                            className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
+                            title={`Delete ${item.name}`}
+                            aria-label={`Delete bridge ${item.name}`}
+                          >
+                            {deletingName === item.name ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+                          </button>
+                        </DataTableRowActions>
+                      </DataTableTd>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            </DataTableScroll>
+          )}
+        </RecordGate>
       </div>
       <BridgeCreateModal
         open={createOpen}

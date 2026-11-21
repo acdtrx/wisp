@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { createVM, getHostBridges } from '../../api/vms.js';
+import { createVM } from '../../api/vms.js';
 import GeneralSection from '../sections/GeneralSection.jsx';
 import DisksSection from '../sections/DisksSection.jsx';
 import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
 import { errorText } from '../../api/errors.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+
+const NO_BRIDGES = [];
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -55,7 +59,7 @@ export default function CreateVMPanel() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState(defaultForm);
-  const [bridges, setBridges] = useState([]);
+  const bridges = useRecord(RECORD.HOST_BRIDGES).data ?? NO_BRIDGES;
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createJobId, setCreateJobId] = useState(null);
@@ -70,21 +74,16 @@ export default function CreateVMPanel() {
     return () => { mountedRef.current = false; };
   }, []);
 
+  /* The first NIC takes the first bridge once the bridges are known. With none (or
+   * none loaded), no invented bridge: an empty source lets the server use its default. */
   useEffect(() => {
-    getHostBridges()
-      .then((list) => {
-        const b = Array.isArray(list) ? list : [];
-        setBridges(b);
-        if (!b.length) return;
-        setForm((prev) => {
-          if (!prev.nics?.length) return prev;
-          const nics = prev.nics.map((nic, i) => (i === 0 && !nic.source ? { ...nic, source: b[0] } : nic));
-          return { ...prev, nics };
-        });
-      })
-      // No invented bridge: an empty source lets the server use its default bridge.
-      .catch(() => setBridges([]));
-  }, []);
+    if (!bridges.length) return;
+    setForm((prev) => {
+      if (!prev.nics?.length || prev.nics[0].source) return prev;
+      const nics = prev.nics.map((nic, i) => (i === 0 ? { ...nic, source: bridges[0] } : nic));
+      return { ...prev, nics };
+    });
+  }, [bridges]);
 
   const vmConfig = useCallback(() => ({
     name: form.name,

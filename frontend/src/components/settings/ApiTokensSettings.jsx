@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { KeyRound, Plus, Check, X, Trash2, Copy, Loader2 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -14,12 +14,15 @@ import {
   rowActionIconBtn,
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
-import { listApiTokens, createApiToken, deleteApiToken } from '../../api/authTokens.js';
+import { createApiToken, deleteApiToken } from '../../api/authTokens.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { useKindChanges } from '../../hooks/useChanges.js';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import RecordGate from '../shared/RecordGate.jsx';
+import RecordError from '../shared/RecordError.jsx';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -33,9 +36,10 @@ function formatCreated(iso) {
 }
 
 export default function ApiTokensSettings() {
-  const [tokens, setTokens] = useState(null);
+  /* The tokens, read again on a create or revoke from any tab. */
+  const tokensRecord = useRecord(RECORD.TOKENS);
+  const tokens = tokensRecord.data;
   const [error, setError] = useState(null);
-  const [loadError, setLoadError] = useState(null);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newScope, setNewScope] = useState('read');
@@ -45,25 +49,6 @@ export default function ApiTokensSettings() {
   const [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
-
-  /* Loads are numbered: only the newest one sent applies, or reports its failure. */
-  const loadsSent = useRef(0);
-  const load = useCallback(async () => {
-    const request = ++loadsSent.current;
-    try {
-      const list = await listApiTokens();
-      if (request !== loadsSent.current) return;
-      setTokens(list);
-      setLoadError(null);
-    } catch (err) {
-      if (request !== loadsSent.current) return;
-      setLoadError(errorText(err));
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-  /* A create or revoke from any tab, or a reconnect, re-reads the list. */
-  useKindChanges(CHANGE_KIND.TOKENS, load);
 
   const openAdd = () => {
     setError(null);
@@ -179,15 +164,9 @@ export default function ApiTokensSettings() {
           </div>
         )}
 
+        {tokens != null && <RecordError record={tokensRecord} what="API tokens" className="mb-2" />}
         {tokens == null ? (
-          loadError ? (
-            <p className="text-xs text-status-stopped" role="alert">
-              Couldn't load the API tokens: {loadError}{' '}
-              <button type="button" onClick={load} className="font-medium underline">Retry</button>
-            </p>
-          ) : (
-            <p className="text-xs text-text-muted">Loading…</p>
-          )
+          <RecordGate record={tokensRecord} what="API tokens">{() => null}</RecordGate>
         ) : (
           <DataTableScroll>
             <DataTable>

@@ -9,13 +9,15 @@ import RecordError from './RecordError.jsx';
  * later read, over data shown, is the view's to place (`RecordError`).
  *
  * @param {{ record: ReturnType<import('../../hooks/useRecord.js').useRecord>, what: string,
- *   loading?: import('react').ReactNode, children: (data: any) => import('react').ReactNode }} props
+ *   loading?: import('react').ReactNode, gone?: import('react').ReactNode,
+ *   children: (data: any) => import('react').ReactNode }} props — `gone`: what the view
+ *   says when the record does not exist (default "No {what}.")
  */
-export default function RecordGate({ record, what, loading, children }) {
+export default function RecordGate({ record, what, loading, gone, children }) {
   if (record.status === 'idle') return null;
   if (record.data != null) return children(record.data);
   if (record.status === 'error') return <RecordError record={record} what={what} />;
-  if (record.status === 'gone') return <p className="text-xs text-text-muted">No {what}.</p>;
+  if (record.status === 'gone') return gone ?? <p className="text-xs text-text-muted">No {what}.</p>;
   return loading ?? (
     <p className="flex items-center gap-2 text-xs text-text-muted">
       <Loader2 size={14} className="animate-spin" aria-hidden /> Loading {what}…
