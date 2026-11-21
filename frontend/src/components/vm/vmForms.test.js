@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { changedFields } from '../../hooks/formState.js';
 import {
-  expertForm, memoryText, sizeForm, sizeProblems, sizeSent, systemSummary, toggledBootDevice, withPreset,
+  expertForm, memoryText, nicsForApi, sizeForm, sizeProblems, sizeSent, systemSummary, toggledBootDevice, withPreset,
 } from './vmForms.js';
 
 const vm = {
@@ -60,4 +61,13 @@ test('the System line says what the settings are', () => {
     systemSummary({ ...vm, firmware: 'uefi-secure', vtpm: true, features: { hyperv: true }, guestAgent: false }),
     'UEFI with Secure Boot, Q35, host CPU, VirtIO video, TPM, Windows tuning',
   );
+});
+
+test('an adapter read back with no bridge, model or MAC is sent with strings', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../../../backend/src/routes/fixtures/responses/hand-vm-detail-sparse.json', import.meta.url)));
+  const [nic] = fixture.body.nics;
+  assert.equal(nic.source, null);
+  assert.deepEqual(nicsForApi([nic]), [{ type: 'bridge', mac: '52:54:00:00:00:02', source: '', model: 'virtio' }]);
+  assert.deepEqual(nicsForApi([{ mac: null, model: null, source: 'br0' }]), [{ type: 'bridge', mac: '', source: 'br0', model: 'virtio' }]);
+  for (const sent of nicsForApi([{}, nic])) for (const v of Object.values(sent)) assert.equal(typeof v, 'string');
 });

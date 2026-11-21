@@ -142,3 +142,14 @@ export function systemSummary(config) {
     config.features?.hyperv ? 'Windows tuning' : null,
   ].filter(Boolean).join(', ');
 }
+
+/* ---- Network ---- */
+
+/** The adapters as the PATCH takes them: an adapter defined outside Wisp may read back
+ *  with no bridge, model or MAC, sent as an empty string, and VirtIO for the model. */
+export const nicsForApi = (nics) => (nics ?? []).map((n) => ({
+  type: n.type || 'bridge',
+  mac: n.mac ?? '',
+  source: n.source ?? '',
+  model: n.model || 'virtio',
+}));

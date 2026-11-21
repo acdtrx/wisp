@@ -8,14 +8,13 @@ import GroupAction from '../shared/GroupAction.jsx';
 import GroupCard from '../shared/GroupCard.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import { nicsForApi } from './vmForms.js';
 
 /** Every change re-sends the whole `nics` list, so one runs at a time: one key. */
 const NICS = 'nics';
 const NO_BRIDGES = [];
 const MODEL_LABEL = { virtio: 'VirtIO' };
 
-/** The adapters as the API takes them. */
-const nicsForApi = (nics) => (nics ?? []).map(({ type, mac, source, model }) => ({ type: type || 'bridge', mac, source, model }));
 
 /**
  * The VM's network adapters: bridge, model and MAC (its address is in the figures).
