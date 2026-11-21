@@ -2,7 +2,7 @@ import {
   Fragment, useState, useEffect, lazy, Suspense,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { renamedPath } from '../../store/renameFollow.js';
+import { renamedPath } from '../../utils/renamedPath.js';
 import {
   Play, Square, Zap, RotateCcw, Pause, PlayCircle,
   Trash2, Loader2, Code2, Archive,
