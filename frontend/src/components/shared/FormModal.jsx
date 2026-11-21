@@ -10,17 +10,19 @@ import { formModalNeutralBtn, formModalPrimaryBtn } from './FormModalChrome.jsx'
  * editor): its fields, then Cancel and Save. `save` is the editor's command
  * (`useCommand`): Save is busy until the server answers, and its failure shows at the
  * bottom of the form, which stays open. `blocked` says why Save is off (a problem with
- * the values, or nothing changed); `onSubmit` runs on Save and on Enter.
+ * the values, or nothing changed); `onSubmit` runs on Save and on Enter. While Save
+ * runs the form cannot be closed (Cancel, Escape or the X), so its failure shows.
  */
 export default function FormModal({
   title, subtitle, saveLabel = 'Save', save, blocked, onSubmit, onClose, size = 'sm', footerStart, children,
 }) {
   const formId = useId();
   const saving = save.busy;
+  const close = () => { if (!saving) onClose(); };
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={close}
       title={title}
       subtitle={subtitle}
       size={size}
