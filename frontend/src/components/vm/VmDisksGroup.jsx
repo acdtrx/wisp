@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Disc, Eject, HardDrive, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { attachISO, detachDiskFromVM, ejectISO } from '../../api/vms.js';
-import DiskEditorModal, { libraryImagePath } from '../sections/DiskEditorModal.jsx';
+import DiskEditorModal from '../sections/DiskEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
 import GroupCard from '../shared/GroupCard.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
@@ -113,7 +113,7 @@ export default function VmDisksGroup({ config, busy, lockReason, act }) {
         onClose={() => setPicking(null)}
         onSelect={(file) => {
           const slot = picking;
-          run(() => attachISO(config.name, slot, libraryImagePath(file)), insertAbout(slot));
+          run(() => attachISO(config.name, slot, file.name), insertAbout(slot));
         }}
         defaultFilter="iso"
       />

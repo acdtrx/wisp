@@ -31,11 +31,6 @@ const DISK_BUS_OPTIONS = [
   { value: 'ide', label: 'IDE' },
 ];
 
-/** Library images live in one flat directory — the same path the picker builds. */
-export function libraryImagePath(file) {
-  return file._fullPath || `/var/lib/wisp/images/${file.name}`;
-}
-
 const ADD_MODE_OPTIONS = [
   { value: 'new', label: 'New disk' },
   { value: 'existing', label: 'Existing image' },
@@ -81,7 +76,7 @@ function LibraryDiskSelect({ value, onChange }) {
         {/* "None in the library" only for a read that succeeded empty. */}
         <option value="">{loading ? 'Loading…' : library.data == null ? 'Library unavailable' : images.length ? 'Select…' : 'No disk images in the library'}</option>
         {images.map((file) => (
-          <option key={file.name} value={libraryImagePath(file)}>
+          <option key={file.name} value={file.name}>
             {`${file.name} · ${formatSize(file.size)}`}
           </option>
         ))}

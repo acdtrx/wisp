@@ -9,7 +9,6 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { formatSize } from '../../utils/formatters.js';
-import { libraryImagePath } from '../sections/DiskEditorModal.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -100,7 +99,7 @@ export default function CreateVMPanel() {
   const submit = (e) => {
     e.preventDefault();
     if (blocked || creating) return;
-    const body = createVmBody(effective, library, libraryImagePath);
+    const body = createVmBody(effective, library);
     create.run(() => createVM(body), {
       job: true,
       onAck: (ack) => setJobId(ack.jobId),

@@ -72,24 +72,23 @@ export function vmDraftProblems(draft, library) {
 /**
  * The create request (`POST /api/vms`) for the draft. A disk image is copied and grown
  * to the disk size; an ISO goes in CD 1 with a new disk of that size. A Linux image
- * takes its first boot setup (package update off).
- *
- * @param {(file: { name: string }) => string} pathOf — a library file's path
+ * takes its first boot setup (package update off). Library files go by name: the
+ * server finds them in its image library, wherever that is.
  */
-export function createVmBody(draft, library, pathOf) {
+export function createVmBody(draft, library) {
   const r = runsOf(draft.runs);
   const file = imagesFor(draft.runs, library).find((f) => f.name === draft.image);
   const { vcpus, memoryMiB } = sizeSent(draft);
   const diskGB = Number(draft.diskGB);
   const body = { name: draft.name.trim(), profile: r.profile, vcpus, memoryMiB };
   if (file?.type === 'disk') {
-    body.disk = { type: 'existing', sourcePath: pathOf(file), resizeGB: diskGB };
+    body.disk = { type: 'existing', sourcePath: file.name, resizeGB: diskGB };
   } else {
     body.disk = { type: 'new', sizeGB: diskGB };
-    if (file) body.cdrom1Path = pathOf(file);
+    if (file) body.cdrom1Path = file.name;
   }
   const drivers = r.value === 'windows-11' && draft.drivers ? (library ?? []).find((f) => f.name === draft.drivers) : null;
-  if (drivers) body.cdrom2Path = pathOf(drivers);
+  if (drivers) body.cdrom2Path = drivers.name;
   if (r.value === 'linux-image') {
     body.cloudInit = {
       enabled: true,
