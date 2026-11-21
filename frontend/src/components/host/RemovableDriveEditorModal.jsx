@@ -3,7 +3,6 @@ import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
-  EditorGone,
   FormField,
   FormCheckbox,
   formModalNeutralBtn,
@@ -14,10 +13,8 @@ import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useForm.js';
 import { changedFields } from '../../hooks/formState.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -81,30 +78,25 @@ export default function RemovableDriveEditorModal(props) {
   return props.open ? <RemovableDriveEditor {...props} /> : null;
 }
 
-function RemovableDriveEditor({ open, driveId, adoptDisk, onClose }) {
-  const record = useRecord(RECORD.SETTINGS);
-  const isEdit = driveId != null;
-  const drive = isEdit ? (record.data?.mounts || []).find((m) => m.id === driveId) ?? null : null;
-  const [blank] = useState(() => formFromDetectedDisk(adoptDisk || {}));
-  const { form, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
-    record,
-    (settings) => {
-      if (!isEdit) return blank;
-      const stored = (settings.mounts || []).find((m) => m.id === driveId);
-      return stored ? formFromDrive(stored) : null;
-    },
-    driveSent,
-    { problems: pathProblems, creating: !isEdit },
-  );
+function RemovableDriveEditor({ open, drive: openedDrive = null, adoptDisk, onClose }) {
+  /* The drive as the editor opened: it never reads the settings again. */
+  const [drive] = useState(openedDrive);
+  const isEdit = drive != null;
+  const driveId = drive?.id ?? null;
+  const { form, start, setForm, dirty } = useEditor(() => (isEdit ? formFromDrive(drive) : formFromDetectedDisk(adoptDisk || {})));
   const save = useCommand();
+  const saving = save.busy;
+  const problems = pathProblems(form);
+  const blocked = Object.values(problems)[0] ?? null;
 
-  /* An edit needs a change that sends something; an adoption only valid values. */
-  const canSave = form != null && !blocked && (!isEdit || dirty) && !saving;
+  /* An edit needs a change; an adoption only valid values. */
+  const canSave = !blocked && (!isEdit || dirty) && !saving;
 
   const handleSave = () => {
     if (!canSave) return;
-    saveForm((values, saved) => save.run(() => (isEdit
-      ? patchMount(form.id, changedFields(values, saved))
+    const values = driveSent(form);
+    save.run(() => (isEdit
+      ? patchMount(form.id, changedFields(values, driveSent(start)))
       : addMount({
         id: form.id,
         type: 'disk',
@@ -114,7 +106,7 @@ function RemovableDriveEditor({ open, driveId, adoptDisk, onClose }) {
         uuid: form.uuid,
         fsType: form.fsType,
         readOnly: values.readOnly,
-      }))))
+      })))
       .then((ok) => { if (ok) onClose(); });
   };
 
@@ -143,7 +135,6 @@ function RemovableDriveEditor({ open, driveId, adoptDisk, onClose }) {
         </>
       )}
     >
-      {form == null ? <EditorGone what="drive" /> : (
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -201,7 +192,6 @@ function RemovableDriveEditor({ open, driveId, adoptDisk, onClose }) {
         </div>
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
-      )}
     </Modal>
   );
 }

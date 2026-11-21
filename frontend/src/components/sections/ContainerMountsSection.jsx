@@ -128,8 +128,7 @@ export default function ContainerMountsSection({ config }) {
 
   /* Host-side disk usage per mount, read again on the container's change cue (an
    * upload, a content edit, a mounts change); not a live feed (sizing walks the data dir
-   * and can take seconds for large trees), so no command waits for its re-read (the
-   * record table says so: store/records.js). Best-effort: without it, or once the
+   * and can take seconds for large trees). Best-effort: without it, or once the
    * container is gone, the Size column shows em-dashes. */
   const usageRecord = useRecord(RECORD.CONTAINER_MOUNT_USAGE, (config.mounts || []).length > 0 ? config.name : null);
   const mountUsage = usageRecord.data?.mounts ?? null;
@@ -523,7 +522,8 @@ export default function ContainerMountsSection({ config }) {
       <ContainerMountEditorModal
         open={editor.open}
         containerName={config.name}
-        mountName={editor.name}
+        mount={editor.name == null ? null : (config.mounts || []).find((m) => m.name === editor.name) ?? null}
+        mounts={config.mounts || []}
         kind={editor.kind}
         storageMounts={storageMounts}
         runAsRoot={runAsRoot}

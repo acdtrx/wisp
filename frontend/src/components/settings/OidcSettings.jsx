@@ -41,7 +41,7 @@ function secretOwed(form, settings) {
 
 /** What keeps the values from being saved: a changed identity with no secret typed. */
 const oidcProblems = (form, settings) => (secretOwed(form, settings) && !form.clientSecret
-  ? { 'issuer,clientId': 'Re-enter the client secret when changing the issuer or client ID' }
+  ? { clientSecret: 'Re-enter the client secret when changing the issuer or client ID' }
   : {});
 
 /** The callback URL for an advertised URL (none, or one that is no URL: this origin). */
@@ -56,7 +56,8 @@ function callbackUrl(advertisedUrl) {
 export default function OidcSettings() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setField, dirty, saving, blocked, save } = useForm(settingsRecord, formFromSettings, oidcSent, { problems: oidcProblems });
+  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings, oidcSent);
+  const blocked = form == null ? null : Object.values(oidcProblems(form, settings))[0] ?? null;
   const command = useCommand();
   const [copied, setCopied] = useState(false);
   const enabled = form?.enabled ?? false;

@@ -16,10 +16,9 @@ import {
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
+import { useEditor, useForm } from '../../hooks/useForm.js';
 import { changedFields, rowId } from '../../hooks/formState.js';
 import CommandErrors from '../shared/CommandErrors.jsx';
-import { EditorGone } from '../shared/FormModalChrome.jsx';
 import { RECORD } from '../../store/records.js';
 import { containerLocked } from '../../utils/workloadLocks.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -103,8 +102,6 @@ const networkForm = (config) => ({ mac: config.network?.mac || '', interface: co
 /** What Save sends: the MAC trimmed and in lower case, the interface trimmed (none: null). */
 const networkSent = (f) => ({ mac: f.mac.trim().toLowerCase(), interface: f.interface.trim() || null });
 
-const NETWORK_FIELDS = ['mac', 'interface'];
-
 export default function ContainerNetworkSection({ config, onSave }) {
   const net = config.network || {};
   const isUp = config.state === 'running';
@@ -113,8 +110,7 @@ export default function ContainerNetworkSection({ config, onSave }) {
   const editable = !containerLocked(config.state);
 
   const record = useRecord(RECORD.CONTAINER, config.name);
-  /* Locked, both fields show the stored values and are neither sent nor a change. */
-  const { form, setField, dirty, saving, save: saveForm } = useForm(record, networkForm, networkSent, { locked: editable ? [] : NETWORK_FIELDS });
+  const { form, setField, dirty, saving, save: saveForm } = useForm(record, networkForm, networkSent);
   const save = useCommand();
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !!config.pendingRestart;
@@ -129,7 +125,7 @@ export default function ContainerNetworkSection({ config, onSave }) {
   const pills = buildPortPills(config.exposedPorts, config.services);
 
   const closeStrip = useCallback(() => setStrip(null), []);
-  const openStripForPort = (port, service) => setStrip({ port, hasExisting: !!service, portEditable: false });
+  const openStripForPort = (port, service) => setStrip({ port, service: service ?? null, hasExisting: !!service, portEditable: false });
   const openStripForAdd = () => setStrip({ port: null, hasExisting: false, portEditable: true });
 
   const handleSave = () => saveForm((values, saved) => save.run(() => onSave({ network: changedFields(values, saved) })));
@@ -270,13 +266,12 @@ function serviceSent(d) {
   return { port: parseInt(d.port, 10), type: effectiveType(d), txt: txtPairsToObject(d.txtPairs) };
 }
 
-/** What a service editor's values lack to be saved, by the field each is about. */
-function serviceProblems(d) {
+/** What a service editor's values lack to be saved, or null. */
+function serviceProblem(d) {
   const { port, type } = serviceSent(d);
-  const problems = {};
-  if (!Number.isInteger(port) || port < 1 || port > 65535) problems.port = 'Port must be an integer between 1 and 65535';
-  if (!isValidServiceType(type)) problems['typeSelect,customType'] = 'Type must look like _name._tcp or _name._udp';
-  return problems;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return 'Port must be an integer between 1 and 65535';
+  if (!isValidServiceType(type)) return 'Type must look like _name._tcp or _name._udp';
+  return null;
 }
 
 function ServiceEditorModal(props) {
@@ -284,20 +279,13 @@ function ServiceEditorModal(props) {
 }
 
 function ServiceEditor({ strip, containerName, onClose }) {
-  const record = useRecord(RECORD.CONTAINER, containerName);
-  const [blank] = useState(() => emptyDraft(strip.port, strip.port == null ? null : suggestTypeForPort(strip.port)));
-  const { form: draft, setForm, dirty, saving, blocked: problem, save: saveForm } = useForm(
-    record,
-    (config) => {
-      if (!strip.hasExisting) return blank;
-      const service = (config.services || []).find((svc) => svc.port === strip.port);
-      return service ? draftFromService(service) : null;
-    },
-    serviceSent,
-    { problems: serviceProblems, creating: !strip.hasExisting },
-  );
+  /* The service's values as the editor opened (`strip.service`; none for a new one). */
+  const { form: draft, setForm, dirty } = useEditor(() => (strip.service
+    ? draftFromService(strip.service)
+    : emptyDraft(strip.port, strip.port == null ? null : suggestTypeForPort(strip.port))));
   const serviceCmd = useCommand();
-  const busy = saving || serviceCmd.busy;
+  const busy = serviceCmd.busy;
+  const problem = serviceProblem(draft);
 
   const updateDraft = (patch) => setForm((d) => ({ ...d, ...patch }));
   const setTypeChoice = (value) => {
@@ -321,15 +309,16 @@ function ServiceEditor({ strip, containerName, onClose }) {
   const addTxtPair = () => setForm((d) => ({ ...d, txtPairs: [...d.txtPairs, { id: rowId(), k: '', v: '' }] }));
   const removeTxtPair = (id) => setForm((d) => ({ ...d, txtPairs: d.txtPairs.filter((pair) => pair.id !== id) }));
 
-  /* An edit needs a change that sends something; a new service only valid values (the
-   * first problem that stands shows under them). */
-  const canSave = draft != null && !problem && (!strip.hasExisting || dirty) && !busy;
+  /* An edit needs a change; a new service only valid values (the problem shows under
+   * them). */
+  const canSave = !problem && (!strip.hasExisting || dirty) && !busy;
 
   const handleSave = () => {
     if (!canSave) return;
-    saveForm((values) => serviceCmd.run(() => (strip.hasExisting
+    const values = serviceSent(draft);
+    serviceCmd.run(() => (strip.hasExisting
       ? updateContainerService(containerName, values.port, { type: values.type, txt: values.txt })
-      : addContainerService(containerName, values))))
+      : addContainerService(containerName, values)))
       .then((ok) => { if (ok) onClose(); });
   };
 
@@ -348,8 +337,6 @@ function ServiceEditor({ strip, containerName, onClose }) {
       size="xl"
       closeOnEscape={!busy}
     >
-      {/* Its own delete closes the editor: "gone" is for a removal from elsewhere. */}
-      {draft == null ? (serviceCmd.isBusy('delete') ? null : <EditorGone what="service" />) : (
       <>
       <CommandErrors className="mb-2" commands={[serviceCmd]} prefix={(key) => (key === 'delete' ? "Couldn't remove the service" : undefined)} />
 
@@ -477,7 +464,6 @@ function ServiceEditor({ strip, containerName, onClose }) {
         </div>
       </div>
       </>
-      )}
     </Modal>
   );
 }

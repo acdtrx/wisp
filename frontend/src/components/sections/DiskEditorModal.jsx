@@ -1,11 +1,9 @@
-import { useState } from 'react';
 import RadioPills from '../shared/RadioPills.jsx';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import {
-  EditorGone,
   FormField,
   formModalNeutralBtn,
   formModalPrimaryBtn,
@@ -22,7 +20,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useForm.js';
 
 const FORM_ID = 'disk-editor-form';
 
@@ -100,16 +98,13 @@ function LibraryDiskSelect({ value, onChange }) {
  * new empty volume and attaching a library image (plain select; the full
  * ImageLibraryModal stays the direct-action path for ISO slots).
  *
- * Saves through the same row-scoped disk APIs and in the same order the inline
- * editors used, each one resolving once the VM's new config is in; closes after
- * the last, stays open on failure.
+ * It takes the disk's values when it opens. Saves through the same row-scoped disk
+ * APIs and in the same order the inline editors used, each one ending at its answer;
+ * closes after the last, stays open on failure.
  */
 export default function DiskEditorModal(props) {
   return props.open ? <DiskEditor {...props} /> : null;
 }
-
-/** The block disk in `slot` of a VM's config, or null. */
-const diskAt = (vm, slot) => (vm.disks || []).find((d) => d.device === 'disk' && d.slot === slot) ?? null;
 
 /** What an edit's Save writes: the bus, and the size to 0.001 GiB (the listed size is
  *  rounded to whole GiB, so a sub-GiB delta is no change). */
@@ -138,55 +133,48 @@ function DiskEditor({
   vmName,
   slot,
   editing,
+  disk = null,
   defaultBus = 'virtio',
   onClose,
 }) {
-  const record = useRecord(RECORD.VM, vmName);
   const isEdit = editing;
-  const [blank] = useState(() => formFromDisk(null, defaultBus));
-  const { form, setField, dirty, saving, problems, blocked, save: saveForm } = useForm(
-    record,
-    (vm) => {
-      if (!isEdit) return blank;
-      const disk = diskAt(vm, slot);
-      return disk ? formFromDisk(disk) : null;
-    },
-    isEdit ? editSent : undefined,
-    /* A stored size the editor cannot read (a disk whose image has none) is no problem:
-     * the form hook keeps those of values the user changed. */
-    { problems: diskProblems, creating: !isEdit },
-  );
+  /* The disk's values as the editor opened: it never reads the VM's config again. */
+  const { form, start, setField, dirty } = useEditor(() => formFromDisk(isEdit ? disk : null, defaultBus));
   const save = useCommand();
+  const saving = save.busy;
 
-  const isAttach = !isEdit && form?.mode === 'existing';
-  const sizeValue = form ? positiveNumber(form.sizeGB) : null;
+  const isAttach = !isEdit && form.mode === 'existing';
+  const sizeValue = positiveNumber(form.sizeGB);
+  const problems = diskProblems(form);
+  const blocked = Object.values(problems)[0] ?? null;
   /* A cleared size says nothing under the field (Save says why it is off). */
-  const sizeError = form?.sizeGB !== '' ? problems.sizeGB ?? null : null;
-  const resizeValue = !form || form.resizeGB === '' ? null : positiveNumber(form.resizeGB);
+  const sizeError = form.sizeGB !== '' ? problems.sizeGB ?? null : null;
+  const resizeValue = form.resizeGB === '' ? null : positiveNumber(form.resizeGB);
   const resizeError = problems.resizeGB ?? null;
   const imageError = problems.imagePath ?? null;
-  /* An edit needs a change that sends something; a new disk only valid values. */
-  const canSave = form != null && !blocked && (!isEdit || dirty) && !saving;
+  /* An edit needs a change; a new disk only valid values. */
+  const canSave = !blocked && (!isEdit || dirty) && !saving;
 
   /* One command, of one to two requests in the order the inline editors used, ending at
-   * the last ack (the form then reads the VM's config again). */
+   * the last answer. */
   const handleSave = () => {
     if (!canSave) return;
-    saveForm((values, saved) => save.run(async () => {
-      const command = (send) => send();
+    const values = editSent(form);
+    const saved = editSent(start);
+    save.run(async () => {
       if (isEdit) {
-        if (values.bus !== saved.bus) await command(() => updateDiskBus(vmName, slot, values.bus));
-        if (values.size !== saved.size) await command(() => resizeDisk(vmName, slot, sizeValue));
+        if (values.bus !== saved.bus) await updateDiskBus(vmName, slot, values.bus);
+        if (values.size !== saved.size) await resizeDisk(vmName, slot, sizeValue);
       } else if (isAttach) {
-        await command(() => attachDiskToVM(vmName, slot, values.imagePath, values.bus));
-        if (resizeValue != null) await command(() => resizeDisk(vmName, slot, resizeValue));
+        await attachDiskToVM(vmName, slot, form.imagePath, form.bus);
+        if (resizeValue != null) await resizeDisk(vmName, slot, resizeValue);
       } else {
-        await command(() => createDiskOnVM(vmName, slot, Math.max(1, parseInt(values.sizeGB, 10) || 32), values.bus));
+        await createDiskOnVM(vmName, slot, Math.max(1, parseInt(form.sizeGB, 10) || 32), form.bus);
       }
-    })).then((ok) => { if (ok) onClose(); });
+    }).then((ok) => { if (ok) onClose(); });
   };
 
-  const busField = form && (
+  const busField = (
     <FormField label="Bus" htmlFor="disk-editor-bus">
       <select
         id="disk-editor-bus"
@@ -224,7 +212,6 @@ function DiskEditor({
         </>
       )}
     >
-      {form == null ? <EditorGone what="disk" /> : (
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -295,7 +282,6 @@ function DiskEditor({
 
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
-      )}
     </Modal>
   );
 }

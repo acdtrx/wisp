@@ -35,8 +35,6 @@ function generalForm(vm) {
   };
 }
 
-/** The fields locked unless the VM is shut off. */
-const OFFLINE_FIELDS = ['name', 'vcpus', 'memoryMiB'];
 const unitFor = (memoryMiB) => ((memoryMiB ?? 1024) >= 1024 ? 'GB' : 'MB');
 
 /** What Save sends for the values: the name trimmed. */
@@ -48,13 +46,11 @@ const generalSent = (f) => ({ ...f, name: (f.name ?? '').trim() });
  * `onDraft(update)`) is the only state.
  */
 export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, onSave, onRenamed, busyReason }) {
-  /* The name, CPU and RAM are editable only when the VM is shut off (workloadLocks.js).
-   * Locked fields show the stored values and are neither sent nor a change. */
+  /* The name, CPU and RAM are editable only when the VM is shut off (workloadLocks.js). */
   const locked = !isCreating && vmLocked(vmConfig.state);
-  const lockedFields = locked ? OFFLINE_FIELDS : [];
 
   const record = useRecord(isCreating ? null : RECORD.VM, vmConfig.name);
-  const edit = useForm(record, generalForm, generalSent, { locked: lockedFields, problems: generalProblems });
+  const edit = useForm(record, generalForm, generalSent);
   const form = isCreating ? draft : edit.form;
   const save = useCommand();
   /* How RAM is typed is the view's, not a value: the unit the user chose, kept while the
@@ -68,10 +64,9 @@ export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, o
     : edit.setField(key, value));
 
   /* CPU and RAM as typed: a cleared field is '' and, like a number the server refuses,
-   * shows its problem under it and blocks Save (creating, Create) with its reason;
-   * editing, the form hook keeps only those of values the user changed. */
-  const problems = isCreating ? generalProblems(form) : edit.problems;
-  const blocked = isCreating ? null : edit.blocked;
+   * shows its problem under it and blocks Save (creating, Create) with its reason. */
+  const problems = form == null ? {} : generalProblems(form);
+  const blocked = isCreating ? null : Object.values(problems)[0] ?? null;
 
   const memoryDisplay = form.memoryMiB === ''
     ? ''
@@ -90,7 +85,7 @@ export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, o
    * whose page reads its record like any page: this form goes with the old one. */
   const handleSave = () => {
     if (blocked) return;
-    const changes = changedFields(generalSent(edit.form), generalSent(edit.saved));
+    const changes = changedFields(generalSent(edit.form), generalSent(edit.start));
     if (changes.name != null && changes.name !== vmConfig.name) {
       save.run(() => onSave(changes)).then((ok) => { if (ok) onRenamed?.(changes.name); });
       return;

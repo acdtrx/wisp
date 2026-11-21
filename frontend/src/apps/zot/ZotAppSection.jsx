@@ -5,6 +5,7 @@
  * and they are independent code paths, so htpasswd keeps working when the IdP is down —
  * and it stays the only way `docker login` can authenticate without an API key.
  */
+import { useState } from 'react';
 import { Plus, Trash2, Container, Eye, EyeOff, UserPlus, KeyRound } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
@@ -21,7 +22,7 @@ import {
 } from '../../components/shared/DataTableChrome.jsx';
 import { rowId } from '../../hooks/formState.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useForm } from '../../hooks/useForm.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 
@@ -83,16 +84,14 @@ function appConfigToSend(form) {
 }
 
 export default function ZotAppSection({ config, onSave }) {
-  /* The form follows the container's config record by value: a save elsewhere that
-   * leaves this app's settings as they were leaves its edits. */
+  /* The form follows the container's config record until it is edited. */
   const record = useRecord(RECORD.CONTAINER, config.name);
-  const { form, generation, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
+  const { form, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
   const save = useCommand();
-  /* Held on the form as it is (a reset drops them): revealed passwords, by row id, and
-   * the revealed secret. */
-  const [shownPasswords, setShowPasswords] = useHeld(generation);
+  /* Revealed passwords, by row id, and the revealed secret. */
+  const [shownPasswords, setShowPasswords] = useState(null);
   const showPasswords = shownPasswords ?? {};
-  const [showSecret, setShowSecret] = useHeld(generation);
+  const [showSecret, setShowSecret] = useState(null);
   const toggleShowSecret = () => setShowSecret((on) => (on ? null : true));
 
   const updateField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));

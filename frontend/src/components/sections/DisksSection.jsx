@@ -619,6 +619,7 @@ export default function DisksSection({
         vmName={vmName}
         slot={editor.slot}
         editing={editor.editing}
+        disk={editor.editing ? localDisks.find((d) => d.slot === editor.slot) ?? null : null}
         defaultBus={sda?.bus || 'virtio'}
         onClose={() => setEditor({ open: false, slot: 'sdb', editing: false })}
       />

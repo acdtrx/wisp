@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import { AlertTriangle, Loader2, Shuffle } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
-  EditorGone,
   FormField,
   formModalNeutralBtn,
   formModalPrimaryBtn,
@@ -13,9 +11,7 @@ import { randomMac } from '../../utils/randomMac.js';
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
+import { useEditor } from '../../hooks/useForm.js';
 
 const FORM_ID = 'nic-editor-form';
 
@@ -32,53 +28,31 @@ function formFromNic(nic, bridges) {
 /** What Save writes for the values: the MAC trimmed and in lower case. */
 const nicSent = (form) => ({ source: form.source, model: form.model, mac: form.mac.trim().toLowerCase() });
 
-/** The NIC at `index` of a VM's config, as the form shows it, while it is the NIC the
- *  editor edits (its MAC is `mac`); null when that NIC is gone. */
-function pickNic(vm, index, mac) {
-  const nic = (vm.nics || [])[index];
-  return nic && (nic.mac || '').toLowerCase() === mac ? formFromNic(nic, []) : null;
-}
-
 /**
  * Modal form editor for one VM network interface — create when `opened` is null, edit
- * the NIC at `index` otherwise (see docs/FRONTEND-RULES.md § Modal form editor). Its
- * record is the VM's config. The wire addresses a NIC by its position (the PATCH
- * re-sends the list, and MACs may repeat), so the editor holds the position and the
- * NIC it opened on (`opened`): another NIC at that position is "gone". The section
- * owns the full-array PATCH (`onSubmit(fields, index)`).
+ * the NIC at `index` otherwise (see docs/FRONTEND-RULES.md § Modal form editor). It
+ * takes the NIC's values when it opens. The section owns the full-array PATCH
+ * (`onSubmit(fields, index)`).
  */
 export default function NicEditorModal(props) {
   return props.open ? <NicEditor {...props} /> : null;
 }
 
-function NicEditor({ open, vmName, index, opened, bridges = [], onSubmit, onClose }) {
-  const record = useRecord(RECORD.VM, vmName);
-  /* A new NIC's values are fixed when the editor opens (`bridges` with them): a late
-   * host-bridge refresh does not reset a form in progress. */
-  const [blank] = useState(() => formFromNic(null, bridges));
+function NicEditor({ open, index, opened, bridges = [], onSubmit, onClose }) {
   const isEdit = opened != null;
-  /* The MAC the edited NIC has: the one it opened with, then the one its own save sent. */
-  const [mac, setMac] = useState(() => (opened?.mac || '').toLowerCase());
-  const { form, dirty, setField, saving, save: saveForm } = useForm(
-    record,
-    (vm) => (isEdit ? pickNic(vm, index, mac) : blank),
-    nicSent,
-  );
+  const { form, start, dirty, setField } = useEditor(() => formFromNic(opened, bridges));
   const save = useCommand();
+  const saving = save.busy;
 
   /* An edit needs a change; a new NIC only its values (they are all valid). */
-  const canSave = form != null && (!isEdit || dirty) && !saving;
+  const canSave = (!isEdit || dirty) && !saving;
 
   /* cloud-init writes the network config against the first NIC's MAC. */
-  const macBreaksCloudInit = isEdit && form != null && index === 0 && nicSent(form).mac !== mac;
+  const macBreaksCloudInit = isEdit && index === 0 && nicSent(form).mac !== start.mac.trim().toLowerCase();
 
   const handleSave = () => {
     if (!canSave) return;
-    saveForm(async (values) => {
-      const ok = await save.run(() => onSubmit(values, isEdit ? index : null));
-      if (ok) setMac(values.mac);
-      return ok;
-    }).then((ok) => { if (ok) onClose(); });
+    save.run(() => onSubmit(nicSent(form), isEdit ? index : null)).then((ok) => { if (ok) onClose(); });
   };
 
   return (
@@ -102,7 +76,6 @@ function NicEditor({ open, vmName, index, opened, bridges = [], onSubmit, onClos
         </>
       )}
     >
-      {form == null ? <EditorGone what="network interface" /> : (
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -166,7 +139,6 @@ function NicEditor({ open, vmName, index, opened, bridges = [], onSubmit, onClos
         </FormField>
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
-      )}
     </Modal>
   );
 }

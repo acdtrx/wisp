@@ -291,7 +291,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, draft
 
       <NicEditorModal
         open={editor.open}
-        vmName={vmConfig.name}
         index={editor.index ?? nics.length}
         opened={editor.opened}
         bridges={bridges}

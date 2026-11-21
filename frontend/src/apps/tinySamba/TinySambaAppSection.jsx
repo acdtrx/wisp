@@ -42,7 +42,7 @@ import {
 import { rowId } from '../../hooks/formState.js';
 import RecordGate from '../../components/shared/RecordGate.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useForm } from '../../hooks/useForm.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 
@@ -120,8 +120,7 @@ function appConfigToSend(form) {
 
 /** What keeps the values from being saved, by the path of the value each is about:
  *  pre-flight guards that mirror tiny-samba's validation, so users see issues here
- *  instead of a "reload failed" error from smbd (the form hook keeps those of values
- *  the user changed). */
+ *  instead of a "reload failed" error from smbd. */
 function appConfigProblems(form) {
   const problems = {};
   if (!isValidUid(form.server.dataUid)) problems['server.dataUid'] = 'Data UID must be a whole number from 0 to 65535.';
@@ -164,19 +163,18 @@ export default function TinySambaAppSection({ config, onSave }) {
   const settings = settingsRecord.data;
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
-  /* The form follows the container's config record by value: a save elsewhere that
-   * leaves this app's settings as they were leaves its edits. */
+  /* The form follows the container's config record until it is edited. */
   const record = useRecord(RECORD.CONTAINER, config.name);
-  const { form, saved: original, generation, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
-    record, parseAppConfig, appConfigToSend, { problems: appConfigProblems },
-  );
+  const { form, start: original, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
+  const problems = appConfigProblems(form);
+  const blocked = Object.values(problems)[0] ?? null;
   const save = useCommand();
-  /* Held on the form as it is (a reset drops them): the delete-share-data confirm
-   * (`{ names }`), and what the view keeps on a row by its id. */
-  const [dataLoss, setDataLoss] = useHeld(generation);
-  const [shownPasswords, setShowPasswords] = useHeld(generation);
+  /* The delete-share-data confirm (`{ names }`), and what the view keeps on a row by
+   * its id. */
+  const [dataLoss, setDataLoss] = useState(null);
+  const [shownPasswords, setShowPasswords] = useState(null);
   const showPasswords = shownPasswords ?? {};
-  const [openShares, setExpandedShares] = useHeld(generation);
+  const [openShares, setExpandedShares] = useState(null);
   const expandedShares = openShares ?? NO_SHARES;
   const [serverOpen, setServerOpen] = useState(true);
   const [usersOpen, setUsersOpen] = useState(true);

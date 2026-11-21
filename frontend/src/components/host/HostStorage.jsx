@@ -145,8 +145,7 @@ export default function HostStorage() {
  * A mount row's commands, shared by the SMB and drive tables: the removal and the
  * mount toggle, each keyed by the mount's id, so rows run in parallel and each keeps
  * its error (the Storage section's). A removal and an unmount are jobs: busy until the
- * job ended and the records they change, read again after it, have landed; a mount is
- * busy until the `host-mounts` cue's re-read has.
+ * job ended; a mount is busy until its answer.
  */
 function useMountRowCommands() {
   const removal = useCommand();
@@ -341,7 +340,7 @@ function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
       </DataTableScroll>
       <SmbShareEditorModal
         open={editor.open}
-        shareId={editor.id}
+        share={editor.id == null ? null : smbSaved.find((m) => m.id === editor.id) ?? null}
         onClose={closeEditor}
         onSaved={handleSaved}
       />
@@ -597,7 +596,7 @@ function RemovableDrivesSection({
       )}
       <RemovableDriveEditorModal
         open={editor.open}
-        driveId={editor.driveId}
+        drive={editor.driveId == null ? null : diskSaved.find((m) => m.id === editor.driveId) ?? null}
         adoptDisk={editor.adoptDisk}
         onClose={closeEditor}
       />

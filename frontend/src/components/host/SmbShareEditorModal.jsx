@@ -3,7 +3,6 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
-  EditorGone,
   FormField,
   formModalNeutralBtn,
   formModalPrimaryBtn,
@@ -13,10 +12,8 @@ import { addMount, patchMount, checkMountConnection } from '../../api/settings.j
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useForm.js';
 import { changedFields } from '../../hooks/formState.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -73,33 +70,27 @@ export default function SmbShareEditorModal(props) {
   return props.open ? <SmbShareEditor {...props} /> : null;
 }
 
-function SmbShareEditor({ open, shareId, onClose, onSaved }) {
-  const record = useRecord(RECORD.SETTINGS);
-  const isEdit = shareId != null;
-  const stored = isEdit ? (record.data?.mounts || []).find((m) => m.id === shareId) ?? null : null;
-  const [blank] = useState(emptyForm);
-  const { form, generation, setField: setValue, dirty, saving, problems, blocked, save: saveForm } = useForm(
-    record,
-    (settings) => {
-      if (!isEdit) return blank;
-      const share = (settings.mounts || []).find((m) => m.id === shareId);
-      return share ? formFromShare(share) : null;
-    },
-    shareSent,
-    { problems: shareProblems, creating: !isEdit },
-  );
+function SmbShareEditor({ open, share = null, onClose, onSaved }) {
+  /* The share as the editor opened: it never reads the settings again. */
+  const [stored] = useState(share);
+  const isEdit = stored != null;
+  const shareId = stored?.id ?? null;
+  const { form, start, setField: setValue, dirty } = useEditor(() => (isEdit ? formFromShare(stored) : emptyForm()));
   const save = useCommand();
+  const saving = save.busy;
+  const problems = shareProblems(form);
+  const blocked = Object.values(problems)[0] ?? null;
   /* The connection test: busy while it runs; a failure is its error, a pass shows as OK. */
   const test = useCommand();
-  /* A passed test, of the values as they were: held on the form, a reset drops it. */
-  const [testPassed, setTestPassed] = useHeld(generation);
+  /* A passed test, of the values as they were. */
+  const [testPassed, setTestPassed] = useState(null);
   const checking = test.busy;
 
   const setField = (field) => (e) => setValue(field, e.target.value);
 
-  const trimmedShare = form?.share.trim() ?? '';
-  /* An edit needs a change that sends something; a new share only valid values. */
-  const canSave = form != null && !blocked && (!isEdit || dirty) && !saving;
+  const trimmedShare = form.share.trim();
+  /* An edit needs a change; a new share only valid values. */
+  const canSave = !blocked && (!isEdit || dirty) && !saving;
   const hasStoredPassword = isEdit && stored?.hasPassword === true;
 
   const handleCheck = () => {
@@ -120,16 +111,16 @@ function SmbShareEditor({ open, shareId, onClose, onSaved }) {
 
   const handleSave = () => {
     if (!canSave) return;
-    saveForm((values, saved) => save.run(async () => {
+    const values = shareSent(form);
+    save.run(async () => {
       if (!isEdit) {
         await addMount({ id: form.id, type: 'smb', ...values });
       } else {
         /* Only the changed fields; `password` only when one was typed. */
-        const patch = changedFields(values, saved);
-        await patchMount(form.id, patch);
+        await patchMount(form.id, changedFields(values, shareSent(start)));
       }
       await onSaved?.();
-    })).then((ok) => { if (ok) onClose(); });
+    }).then((ok) => { if (ok) onClose(); });
   };
 
   return (
@@ -147,7 +138,7 @@ function SmbShareEditor({ open, shareId, onClose, onSaved }) {
             <button
               type="button"
               onClick={handleCheck}
-              disabled={form == null || checking || saving}
+              disabled={checking || saving}
               className={formModalNeutralBtn}
             >
               {checking
@@ -167,8 +158,7 @@ function SmbShareEditor({ open, shareId, onClose, onSaved }) {
         </>
       )}
     >
-      {form == null ? <EditorGone what="SMB share" /> : (
-      <form
+            <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
         className="space-y-3"
@@ -239,7 +229,6 @@ function SmbShareEditor({ open, shareId, onClose, onSaved }) {
         <ErrorBanner className="mt-3" error={test.error} prefix="Connection test" onDismiss={test.dismiss} />
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
-      )}
     </Modal>
   );
 }

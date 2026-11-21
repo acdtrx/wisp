@@ -4,7 +4,6 @@ import { Check, Copy, Dices, Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import {
-  EditorGone,
   FormCheckbox,
   FormField,
   formModalNeutralBtn,
@@ -13,9 +12,7 @@ import {
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
+import { useEditor } from '../../hooks/useForm.js';
 
 const FORM_ID = 'env-var-editor-form';
 
@@ -99,51 +96,44 @@ export default function EnvVarEditorModal(props) {
 
 /**
  * What an env editor's values lack to be saved, by the field each is about: a key, one
- * no other variable of the record as the form took it (`taken`) has, and for a new
- * secret (`creating`) a value — it has nothing on file to fall back on.
+ * none of `otherKeys` (the container's other variables) has, and for a new secret
+ * (`creating`) a value — it has nothing on file to fall back on.
  */
-function envProblems(form, taken, rowKey, creating) {
+function envProblems(form, otherKeys, creating) {
   const problems = {};
   const key = form.key.trim();
   if (key === '') problems.key = 'A key is required.';
-  else if (rowsFromEnv(taken?.env).some((r) => r.key !== rowKey && r.key === key)) {
+  else if (otherKeys.includes(key)) {
     problems.key = `A variable named ${key} already exists.`;
   }
   if (creating && form.secret && form.value.trim() === '') problems.value = 'A new secret needs a value.';
   return problems;
 }
 
-function EnvVarEditor({ open, containerName, rowKey: openedKey, onSubmit, onClose }) {
-  const record = useRecord(RECORD.CONTAINER, containerName);
+function EnvVarEditor({ open, env, rowKey: openedKey, onSubmit, onClose }) {
+  /* The variable and the other variables' keys, as the editor opened. */
+  const [opened] = useState(() => {
+    const rows = rowsFromEnv(env);
+    return { row: rows.find((r) => r.key === openedKey) ?? null, otherKeys: rows.map((r) => r.key).filter((k) => k !== openedKey) };
+  });
   const isEdit = openedKey != null;
-  /* The variable's key: the one it opened on, then the one its own save sent (from the
-   * command's ack on, whatever the re-read does). */
-  const [rowKey, setRowKey] = useState(openedKey);
-  const [blank] = useState(() => formFromRow(null));
-  const { form, generation, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
-    record,
-    (config) => {
-      if (!isEdit) return blank;
-      const stored = rowsFromEnv(config.env).find((r) => r.key === rowKey);
-      return stored ? formFromRow(stored) : null;
-    },
-    (f) => envSent(f, f.stored),
-    { problems: (values, data, taken) => envProblems(values, taken, rowKey, !isEdit), creating: !isEdit },
-  );
-  /* The variable as the form took it. */
-  const row = form?.stored ?? null;
+  const rowKey = openedKey;
+  const { form, dirty, setForm } = useEditor(() => formFromRow(isEdit ? opened.row : null));
+  const row = form.stored ?? null;
   const save = useCommand();
-  /* The generate-secret confirm, `{ value, replacing }`: held on the form as it is, a
-   * reset drops it. */
-  const [pendingGenerate, setPendingGenerate] = useHeld(generation);
+  const saving = save.busy;
+  const problems = envProblems(form, opened.otherKeys, !isEdit);
+  const blocked = Object.values(problems)[0] ?? null;
+  /* The generate-secret confirm, `{ value, replacing }`. */
+  const [pendingGenerate, setPendingGenerate] = useState(null);
   const [genCopied, setGenCopied] = useState(false);
 
-  const trimmedKey = form?.key.trim() ?? '';
-  const canSave = form != null && !blocked && (!isEdit || dirty) && !saving;
+  const trimmedKey = form.key.trim();
+  const canSave = !blocked && (!isEdit || dirty) && !saving;
 
   /* Renaming a secret re-creates it under the new key: the old key is removed
    * and the new one is written with whatever the value field holds. */
-  const renamingStoredSecret = isEdit && !!form?.secret && !!row?.isSet && trimmedKey !== rowKey;
+  const renamingStoredSecret = isEdit && !!form.secret && !!row?.isSet && trimmedKey !== rowKey;
 
   const requestGenerate = () => {
     setGenCopied(false);
@@ -174,11 +164,7 @@ function EnvVarEditor({ open, containerName, rowKey: openedKey, onSubmit, onClos
 
   const handleSave = () => {
     if (!canSave) return;
-    saveForm(async (sent) => {
-      const ok = await save.run(() => onSubmit({ envPatch: envPatch(sent, row) }));
-      if (ok && isEdit) setRowKey(sent.key);
-      return ok;
-    }).then((ok) => { if (ok) onClose(); });
+    save.run(() => onSubmit({ envPatch: envPatch(envSent(form, row), row) })).then((ok) => { if (ok) onClose(); });
   };
 
   /* An empty key says nothing under the field (Save says why it is off). */
@@ -188,7 +174,7 @@ function EnvVarEditor({ open, containerName, rowKey: openedKey, onSubmit, onClos
       ? 'Renaming a secret stores it under the new key with the value below.'
       : null;
 
-  const valueHint = form?.secret
+  const valueHint = form.secret
     ? isEdit && row?.isSet
       ? 'Leave empty to keep the stored secret. Secrets are never read back, only overwritten.'
       : 'Stored hidden — it can only be overwritten later, never read back.'
@@ -217,7 +203,6 @@ function EnvVarEditor({ open, containerName, rowKey: openedKey, onSubmit, onClos
           </>
         )}
       >
-        {form == null ? <EditorGone what="variable" /> : (
         <form
           id={FORM_ID}
           onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -271,7 +256,6 @@ function EnvVarEditor({ open, containerName, rowKey: openedKey, onSubmit, onClos
           />
           <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
         </form>
-        )}
       </Modal>
 
       <ConfirmDialog

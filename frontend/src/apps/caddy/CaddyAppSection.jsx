@@ -4,6 +4,7 @@
  * reveals the API token field, then a Hosts sub-header with add button,
  * then the hosts table.
  */
+import { useState } from 'react';
 import { Plus, Trash2, Globe, Eye, EyeOff, Server } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
@@ -20,7 +21,7 @@ import {
 } from '../../components/shared/DataTableChrome.jsx';
 import { rowId } from '../../hooks/formState.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useForm } from '../../hooks/useForm.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 
@@ -59,13 +60,11 @@ function appConfigToSend(form) {
 }
 
 export default function CaddyAppSection({ config, onSave }) {
-  /* The form follows the container's config record by value: a save elsewhere that
-   * leaves this app's settings as they were leaves its edits. */
+  /* The form follows the container's config record until it is edited. */
   const record = useRecord(RECORD.CONTAINER, config.name);
-  const { form, generation, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
+  const { form, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
   const save = useCommand();
-  /* The token revealed: held on the form as it is, a reset hides it again. */
-  const [showToken, setShowToken] = useHeld(generation);
+  const [showToken, setShowToken] = useState(null);
   const toggleShowToken = () => setShowToken((on) => (on ? null : true));
 
   const updateField = (field, value) => {

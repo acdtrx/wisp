@@ -45,9 +45,6 @@ const BOOT_DEVICES = [
   { value: 'network', label: 'Network' },
 ];
 
-/** The fields locked unless the VM is shut off (workloadLocks.js). */
-const OFFLINE_ONLY = ['machineType', 'cpuMode', 'firmware', 'nestedVirt', 'vtpm'];
-
 function advancedFormFromVmConfig(vmConfig) {
   const machineRaw = vmConfig.machineType || '';
   const machineValue = machineRaw.includes('q35') ? 'q35' : machineRaw.includes('440') ? 'pc-i440fx' : machineRaw || 'q35';
@@ -78,8 +75,7 @@ export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, 
   const [collapsed, setCollapsed] = useState(true);
 
   const record = useRecord(isCreating ? null : RECORD.VM, vmConfig.name);
-  /* A locked field shows its stored value, and is neither sent nor a change. */
-  const edit = useForm(record, advancedFormFromVmConfig, undefined, { locked: offlineOnly ? OFFLINE_ONLY : [] });
+  const edit = useForm(record, advancedFormFromVmConfig);
   const form = isCreating ? draft : edit.form;
   const save = useCommand();
 

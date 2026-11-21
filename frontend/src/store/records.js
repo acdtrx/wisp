@@ -86,8 +86,7 @@ export const RECORD_KINDS = {
     cues: [{ topic: TOPIC.CONTAINERS, key: (list, name) => (Array.isArray(list) ? list.find((c) => c.name === name)?.state ?? null : undefined) }],
   },
   /* `[container, mount]`; read while its editor is open, and again on its container's
-   * change (the editor follows it by value: a read with the same content leaves its
-   * edits). */
+   * change (the editor follows it while not edited). */
   [RECORD.MOUNT_FILE_CONTENT]: {
     fetch: ([container, mount], o) => containersApi.getMountFileContent(container, mount, o),
     goneCodes: ['CONTAINER_MOUNT_NOT_FOUND', 'CONTAINER_NOT_FOUND'],

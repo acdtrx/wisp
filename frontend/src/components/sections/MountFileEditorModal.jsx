@@ -24,7 +24,7 @@ function MountFileEditor({
   mountName,
   onClose,
 }) {
-  /* The file's content is read while the editor is open; the text follows it by value. */
+  /* The file's content is read while the editor is open; the text follows it until edited. */
   const content = useRecord(RECORD.MOUNT_FILE_CONTENT, containerName && mountName ? [containerName, mountName] : null);
   const { form: text, setForm, dirty, saving, save: saveForm } = useForm(content, contentText);
   const setText = (value) => setForm(() => value);

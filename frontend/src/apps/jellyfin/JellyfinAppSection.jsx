@@ -4,7 +4,7 @@
  * acceleration toggle, and the published URL Jellyfin advertises to clients
  * on the LAN.
  */
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import { Cpu, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import SectionCard from '../../components/shared/SectionCard.jsx';
@@ -13,7 +13,7 @@ import HelpIcon from '../../components/shared/HelpIcon.jsx';
 import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
 import RecordGate from '../../components/shared/RecordGate.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useForm } from '../../hooks/useForm.js';
 import { rowId } from '../../hooks/formState.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
@@ -90,8 +90,7 @@ function libraryRowError(lib, libraries) {
   return null;
 }
 
-/** What keeps the libraries from being saved, by the row each is about (the form hook
- *  keeps those of rows the user changed). */
+/** What keeps the libraries from being saved, by the row each is about. */
 function libraryProblems(form) {
   const problems = {};
   form.libraries.forEach((lib, i) => {
@@ -105,12 +104,12 @@ export default function JellyfinAppSection({ config, onSave }) {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
 
-  /* The form follows the container's config record by value: a save elsewhere that
-   * leaves this app's settings as they were leaves its edits. */
+  /* The form follows the container's config record until it is edited. */
   const record = useRecord(RECORD.CONTAINER, config.name);
-  const { form, generation, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
-    record, parseAppConfig, appConfigToSend, { problems: libraryProblems },
-  );
+  const { form, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
+  /* A library row with a problem shows it under the row, and keeps Save off. */
+  const problems = libraryProblems(form);
+  const blocked = Object.values(problems)[0] ?? null;
   const gpus = useRecord(RECORD.HOST_GPUS);
   const hostGpus = gpus.data ? (Array.isArray(gpus.data.gpus) ? gpus.data.gpus : []) : (gpus.error ? [] : null);
   /* A failed read of the host's GPUs shows once, in the Devices section: here the
@@ -133,7 +132,7 @@ export default function JellyfinAppSection({ config, onSave }) {
   /* The library editor: the row it edits (null to add one) and the form as it was when
    * it opened. A reset of the form (a save elsewhere) closes it, and an edit whose row
    * is gone never applies to another. */
-  const [editor, setEditor] = useHeld(generation);
+  const [editor, setEditor] = useState(null);
   const editingLibrary = editor?.rowId != null
     ? form.libraries.find((lib) => lib.rowId === editor.rowId) || null
     : null;

@@ -5,7 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useForm } from '../../hooks/useForm.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -105,9 +105,7 @@ export default function CloudInitSection({ vmConfig, isCreating, draft, onDraft,
   const saving = edit.saving || op.busy;
   const [ghUsername, setGhUsername] = useState('');
   const [ghKeys, setGhKeys] = useState([]);
-  /* The password revealed: held on the form as it is, a reset hides it again (the create
-   * draft is never reset). */
-  const [showPassword, setShowPassword] = useHeld(edit.generation);
+  const [showPassword, setShowPassword] = useState(null);
   const toggleShowPassword = () => setShowPassword((on) => (on ? null : true));
 
   const startEditing = () => {

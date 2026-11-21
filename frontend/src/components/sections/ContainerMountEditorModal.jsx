@@ -3,7 +3,6 @@ import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
-  EditorGone,
   FormCheckbox,
   FormField,
   formModalNeutralBtn,
@@ -13,10 +12,8 @@ import { addContainerMount, updateContainerMount } from '../../api/containers.js
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useForm.js';
 import { changedFields } from '../../hooks/formState.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
 
 const FORM_ID = 'container-mount-editor-form';
 
@@ -152,8 +149,9 @@ function mountSent(form) {
  * Modal form editor for one container mount (see docs/FRONTEND-RULES.md § Modal
  * form editor). Two entry points like RemovableDriveEditorModal: create — the
  * header Add that was tapped passes its `kind` (`file` | `directory` | `tmpfs`)
- * — or edit the mount named `mountName`. Its record is the container's config.
- * Saves through the row-scoped mount APIs, then closes; stays open on failure.
+ * — or edit `mount`. It takes the mount's values when it opens, and checks duplicates
+ * against the container's other mounts as they were then (`mounts`). Saves through
+ * the row-scoped mount APIs, then closes; stays open on failure.
  */
 export default function ContainerMountEditorModal(props) {
   return props.open ? <ContainerMountEditor {...props} /> : null;
@@ -161,15 +159,14 @@ export default function ContainerMountEditorModal(props) {
 
 /**
  * What a mount editor's values lack to be saved, by the field each is about: the rule
- * set the inline row editor enforced. Duplicates are checked against the other mounts
- * of the record as the form took it (`taken`; the mount itself is `mountName`).
+ * set the inline row editor enforced. Duplicates are checked against `others`, the
+ * container's other mounts.
  */
-function mountProblems(form, taken, mountName) {
+function mountProblems(form, others) {
   const problems = {};
   const isTmpfs = form.type === 'tmpfs';
   const name = form.name.trim();
   const containerPath = form.containerPath.trim();
-  const others = (taken?.mounts || []).filter((m) => m.name !== mountName);
   if (name === '') problems.name = 'Mount name is required.';
   else if (others.some((m) => m.name === name)) problems.name = `Duplicate mount name: ${name}`;
   if (containerPath === '') problems.containerPath = 'Container path is required.';
@@ -189,34 +186,23 @@ function mountProblems(form, taken, mountName) {
 function ContainerMountEditor({
   open,
   containerName,
-  mountName: openedName = null,
+  mount = null,
+  mounts = [],
   kind = 'file',
   storageMounts = [],
   runAsRoot = false,
   onClose,
 }) {
-  const record = useRecord(RECORD.CONTAINER, containerName);
-  const isEdit = openedName != null;
-  /* The mount's name: the one it opened on, then the one its own save sent (from the
-   * command's ack on, whatever the re-read does). */
-  const [mountName, setMountName] = useState(openedName);
-  const [blank] = useState(() => formFromMount(null, kind));
-  const editor = useForm(
-    record,
-    (config) => {
-      if (!isEdit) return blank;
-      const stored = (config.mounts || []).find((m) => m.name === mountName);
-      return stored ? formFromMount(stored) : null;
-    },
-    mountSent,
-    /* A stored value the client check refuses is no problem: the form hook keeps those
-     * of values the user changed. */
-    { problems: (values, data, taken) => mountProblems(values, taken, mountName), creating: !isEdit },
-  );
-  const { setForm, setField, dirty, saving, problems, blocked, save: saveForm } = editor;
+  /* The mount, and the container's other mounts, as the editor opened. */
+  const [opened] = useState({ mount, others: mounts.filter((m) => m.name !== mount?.name) });
+  const isEdit = opened.mount != null;
+  const mountName = opened.mount?.name ?? null;
+  const others = opened.others;
+  const { form, start, setForm, setField, dirty } = useEditor(() => formFromMount(opened.mount, kind));
   const save = useCommand();
-  /* The mount is gone (removed elsewhere): the body says so, over the blank values. */
-  const form = editor.form ?? blank;
+  const saving = save.busy;
+  const problems = mountProblems(form, others);
+  const blocked = Object.values(problems)[0] ?? null;
 
   const isTmpfs = form.type === 'tmpfs';
   const trimmedName = form.name.trim();
@@ -224,15 +210,15 @@ function ContainerMountEditor({
   /* Owner idmap applies to Local (non-storage) bind mounts only. */
   const showOwnerIds = runAsRoot && !isTmpfs && !form.sourceId;
 
-  /* Each field's problem that stands, under it; an empty name or path says nothing there
-   * (Save says why it is off). */
+  /* Each field's problem, under it; an empty name or path says nothing there (Save says
+   * why it is off). */
   const pathError = trimmedPath !== '' ? problems.containerPath ?? null : null;
   const nameError = trimmedName !== '' ? problems.name ?? null : null;
   const sizeError = problems.sizeMiB ?? null;
   const subPathError = problems.subPath ?? null;
   const ownerError = problems.containerOwnerUid ?? problems.containerOwnerGid ?? null;
-  /* An edit needs a change that sends something; a new mount only valid values. */
-  const canSave = editor.form != null && !blocked && (!isEdit || dirty) && !saving;
+  /* An edit needs a change; a new mount only valid values. */
+  const canSave = !blocked && (!isEdit || dirty) && !saving;
 
   /* Clearing the source drops its sub-path — it only means anything under a storage mount. */
   const setSource = (nextSourceId) => {
@@ -248,13 +234,10 @@ function ContainerMountEditor({
 
   const handleSave = () => {
     if (!canSave) return;
-    saveForm(async (values, saved) => {
-      const ok = await save.run(() => (isEdit
-        ? updateContainerMount(containerName, mountName, changedFields(values, saved))
-        : addContainerMount(containerName, buildCreatePayload(form))));
-      if (ok && isEdit) setMountName(values.name);
-      return ok;
-    }).then((ok) => { if (ok) onClose(); });
+    save.run(() => (isEdit
+      ? updateContainerMount(containerName, mountName, changedFields(mountSent(form), mountSent(start)))
+      : addContainerMount(containerName, buildCreatePayload(form))))
+      .then((ok) => { if (ok) onClose(); });
   };
 
   const meta = KIND_META[form.type] || KIND_META.file;
@@ -281,7 +264,7 @@ function ContainerMountEditor({
         </>
       )}
     >
-      {editor.form == null ? <EditorGone what="mount" /> : (
+
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -395,7 +378,7 @@ function ContainerMountEditor({
         {form.type === 'file' && (
           <FormCheckbox
             label="Secret"
-            hint={isEdit && editor.saved?.secret
+            hint={isEdit && start.secret
               ? 'Unchecking empties the stored file — upload or paste the content again afterwards.'
               : 'Content becomes write-only — it can be replaced or cleared, never read back.'}
             checked={form.secret}
@@ -436,7 +419,6 @@ function ContainerMountEditor({
 
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
-      )}
     </Modal>
   );
 }

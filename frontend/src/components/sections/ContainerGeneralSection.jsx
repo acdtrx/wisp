@@ -39,20 +39,15 @@ export default function ContainerGeneralSection({ config, isCreating, draft, onD
   const nameEditable = isCreating || !containerLocked(config?.state);
 
   const record = useRecord(isCreating ? null : RECORD.CONTAINER, config.name);
-  /* A locked name shows the stored one, and a name left in the field is neither sent
-   * nor a change. */
-  const edit = useForm(record, containerGeneralForm, containerGeneralSent, {
-    locked: nameEditable ? [] : ['name'],
-    problems: containerGeneralProblems,
-  });
+  const edit = useForm(record, containerGeneralForm, containerGeneralSent);
   const form = isCreating ? draft : edit.form;
   const save = useCommand();
 
   /* What keeps the values from being saved, shown beside its field: Save is blocked
-   * with the first (the form hook keeps those of values the user changed). */
-  const problems = isCreating ? {} : edit.problems;
+   * with the first. */
+  const problems = isCreating || form == null ? {} : containerGeneralProblems(form);
   const nameError = problems.name ?? null;
-  const blocked = isCreating ? null : edit.blocked;
+  const blocked = Object.values(problems)[0] ?? null;
 
   const updateField = (key, value) => (isCreating
     ? onDraft((d) => ({ ...d, [key]: value }))
@@ -62,7 +57,7 @@ export default function ContainerGeneralSection({ config, isCreating, draft, onD
     if (blocked) return;
     /* A save that renames the container ends at its ack and the page follows to the new
      * name, whose page reads its record like any page: this form goes with the old one. */
-    const changes = changedFields(containerGeneralSent(edit.form), containerGeneralSent(edit.saved));
+    const changes = changedFields(containerGeneralSent(edit.form), containerGeneralSent(edit.start));
     if (changes.name) {
       save.run(() => onSave(changes)).then((ok) => { if (ok) onRenamed?.(changes.name); });
       return;

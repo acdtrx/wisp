@@ -151,7 +151,7 @@ export default function ContainerEnvSection({ config, onSave }) {
 
       <EnvVarEditorModal
         open={editor.open}
-        containerName={config.name}
+        env={config.env}
         rowKey={editor.key}
         onSubmit={submitEnvPatch}
         onClose={() => setEditor({ open: false, key: null })}
