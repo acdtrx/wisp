@@ -292,7 +292,7 @@ Progress steps are `pausing → measuring → archiving → resuming → manifes
 
 A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopped from `index.js` alongside the hourly update checks) backs up every container whose `container.json` has **`autoBackup: true`** (toggle in the container's General section; default `false`).
 
-**Configuration** lives in `settings.backupSchedule` (**Host → Host Mgmt → Backup Scheduler**):
+**Configuration** lives in `settings.backupSchedule` (**Host → Host Mgmt → Scheduled backups**):
 
 | Field | Default | Constraints | Description |
 |-------|---------|-------------|-------------|

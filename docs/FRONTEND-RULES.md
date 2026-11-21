@@ -19,23 +19,22 @@ holds the UI library's rules.
     the self-update's version poll.
   - Applied: the wire's names (topics, change kinds, job kinds) are written once, in
     `shared/`, never as a bare string.
-  - Applied (settled 2026-11-21): the app shows the server's state, except what is
-    being edited.
-    - A form that edits a saved record follows it until the user edits. From the first
-      edit until Save succeeds or the edit is undone, it keeps the user's values and
-      ignores changes to the record. The last save wins: the same form edited in two
-      tabs at once is not handled.
-    - Save is enabled when the form differs from the values it started from and has no
-      problem. A problem shows beside its field.
-    - A modal editor takes what it edits when it opens. Its Save sends; success closes
-      it, a failure shows the server's error.
+  - Applied (settled 2026-11-21): a page has three shapes and no others.
+    - **View**: a page shows the server's state, live, as text.
+    - **Edit**: a group of settings has one Edit. It opens a form holding the values as
+      they were when it opened; Save sends the group in one request, only what changed,
+      and closes the form; a failure keeps it open with the server's error. The last
+      save wins: the same thing edited in two tabs at once is not handled. Save is
+      enabled when the form differs from what it opened with and has no problem; a
+      problem shows beside its field. Every such form goes through the one editor hook.
+    - **Act**: a switch or a button on a page acts at once, in one request.
+    - No page holds a form with a Save of its own. An input to a command (a password
+      change, a token's name, a name typed in place, sign-in) is its control's own
+      state.
     - A page whose workload was deleted elsewhere says it is gone; one renamed
       elsewhere is followed to its new name (`specs/UI.md`).
-    - Creating a VM or a container, the panel's draft is the only state, and one
-      function turns it into the create request.
-    - Every form goes through the one form hook, every modal editor through the one
-      editor hook. (The form hook is leaving: `features/workload-pages.md` replaces
-      forms on a page with editors, page by page.)
+    - Creating a VM or a container is a form of its own: its draft is the only state,
+      and one function turns it into the create request.
   - Applied (settled 2026-11-21, replacing 2026-11-15's "busy until the stream brings
     its new state"): a command's control is busy until the server answers: its ack, or
     the end of its job. A job that ended cancelled is a failure. Nothing waits for the
@@ -330,7 +329,7 @@ Apply each **save**, **delete**, and other mutating action to **one row** (one A
 
 #### 2. Add controls in the section header (right)
 
-Place **add** actions in `SectionCard` **`headerAction`**, aligned to the **far right** of the section header (after restart badge and Save when dirty). Never let header clicks toggle collapse: give the right-hand control cluster `stopPropagation` when the card is collapsible.
+Place **add** actions in `SectionCard` **`headerAction`**, aligned to the **far right** of the card's header.
 
 - **Add buttons:** accent background; **icon-only** or **`Plus` + a second icon** that names the kind of thing being added (e.g. `Plus`+`File`, `Plus`+`Folder`, `Plus`+`Server` for network mount, `Plus`+`Network` for bridge or NIC, `Plus`+`Braces` for env).
 - Do **not** use a full-width dashed “add row” at the bottom of the table for the primary add path when a header add is appropriate.
@@ -372,14 +371,14 @@ Accessibility:
 
 ### Section shell (Host panels and table pages)
 
-Build major blocks on **Host** tabs (Overview, Host Mgmt, Image Library) with **`SectionCard`** so tables and forms match the same **white card on page background** look as Host Overview sections.
+Build major blocks on **Host** tabs (Overview, Host Mgmt, Image Library) with **`SectionCard`** so tables and lists match the same **white card on page background** look as Host Overview sections and the workload pages' groups.
 
 | Aspect | Convention |
 |--------|----------------|
 | **Card** | `SectionCard` — `rounded-card border border-surface-border bg-surface-card` |
-| **`titleIcon`** | Lucide icon **14px**, **`strokeWidth={2}`**, muted (SectionCard places it before the uppercase title). Same pattern as [HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx) (CPU, Memory, Hardware, etc.). |
+| **`titleIcon`** | Lucide icon **14px**, **`strokeWidth={2}`**, muted (SectionCard places it before the title, which is in sentence case). Same pattern as [HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx) (CPU, Memory, Hardware, etc.). |
 | **`helpText`** | Optional one-line description shown via a small `HelpCircle` icon next to the title (native `title=` + `aria-label`, rendered by [HelpIcon.jsx](../frontend/src/components/shared/HelpIcon.jsx)). Use this instead of an in-body `<p className="text-text-muted">` blurb when the text is descriptive context the user can ignore — keeps vertical space for actual content. |
-| **Header right** | Filters, **Save**, **`headerAction`** (add/upload/download icons) stay in the section header row — not inside the HTML `<thead>`. |
+| **Header right** | Filters and **`headerAction`** (add/upload/download icons) stay in the section header row — not inside the HTML `<thead>`. |
 | **Body** | Default content padding `px-5 py-4` below the header divider (`border-t`). |
 | **Page gutters** | Outer wrapper **`px-6 py-5`** (and **`space-y-5`** between multiple sections); outer container scrolls when content is tall — same as Host Overview / Host Mgmt. |
 
@@ -409,7 +408,7 @@ Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with t
 - **[HostStorage.jsx](../frontend/src/components/host/HostStorage.jsx)** — Row-scoped mount API (`/api/host/mounts`) for SMB + adopted removable drives; `DataTable` chrome with **read-only rows** — create/edit/adopt go through `SmbShareEditorModal` / `RemovableDriveEditorModal`; mount state as a **status dot before the label** (no Status column); on phones the Actions column is hidden and actions **expand under the row text on tap**; combined mount/unmount with mounted-state background; SMB **Check** uses green/red on the shield button (errors on hover); separate "Detected drives" table rendered only when non-empty, visible at all breakpoints.
 - **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Collapsible per-workload cards (custom rich headers on the SectionCard visual tokens); per-backup icon actions on row hover; typed-name `ConfirmDialog` for container restore-in-place.
 - **[HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx)** (hardware inventory) — Read-only; **`SectionCard`** + **`titleIcon`** per section; shared table chrome.
-- **[HostMgmt.jsx](../frontend/src/components/host/HostMgmt.jsx)** — Stacked **`SectionCard`**s (**OS Update**, **Network Bridges**, **Network Storage**, **Backup**) with **`titleIcon`** on each; same page gutters as Overview.
+- **[HostMgmt.jsx](../frontend/src/components/host/HostMgmt.jsx)** — Stacked cards (**Network bridges**, **Storage**, **Backup**, **Scheduled backups**); same page gutters as Overview.
 
 ### Modals and dialogs
 

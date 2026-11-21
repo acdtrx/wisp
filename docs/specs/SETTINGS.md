@@ -16,11 +16,11 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
 
-**Saving and live updates (settled 2026-11-15).** A save answers with an ack (API.md, Command responses); every tab reloads settings when the `changes` topic names them, a mount add, edit or remove included (mounts live in this record). A settings form shows the saved settings and follows them until the user edits it; from the first edit until Save succeeds or the edit is undone it keeps the user's values, whatever is saved elsewhere, and the last save wins (settled 2026-11-21, replacing 2026-11-15's "treats the values it sent as saved" and "resets on any settings change"). A failed save leaves the form as typed.
+**Saving and live updates (settled 2026-11-22).** A save answers with an ack (API.md, Command responses); every tab reloads settings when the `changes` topic names them, a mount add, edit or remove included (mounts live in this record). The settings pages show the saved settings as text. A group's Edit opens a form holding the values as they were when it opened; its Save sends only what changed, and a failed save keeps the form open with the server's message. The last save wins. A setting that is a plain on/off (LAN discovery, scheduled backups, SSO) is a switch that acts at once. This replaces the forms that sat open with a Save, and the rules of 2026-11-15 and 2026-11-21 for how they followed the settings.
 
 ## Single sign-on (`oidc`)
 
-Configured in **Host → App Config → Single sign-on** (issuer URL, client ID, client secret, enable toggle). Saved through `PATCH /api/settings/oidc`, which requires a browser session — API tokens cannot change SSO (settled 2026-10-16, see [AUTH.md](AUTH.md) § Denied surfaces). The client secret is write-only: the field stays blank with a "saved" placeholder, and leaving it blank keeps the saved secret. Changing the issuer or client ID marks the secret required — the saved one is never reused for a different provider. Behavior and validation: [AUTH.md](AUTH.md) § OIDC.
+Configured in **Host → App Config → Single sign-on** (issuer URL, client ID and client secret in its form; a switch turns SSO on, off with its reason until all three are stored). Saved through `PATCH /api/settings/oidc`, which requires a browser session — API tokens cannot change SSO (settled 2026-10-16, see [AUTH.md](AUTH.md) § Denied surfaces). The client secret is write-only: the field stays blank with a "saved" placeholder, and leaving it blank keeps the saved secret. Changing the issuer or client ID marks the secret required — the saved one is never reused for a different provider. Behavior and validation: [AUTH.md](AUTH.md) § OIDC.
 
 ## SSH keys (`sshKeys`)
 
@@ -87,13 +87,13 @@ Configured in **Host → Host Mgmt → Backup**.
 | Setting | Description |
 |---------|-------------|
 | `backupLocalPath` | Local directory for backups (always available as a destination in the backup modals). |
-| `backupMountId` | Optional. If set to a mount `id` from `mounts`, that mount appears as a second destination in the backup modals and the Backup Scheduler. Use `(none)` when no extra destination should be offered for backups. |
+| `backupMountId` | Optional. If set to a mount `id` from `mounts`, that mount appears as a second destination in the backup modals and in Scheduled backups. Any mount can be picked, an SMB share or an adopted drive (settled 2026-11-22: the form offered shares only). None means no extra destination is offered for backups. |
 
 VM backups still require the VM to be stopped; container backups pause a running container for the duration of the archive instead. The modals list **Local** plus at most one extra destination when `backupMountId` is set.
 
-## Backup Scheduler (`backupSchedule`)
+## Scheduled backups (`backupSchedule`)
 
-Configured in **Host → Host Mgmt → Backup Scheduler**. Runs a daily backup of every container with **Auto Backup** enabled (container General section).
+Configured in **Host → Host Mgmt → Scheduled backups**: a switch turns the schedule on, and the form holds the time, the destinations and how long to keep (a number out of range is refused with a reason). Runs a daily backup of every container with the nightly backup switched on (the container page's Start-up and backups group).
 
 | Setting | Description |
 |---------|-------------|
