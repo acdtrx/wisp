@@ -171,7 +171,7 @@ export default function BackupsPanel() {
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [restoreName, setRestoreName] = useState('');
   /* Each command keyed by the backup (or, in place, by the workload): backups run in
-   * parallel, each with its error. */
+   * parallel, each with its error. Confirms close at once; the row shows its command. */
   const restore = useCommand();
 
   /* Restore in place (confirm dialog) */
@@ -290,8 +290,8 @@ export default function BackupsPanel() {
     inPlace.dismiss('confirm');
   };
 
-  /* The confirm stays open until the restore is acked, then the job's progress shows on
-   * the workload's card. */
+  /* The confirm closes once the typed name matches; busy until the ack, then the job's
+   * progress shows on the workload's card. */
   const handleInPlaceConfirm = () => {
     if (!inPlaceTarget) return;
     const { group, backup } = inPlaceTarget;
@@ -299,9 +299,9 @@ export default function BackupsPanel() {
       inPlace.fail(`Type "${group.name}" to confirm`, 'confirm');
       return;
     }
+    setInPlaceTarget(null);
     const target = { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
-    inPlace.run(() => restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety }), { key: backupKey(backup), about: aboutOf(backup, group) })
-      .then(() => setInPlaceTarget(null));
+    inPlace.run(() => restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety }), { key: backupKey(backup), about: aboutOf(backup, group) });
   };
 
   /* ── Delete ── */
@@ -310,11 +310,12 @@ export default function BackupsPanel() {
   const handleDeleteConfirm = () => {
     if (!deleteTarget) return;
     const { group, backup } = deleteTarget;
+    setDeleteTarget(null);
     remove.run(() => sendAndAwaitTopic(TOPIC.BACKUPS, () => (backup.kind === 'container'
       ? deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp })
       : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp }))), {
       key: backupKey(backup), about: aboutOf(backup, group),
-    }).then(() => setDeleteTarget(null));
+    });
   };
 
   /* ── Rendering ── */

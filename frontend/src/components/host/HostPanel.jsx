@@ -80,8 +80,11 @@ export default function HostPanel() {
   }
   const softwareBadgeTitle = softwareReasons.length > 0 ? softwareReasons.join(' · ') : null;
 
-  /* The confirm stays open until the command ends; the button shows it in flight. */
-  const runPower = (key, send, closeConfirm) => power.run(send, { key }).then(() => closeConfirm(false));
+  /* The confirm closes at once; the button shows the command in flight. */
+  const runPower = (key, send, closeConfirm) => {
+    closeConfirm(false);
+    power.run(send, { key });
+  };
   const handlePowerOff = () => runPower('shutdown', hostShutdown, setPowerOffOpen);
   const handleRestart = () => runPower('restart', hostReboot, setRestartOpen);
 

@@ -76,12 +76,12 @@ export default function ApiTokensSettings() {
     });
   };
 
-  /* The confirm stays open until the revoke ends; the token's row shows it in flight. */
+  /* The confirm closes at once; the token's row shows the revoke in flight. */
   const handleDelete = () => {
     if (!deleteTarget) return;
     const { id } = deleteTarget;
-    revoke.run(() => sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => deleteApiToken(id)), { key: id })
-      .then(() => setDeleteTarget(null));
+    setDeleteTarget(null);
+    revoke.run(() => sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => deleteApiToken(id)), { key: id });
   };
 
   const copyToken = async () => {
