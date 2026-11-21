@@ -3,10 +3,14 @@ import { CalendarClock } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
-import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
-import SettingsGate from '../shared/SettingsGate.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import { RECORD } from '../../store/records.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { useForm } from '../../hooks/useForm.js';
 import { errorText } from '../../api/errors.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const DEFAULT_SCHEDULE = {
   enabled: false,
@@ -36,13 +40,11 @@ function clampInt(value, min, max, fallback) {
 }
 
 export default function HostBackupScheduler() {
-  const [form, setForm] = useState(() => fromSettings(null));
+  const settingsRecord = useRecord(RECORD.SETTINGS);
+  const settings = settingsRecord.data;
+  const { form, setForm, dirty, save } = useForm(settings, fromSettings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-
-  const { settings, sent, save } = useSettingsForm((loaded) => setForm(fromSettings(loaded)));
-
-  const dirty = JSON.stringify(form) !== JSON.stringify(sent ?? fromSettings(settings));
 
   /* Local, plus the mount chosen in the Backup section above (when set). */
   const backupMount = settings?.backupMountId
@@ -73,15 +75,15 @@ export default function HostBackupScheduler() {
     setError(null);
     setSaving(true);
     try {
-      await save(form, () => updateSettings({
+      await save((sent) => sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
         backupSchedule: {
-          enabled: form.enabled,
-          time: form.time,
-          destinationIds: form.destinationIds,
-          retainDays: clampInt(form.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
-          retainWeeks: clampInt(form.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
+          enabled: sent.enabled,
+          time: sent.time,
+          destinationIds: sent.destinationIds,
+          retainDays: clampInt(sent.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
+          retainWeeks: clampInt(sent.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
         },
-      }));
+      })));
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -101,76 +103,78 @@ export default function HostBackupScheduler() {
       isDirty={dirty}
       error={error}
     >
-      <SettingsGate>
-      <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
-        <div className="shrink-0">
-          <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-            Enabled
-          </label>
-          <div className={`flex items-center ${controlHeightClass}`}>
-            <Toggle
-              checked={form.enabled}
-              onChange={(v) => setForm((prev) => ({ ...prev, enabled: v }))}
-            />
-          </div>
-        </div>
-        <div className="w-28 shrink-0">
-          <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-            Time
-          </label>
-          <input
-            type="time"
-            value={form.time}
-            onChange={(e) => setForm((prev) => ({ ...prev, time: e.target.value || prev.time }))}
-            className={`input-field w-full text-sm ${controlHeightClass}`}
-          />
-        </div>
-        <div className="shrink-0">
-          <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-            Destinations
-          </label>
-          <div className={`flex items-center gap-4 ${controlHeightClass}`}>
-            {destinationOptions.map((d) => (
-              <label key={d.id} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.destinationIds.includes(d.id)}
-                  onChange={() => toggleDestination(d.id)}
-                  className="rounded-sm border-surface-border"
-                />
-                <span className="text-sm text-text-primary">{d.label}</span>
+      <RecordGate record={settingsRecord} what="settings">
+        {() => (
+          <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
+            <div className="shrink-0">
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                Enabled
               </label>
-            ))}
+              <div className={`flex items-center ${controlHeightClass}`}>
+                <Toggle
+                  checked={form.enabled}
+                  onChange={(v) => setForm((prev) => ({ ...prev, enabled: v }))}
+                />
+              </div>
+            </div>
+            <div className="w-28 shrink-0">
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                Time
+              </label>
+              <input
+                type="time"
+                value={form.time}
+                onChange={(e) => setForm((prev) => ({ ...prev, time: e.target.value || prev.time }))}
+                className={`input-field w-full text-sm ${controlHeightClass}`}
+              />
+            </div>
+            <div className="shrink-0">
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                Destinations
+              </label>
+              <div className={`flex items-center gap-4 ${controlHeightClass}`}>
+                {destinationOptions.map((d) => (
+                  <label key={d.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.destinationIds.includes(d.id)}
+                      onChange={() => toggleDestination(d.id)}
+                      className="rounded-sm border-surface-border"
+                    />
+                    <span className="text-sm text-text-primary">{d.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="w-24 shrink-0">
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                Keep days
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={form.retainDays}
+                onChange={(e) => setForm((prev) => ({ ...prev, retainDays: e.target.value }))}
+                className={`input-field input-field-no-spinner w-full text-right text-sm ${controlHeightClass}`}
+              />
+            </div>
+            <div className="w-24 shrink-0">
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                Keep weeks
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={52}
+                value={form.retainWeeks}
+                onChange={(e) => setForm((prev) => ({ ...prev, retainWeeks: e.target.value }))}
+                className={`input-field input-field-no-spinner w-full text-right text-sm ${controlHeightClass}`}
+              />
+            </div>
           </div>
-        </div>
-        <div className="w-24 shrink-0">
-          <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-            Keep days
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={365}
-            value={form.retainDays}
-            onChange={(e) => setForm((prev) => ({ ...prev, retainDays: e.target.value }))}
-            className={`input-field input-field-no-spinner w-full text-right text-sm ${controlHeightClass}`}
-          />
-        </div>
-        <div className="w-24 shrink-0">
-          <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-            Keep weeks
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={52}
-            value={form.retainWeeks}
-            onChange={(e) => setForm((prev) => ({ ...prev, retainWeeks: e.target.value }))}
-            className={`input-field input-field-no-spinner w-full text-right text-sm ${controlHeightClass}`}
-          />
-        </div>
-      </div>
-      </SettingsGate>
+        )}
+      </RecordGate>
     </SectionCard>
   );
 }

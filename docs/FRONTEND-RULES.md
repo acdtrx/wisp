@@ -30,14 +30,20 @@ holds the UI library's rules.
     reload, dismiss }`, `status` one of loading, ready, error, gone (a 404 is gone, not
     an error); the stale-answer guard is the cache's alone
     (`specs/ERROR-HANDLING.md`, Stale responses).
+  - Applied (settled 2026-11-21): stage edits behind a Save with `useForm(record,
+    toForm)` (`hooks/useForm.js`): the form follows its record by value (a write
+    elsewhere in the record leaves it be), and `dirty` is computed by value. While its
+    own save is in flight the form does not follow its record; when the save's command
+    ends — which is after the re-read of what it changed has landed — the form follows
+    the record as it then is. A failed save leaves the form as typed, dirty. A save
+    whose command ends before its record's re-read is a bug in the command.
   - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
     its new state (its topic's next frame, or the `changes` reference and the re-read it
     triggers), so a section or modal closes onto fresh data; a command error ends it at
-    once. Settings forms instead treat what they sent as saved (`specs/SETTINGS.md`). A
-    request the guest may ignore (VM Stop, which is an ACPI shutdown, and Reboot) ends at
-    the ack: the list shows the VM stopping when it does (settled 2026-11-16). A wait
-    ends after 30 s even if no frame came, with no error: the command was accepted
-    (settled 2026-11-16, CODING-RULES §6).
+    once. A request the guest may ignore (VM Stop, which is an ACPI shutdown, and
+    Reboot) ends at the ack: the list shows the VM stopping when it does (settled
+    2026-11-16). A wait ends after 30 s even if no frame came, with no error: the
+    command was accepted (settled 2026-11-16, CODING-RULES §6).
 - Initialise form and component state with meaningful defaults derived from the data
   model, never with an empty object.
   - Applied: start form state from the config's defaults, never `useState({})`.
