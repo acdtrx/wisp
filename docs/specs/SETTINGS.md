@@ -16,7 +16,7 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
 
-**Saving and live updates (settled 2026-11-15).** A save answers with an ack (API.md, Command responses); every tab reloads settings when the `changes` topic names them, a mount add, edit or remove included (mounts live in this record). A save ends once that reload has landed, and the form then shows the settings as reloaded (settled 2026-11-21, replacing "treats the values it sent as saved until the reload lands"); a failed save leaves the form as typed. Each settings form follows its own values only (settled 2026-11-20, replacing "resets on any settings change", 2026-11-15): when a reload changes the values the form shows, whichever tab or section saved them, the form resets to them; a change elsewhere in the settings (another section's save, a mount added) leaves its unsaved edits as they are.
+**Saving and live updates (settled 2026-11-15).** A save answers with an ack (API.md, Command responses); every tab reloads settings when the `changes` topic names them, a mount add, edit or remove included (mounts live in this record). A settings form shows the saved settings and follows them until the user edits it; from the first edit until Save succeeds or the edit is undone it keeps the user's values, whatever is saved elsewhere, and the last save wins (settled 2026-11-21, replacing 2026-11-15's "treats the values it sent as saved" and "resets on any settings change"). A failed save leaves the form as typed.
 
 ## Single sign-on (`oidc`)
 

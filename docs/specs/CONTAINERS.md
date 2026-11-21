@@ -504,7 +504,7 @@ A container's name is its containerd container ID, the directory key under `cont
 
 **Preconditions:**
 
-- Container must be **stopped** (no running/paused task). Returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise. The user is expected to stop the container manually first; the rename does not auto-stop. The General section's Name input is correspondingly disabled when the container is `running`, `paused`, or `pausing` (matching the same gating used on `network.mac` / `network.interface`).
+- Container must be **stopped** (no running/paused task). Returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise. The user is expected to stop the container manually first; the rename does not auto-stop. The General section's Name input is correspondingly disabled unless the container is stopped, as are `network.mac` / `network.interface`.
 - New name must pass the [name rules](#name-validation) (1–63 chars, no `..` / path separators).
 - New name must not already exist as a containerd container or as a directory under `containersPath`. Returns **409** `CONTAINER_EXISTS` otherwise.
 
@@ -527,7 +527,7 @@ A container's name is its containerd container ID, the directory key under `cont
 
 **Rollback:** if step 5 fails, the old containerd container record is recreated from the captured spec. If step 6 fails after step 5 succeeded, the new container record is deleted and the old one is recreated. The on-disk directory and `container.json` are only touched after containerd has accepted the new id.
 
-**Client effects (breaking):** the URL `/api/containers/:name/...` and any open SSE / WS channels (stats, logs, container console) under the old name stop responding immediately. The PATCH answers 204 ([API.md](API.md), Command responses). The tab that renamed follows the new name from its own request; every other tab follows the container's `uuid` to its new name in the `containers` list. The client re-selects under the new name (which restarts the stats SSE) and `replace`-navigates to `/container/<newName>/<tab>`; the moved section assignment arrives on the `sections` topic. The previous run-log files travel with the directory rename and remain accessible under the new name.
+**Client effects (breaking):** the URL `/api/containers/:name/...` and any open SSE / WS channels (stats, logs, container console) under the old name stop responding immediately. The PATCH answers 204 ([API.md](API.md), Command responses). The tab that renamed goes to the new name from its own request; every other tab follows the container's `uuid` to its new name in the `containers` list. The client re-selects under the new name (which restarts the stats SSE) and `replace`-navigates to `/container/<newName>/<tab>`; the moved section assignment arrives on the `sections` topic. The previous run-log files travel with the directory rename and remain accessible under the new name.
 
 **Why no auto-stop:** rename is intentionally gated on an explicit pre-stop. Auto-stopping would silently restart-equivalent the container's task (the next start runs under the new name with a fresh snapshot), which is too much side effect for what users expect from editing a name field.
 
