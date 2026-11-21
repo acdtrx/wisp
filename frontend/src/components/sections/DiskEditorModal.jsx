@@ -20,7 +20,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 
 const FORM_ID = 'disk-editor-form';
 

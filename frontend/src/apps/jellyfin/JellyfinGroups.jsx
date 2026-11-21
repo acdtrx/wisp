@@ -11,7 +11,7 @@ import RecordError from '../../components/shared/RecordError.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
 import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';

@@ -12,8 +12,8 @@ import { addMount, patchMount, checkMountConnection } from '../../api/settings.j
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
-import { changedFields } from '../../hooks/formState.js';
+import { useEditor } from '../../hooks/useEditor.js';
+import { changedFields } from '../../hooks/editorValues.js';
 
 const FORM_ID = 'smb-share-editor-form';
 

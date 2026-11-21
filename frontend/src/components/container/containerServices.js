@@ -1,4 +1,4 @@
-import { rowId } from '../../hooks/formState.js';
+import { rowId } from '../../hooks/editorValues.js';
 import { KNOWN_SERVICE_TYPES, DEFAULT_TXT_FOR_TYPE, isValidServiceType, parsePortLabel, suggestTypeForPort } from '../../lib/mdnsServiceTypes.js';
 
 /**

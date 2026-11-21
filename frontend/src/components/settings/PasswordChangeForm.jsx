@@ -35,9 +35,6 @@ export default function PasswordChangeForm() {
 
   return (
     <div>
-      <h4 className="text-[11px] font-medium uppercase tracking-wider text-text-muted mb-3">
-        Change password
-      </h4>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">

@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Pencil, Plus, Radio, Shuffle, Trash2 } from 'lucide-react';
 
 import { removeContainerService } from '../../api/containers.js';
-import { changedFields } from '../../hooks/formState.js';
+import { changedFields } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 import { randomMac } from '../../utils/randomMac.js';

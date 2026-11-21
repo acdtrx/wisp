@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { changedFields } from '../../hooks/formState.js';
+import { changedFields } from '../../hooks/editorValues.js';
 import {
   advancedForm, advancedProblems, advancedSent, limitsForm, limitsProblems, limitsSent, networkForm, networkProblems,
   networkSent, restartPolicyText,

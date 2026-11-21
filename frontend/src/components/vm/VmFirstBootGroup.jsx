@@ -3,7 +3,7 @@ import { Eye, EyeOff, Pencil, Trash2 } from 'lucide-react';
 
 import { deleteCloudInit, updateCloudInit } from '../../api/vms.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';

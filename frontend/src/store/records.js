@@ -85,12 +85,12 @@ export const RECORD_KINDS = {
     // A run starts and ends with the container's state, which the list carries.
     cues: [{ topic: TOPIC.CONTAINERS, key: (list, name) => (Array.isArray(list) ? list.find((c) => c.name === name)?.state ?? null : undefined) }],
   },
-  /* `[container, mount]`; read while its editor is open, and again on its container's
-   * change (the editor follows it while not edited). */
+  /* `[container, mount]`; read once each time its editor opens, which keeps the text as
+   * read (an editor is a snapshot): no cue reads it again. */
   [RECORD.MOUNT_FILE_CONTENT]: {
     fetch: ([container, mount], o) => containersApi.getMountFileContent(container, mount, o),
     goneCodes: ['CONTAINER_MOUNT_NOT_FOUND', 'CONTAINER_NOT_FOUND'],
-    cues: [{ change: CHANGE_KIND.CONTAINER, byId: true, idOf: ([container]) => container }],
+    cues: [],
   },
   [RECORD.SETTINGS]: { singleton: true, fetch: (_, o) => settingsApi.getSettings(o), cues: [kindChange(CHANGE_KIND.SETTINGS)] },
   [RECORD.HOST_MOUNT_STATUS]: { singleton: true, fetch: (_, o) => settingsApi.getMountStatus(o), cues: [kindChange(CHANGE_KIND.HOST_MOUNTS)] },

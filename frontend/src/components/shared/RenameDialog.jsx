@@ -1,5 +1,5 @@
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { autoFocusField } from '../../lib/focus.js';
 import FormModal from './FormModal.jsx';
 import { FormField } from './FormModalChrome.jsx';

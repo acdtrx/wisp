@@ -1,80 +1,77 @@
-import { Archive } from 'lucide-react';
+import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 
-import SectionCard from '../shared/SectionCard.jsx';
 import { updateSettings } from '../../api/settings.js';
-import RecordGate from '../shared/RecordGate.jsx';
-import { useCommand } from '../../hooks/useCommand.js';
-import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { useForm } from '../../hooks/useForm.js';
+import { autoFocusField } from '../../lib/focus.js';
+import { RECORD } from '../../store/records.js';
+import { FormField } from '../shared/FormModalChrome.jsx';
+import GroupAction from '../shared/GroupAction.jsx';
+import GroupCard from '../shared/GroupCard.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import ValueRows from '../shared/ValueRows.jsx';
+import SettingsEditor from './SettingsEditor.jsx';
+import { backupForm, backupProblem, backupSent, mountText } from './settingsForms.js';
 
-const formFromSettings = (settings) => ({
-  backupLocalPath: settings.backupLocalPath ?? '',
-  backupMountId: settings.backupMountId ?? '',
-});
-
-/* What Save sends: the local path trimmed; no network mount is null. */
-const backupSent = (form) => ({ backupLocalPath: form.backupLocalPath.trim(), backupMountId: form.backupMountId || null });
-
+/**
+ * Where backups go (docs/specs/BACKUPS.md, Backup destinations): the local path, and a
+ * second destination, any configured mount (an SMB share or an adopted drive).
+ */
 export default function HostBackup() {
-  const settingsRecord = useRecord(RECORD.SETTINGS);
-  const settings = settingsRecord.data;
-  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings, backupSent);
-  const command = useCommand();
-
-  const handleSave = () => save((body) => command.run(() => updateSettings(body)));
-
-  const networkOptions = (settings?.mounts || []).filter((m) => m.type === 'smb');
-
-  const controlHeightClass = 'h-9 py-0 leading-normal';
-
+  const record = useRecord(RECORD.SETTINGS);
+  const [editing, setEditing] = useState(false);
   return (
-    <SectionCard
+    <GroupCard
       title="Backup"
-      titleIcon={<Archive size={14} strokeWidth={2} />}
-      helpText="Local backups are written here under VM name / timestamp. The chosen Network mount, when set, also appears as a destination in each VM's backup dialog."
-      onSave={handleSave}
-      saving={saving}
-      isDirty={dirty}
-      commands={[command]}
+      actions={<GroupAction icon={Pencil} label="Edit where backups go" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
-      <RecordGate record={settingsRecord} what="settings">
-        {() => (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
-              <div className="min-w-0 flex-1 basis-[min(100%,18rem)] max-w-2xl">
-                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                  Local backup path
-                </label>
-                <input
-                  type="text"
-                  value={form.backupLocalPath}
-                  onChange={(e) => setField('backupLocalPath', e.target.value)}
-                  placeholder="/var/lib/wisp/backups"
-                  className={`input-field font-mono placeholder:text-text-muted w-full ${controlHeightClass}`}
-                />
-              </div>
-              <div className="w-full sm:w-64 shrink-0">
-                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                  Network mount for backup
-                </label>
-                <select
-                  value={form.backupMountId}
-                  onChange={(e) => setField('backupMountId', e.target.value)}
-                  className={`input-field w-full text-sm ${controlHeightClass}`}
+      <RecordGate record={record} what="settings">
+        {(settings) => {
+          const mounts = settings.mounts ?? [];
+          const second = mounts.find((m) => m.id === settings.backupMountId);
+          return (
+            <>
+              <ValueRows
+                rows={[
+                  { label: 'Local path', value: settings.backupLocalPath, mono: true },
+                  { label: 'Second destination', value: second ? `${mountText(second)} · ${second.mountPath}` : 'None' },
+                ]}
+              />
+              <p className="pb-1 text-[11px] text-text-muted">Backups go under the workload’s name, then the time. Both destinations are offered in each backup dialog.</p>
+              {editing && (
+                <SettingsEditor
+                  title="Backup"
+                  initial={() => backupForm(settings)}
+                  sent={backupSent}
+                  problem={backupProblem}
+                  send={updateSettings}
+                  onClose={() => setEditing(false)}
                 >
-                  <option value="">(none)</option>
-                  {networkOptions.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label?.trim() || m.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
+                  {({ form, setField }) => (
+                    <>
+                      <FormField label="Local path" htmlFor="backup-path">
+                        <input id="backup-path" ref={autoFocusField} type="text" value={form.backupLocalPath} onChange={(e) => setField('backupLocalPath', e.target.value)} placeholder="/var/lib/wisp/backups" autoComplete="off" spellCheck={false} className="input-field font-mono" />
+                      </FormField>
+                      <FormField
+                        label="Second destination"
+                        htmlFor="backup-mount"
+                        hint={mounts.length === 0
+                          ? 'No mounts yet: add an SMB share or a drive in Storage.'
+                          : 'Changing it takes the old one out of the scheduled backups’ destinations.'}
+                      >
+                        <select id="backup-mount" value={form.backupMountId} onChange={(e) => setField('backupMountId', e.target.value)} className="input-field">
+                          <option value="">None</option>
+                          {mounts.map((m) => <option key={m.id} value={m.id}>{mountText(m)}</option>)}
+                        </select>
+                      </FormField>
+                    </>
+                  )}
+                </SettingsEditor>
+              )}
+            </>
+          );
+        }}
       </RecordGate>
-    </SectionCard>
+    </GroupCard>
   );
 }

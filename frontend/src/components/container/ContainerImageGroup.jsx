@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
-import { changedFields } from '../../hooks/formState.js';
+import { changedFields } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';

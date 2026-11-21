@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
-import { changedFields } from '../../hooks/formState.js';
+import { changedFields } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 import { formatCommandLine } from '../../utils/commandLine.js';

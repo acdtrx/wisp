@@ -1,162 +1,107 @@
-import { CalendarClock } from 'lucide-react';
+import { useState } from 'react';
+import { Pencil } from 'lucide-react';
 
-import SectionCard from '../shared/SectionCard.jsx';
-import Toggle from '../shared/Toggle.jsx';
 import { updateSettings } from '../../api/settings.js';
-import RecordGate from '../shared/RecordGate.jsx';
-import { RECORD } from '../../store/records.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { useForm } from '../../hooks/useForm.js';
-import { backupDestinations, destinationOrder } from '../../utils/backupDestinations.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { autoFocusField } from '../../lib/focus.js';
+import { RECORD } from '../../store/records.js';
+import { backupDestinations } from '../../utils/backupDestinations.js';
+import CommandErrors from '../shared/CommandErrors.jsx';
+import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
+import GroupAction from '../shared/GroupAction.jsx';
+import GroupCard from '../shared/GroupCard.jsx';
+import GroupSwitch from '../shared/GroupSwitch.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import ValueRows from '../shared/ValueRows.jsx';
+import SettingsEditor from './SettingsEditor.jsx';
+import { keepText, scheduleForm, scheduleOf, scheduleProblem, scheduleSent } from './settingsForms.js';
 
-const DEFAULT_SCHEDULE = {
-  enabled: false,
-  time: '03:00',
-  destinationIds: ['local'],
-  retainDays: 7,
-  retainWeeks: 4,
-};
-
-function fromSettings(settings) {
-  const s = settings?.backupSchedule || DEFAULT_SCHEDULE;
-  return {
-    enabled: s.enabled === true,
-    time: s.time || DEFAULT_SCHEDULE.time,
-    destinationIds: Array.isArray(s.destinationIds) && s.destinationIds.length > 0
-      ? [...s.destinationIds]
-      : ['local'],
-    retainDays: String(s.retainDays ?? DEFAULT_SCHEDULE.retainDays),
-    retainWeeks: String(s.retainWeeks ?? DEFAULT_SCHEDULE.retainWeeks),
-  };
-}
-
-function clampInt(value, min, max, fallback) {
-  const n = parseInt(value, 10);
-  if (!Number.isInteger(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
-}
-
-/* What Save sends: the destinations in their order, the retention clamped to its range. */
-const scheduleSent = (form, settings) => ({
-  backupSchedule: {
-    enabled: form.enabled,
-    time: form.time,
-    destinationIds: destinationOrder(form.destinationIds, settings?.mounts),
-    retainDays: clampInt(form.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
-    retainWeeks: clampInt(form.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
-  },
-});
-
+/**
+ * Scheduled backups (docs/specs/BACKUPS.md, Scheduled backups): daily, of every
+ * container with Auto Backup on. On or off is a switch; the Edit holds the time, the
+ * destinations and how long backups are kept.
+ */
 export default function HostBackupScheduler() {
-  const settingsRecord = useRecord(RECORD.SETTINGS);
-  const settings = settingsRecord.data;
-  const { form, setForm, dirty, saving, save } = useForm(settingsRecord, fromSettings, scheduleSent);
-  const command = useCommand();
-
-  /* Local, plus the mount chosen in the Backup section above (when set). */
-  const destinationOptions = settings ? backupDestinations(settings) : [];
-
-  const toggleDestination = (id) => {
-    setForm((prev) => {
-      const has = prev.destinationIds.includes(id);
-      /* At least one destination must stay selected. */
-      if (has && prev.destinationIds.length === 1) return prev;
-      return {
-        ...prev,
-        destinationIds: has
-          ? prev.destinationIds.filter((d) => d !== id)
-          : [...prev.destinationIds, id],
-      };
-    });
-  };
-
-  const handleSave = () => save((body) => command.run(() => updateSettings(body)));
-
-  const controlHeightClass = 'h-9 py-0 leading-normal';
-
+  const record = useRecord(RECORD.SETTINGS);
+  const [editing, setEditing] = useState(false);
+  const act = useCommand();
   return (
-    <SectionCard
-      title="Backup Scheduler"
-      titleIcon={<CalendarClock size={14} strokeWidth={2} />}
-      helpText="Backs up every container with Auto Backup enabled, daily at the set time (running containers are briefly paused while archived). Retention keeps the newest scheduled backup per day for the daily window, then one per week — manual backups are never pruned. Runs only while the server is up; a missed time is skipped until the next day."
-      onSave={handleSave}
-      saving={saving}
-      isDirty={dirty}
-      commands={[command]}
+    <GroupCard
+      title="Scheduled backups"
+      actions={<GroupAction icon={Pencil} label="Edit the backup schedule" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
-      <RecordGate record={settingsRecord} what="settings">
-        {() => (
-          <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
-            <div className="shrink-0">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                Enabled
-              </label>
-              <div className={`flex items-center ${controlHeightClass}`}>
-                <Toggle
-                  checked={form.enabled}
-                  onChange={(v) => setForm((prev) => ({ ...prev, enabled: v }))}
-                />
-              </div>
-            </div>
-            <div className="w-28 shrink-0">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                Time
-              </label>
-              <input
-                type="time"
-                value={form.time}
-                onChange={(e) => setForm((prev) => ({ ...prev, time: e.target.value || prev.time }))}
-                className={`input-field w-full text-sm ${controlHeightClass}`}
+      <RecordGate record={record} what="settings">
+        {(settings) => {
+          const schedule = scheduleOf(settings);
+          const options = backupDestinations(settings);
+          const nameOf = (id) => options.find((d) => d.id === id)?.label ?? id;
+          return (
+            <>
+              <ValueRows
+                rows={[
+                  { label: 'Time', value: `Daily at ${schedule.time}` },
+                  { label: 'Destinations', value: schedule.destinationIds.map(nameOf).join(', ') },
+                  { label: 'Keeps', value: keepText(schedule) },
+                ]}
               />
-            </div>
-            <div className="shrink-0">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                Destinations
-              </label>
-              <div className={`flex items-center gap-4 ${controlHeightClass}`}>
-                {destinationOptions.map((d) => (
-                  <label key={d.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.destinationIds.includes(d.id)}
-                      onChange={() => toggleDestination(d.id)}
-                      className="rounded-sm border-surface-border"
-                    />
-                    <span className="text-sm text-text-primary">{d.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="w-24 shrink-0">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                Keep days
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={365}
-                value={form.retainDays}
-                onChange={(e) => setForm((prev) => ({ ...prev, retainDays: e.target.value }))}
-                className={`input-field input-field-no-spinner w-full text-right text-sm ${controlHeightClass}`}
+              <GroupSwitch
+                label="Back up on schedule"
+                hint="Every container with Auto Backup on; a running one is paused while it is archived. Manual backups are never pruned."
+                checked={schedule.enabled === true}
+                busy={act.isBusy('enabled')}
+                onChange={(on) => act.run(() => updateSettings({ backupSchedule: { enabled: on } }), {
+                  key: 'enabled', about: `Couldn't turn scheduled backups ${on ? 'on' : 'off'}`,
+                })}
               />
-            </div>
-            <div className="w-24 shrink-0">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                Keep weeks
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={52}
-                value={form.retainWeeks}
-                onChange={(e) => setForm((prev) => ({ ...prev, retainWeeks: e.target.value }))}
-                className={`input-field input-field-no-spinner w-full text-right text-sm ${controlHeightClass}`}
-              />
-            </div>
-          </div>
-        )}
+              <CommandErrors className="mt-2" commands={[act]} prefix={(_key, _cmd, about) => about} />
+              {editing && (
+                <SettingsEditor
+                  title="Backup schedule"
+                  initial={() => scheduleForm(settings)}
+                  sent={(form) => scheduleSent(form, settings)}
+                  problem={scheduleProblem}
+                  send={(changed) => updateSettings({ backupSchedule: changed })}
+                  onClose={() => setEditing(false)}
+                >
+                  {({ form, setField }) => (
+                    <>
+                      <FormField label="Time" htmlFor="schedule-time" hint="Daily, the host’s time. A time missed while the server is down is skipped until the next day.">
+                        <input id="schedule-time" ref={autoFocusField} type="time" value={form.time} onChange={(e) => setField('time', e.target.value)} className="input-field w-32" />
+                      </FormField>
+                      <fieldset>
+                        <legend className="mb-1 text-xs font-medium text-text-secondary">Destinations</legend>
+                        <div className="flex flex-wrap gap-4">
+                          {options.map((d) => (
+                            <FormCheckbox
+                              key={d.id}
+                              label={d.label}
+                              hint={d.path}
+                              checked={form.destinationIds.includes(d.id)}
+                              onChange={(e) => setField('destinationIds', e.target.checked
+                                ? [...form.destinationIds, d.id]
+                                : form.destinationIds.filter((id) => id !== d.id))}
+                            />
+                          ))}
+                        </div>
+                        {options.length === 1 && <p className="mt-1 text-[11px] text-text-muted">Set a second destination in Backup to add one here.</p>}
+                      </fieldset>
+                      <div className="grid grid-cols-2 gap-3">
+                        <FormField label="Keep days" htmlFor="schedule-days" hint="The newest per day, 1 to 365.">
+                          <input id="schedule-days" type="text" inputMode="numeric" value={form.retainDays} onChange={(e) => setField('retainDays', e.target.value)} className="input-field" />
+                        </FormField>
+                        <FormField label="Keep weeks" htmlFor="schedule-weeks" hint="Then one per week, 0 to 52.">
+                          <input id="schedule-weeks" type="text" inputMode="numeric" value={form.retainWeeks} onChange={(e) => setField('retainWeeks', e.target.value)} className="input-field" />
+                        </FormField>
+                      </div>
+                    </>
+                  )}
+                </SettingsEditor>
+              )}
+            </>
+          );
+        }}
       </RecordGate>
-    </SectionCard>
+    </GroupCard>
   );
 }

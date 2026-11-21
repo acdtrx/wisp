@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
 import { addContainerService, updateContainerService } from '../../api/containers.js';
-import { rowId } from '../../hooks/formState.js';
+import { rowId } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { KNOWN_SERVICE_TYPES } from '../../lib/mdnsServiceTypes.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';

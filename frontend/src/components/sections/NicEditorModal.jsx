@@ -11,7 +11,7 @@ import { randomMac } from '../../utils/randomMac.js';
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 
 const FORM_ID = 'nic-editor-form';
 

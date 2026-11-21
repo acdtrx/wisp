@@ -9,7 +9,7 @@ import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
 import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { useEditor } from '../../hooks/useForm.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { domainForm, siteForm, siteProblem, withDomain, withSite, withoutSite } from './caddyConfig.js';
 

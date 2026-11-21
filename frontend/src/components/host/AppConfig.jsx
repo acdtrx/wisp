@@ -1,134 +1,155 @@
-import SectionCard from '../shared/SectionCard.jsx';
-import Toggle from '../shared/Toggle.jsx';
-import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
-import OidcSettings from '../settings/OidcSettings.jsx';
-import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
-import SshKeysSettings from '../settings/SshKeysSettings.jsx';
+import { useState } from 'react';
+import { Pencil } from 'lucide-react';
+
 import { updateSettings } from '../../api/settings.js';
-import RecordGate from '../shared/RecordGate.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { useForm } from '../../hooks/useForm.js';
+import { autoFocusField } from '../../lib/focus.js';
+import { RECORD } from '../../store/records.js';
+import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
+import OidcSettings from '../settings/OidcSettings.jsx';
+import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
+import SshKeysSettings from '../settings/SshKeysSettings.jsx';
+import CommandErrors from '../shared/CommandErrors.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
+import GroupAction from '../shared/GroupAction.jsx';
+import GroupCard from '../shared/GroupCard.jsx';
+import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import ValueRows from '../shared/ValueRows.jsx';
+import SettingsEditor from './SettingsEditor.jsx';
+import { pathsForm, pathsProblem, pathsSent, serverForm, serverProblem, serverSent } from './settingsForms.js';
 
-function formFromSettings(settings) {
-  return {
-    serverName: settings.serverName || '',
-    vmsPath: settings.vmsPath ?? '',
-    imagePath: settings.imagePath ?? '',
-    discoveryEnabled: settings.discoveryEnabled !== false,
-    advertisedUrl: settings.advertisedUrl ?? '',
-  };
-}
-
-/* What Save sends: the paths and name trimmed; no name is null (the server's default
- * name), and no URL is null (back to the default announcement). */
-const appConfigSent = (form) => ({
-  serverName: form.serverName.trim() || null,
-  vmsPath: form.vmsPath.trim(),
-  imagePath: form.imagePath.trim(),
-  discoveryEnabled: form.discoveryEnabled,
-  advertisedUrl: form.advertisedUrl.trim() || null,
-});
-
+/**
+ * Host → App Config (docs/specs/SETTINGS.md): this server, its storage paths, the
+ * password, SSH keys, single sign-on and API tokens, each a group of its own.
+ */
 export default function AppConfig() {
-  const settingsRecord = useRecord(RECORD.SETTINGS);
-  const { form, setField, dirty, saving, save } = useForm(settingsRecord, formFromSettings, appConfigSent);
-  const command = useCommand();
-
-  const handleSave = () => save((body) => command.run(() => updateSettings(body)));
-
+  const settings = useRecord(RECORD.SETTINGS);
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
-      {settingsRecord.data != null && <RecordError record={settingsRecord} what="settings" />}
-
-      <SectionCard
-        title="General"
-        onSave={handleSave}
-        saving={saving}
-        isDirty={dirty}
-        commands={[command]}
-      >
-        <RecordGate record={settingsRecord} what="settings">
-          {() => (
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                    Server display name
-                  </label>
-                  <input
-                    type="text"
-                    value={form.serverName}
-                    onChange={(e) => setField('serverName', e.target.value)}
-                    placeholder="My Server"
-                    className="input-field placeholder:text-text-muted"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                    VM storage path
-                  </label>
-                  <input
-                    type="text"
-                    value={form.vmsPath}
-                    onChange={(e) => setField('vmsPath', e.target.value)}
-                    placeholder="/var/lib/wisp/vms"
-                    className="input-field font-mono placeholder:text-text-muted w-full max-w-md"
-                  />
-                  <p className="mt-1 text-[10px] text-text-muted">Base path for VM disks and config. Restart may be needed after change.</p>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                    Image library path
-                  </label>
-                  <input
-                    type="text"
-                    value={form.imagePath}
-                    onChange={(e) => setField('imagePath', e.target.value)}
-                    placeholder="/var/lib/wisp/images"
-                    className="input-field font-mono placeholder:text-text-muted w-full max-w-md"
-                  />
-                  <p className="mt-1 text-[10px] text-text-muted">Path for ISOs and disk images.</p>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                    LAN discovery
-                  </label>
-                  <Toggle checked={form.discoveryEnabled} onChange={(on) => setField('discoveryEnabled', on)} />
-                  <p className="mt-1 text-[10px] text-text-muted">
-                    Announce this server on the local network and list other Wisp servers in the top bar.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                    Advertised URL
-                  </label>
-                  <input
-                    type="text"
-                    value={form.advertisedUrl}
-                    onChange={(e) => setField('advertisedUrl', e.target.value)}
-                    placeholder="http://myserver.local:8080"
-                    className="input-field font-mono placeholder:text-text-muted w-full max-w-md"
-                  />
-                  <p className="mt-1 text-[10px] text-text-muted">
-                    Full URL browsers and other Wisp servers use to open this one (e.g. behind a reverse proxy).
-                    Also sets the SSO redirect URI. Leave empty to announce http://&lt;hostname&gt;.local:&lt;port&gt;.
-                  </p>
-                </div>
-              </div>
-              <PasswordChangeForm />
-            </div>
-          )}
-        </RecordGate>
-      </SectionCard>
-
+    <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5">
+      {settings.data != null && <RecordError record={settings} what="settings" />}
+      <ServerGroup record={settings} />
+      <StoragePathsGroup record={settings} />
+      <GroupCard title="Password">
+        <div className="max-w-md py-1">
+          <PasswordChangeForm />
+        </div>
+      </GroupCard>
       <SshKeysSettings />
-
       <OidcSettings />
-
       <ApiTokensSettings />
     </div>
+  );
+}
+
+/** The server's name and the URL it is opened by; LAN discovery as a switch. */
+function ServerGroup({ record }) {
+  const [editing, setEditing] = useState(false);
+  const act = useCommand();
+  return (
+    <GroupCard
+      title="This server"
+      actions={<GroupAction icon={Pencil} label="Edit the server’s name and URL" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+    >
+      <RecordGate record={record} what="settings">
+        {(settings) => (
+          <>
+            <ValueRows
+              rows={[
+                { label: 'Name', value: settings.serverName },
+                {
+                  label: 'Advertised URL',
+                  value: settings.advertisedUrl ?? 'None: it announces http://<host name>.local:<port>',
+                  mono: !!settings.advertisedUrl,
+                },
+              ]}
+            />
+            <GroupSwitch
+              label="LAN discovery"
+              hint="Announce this server on the local network, and list other Wisp servers in the top bar."
+              checked={settings.discoveryEnabled !== false}
+              busy={act.isBusy('discovery')}
+              onChange={(on) => act.run(() => updateSettings({ discoveryEnabled: on }), {
+                key: 'discovery', about: `Couldn't turn LAN discovery ${on ? 'on' : 'off'}`,
+              })}
+            />
+            <CommandErrors className="mt-2" commands={[act]} prefix={(_key, _cmd, about) => about} />
+            {editing && (
+              <SettingsEditor
+                title="This server"
+                initial={() => serverForm(settings)}
+                sent={serverSent}
+                problem={serverProblem}
+                send={updateSettings}
+                onClose={() => setEditing(false)}
+              >
+                {({ form, setField }) => (
+                  <>
+                    <FormField label="Name" htmlFor="server-name" hint="Shown in the top bar. Empty: My Server.">
+                      <input id="server-name" ref={autoFocusField} type="text" value={form.serverName} onChange={(e) => setField('serverName', e.target.value)} placeholder="My Server" className="input-field" />
+                    </FormField>
+                    <FormField
+                      label="Advertised URL"
+                      htmlFor="server-url"
+                      hint="The full URL browsers and other Wisp servers open this one by (behind a reverse proxy, say); it also sets the SSO redirect URI. Empty: http://<host name>.local:<port>."
+                    >
+                      <input id="server-url" type="text" value={form.advertisedUrl} onChange={(e) => setField('advertisedUrl', e.target.value)} placeholder="https://wisp.example.com" autoComplete="off" spellCheck={false} className="input-field font-mono" />
+                    </FormField>
+                  </>
+                )}
+              </SettingsEditor>
+            )}
+          </>
+        )}
+      </RecordGate>
+    </GroupCard>
+  );
+}
+
+/** Where VM directories and the image library live. */
+function StoragePathsGroup({ record }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <GroupCard
+      title="Storage paths"
+      actions={<GroupAction icon={Pencil} label="Edit the storage paths" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+    >
+      <RecordGate record={record} what="settings">
+        {(settings) => (
+          <>
+            <ValueRows
+              rows={[
+                { label: 'VMs', value: settings.vmsPath, mono: true },
+                { label: 'Image library', value: settings.imagePath, mono: true },
+              ]}
+            />
+            {editing && (
+              <SettingsEditor
+                title="Storage paths"
+                initial={() => pathsForm(settings)}
+                sent={pathsSent}
+                problem={pathsProblem}
+                send={updateSettings}
+                onClose={() => setEditing(false)}
+              >
+                {({ form, setField }) => (
+                  <>
+                    <FormField label="VM storage path" htmlFor="paths-vms" hint="Each VM’s disks and settings live in a folder of its own here.">
+                      <input id="paths-vms" ref={autoFocusField} type="text" value={form.vmsPath} onChange={(e) => setField('vmsPath', e.target.value)} placeholder="/var/lib/wisp/vms" autoComplete="off" spellCheck={false} className="input-field font-mono" />
+                    </FormField>
+                    <FormField label="Image library path" htmlFor="paths-images" hint="ISOs and disk images.">
+                      <input id="paths-images" type="text" value={form.imagePath} onChange={(e) => setField('imagePath', e.target.value)} placeholder="/var/lib/wisp/images" autoComplete="off" spellCheck={false} className="input-field font-mono" />
+                    </FormField>
+                    <p className="text-[11px] text-text-muted">VMs and images already there stay where they are; a restart may be needed.</p>
+                  </>
+                )}
+              </SettingsEditor>
+            )}
+          </>
+        )}
+      </RecordGate>
+    </GroupCard>
   );
 }

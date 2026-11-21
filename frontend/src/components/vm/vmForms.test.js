@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { changedFields } from '../../hooks/formState.js';
+import { changedFields } from '../../hooks/editorValues.js';
 import {
   expertForm, memoryText, nicsForApi, profileText, sizeForm, sizeProblems, sizeSent, systemSummary, takesFirstBootSetup,
   toggledBootDevice, withPreset,
