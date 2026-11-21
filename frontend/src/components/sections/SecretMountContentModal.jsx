@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
@@ -25,18 +25,16 @@ const FORM_ID = 'secret-mount-content-form';
  * PUT content route as the plain-text editor, and resolve once the container's
  * re-read has landed (awaitContainerChange).
  */
-export default function SecretMountContentModal({ open, containerName, mount, onClose }) {
+export default function SecretMountContentModal(props) {
+  return props.open ? <SecretMountContentEditor {...props} /> : null;
+}
+
+function SecretMountContentEditor({ open, containerName, mount, onClose }) {
+  /* Write-only: the stored content is never read, so the text is an input to the
+   * replace command, its own state, starting empty. */
   const [text, setText] = useState('');
   const save = useCommand();
   const [confirmClear, setConfirmClear] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setText('');
-    save.dismiss('replace');
-    save.dismiss('clear');
-    setConfirmClear(false);
-  }, [open, mount?.name]);
 
   /* Replace and clear: two commands of the one content write (one at a time: both
    * controls are disabled while either runs). */

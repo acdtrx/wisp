@@ -14,25 +14,11 @@ import {
   dataTableEmptyCellClass,
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
-import EnvVarEditorModal from './EnvVarEditorModal.jsx';
+import EnvVarEditorModal, { rowsFromEnv } from './EnvVarEditorModal.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { awaitContainerChange } from '../../store/containerStore.js';
 
 const MASK = '••••••••';
-
-function rowsFromEnv(env) {
-  if (!env || typeof env !== 'object') return [];
-  return Object.entries(env).map(([key, entry]) => {
-    const secret = !!entry?.secret;
-    return {
-      key,
-      secret,
-      /* A secret's value is never sent to the client — `isSet` says whether
-       * one is stored. */
-      isSet: secret ? !!entry?.isSet : false,
-      value: secret ? '' : String(entry?.value ?? ''),
-    };
-  });
-}
 
 const truncate = (s, n) => {
   const t = (s || '').trim();
@@ -45,9 +31,8 @@ export default function ContainerEnvSection({ config, onSave }) {
   const remove = useCommand();
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !!config.pendingRestart;
-  /* The row is snapshotted when the editor opens so a background refresh of
-   * `config.env` can't reset the open form. */
-  const [editor, setEditor] = useState({ open: false, row: null });
+  /* The editor: the key of the variable it edits, picked when it opens (null to add). */
+  const [editor, setEditor] = useState({ open: false, key: null });
 
   const rows = useMemo(() => rowsFromEnv(config.env), [config.env]);
 
@@ -56,12 +41,13 @@ export default function ContainerEnvSection({ config, onSave }) {
    * restart badge. Failures propagate so the modal can show them and stay open. */
   const submitEnvPatch = ({ envPatch }) => onSave({ envPatch });
 
-  const removeRow = (row) => remove.run(() => onSave({ envPatch: { [row.key]: null } }), { key: row.key });
+  /* A row's remove is a command: busy until the container's change is in. */
+  const removeRow = (row) => remove.run(() => awaitContainerChange(config.name, () => onSave({ envPatch: { [row.key]: null } })), { key: row.key });
 
   const headerAdd = (
     <button
       type="button"
-      onClick={() => setEditor({ open: true, row: null })}
+      onClick={() => setEditor({ open: true, key: null })}
       className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
       title="Add environment variable"
       aria-label="Add environment variable"
@@ -133,7 +119,7 @@ export default function ContainerEnvSection({ config, onSave }) {
                     <DataTableRowActions forceVisible={remove.isBusy(row.key)}>
                       <button
                         type="button"
-                        onClick={() => setEditor({ open: true, row })}
+                        onClick={() => setEditor({ open: true, key: row.key })}
                         disabled={remove.isBusy(row.key)}
                         className={rowActionIconBtn}
                         title="Edit"
@@ -166,10 +152,10 @@ export default function ContainerEnvSection({ config, onSave }) {
 
       <EnvVarEditorModal
         open={editor.open}
-        row={editor.row}
-        existingKeys={rows.map((r) => r.key)}
+        containerName={config.name}
+        rowKey={editor.key}
         onSubmit={submitEnvPatch}
-        onClose={() => setEditor({ open: false, row: null })}
+        onClose={() => setEditor({ open: false, key: null })}
       />
     </SectionCard>
   );

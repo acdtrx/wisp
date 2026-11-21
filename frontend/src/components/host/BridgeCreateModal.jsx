@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
@@ -21,22 +21,22 @@ const FORM_ID = 'bridge-create-form';
  * (`<parent>-vlan<id>`) and shown as a preview. The new bridge reaches the list
  * on the `network-bridges` cue its job announces.
  */
-export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
-  const [baseBridge, setBaseBridge] = useState('');
-  const [vlanId, setVlanId] = useState('');
+export default function BridgeCreateModal(props) {
+  return props.open ? <BridgeCreateEditor {...props} /> : null;
+}
+
+function BridgeCreateEditor({ open, eligibleParents, onClose }) {
+  /* The create's input: the dialog's own values (it edits no saved record). */
+  const [input, setInput] = useState({ baseBridge: '', vlanId: '' });
+  const setField = (key, value) => setInput((v) => ({ ...v, [key]: value }));
   const create = useCommand();
   const submitting = create.busy;
 
   const parents = Array.isArray(eligibleParents) ? eligibleParents : [];
-
-  useEffect(() => {
-    if (!open) return;
-    setBaseBridge(parents[0] || '');
-    setVlanId('');
-    create.dismiss();
-    // parents comes fresh from the section on every open; keying the reset on
-    // `open` alone avoids resetting the form while the user types.
-  }, [open]);
+  /* No parent chosen yet: the first eligible one, also once the list arrives after
+   * the dialog opened. */
+  const baseBridge = input.baseBridge || parents[0] || '';
+  const { vlanId } = input;
 
   const bridgePreview = useMemo(() => {
     const n = Number(vlanId);
@@ -90,7 +90,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
             <select
               id="bridge-create-parent"
               value={baseBridge}
-              onChange={(e) => setBaseBridge(e.target.value)}
+              onChange={(e) => setField('baseBridge', e.target.value)}
               className="input-field"
             >
               {parents.map((name) => (
@@ -109,7 +109,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
               min="1"
               max="4094"
               value={vlanId}
-              onChange={(e) => setVlanId(e.target.value)}
+              onChange={(e) => setField('vlanId', e.target.value)}
               placeholder="10"
               ref={autoFocusField}
               className="input-field"

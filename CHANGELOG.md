@@ -34,8 +34,8 @@
 - **After a rename, the page follows the new name only while it still shows the workload.**
 - **Bridge pickers show a bridge made or removed elsewhere** without a reload.
 - **A failed refresh keeps what was shown** — every view shows its read's error over the data it already had (dismissible), or as its error state with a Retry; a record shown in several places is read once.
-- **An open mount file editor shows the file as read again** when the page's live connection to Wisp comes back and the file changed, replacing unsaved edits.
 - **Settings forms keep their unsaved edits through another section's save** — each follows its own values only.
+- **An open mount file editor shows the file as read again** when its container changes or the page's live connection to Wisp comes back, replacing unsaved edits only when the file itself changed; its Save needs a change.
 - **The Software page shows a failed settings read**, with a Retry before they loaded; the update card shows only its own status read's failure.
 - **Backup destination pickers wait for the settings** — they show a loading line, or the settings' error with a Retry, instead of offering Local alone; an unlabelled backup mount is called Network everywhere.
 - **The container backup dialog shows the backup's progress** like the VM's, instead of closing once it started; it follows a backup already running when it opens.
@@ -52,8 +52,10 @@
 - **A Retry shows its read on its way** ("Retrying…").
 - **The backup schedule saves Local first, then the network mount**: a backup writes them in that order, so a failing mount never skips Local; ticking a destination off and on again is no change.
 - **Clearing the server name in App Config restores the default name**, instead of being ignored.
+- **A modal editor's Save stays busy until the saved values are on screen**; the editor shows a change saved elsewhere to what it edits, and says so when it was removed.
 - **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
 - **SSO's Save is off, with its reason, while a changed issuer or client ID waits for the client secret** (it was on, and said so only when clicked).
+- **The VLAN bridge dialog takes the first parent bridge** even when it is opened before the bridges have loaded (Create stayed disabled).
 
 ## 2026-11-17
 

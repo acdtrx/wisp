@@ -6,6 +6,8 @@ import { isErrorFrame } from './streamStore.js';
  * @typedef {Object} RecordCue - when a shown record is read again
  * @property {string} [change] - a `CHANGE_KIND`: on a `changes` frame of that kind
  * @property {boolean} [byId] - with `change`: only a frame whose `id` is the record's
+ * @property {(id: any) => any} [idOf] - with `byId`: the frame's id for a record id (a
+ *   record of a part of the frame's subject: a mount's file is its container's)
  * @property {string} [topic] - a `TOPIC`: on its frames, after the first
  * @property {(frame: any, id: any) => unknown} [key] - with `topic`: only when this
  *   value of the frame changes (error frames skipped)
@@ -145,7 +147,7 @@ export function createRecordCache(kinds) {
     entry.offs.push(subscribeChanges(changeKinds, (change) => {
       if (change.kind === CHANGE_KIND.ALL) return cued(entry);
       const cue = cues.find((c) => c.change === change.kind);
-      if (cue?.byId && change.id !== entry.id) return undefined;
+      if (cue?.byId && change.id !== (cue.idOf ? cue.idOf(entry.id) : entry.id)) return undefined;
       return cued(entry);
     }));
     for (const cue of cues.filter((c) => c.topic)) {

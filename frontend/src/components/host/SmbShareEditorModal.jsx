@@ -1,19 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
+  EditorGone,
   FormField,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm, useHeld } from '../../hooks/useForm.js';
+import { changedFields } from '../../hooks/formState.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -41,46 +44,66 @@ function formFromShare(share) {
   };
 }
 
+/** What Save writes for the values: every field trimmed; an empty password keeps the
+ *  one on file (the backend never returns it). */
+const shareSent = (form) => ({
+  label: form.label.trim(),
+  share: form.share.trim(),
+  mountPath: form.mountPath.trim(),
+  username: form.username.trim(),
+  password: form.password.trim(),
+});
+
+/** What an SMB share editor's values lack to be saved: a share, an absolute mount path. */
+function shareProblems(form) {
+  const problems = {};
+  if (form.share.trim() === '') problems.share = 'Set the share (//server/share).';
+  if (!form.mountPath.trim().startsWith('/')) problems.mountPath = 'Must be absolute (start with /).';
+  return problems;
+}
+
 /**
- * Modal form editor for one SMB share — create when `share` is null, edit
- * otherwise (see docs/FRONTEND-RULES.md § Modal form editor). Owns validation
- * and the add/patch/check API calls; calls `onSaved` after a successful save
- * so the parent can refresh settings and mount status.
+ * Modal form editor for one SMB share — create when `shareId` is null, edit the
+ * share with that id otherwise (see docs/FRONTEND-RULES.md § Modal form editor). Its
+ * record is the settings (the mounts list). Owns validation and the add/patch/check
+ * API calls; calls `onSaved` after a successful save so the parent can drop its
+ * connection-test results.
  */
-export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
-  const [form, setForm] = useState(emptyForm);
+export default function SmbShareEditorModal(props) {
+  return props.open ? <SmbShareEditor {...props} /> : null;
+}
+
+function SmbShareEditor({ open, shareId, onClose, onSaved }) {
+  const record = useRecord(RECORD.SETTINGS);
+  const isEdit = shareId != null;
+  const stored = isEdit ? (record.data?.mounts || []).find((m) => m.id === shareId) ?? null : null;
+  const [blank] = useState(emptyForm);
+  const { form, generation, setField: setValue, dirty, saving, problems, blocked, save: saveForm } = useForm(
+    record,
+    (settings) => {
+      if (!isEdit) return blank;
+      const share = (settings.mounts || []).find((m) => m.id === shareId);
+      return share ? formFromShare(share) : null;
+    },
+    shareSent,
+    { problems: shareProblems, creating: !isEdit },
+  );
   const save = useCommand();
   /* The connection test: busy while it runs; a failure is its error, a pass shows as OK. */
   const test = useCommand();
-  const [testPassed, setTestPassed] = useState(false);
+  /* A passed test, of the values as they were: held on the form, a reset drops it. */
+  const [testPassed, setTestPassed] = useHeld(generation);
   const checking = test.busy;
 
-  const isEdit = share != null;
+  const setField = (field) => (e) => setValue(field, e.target.value);
 
-  useEffect(() => {
-    if (!open) return;
-    setForm(share ? formFromShare(share) : emptyForm());
-    setTestPassed(false);
-    test.dismiss();
-    save.dismiss();
-  }, [open, share]);
-
-  const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
-
-  const trimmedShare = form.share.trim();
-  const trimmedPath = form.mountPath.trim();
-  const pathOk = trimmedPath.startsWith('/');
-  const dirty = !isEdit
-    || form.label.trim() !== (share.label || '').trim()
-    || trimmedShare !== (share.share || '').trim()
-    || trimmedPath !== (share.mountPath || '').trim()
-    || form.username.trim() !== (share.username || '').trim()
-    || form.password.trim() !== '';
-  const canSave = pathOk && trimmedShare !== '' && dirty && !save.busy;
-  const hasStoredPassword = isEdit && share.hasPassword === true;
+  const trimmedShare = form?.share.trim() ?? '';
+  /* An edit needs a change that sends something; a new share only valid values. */
+  const canSave = form != null && !blocked && (!isEdit || dirty) && !saving;
+  const hasStoredPassword = isEdit && stored?.hasPassword === true;
 
   const handleCheck = () => {
-    setTestPassed(false);
+    setTestPassed(null);
     if (!trimmedShare) {
       test.fail('Set share first');
       return;
@@ -97,32 +120,16 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
 
   const handleSave = () => {
     if (!canSave) return;
-    save.run(async () => {
+    saveForm((values, saved) => save.run(async () => {
       if (!isEdit) {
-        /* Saved once the settings store holds it: the mount list is read from there. */
-        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => addMount({
-          id: form.id,
-          type: 'smb',
-          label: form.label.trim(),
-          share: trimmedShare,
-          mountPath: trimmedPath,
-          username: form.username.trim(),
-          password: form.password.trim(),
-        }));
+        await addMount({ id: form.id, type: 'smb', ...values });
       } else {
-        const patch = {};
-        if (form.label.trim() !== (share.label || '').trim()) patch.label = form.label.trim();
-        if (trimmedPath !== (share.mountPath || '').trim()) patch.mountPath = trimmedPath;
-        if (trimmedShare !== (share.share || '').trim()) patch.share = trimmedShare;
-        if (form.username.trim() !== (share.username || '').trim()) patch.username = form.username.trim();
-        /* Only send `password` when the user actually typed one; empty means
-         * "keep what's on file" (the backend never returns the stored value). */
-        const newPw = form.password.trim();
-        if (newPw !== '') patch.password = newPw;
-        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => patchMount(form.id, patch));
+        /* Only the changed fields; `password` only when one was typed. */
+        const patch = changedFields(values, saved);
+        await patchMount(form.id, patch);
       }
       await onSaved?.();
-    }, { onDone: onClose });
+    })).then((ok) => { if (ok) onClose(); });
   };
 
   return (
@@ -130,17 +137,17 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
       open={open}
       onClose={onClose}
       title={isEdit ? 'Edit SMB share' : 'Add SMB share'}
-      subtitle={isEdit ? share.share || share.label : 'Network mount over SMB/CIFS'}
+      subtitle={isEdit ? stored?.share || stored?.label || shareId : 'Network mount over SMB/CIFS'}
       size="md"
       height="cap"
-      closeOnEscape={!save.busy}
+      closeOnEscape={!saving}
       footer={(
         <>
           <div className="mr-auto flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={handleCheck}
-              disabled={checking || save.busy}
+              disabled={form == null || checking || saving}
               className={formModalNeutralBtn}
             >
               {checking
@@ -150,16 +157,17 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
             </button>
             {testPassed && <span className="text-status-running">Connection OK</span>}
           </div>
-          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
             Cancel
           </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
+          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
+            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
             Save
           </button>
         </>
       )}
     >
+      {form == null ? <EditorGone what="SMB share" /> : (
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -189,7 +197,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
         <FormField
           label="Mount path"
           htmlFor="smb-editor-path"
-          hint={pathOk ? null : 'Must be absolute (start with /).'}
+          hint={problems.mountPath ?? null}
         >
           <input
             id="smb-editor-path"
@@ -231,6 +239,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
         <ErrorBanner className="mt-3" error={test.error} prefix="Connection test" onDismiss={test.dismiss} />
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
+      )}
     </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Plus,
   File,
@@ -114,25 +114,18 @@ export default function ContainerMountsSection({ config }) {
    * parallel and each keeps its error. */
   const upload = useCommand();
   const removal = useCommand();
-  /* The mount is snapshotted when the editor opens so a background refresh of
-   * `config.mounts` can't reset the open form; `kind` drives the create path. */
-  const [editor, setEditor] = useState({ open: false, kind: 'file', mount: null });
+  /* The editor: the mount it edits, by name (none: add one of `kind`); it reads the
+   * container's config itself. */
+  const [editor, setEditor] = useState({ open: false, kind: 'file', name: null });
   const [fileEditor, setFileEditor] = useState({ open: false, mountName: '' });
   /* Secret file mounts never open the text editor — only this write-only dialog. */
   const [secretEditor, setSecretEditor] = useState({ open: false, mount: null });
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedName, setExpandedName] = useState(null);
 
-  // The config (and therefore `config.mounts`) is a new object on every re-read and list
-  // update, even when the mounts are unchanged, so depending on the array reference would
-  // re-run the usage fetch each time. Use a content-hashed key instead.
-  const mountsKey = useMemo(() => JSON.stringify(config.mounts || []), [config.mounts]);
-  const rows = useMemo(() => rowsFromServerMounts(config.mounts), [mountsKey]);
-
-  /* Another container: its errors and its open row are not this one's. */
-  useEffect(() => {
-    setExpandedName(null);
-  }, [config.name]);
+  /* `config.mounts` keeps its identity while the mounts are unchanged (the record cache
+   * keeps an equal answer's object). */
+  const rows = useMemo(() => rowsFromServerMounts(config.mounts), [config.mounts]);
 
   /* Host-side disk usage per mount, read again on the container's change cue (an
    * upload, a content edit, a mounts change); not a live feed (sizing walks the data dir
@@ -159,14 +152,14 @@ export default function ContainerMountsSection({ config }) {
   const colCount = runAsRoot ? 9 : 8;
 
   const openCreate = (kind) => {
-    setEditor({ open: true, kind, mount: null });
+    setEditor({ open: true, kind, name: null });
   };
 
   const openEdit = (row) => {
-    setEditor({ open: true, kind: row.type, mount: (config.mounts || []).find((m) => m.name === row.name) || row });
+    setEditor({ open: true, kind: row.type, name: row.name });
   };
 
-  const closeEditor = () => setEditor({ open: false, kind: 'file', mount: null });
+  const closeEditor = () => setEditor({ open: false, kind: 'file', name: null });
 
   /* The removal is a job: busy until it ended and the container's config, read
    * again after it, has landed. */
@@ -531,9 +524,8 @@ export default function ContainerMountsSection({ config }) {
       <ContainerMountEditorModal
         open={editor.open}
         containerName={config.name}
-        mount={editor.mount}
+        mountName={editor.name}
         kind={editor.kind}
-        mounts={config.mounts || []}
         storageMounts={storageMounts}
         runAsRoot={runAsRoot}
         onClose={closeEditor}

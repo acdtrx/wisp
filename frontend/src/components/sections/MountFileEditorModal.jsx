@@ -1,8 +1,7 @@
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import { putMountFileContent } from '../../api/containers.js';
-import { awaitContainerChange } from '../../store/containerStore.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { RECORD } from '../../store/records.js';
@@ -13,37 +12,36 @@ import RecordError from '../shared/RecordError.jsx';
 
 const contentText = (data) => (typeof data?.content === 'string' ? data.content : '');
 
-export default function MountFileEditorModal({
+/** The editor of a plain mount file's content; it mounts when it opens, so each opening
+ *  starts from the file as read. */
+export default function MountFileEditorModal(props) {
+  return props.open ? <MountFileEditor {...props} /> : null;
+}
+
+function MountFileEditor({
   open,
   containerName,
   mountName,
   onClose,
 }) {
   /* The file's content is read while the editor is open; the text follows it by value. */
-  const content = useRecord(RECORD.MOUNT_FILE_CONTENT, open && containerName && mountName ? [containerName, mountName] : null);
-  const { form: text, setForm } = useForm(content, contentText);
+  const content = useRecord(RECORD.MOUNT_FILE_CONTENT, containerName && mountName ? [containerName, mountName] : null);
+  const { form: text, setForm, dirty, saving, save: saveForm } = useForm(content, contentText);
   const setText = (value) => setForm(() => value);
-  /* Save only over the file as read: not while it loads, after a failed read, or once
-   * the mount (or its container) is gone. */
-  const canSave = content.data != null;
+  /* Save only a change, over the file as read: not while it loads, after a failed read,
+   * or once the mount (or its container) is gone. */
+  const canSave = content.data != null && dirty;
   const save = useCommand();
-  const saving = save.busy;
 
   const handleClose = useCallback(() => {
     if (saving) return;
     onClose();
   }, [onClose, saving]);
 
-  const { dismiss: dismissSave } = save;
-  useEffect(() => {
-    if (open) dismissSave();
-  }, [open, containerName, mountName, dismissSave]);
-
   const handleSave = () => {
     if (!containerName || !mountName) return;
-    save.run(() => awaitContainerChange(containerName, () => putMountFileContent(containerName, mountName, text)), {
-      onDone: onClose,
-    });
+    saveForm((value) => save.run(() => putMountFileContent(containerName, mountName, value)))
+      .then((ok) => { if (ok) onClose(); });
   };
 
   return (

@@ -54,3 +54,8 @@ export function FormCheckbox({ label, hint, checked, onChange, disabled = false,
     </label>
   );
 }
+
+/** A modal editor's body when the entity it opened on is no longer in its record. */
+export function EditorGone({ what }) {
+  return <p className="text-sm text-text-secondary">The {what} is gone: it was removed elsewhere.</p>;
+}

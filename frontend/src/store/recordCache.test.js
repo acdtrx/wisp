@@ -307,6 +307,22 @@ test('a change naming the record reads it again, and the reconnect frame reads e
   stream.end();
 });
 
+test("a record of a part of its subject is read again on the subject's change (`idOf`)", async () => {
+  const { cache, reads } = cacheWith([{ change: CHANGE_KIND.CONTAINER, byId: true, idOf: ([container]) => container }]);
+  const v = follow(cache, ['c1', 'm1']);
+  reads.calls[0].resolve({ v: 1 });
+  const stream = await events();
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.CONTAINER, id: 'c2' } });
+  await settle();
+  assert.equal(reads.calls.length, 1);
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.CONTAINER, id: 'c1' } });
+  await settle();
+  assert.equal(reads.calls.length, 2);
+  reads.calls[1].resolve({ v: 1 });
+  v.off();
+  stream.end();
+});
+
 test('a topic cue with a key reads again only when the key changes; error frames are skipped', async () => {
   const { cache, reads } = cacheWith([{ topic: TOPIC.VMS, key: (list, id) => list.some((x) => x.name === id) }]);
   const v = follow(cache, 'a');

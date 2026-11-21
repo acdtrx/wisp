@@ -16,34 +16,30 @@ import { useCommand } from '../../hooks/useCommand.js';
 const DEFAULT_ICON_ID = 'globe';
 
 /**
- * Modal form editor for a manual Home link (docs/FRONTEND-RULES.md § Modal form
- * editor). Create vs edit is the presence of `tile`; the parent only opens and
+ * Modal for adding a manual Home link (docs/FRONTEND-RULES.md § Modal form editor):
+ * its values are the add command's input, its own state. The parent only opens and
  * closes it — the store owns persistence.
  */
-export default function ManualLinkModal({ open, tile, onClose }) {
-  const addManualTile = useHomeStore((s) => s.addManualTile);
-  const updateManualTile = useHomeStore((s) => s.updateManualTile);
+export default function ManualLinkModal(props) {
+  return props.open ? <ManualLinkEditor {...props} /> : null;
+}
 
-  const [name, setName] = useState(tile?.name || '');
-  const [url, setUrl] = useState(tile?.url || '');
-  const [iconId, setIconId] = useState(tile?.iconId || DEFAULT_ICON_ID);
+function ManualLinkEditor({ open, onClose }) {
+  const addManualTile = useHomeStore((s) => s.addManualTile);
+  const [link, setLink] = useState({ name: '', url: '', iconId: DEFAULT_ICON_ID });
+  const setField = (key, value) => setLink((l) => ({ ...l, [key]: value }));
+  const { name, url, iconId } = link;
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const save = useCommand();
 
   const trimmedName = name.trim();
   const trimmedUrl = url.trim();
-  const dirty =
-    trimmedName !== (tile?.name || '') ||
-    trimmedUrl !== (tile?.url || '') ||
-    iconId !== (tile?.iconId || DEFAULT_ICON_ID);
   const valid = trimmedName.length > 0 && /^https?:\/\/\S+$/i.test(trimmedUrl);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!valid) return;
-    save.run(() => (tile
-      ? updateManualTile(tile.id, { name: trimmedName, url: trimmedUrl, iconId })
-      : addManualTile({ name: trimmedName, url: trimmedUrl, iconId })), { onDone: onClose });
+    save.run(() => addManualTile({ name: trimmedName, url: trimmedUrl, iconId }), { onDone: onClose });
   };
 
   const Icon = getVmIcon(iconId).component;
@@ -53,7 +49,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
       <Modal
         open={open}
         onClose={onClose}
-        title={tile ? 'Edit link' : 'Add link'}
+        title="Add link"
         subtitle="A tile for anything with a URL — on this host or elsewhere."
         size="sm"
         height="cap"
@@ -67,10 +63,10 @@ export default function ManualLinkModal({ open, tile, onClose }) {
               type="submit"
               form="manual-link-form"
               className={formModalPrimaryBtn}
-              disabled={!valid || !dirty || save.busy}
+              disabled={!valid || save.busy}
             >
               {save.busy && <Loader2 size={13} className="animate-spin" aria-hidden />}
-              {tile ? 'Save' : 'Add'}
+              Add
             </button>
           </>
         }
@@ -82,7 +78,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
               type="text"
               ref={autoFocusField}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setField('name', e.target.value)}
               placeholder="Router"
               maxLength={64}
               className="input-field"
@@ -97,7 +93,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
               id="manual-link-url"
               type="text"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => setField('url', e.target.value)}
               placeholder="https://192.168.1.1"
               className="input-field"
             />
@@ -118,7 +114,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
       <IconPickerModal
         open={iconPickerOpen}
         currentIconId={iconId}
-        onSelect={setIconId}
+        onSelect={(next) => setField('iconId', next)}
         onClose={() => setIconPickerOpen(false)}
       />
     </>

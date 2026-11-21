@@ -1,20 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
+  EditorGone,
   FormField,
   FormCheckbox,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm } from '../../hooks/useForm.js';
+import { changedFields } from '../../hooks/formState.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -57,57 +60,62 @@ function formFromDrive(drive) {
   };
 }
 
+/** What Save writes for the values: the label and path trimmed. */
+const driveSent = (form) => ({
+  label: form.label.trim(),
+  mountPath: form.mountPath.trim(),
+  autoMount: form.autoMount,
+  readOnly: form.readOnly,
+});
+
+/** What a drive editor's values lack to be saved: an absolute mount path. */
+const pathProblems = (form) => (form.mountPath.trim().startsWith('/') ? {} : { mountPath: 'Must be absolute (start with /).' });
+
 /**
  * Modal form editor for one removable drive (see docs/FRONTEND-RULES.md § Modal
- * form editor). Two entry points: edit an adopted drive (`drive` set) or
- * adopt a detected one (`adoptDisk` set — form prefilled from the device).
- * UUID and filesystem are identity, shown read-only.
+ * form editor). Two entry points: edit an adopted drive (`driveId` set) or adopt a
+ * detected one (`adoptDisk` set — form prefilled from the device). Its record is the
+ * settings (the mounts list). UUID and filesystem are identity, shown read-only.
  */
-export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onClose }) {
-  const [form, setForm] = useState(() => formFromDrive({}));
+export default function RemovableDriveEditorModal(props) {
+  return props.open ? <RemovableDriveEditor {...props} /> : null;
+}
+
+function RemovableDriveEditor({ open, driveId, adoptDisk, onClose }) {
+  const record = useRecord(RECORD.SETTINGS);
+  const isEdit = driveId != null;
+  const drive = isEdit ? (record.data?.mounts || []).find((m) => m.id === driveId) ?? null : null;
+  const [blank] = useState(() => formFromDetectedDisk(adoptDisk || {}));
+  const { form, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
+    record,
+    (settings) => {
+      if (!isEdit) return blank;
+      const stored = (settings.mounts || []).find((m) => m.id === driveId);
+      return stored ? formFromDrive(stored) : null;
+    },
+    driveSent,
+    { problems: pathProblems, creating: !isEdit },
+  );
   const save = useCommand();
 
-  const isEdit = drive != null;
-
-  useEffect(() => {
-    if (!open) return;
-    setForm(drive ? formFromDrive(drive) : formFromDetectedDisk(adoptDisk || {}));
-    save.dismiss();
-  }, [open, drive, adoptDisk]);
-
-  const trimmedPath = form.mountPath.trim();
-  const pathOk = trimmedPath.startsWith('/');
-  const dirty = !isEdit
-    || form.label.trim() !== (drive.label || '').trim()
-    || trimmedPath !== (drive.mountPath || '').trim()
-    || form.readOnly !== (drive.readOnly === true)
-    || form.autoMount !== (drive.autoMount !== false);
-  const canSave = pathOk && dirty && !save.busy;
+  /* An edit needs a change that sends something; an adoption only valid values. */
+  const canSave = form != null && !blocked && (!isEdit || dirty) && !saving;
 
   const handleSave = () => {
     if (!canSave) return;
-    save.run(async () => {
-      if (!isEdit) {
-        /* Saved once the settings store holds it: the mount list is read from there. */
-        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => addMount({
-          id: form.id,
-          type: 'disk',
-          label: form.label.trim(),
-          mountPath: trimmedPath,
-          autoMount: form.autoMount,
-          uuid: form.uuid,
-          fsType: form.fsType,
-          readOnly: form.readOnly,
-        }));
-      } else {
-        const patch = {};
-        if (form.label.trim() !== (drive.label || '').trim()) patch.label = form.label.trim();
-        if (trimmedPath !== (drive.mountPath || '').trim()) patch.mountPath = trimmedPath;
-        if (form.autoMount !== (drive.autoMount !== false)) patch.autoMount = form.autoMount;
-        if (form.readOnly !== (drive.readOnly === true)) patch.readOnly = form.readOnly;
-        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => patchMount(form.id, patch));
-      }
-    }, { onDone: onClose });
+    saveForm((values, saved) => save.run(() => (isEdit
+      ? patchMount(form.id, changedFields(values, saved))
+      : addMount({
+        id: form.id,
+        type: 'disk',
+        label: values.label,
+        mountPath: values.mountPath,
+        autoMount: values.autoMount,
+        uuid: form.uuid,
+        fsType: form.fsType,
+        readOnly: values.readOnly,
+      }))))
+      .then((ok) => { if (ok) onClose(); });
   };
 
   const adoptDeviceName = adoptDisk
@@ -119,22 +127,23 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
       open={open}
       onClose={onClose}
       title={isEdit ? 'Edit drive' : 'Adopt drive'}
-      subtitle={isEdit ? drive.label || shortUuid(drive.uuid) : `${adoptDeviceName} · ${adoptDisk?.devPath || ''}`}
+      subtitle={isEdit ? drive?.label || shortUuid(drive?.uuid) || driveId : `${adoptDeviceName} · ${adoptDisk?.devPath || ''}`}
       size="md"
       height="cap"
-      closeOnEscape={!save.busy}
+      closeOnEscape={!saving}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
             Cancel
           </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
+          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
+            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {isEdit ? 'Save' : 'Adopt'}
           </button>
         </>
       )}
     >
+      {form == null ? <EditorGone what="drive" /> : (
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -164,7 +173,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
         <FormField
           label="Mount path"
           htmlFor="drive-editor-path"
-          hint={pathOk ? null : 'Must be absolute (start with /).'}
+          hint={problems.mountPath ?? null}
         >
           <input
             id="drive-editor-path"
@@ -192,6 +201,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
         </div>
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
+      )}
     </Modal>
   );
 }

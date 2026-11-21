@@ -199,7 +199,7 @@ export default function HomePanel() {
         )}
       </div>
 
-      {addLinkOpen && <ManualLinkModal open tile={null} onClose={() => setAddLinkOpen(false)} />}
+      {addLinkOpen && <ManualLinkModal open onClose={() => setAddLinkOpen(false)} />}
       <AlertDialog
         open={!!groupsCommand.errors[0]}
         title="Home action failed"

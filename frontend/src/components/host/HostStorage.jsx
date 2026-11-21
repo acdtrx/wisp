@@ -172,7 +172,7 @@ function useMountRowCommands() {
 /* -------------------------- SMB mounts sub-section -------------------------- */
 
 function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
-  const [editor, setEditor] = useState({ open: false, share: null });
+  const [editor, setEditor] = useState({ open: false, id: null });
   /* A connection test: its outcome, pass or fail, is the row's result, not an error. */
   const connectionTest = useCommand();
   const rowBusy = (id) => rowCommands.busy(id) || connectionTest.isBusy(id);
@@ -181,11 +181,11 @@ function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedId, setExpandedId] = useState(null);
 
-  const openCreate = () => setEditor({ open: true, share: null });
+  const openCreate = () => setEditor({ open: true, id: null });
 
-  const openEdit = (share) => setEditor({ open: true, share });
+  const openEdit = (share) => setEditor({ open: true, id: share.id });
 
-  const closeEditor = () => setEditor({ open: false, share: null });
+  const closeEditor = () => setEditor({ open: false, id: null });
 
   const handleSaved = () => {
     /* Saved config may invalidate earlier connection-test results. */
@@ -343,7 +343,7 @@ function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
       </DataTableScroll>
       <SmbShareEditorModal
         open={editor.open}
-        share={editor.share}
+        shareId={editor.id}
         onClose={closeEditor}
         onSaved={handleSaved}
       />
@@ -374,17 +374,17 @@ function RemovableDrivesSection({
   unadoptedDetected,
   rowCommands,
 }) {
-  const rowBusy = rowCommands.busy;
-  const [editor, setEditor] = useState({ open: false, drive: null, adoptDisk: null });
+  const [editor, setEditor] = useState({ open: false, driveId: null, adoptDisk: null });
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const rowBusy = rowCommands.busy;
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedId, setExpandedId] = useState(null);
 
-  const openEdit = (drive) => setEditor({ open: true, drive, adoptDisk: null });
+  const openEdit = (drive) => setEditor({ open: true, driveId: drive.id, adoptDisk: null });
 
-  const openAdopt = (disk) => setEditor({ open: true, drive: null, adoptDisk: disk });
+  const openAdopt = (disk) => setEditor({ open: true, driveId: null, adoptDisk: disk });
 
-  const closeEditor = () => setEditor({ open: false, drive: null, adoptDisk: null });
+  const closeEditor = () => setEditor({ open: false, driveId: null, adoptDisk: null });
 
 
   const handleRemoveConfirm = () => {
@@ -599,7 +599,7 @@ function RemovableDrivesSection({
       )}
       <RemovableDriveEditorModal
         open={editor.open}
-        drive={editor.drive}
+        driveId={editor.driveId}
         adoptDisk={editor.adoptDisk}
         onClose={closeEditor}
       />

@@ -1,23 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
 import {
+  EditorGone,
   FormCheckbox,
   FormField,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { addContainerMount, updateContainerMount } from '../../api/containers.js';
-import { awaitContainerChange } from '../../store/containerStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm } from '../../hooks/useForm.js';
+import { changedFields } from '../../hooks/formState.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const FORM_ID = 'container-mount-editor-form';
 
-export const TMPFS_DEFAULT_SIZE_MIB = 64;
-export const TMPFS_MAX_SIZE_MIB = 2048;
+const TMPFS_DEFAULT_SIZE_MIB = 64;
+const TMPFS_MAX_SIZE_MIB = 2048;
 
 /** Mount kinds, in the vocabulary the API uses (`type` on the mount definition). */
 const KIND_META = {
@@ -127,65 +131,92 @@ function buildCreatePayload(form) {
   return payload;
 }
 
-/** Delta PATCH against the saved mount — only changed keys are sent. */
-function buildPatch(form, prev) {
-  const patch = {};
-  const name = form.name.trim();
-  const containerPath = form.containerPath.trim();
-  if (name !== prev.name) patch.name = name;
-  if (containerPath !== prev.containerPath) patch.containerPath = containerPath;
-  if (form.type === 'tmpfs') {
-    const size = normalizeTmpfsSize(form.sizeMiB);
-    const prevSize = Number.isInteger(prev.sizeMiB) && prev.sizeMiB > 0 ? prev.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
-    if (size !== prevSize) patch.sizeMiB = size;
-    return patch;
-  }
-  if (!!form.readonly !== !!prev.readonly) patch.readonly = !!form.readonly;
-  if (form.type === 'file' && !!form.secret !== !!prev.secret) patch.secret = !!form.secret;
-  const prevSourceId = prev.sourceId || null;
-  const nextSourceId = form.sourceId || null;
-  if (prevSourceId !== nextSourceId) patch.sourceId = nextSourceId;
-  const sub = normalizeSubPath(form.subPath);
-  const prevSub = prev.subPath || '';
-  if ((nextSourceId && sub !== prevSub) || (!nextSourceId && prevSub)) {
-    patch.subPath = nextSourceId ? sub : '';
-  }
-  const uid = normalizeOwnerId(form.containerOwnerUid);
-  const gid = normalizeOwnerId(form.containerOwnerGid);
-  const prevUid = Number.isInteger(prev.containerOwnerUid) ? prev.containerOwnerUid : 0;
-  const prevGid = Number.isInteger(prev.containerOwnerGid) ? prev.containerOwnerGid : 0;
-  if (uid !== prevUid) patch.containerOwnerUid = uid;
-  if (gid !== prevGid) patch.containerOwnerGid = gid;
-  return patch;
+/** What Save writes for the values, normalised (the shape an edit compares, and sends
+ *  the changed keys of): a tmpfs takes its size; the others their access, source,
+ *  sub-path (none without a source) and owner ids. */
+function mountSent(form) {
+  const base = { type: form.type, name: form.name.trim(), containerPath: form.containerPath.trim() };
+  if (form.type === 'tmpfs') return { ...base, sizeMiB: normalizeTmpfsSize(form.sizeMiB) };
+  return {
+    ...base,
+    readonly: !!form.readonly,
+    ...(form.type === 'file' ? { secret: !!form.secret } : {}),
+    sourceId: form.sourceId || null,
+    subPath: form.sourceId ? normalizeSubPath(form.subPath) : '',
+    containerOwnerUid: normalizeOwnerId(form.containerOwnerUid),
+    containerOwnerGid: normalizeOwnerId(form.containerOwnerGid),
+  };
 }
 
 /**
  * Modal form editor for one container mount (see docs/FRONTEND-RULES.md § Modal
  * form editor). Two entry points like RemovableDriveEditorModal: create — the
  * header Add that was tapped passes its `kind` (`file` | `directory` | `tmpfs`)
- * — or edit, with the saved `mount` row. Saves through the row-scoped mount
- * APIs, then closes; stays open on failure.
+ * — or edit the mount named `mountName`. Its record is the container's config.
+ * Saves through the row-scoped mount APIs, then closes; stays open on failure.
  */
-export default function ContainerMountEditorModal({
+export default function ContainerMountEditorModal(props) {
+  return props.open ? <ContainerMountEditor {...props} /> : null;
+}
+
+/**
+ * What a mount editor's values lack to be saved, by the field each is about: the rule
+ * set the inline row editor enforced. Duplicates are checked against the other mounts
+ * of the record as the form took it (`taken`; the mount itself is `mountName`).
+ */
+function mountProblems(form, taken, mountName) {
+  const problems = {};
+  const isTmpfs = form.type === 'tmpfs';
+  const name = form.name.trim();
+  const containerPath = form.containerPath.trim();
+  const others = (taken?.mounts || []).filter((m) => m.name !== mountName);
+  if (name === '') problems.name = 'Mount name is required.';
+  else if (others.some((m) => m.name === name)) problems.name = `Duplicate mount name: ${name}`;
+  if (containerPath === '') problems.containerPath = 'Container path is required.';
+  else if (!containerPath.startsWith('/')) problems.containerPath = 'Container path must be absolute (start with /).';
+  else if (others.some((m) => m.containerPath === containerPath)) problems.containerPath = `Duplicate container path: ${containerPath}`;
+  if (isTmpfs && !isValidTmpfsSize(form.sizeMiB)) {
+    problems.sizeMiB = `Tmpfs size must be a whole number between 1 and ${TMPFS_MAX_SIZE_MIB} MiB.`;
+  }
+  if (!isTmpfs && form.sourceId && !isValidSubPath(form.subPath)) {
+    problems.subPath = 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
+  }
+  if (!isTmpfs && !isValidOwnerId(form.containerOwnerUid)) problems.containerOwnerUid = 'Owner UID must be a whole number between 0 and 65535.';
+  if (!isTmpfs && !isValidOwnerId(form.containerOwnerGid)) problems.containerOwnerGid = 'Owner GID must be a whole number between 0 and 65535.';
+  return problems;
+}
+
+function ContainerMountEditor({
   open,
   containerName,
-  mount = null,
+  mountName: openedName = null,
   kind = 'file',
-  mounts = [],
   storageMounts = [],
   runAsRoot = false,
   onClose,
 }) {
-  const [form, setForm] = useState(() => formFromMount(null, 'file'));
+  const record = useRecord(RECORD.CONTAINER, containerName);
+  const isEdit = openedName != null;
+  /* The mount's name: the one it opened on, then the one its own save sent (from the
+   * command's ack on, whatever the re-read does). */
+  const [mountName, setMountName] = useState(openedName);
+  const [blank] = useState(() => formFromMount(null, kind));
+  const editor = useForm(
+    record,
+    (config) => {
+      if (!isEdit) return blank;
+      const stored = (config.mounts || []).find((m) => m.name === mountName);
+      return stored ? formFromMount(stored) : null;
+    },
+    mountSent,
+    /* A stored value the client check refuses is no problem: the form hook keeps those
+     * of values the user changed. */
+    { problems: (values, data, taken) => mountProblems(values, taken, mountName), creating: !isEdit },
+  );
+  const { setForm, setField, dirty, saving, problems, blocked, save: saveForm } = editor;
   const save = useCommand();
-
-  const isEdit = mount != null;
-
-  useEffect(() => {
-    if (!open) return;
-    setForm(formFromMount(mount, kind));
-    save.dismiss();
-  }, [open, mount, kind]);
+  /* The mount is gone (removed elsewhere): the body says so, over the blank values. */
+  const form = editor.form ?? blank;
 
   const isTmpfs = form.type === 'tmpfs';
   const trimmedName = form.name.trim();
@@ -193,37 +224,15 @@ export default function ContainerMountEditorModal({
   /* Owner idmap applies to Local (non-storage) bind mounts only. */
   const showOwnerIds = runAsRoot && !isTmpfs && !form.sourceId;
 
-  const others = (mounts || []).filter((m) => m.name !== mount?.name);
-  const duplicateName = trimmedName !== '' && others.some((m) => m.name === trimmedName);
-  const duplicatePath = trimmedPath !== '' && others.some((m) => m.containerPath === trimmedPath);
-
-  /* Same rule set the inline row editor enforced, surfaced per field. */
-  const pathError = trimmedPath !== '' && !trimmedPath.startsWith('/')
-    ? 'Container path must be absolute (start with /).'
-    : duplicatePath
-      ? `Duplicate container path: ${trimmedPath}`
-      : null;
-  const nameError = duplicateName ? `Duplicate mount name: ${trimmedName}` : null;
-  const sizeError = isTmpfs && !isValidTmpfsSize(form.sizeMiB)
-    ? `Tmpfs size must be a whole number between 1 and ${TMPFS_MAX_SIZE_MIB} MiB.`
-    : null;
-  const subPathError = !isTmpfs && form.sourceId && !isValidSubPath(form.subPath)
-    ? 'Sub-path must be relative (no leading /) and cannot contain ".." segments.'
-    : null;
-  const ownerError = isTmpfs
-    ? null
-    : !isValidOwnerId(form.containerOwnerUid)
-      ? 'Owner UID must be a whole number between 0 and 65535.'
-      : !isValidOwnerId(form.containerOwnerGid)
-        ? 'Owner GID must be a whole number between 0 and 65535.'
-        : null;
-
-  const invalid = !!(pathError || nameError || sizeError || subPathError || ownerError);
-  const patch = isEdit ? buildPatch(form, mount) : null;
-  const dirty = isEdit ? Object.keys(patch).length > 0 : true;
-  const canSave = trimmedName !== '' && trimmedPath !== '' && !invalid && dirty && !save.busy;
-
-  const setField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  /* Each field's problem that stands, under it; an empty name or path says nothing there
+   * (Save says why it is off). */
+  const pathError = trimmedPath !== '' ? problems.containerPath ?? null : null;
+  const nameError = trimmedName !== '' ? problems.name ?? null : null;
+  const sizeError = problems.sizeMiB ?? null;
+  const subPathError = problems.subPath ?? null;
+  const ownerError = problems.containerOwnerUid ?? problems.containerOwnerGid ?? null;
+  /* An edit needs a change that sends something; a new mount only valid values. */
+  const canSave = editor.form != null && !blocked && (!isEdit || dirty) && !saving;
 
   /* Clearing the source drops its sub-path — it only means anything under a storage mount. */
   const setSource = (nextSourceId) => {
@@ -239,15 +248,13 @@ export default function ContainerMountEditorModal({
 
   const handleSave = () => {
     if (!canSave) return;
-    save.run(async () => {
-      if (isEdit) {
-        if (Object.keys(patch).length > 0) {
-          await awaitContainerChange(containerName, () => updateContainerMount(containerName, mount.name, patch));
-        }
-      } else {
-        await awaitContainerChange(containerName, () => addContainerMount(containerName, buildCreatePayload(form)));
-      }
-    }, { onDone: onClose });
+    saveForm(async (values, saved) => {
+      const ok = await save.run(() => (isEdit
+        ? updateContainerMount(containerName, mountName, changedFields(values, saved))
+        : addContainerMount(containerName, buildCreatePayload(form))));
+      if (ok && isEdit) setMountName(values.name);
+      return ok;
+    }).then((ok) => { if (ok) onClose(); });
   };
 
   const meta = KIND_META[form.type] || KIND_META.file;
@@ -258,22 +265,23 @@ export default function ContainerMountEditorModal({
       open={open}
       onClose={onClose}
       title={isEdit ? 'Edit mount' : meta.addTitle}
-      subtitle={isEdit ? `${mount.name} · ${containerName}` : meta.subtitle}
+      subtitle={isEdit ? `${mountName} · ${containerName}` : meta.subtitle}
       size="md"
       height="cap"
-      closeOnEscape={!save.busy}
+      closeOnEscape={!saving}
       footer={(
         <>
-          <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
+          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
             Cancel
           </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
+          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
+            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {isEdit ? 'Save' : 'Add'}
           </button>
         </>
       )}
     >
+      {editor.form == null ? <EditorGone what="mount" /> : (
       <form
         id={FORM_ID}
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
@@ -387,7 +395,7 @@ export default function ContainerMountEditorModal({
         {form.type === 'file' && (
           <FormCheckbox
             label="Secret"
-            hint={isEdit && mount.secret
+            hint={isEdit && editor.saved?.secret
               ? 'Unchecking empties the stored file — upload or paste the content again afterwards.'
               : 'Content becomes write-only — it can be replaced or cleared, never read back.'}
             checked={form.secret}
@@ -428,6 +436,7 @@ export default function ContainerMountEditorModal({
 
         <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
       </form>
+      )}
     </Modal>
   );
 }
