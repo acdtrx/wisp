@@ -40,7 +40,7 @@ Rejection responses:
 
 ### Tab placement
 
-The console is accessed via the "Console" tab in the VM overview header. It shares the center panel with the Overview tab. The VM stats bar remains visible at the bottom.
+The console is accessed via the "Console" tab in the VM overview header. It shares the center panel with the Overview tab.
 
 ### Toolbar
 
@@ -67,7 +67,7 @@ Limitations:
 
 ### Viewport
 
-The VNC console viewport fills the available space below the toolbar and above the VM stats bar. The noVNC client uses `scaleViewport = true` to scale the VM display to fit the viewport dimensions.
+The VNC console viewport fills the available space below the toolbar. The noVNC client uses `scaleViewport = true` to scale the VM display to fit the viewport dimensions.
 
 **Console colours follow the theme** *(settled 2026-08-25)*. The terminal well is its own token pair, `--color-console` / `--color-console-text` in `index.css` — deliberately dark in **both** themes, because a terminal is dark; light keeps the slate the consoles have always used, dark drops to the Dusk input well so it stops reading as a blue-grey patch. `consoleTheme()` (`components/console/consoleTheme.js`) resolves them so the `bg-console` class on the viewport and the JS-configured palettes cannot drift apart. The container terminal repaints **live** on a theme flip (`terminal.options.theme`) — no reconnect, no lost scrollback. ANSI colours stay on xterm's defaults: they are tuned for a dark background and both backgrounds are dark, so nothing needs overriding and light stays byte-identical. The noVNC letterbox is recoloured in dark by a CSS rule on `[data-wisp-vnc-viewport] > div` (noVNC paints its screen element inline and gives it no class, so `!important` is the only hook); light keeps noVNC's own default. The remote framebuffer is whatever the guest renders.
 

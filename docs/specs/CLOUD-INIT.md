@@ -127,7 +127,7 @@ The Cloud-Init section in the UI then shows a way to configure again from scratc
 
 ### Regenerate
 
-Rebuild the seed ISO from the current stored configuration without opening the edit form. Useful after making manual changes to `cloud-init.json`.
+The server can rebuild the seed ISO from the stored configuration, for use after a manual change to `cloud-init.json`. The page no longer offers it (settled 2026-11-21): saving first boot setup rebuilds the ISO.
 
 A backup restore (always as a new VM) rebuilds the ISO the same way, from the restored `cloud-init.json` (`rebuildCloudInitISO`, the stored password hash reused); backups don't carry the ISO. See [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso).
 
@@ -164,7 +164,7 @@ During VM creation:
 | Context | Behavior |
 |---------|----------|
 | **Create VM** (`isCreating=true`) | Full editable form: a **Cloud Init** master toggle (first in the toggle row, default on) gates whether cloud-init runs for this VM; when off, other fields are disabled and creation skips the seed ISO. |
-| **Overview** (`isCreating=false`) | Read-only summary includes Cloud Init on/off, hostname, username, masked password, SSH key status, and option toggles. Edit opens the full form; save with Cloud Init off performs a soft-disable (ISO removed, json kept). **Remove** performs full removal (same as `DELETE`). |
+| **The VM page** | The First boot setup group ([UI-VM.md](UI-VM.md)): its values as text, an Edit that saves with the setup on, and a Remove that asks first (same as `DELETE`). The page has no on/off: a stored setup that is switched off shows "Off" until it is saved again (settled 2026-11-21). |
 
 ## Timeouts
 

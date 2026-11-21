@@ -34,8 +34,6 @@ source refer to them.
     VM and container operation; never duplicate operation logic in routes.
 - Split a function whose parameters collect behaviour-changing booleans, rather than add
   another flag.
-  - Applied: Overview and Create VM share their section components through a single
-    `isCreating` prop — one genuine shared purpose, one flag.
 - Keep a shared helper in one module; never copy it between files.
 
 ## 3. Minimal External Dependencies

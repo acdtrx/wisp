@@ -30,7 +30,6 @@ The palette, both themes, typography and the shared list, table and modal patter
 - **Below top bar:** `flex flex-1 overflow-hidden`
 - **Left panel:** Fixed width ~280px, full height below top bar, scrollable, `bg-surface-sidebar`
 - **Center panel:** Fills remaining width, `bg-surface`, content scrollable
-- **VM stats bar:** Fixed at bottom of center panel when a VM is selected
 
 ### Responsive behavior (below `lg`, 1024px)
 
@@ -45,12 +44,9 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
 - **Content gutters** shrink to `px-4 py-4`; modal overlays carry `p-4` so dialogs never sit edge-to-edge; wide tables keep their horizontal scroll.
 - **Wide data tables collapse to the essential columns** — Host Overview (network, hardware), Image Library, and Host Mgmt (SMB, removable drives, bridges) hide secondary columns below `sm` and stack their values on a muted second line inside the first cell, so each fits without horizontal scroll.
 - **Host Mgmt is fully manageable on phones** — SMB shares, removable drives, and bridges create/edit through modal form editors (`SmbShareEditorModal`, `RemovableDriveEditorModal`, `BridgeCreateModal` — see `docs/FRONTEND-RULES.md` § Modal form editor); row actions expand under the row on tap below `sm`. The Backup form (path + network-mount select) reflows inline.
-- **Cloud-init is view-only on phones** — the VM detail Cloud-Init section shows its summary below `sm` but hides the Regenerate / Remove / Configure buttons, so the edit form (a desktop-oriented multi-field layout) is never reached on mobile.
 - **Touch devices render form controls at ≥16px** *(settled 2026-08-25)* — iOS Safari auto-zooms the page whenever a focused `input` / `select` / `textarea` computes below 16px, and never zooms back out, so a `(hover: none) and (pointer: coarse)` block in `index.css` floors every text-entry control at `max(16px, 1em)` and floors `input-field`'s height at 34px (the dense `h-7` / `h-8` row variants otherwise clip the taller text). Pointer devices keep the designed `text-sm` / `text-xs` sizes exactly. Deliberately a pointer query, not a `max-sm:` variant — an iPad in landscape is wider than `sm` and still touch. The `maximum-scale=1` viewport meta was rejected: it stops the zoom by disabling pinch-zoom for everyone. The block is unlayered because Tailwind's size utilities live in the utilities layer and would win over `@layer base`; components must not try to opt out with a smaller `text-*` class.
-- **Safe-area insets keep chrome off the iOS home indicator.** `index.html` sets `viewport-fit=cover`, which is what makes `env(safe-area-inset-*)` report real values; the `pt-safe` / `pb-safe` / `px-safe` utilities (`index.css`) then apply them. This matters most for the VM stats bar: launched from the home screen the app renders edge-to-edge, and a horizontally-scrollable strip sitting in the bottom gesture band gets its swipes taken by the iOS app switcher instead of scrolling. Each bar wraps its `h-11` scroll row in a `pb-safe` element that carries the border and card background, so the pills sit above the band and the card colour still paints the indicator strip. Same treatment on the drawer's Organize footer. `px-safe` on the app shell and the drawer keeps them out of the landscape notch; `pt-safe` on the top bar means the shell never slides under the status bar, and the drawer's top offset is written against it. All inert where the insets are `0` (desktop, Android, notch-less phones, and iOS's default opaque status bar).
-- **VM detail sections are fully manageable on phones**: both collection editors (NICs, Disks) create and edit through modal form editors, with rows read-only at every breakpoint (the container page: [UI-CONTAINER.md](UI-CONTAINER.md)):
-  - **VM Network interfaces** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `NicEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the Model and MAC columns are hidden and stack as `model · mac` under the bridge; header **Add** and the two row actions (Edit, Remove) stay visible. Unless the VM is shut off those three controls render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width. The create flow keeps its desktop-oriented draft rows.
-  - **VM Disks** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `DiskEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the Size, Image, Image type, and Bus columns are hidden and stack under the slot label (image filename, then `size · bus · image type`); the header **Add disk** / **Attach ISO** buttons and the two row actions per row (Edit, Unmount for block disks; Change ISO, Eject for CD-ROMs) stay visible — the set fits without the tap-to-expand strip. Unless the VM is shut off, add / edit / unmount render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width; ISO actions stay live. The create flow keeps its desktop-oriented draft rows.
+- **Safe-area insets keep chrome off the iOS home indicator.** `index.html` sets `viewport-fit=cover`, which is what makes `env(safe-area-inset-*)` report real values; the `pt-safe` / `pb-safe` / `px-safe` utilities (`index.css`) then apply them. This matters most for a bar at the bottom of the screen: launched from the home screen the app renders edge-to-edge, and a horizontally-scrollable strip sitting in the bottom gesture band gets its swipes taken by the iOS app switcher instead of scrolling. Each bar wraps its `h-11` scroll row in a `pb-safe` element that carries the border and card background, so the pills sit above the band and the card colour still paints the indicator strip. Same treatment on the drawer's Organize footer. `px-safe` on the app shell and the drawer keeps them out of the landscape notch; `pt-safe` on the top bar means the shell never slides under the status bar, and the drawer's top offset is written against it. All inert where the insets are `0` (desktop, Android, notch-less phones, and iOS's default opaque status bar).
+- **The VM and container pages are fully manageable on phones**: the same groups in one column, forms as a sheet from the bottom ([UI-VM.md](UI-VM.md), [UI-CONTAINER.md](UI-CONTAINER.md)).
 - **USB devices** — the ID column is hidden below `sm` (Name gets the room), and the bus/device cell shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes instead of repeating the `Bus …`/`Device …` labels.
 - **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
@@ -132,7 +128,7 @@ The center panel content is controlled by the URL. `AppLayout` is a shell that r
 |-----|---------|
 | `/` | Redirects to `/host/home` |
 | `/host/:tab` | Host panel (`tab` ∈ `home`, `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
-| `/vm/:name/:tab?` | Overview panel + VM Stats Bar (`tab` ∈ `overview`, `console`; default `overview`) |
+| `/vm/:name/:tab?` | The VM page, [UI-VM.md](UI-VM.md) (`tab` ∈ `overview`, `console`; default `overview`) |
 | `/container/:name/:tab?` | The container page, [UI-CONTAINER.md](UI-CONTAINER.md) (`tab` ∈ `overview`, `logs`, `console`; default `overview`) |
 | `/create/vm` | Create VM panel |
 | `/create/container` | Create Container panel |
@@ -190,52 +186,9 @@ Same centered card as the Server Unreachable screen: the Wisp glyph, a `bg-statu
 
 ---
 
-## VM Overview Panel
+## The VM page
 
-When a VM is selected, the center panel shows two tabs: **Overview** and **Console**.
-
-### Header row
-
-A single horizontal bar containing:
-
-- **VM icon** — clickable, opens the Icon Picker modal. The icon is colored by VM state (green running, grey stopped, amber paused, blue transitioning); there is no separate status badge pill.
-- **VM name** — bold, truncated if long, followed by a small muted **vm** pill (same style as the **container** pill on the container overview header)
-- **Tabs** — Overview | Console (underline style with border-bottom; active tab has accent border + bold label)
-- **Restart required** amber badge (left of the actions, same style as the container header's) while the VM's persisted restart-required flag is set (`pendingRestart` — see [VM-MANAGEMENT.md](VM-MANAGEMENT.md#restart-required-flag)). Its tooltip says a stop + start applies the saved changes and a guest reboot doesn't. It survives reloads and Wisp restarts and drops once the VM's QEMU process is seen to have started after the change (the next list refresh after a stop + start); the selected VM's flag follows the `vms` list feed, so the badge drops without a manual refresh. (settled 2026-10-16)
-- **Action buttons** (right-aligned): Start, Stop, Force Stop, Reboot, Suspend, Resume, (divider), Backup, Delete, View XML (no Clone or snapshot actions — [VM-MANAGEMENT.md → Not supported](VM-MANAGEMENT.md#not-supported-snapshots-cloning-restore-in-place))
-
-Action buttons are **context-sensitive**: irrelevant ones are disabled with muted style, not hidden.
-
-- **Backup** — opens modal to select backup destinations; while a backup is running, **Continue in background** closes the dialog (job progress remains in the top bar). **Start** and **Delete** are disabled while any job on this VM runs — a running job whose `subject` is the VM, e.g. a backup (including after the modal is dismissed) — the backend refuses them with 409 `VM_BUSY` anyway ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock)). So is everything below that would hit a locked route — see [Overview tab content](#overview-tab-content). With several destinations the progress line names the destination being written, and the dialog shows *Backup complete* only after the last one.
-- **Delete** — opens confirmation dialog with "Also delete disk images" checkbox
-- **View XML** — opens modal with read-only domain XML and Copy button
-
-### Error bar
-
-A red bar below the header, visible on both tabs. Appears when an action or save fails. Includes a dismiss (X) button.
-
-### Overview tab content
-
-A single scrollable panel with section cards, in this order. While any job on this VM runs (a running job whose `subject` is the VM — a backup, a start, a delete, …), a warning-tinted note above the sections names it and says editing is unavailable until it finishes, and every control that would be refused with 409 `VM_BUSY` ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock)) is **disabled** with *Unavailable while “<job title>” runs* as its `title`: the header icon picker; General / Advanced **Save** (fields stay editable, the save waits); Disks **Add disk**, **+ CD-ROM**, Edit / Unmount / Change ISO / Eject (the lock note under the table shows the same text); USB **Attach** / **Detach**; NIC **Add** / Edit / Remove (lock note likewise); Cloud-Init **Configure** / **Regenerate** / **Remove** and the edit form's save. Read-only interactions (collapse, View XML, the backup dialog) stay live. It follows the jobs list by subject, never by title, so the controls re-enable when the job settles. **General**, **Network interfaces** and **Advanced** — the sections that edit the domain definition — show the `SectionCard` *Restart required* badge from the same persisted flag as the header (the container Mounts / Devices sections do the same with theirs); no section keeps a session-only restart state.
-
-1. **General** — one row on desktop: Name, **Auto Start** toggle, then (divider) CPU Cores, RAM (number + GB/MB toggle), then (divider) OS Type (radio pills with OS icons, content-sized). Below `sm` it stacks as three lines: Name + the toggle, CPU + RAM as equal halves, OS Type. Per-section dirty state and Save button. Name, CPU Cores and RAM are editable only when the VM is shut off (settled 2026-11-21: one rule for everything on a VM that needs it offline, here and in Disks, Network interfaces and Advanced).
-
-2. **Disks** — `SectionCard` with header **+ Add disk** (block disks, shown while a block-disk slot is free — `sda` first, so a VM created without disks can get a primary disk, then `sdb`) and **+ CD-ROM**. Table rows are **read-only**; columns: **Disk**, **Size**, **Image**, **Image type** (e.g. qcow2, ISO, cloud-init), **Bus**, **Actions** (icon-only, hover-reveal). Fixed slot convention:
-   - `sda` / `sdb` — block disks: **Actions** → **Edit** (pencil) and header **+ Add disk** open **[DiskEditorModal.jsx](../../frontend/src/components/sections/DiskEditorModal.jsx)** (modal form editor, one component with two entry points: edit the row's **Size** + **Bus**, or add a disk in the first free slot — `sda` on a VM without one, else `sdb`). Adding picks a **Source** — *New disk* (size + bus → create) or *Existing image* (a plain `select` of the library's disk images + optional resize-to-GB + bus → attach, then resize). It does **not** nest the image-library picker; that stays the direct-action path for ISO slots. **Unmount** (minus) stays a row action. Add / Edit / Unmount are **disabled** unless the VM is shut off, with a lock note under the table. **+ CD-ROM** opens the image library; a CD-ROM row appears only after an ISO is chosen (`sdc` then `sdd`).
-   - `sdc` / `sdd` — CD-ROMs: row actions are **Change ISO** (opens the library to swap media) and **Eject** (clears the row). Attach, change, and eject all hot-plug while the VM is running — only the **+ CD-ROM** header button hides itself when both slots are filled.
-   - `sde` — cloud-init seed ISO (read-only, shown when cloud-init enabled); **Actions** cell is empty (no em dash)
-
-3. **USB Devices** — **Table** (DataTable chrome) of devices **attached to this VM** only; columns **Name**, **ID**, **Bus / device**, **Actions** (Detach, icon-only **hover-reveal** via `DataTableRowActions`). **Attach** in the section header (`Plus`+`Usb`) opens a modal (same shell as the image library picker) listing **available** host USB devices in a second table with **Attach** per row; a successful attach **closes** the modal (also dismiss via backdrop, close, or Escape — Escape does not deselect the VM). When the host reports no USB devices, the header control is disabled. Immediate actions, no Save button. Host list is driven by SSE (`/api/host/usb/stream`); VM-attached devices are fetched on load and after attach/detach.
-
-4. **Network interfaces** — **Table** (DataTable chrome) of **read-only** rows: one row per NIC (bridge, model, MAC). VLAN tagging is done via a VLAN-specific host bridge (Host Mgmt → Network Bridges), not a per-NIC field. **Add NIC** in the section header (`Plus`+network) and row **`Pencil`** open **[NicEditorModal.jsx](../../frontend/src/components/sections/NicEditorModal.jsx)** (modal form editor: Bridge select, Model radio pills, MAC + randomize; changing the first NIC's MAC hints to re-save cloud-init). Row **`Trash2`** removes without a confirm, and disappears at the last NIC. Unless the VM is shut off, Add / Edit / Remove are **disabled** and a lock note under the table says to stop the VM. The **create flow** keeps all-inputs draft rows (desktop-oriented, no modal). Persistence rules: [FRONTEND-RULES.md](../FRONTEND-RULES.md) § Variants (**VM — Network interfaces**). Row actions follow **hover-reveal** unless the row is busy.
-
-5. **Advanced** (collapsed by default) — Compact grid only (no NIC block): Firmware (BIOS/UEFI/UEFI+SecureBoot), Machine type (Q35/i440fx), CPU model, Video driver, Graphics, Boot order, Boot menu toggle, Memory balloon toggle, Guest agent toggle, vTPM toggle, VirtIO RNG toggle, Nested virt toggle, Windows optimizations (read-only indicator). Auto Start lives in **General**. **Section Save** for these fields. Offline-only fields show a lock icon unless the VM is shut off.
-
-6. **Cloud-Init** (hidden for Windows) — Read-only summary: Cloud Init on/off, hostname, username, masked password, SSH key status, option toggles. Edit opens the form; save with Cloud Init off soft-disables (ISO removed, json kept). **Remove** deletes cloud-init entirely. Regenerate rebuilds the ISO when enabled.
-
-### Console tab
-
-Console toolbar (permanent bar above viewport) + VNC console viewport. See [CONSOLE.md](CONSOLE.md).
+The VM page: [UI-VM.md](UI-VM.md). Its Console tab: [CONSOLE.md](CONSOLE.md).
 
 ---
 
@@ -474,7 +427,7 @@ Modal dialog for destructive actions:
 Compact inline stat display:
 - Label + value
 - Optional slim progress bar with color thresholds (green/amber/red)
-- Used in both host stats bar and VM stats bar
+- Used in the host stats bar
 
 ### Toggle
 

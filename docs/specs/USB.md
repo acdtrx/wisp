@@ -64,9 +64,9 @@ The USB device XML:
 
 ## UI Presentation
 
-The USB section in the VM Overview panel shows:
+The USB devices group on the VM page ([UI-VM.md](UI-VM.md)) shows:
 
-1. **Attached devices** — a **table** of devices currently attached to the VM (name, ID, bus/device when known). Row **Detach** (icon-only, hover-reveal). Empty state points to **Attach** in the section header.
+1. **Attached devices** — a **table** of devices currently attached to the VM (name, ID, bus/device when known). Row **Detach** (icon-only, always visible). Empty state points to **Attach** in the section header.
 2. **Attach** — header control (`Plus`+USB) opens a **modal** listing host USB devices **not** already attached to this VM, each row with **Attach**. The modal matches the image-library modal pattern (overlay, close, escape). Choosing **Attach** on a row attaches the device and **closes** the modal.
 
 Host device names update via **SSE** (`/api/host/usb/stream`) when devices are plugged or unplugged. VM-attached devices are refreshed after attach/detach actions. Attach and detach are immediate API actions — no Save button, no dirty state tracking.

@@ -4,15 +4,14 @@ What a VM's page shows and how each thing on it is changed. The shell, the sideb
 the shared components are in [UI.md](UI.md); the three shapes (view, edit, act) are in
 `FRONTEND-RULES.md`, Data. Settled 2026-11-21.
 
-Built by `features/workload-pages.md`. Until its milestone lands, the page is as
-[UI.md](UI.md) describes it; that text is removed when this page is built.
-
 ## The page
 
 - **Header**: the VM's icon and name, its state, and the tabs Overview and Console.
   Actions, as icons: Start when it is stopped; Stop and Restart when it runs. A "More"
   menu holds Pause or Resume, Force stop, Rename, Change icon, Back up now and Delete.
-  "Restart to apply" shows while a saved change waits for the next start.
+  Restart reboots the guest, which keeps the running settings: so while a saved change
+  waits (or the host's QEMU was replaced) the header says "Stop and start to apply".
+  Back up now needs the VM shut off.
 - **Figures**, in a row under the header while the VM runs: address, host name, uptime,
   CPU, disk and network rates, as the stats stream carries them. Each sits in a cell of
   fixed width. Stopped, the row says so.
@@ -31,15 +30,18 @@ shut off, with a small lock by its title; the disabled action says "stop the VM 
 |---|---|---|---|
 | **Size** *(needs shut off)* | CPU cores, memory | Edit: a preset or custom cores and memory | `PATCH /api/vms/:name` `{ vcpus, memoryMiB }` |
 | **Disks and media** | Each disk: size and image. Each CD: its ISO | Disk *(needs shut off)*: Add, Edit (size, bus), Remove. CD, at any time: Insert, Change, Eject | The disk and CD routes ([API-VMS.md](API-VMS.md)) |
-| **Network** *(needs shut off)* | Each adapter: bridge and address | Add, Edit (bridge, MAC, model), Remove | `PATCH` `{ nics }`, the whole list |
-| **First boot setup** (a VM whose profile has it) | Host name, user, whether a password is set, the SSH keys by name, package update | Edit; Remove | `PUT` and `DELETE /api/vms/:name/cloudinit` |
+| **Network** *(needs shut off)* | Each adapter: bridge, model and MAC (the address is in the figures) | Add, Edit (bridge, MAC, model), Remove | `PATCH` `{ nics }`, the whole list |
+| **First boot setup** (a VM whose profile has it) | Host name, user, whether a password is set, the SSH keys by name, the options; "Off" for a stored setup that is switched off, "Not set up." for none | Edit (which turns it on); Remove, which asks first | `PUT` and `DELETE /api/vms/:name/cloudinit` |
 | **USB devices** | The devices passed through | Attach, Detach, at any time | The USB routes |
 | **Start-up** | — | A switch: start with the host | `PATCH` `{ autostart }` |
-| **System** *(needs shut off)* | The profile, and in one line what it set | Expert settings; View XML | `PATCH` with the settings changed |
+| **System** | The profile, and in one line what it set | Expert settings *(needs shut off)*; View XML, at any time | `PATCH` with the settings changed |
 
 - **Rename** *(needs shut off)* asks for the new name in a small dialog and sends
   `PATCH` `{ name }`; the page then moves to the new name.
-- **First boot setup**: an empty host name means the VM's name as it is now. SSH keys are
+- **A disk's Remove** detaches it; its file stays in the VM's folder. The last adapter
+  cannot be removed.
+- **First boot setup**: its form also holds the options (grow the disk, install the guest
+  agent, announce a local name, update packages). An empty host name means the VM's name as it is now. SSH keys are
   picked from Wisp's list ([SETTINGS.md](SETTINGS.md)); a key pasted here is added to
   that list. The password field is empty and keeps the stored one unless typed.
 - **Expert settings** holds, grouped: boot (order, menu); firmware and machine (firmware,

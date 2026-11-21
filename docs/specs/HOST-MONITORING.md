@@ -171,13 +171,9 @@ Embedded in the top bar, always visible. Compact inline pills:
 
 Each pill shows: label, value, and a slim progress bar where applicable (CPU, RAM). The **RUNNING** pill shows running VM and container counts separated by `|`, each count prefixed by the monitor icon (VMs) and box icon (containers), matching the left panel workload icons.
 
-### VM stats bar
+### The VM page's figures
 
-Fixed at the bottom of the center panel. Visible whenever a VM is selected, on both Overview and Console tabs.
-
-When the VM is **running**, pills show: vCPU (usage percent with bar), Disk (read/write MB/s), Net (tx/rx MB/s), Uptime (formatted duration). When the guest agent is enabled and available, optional pills for guest hostname ("Host") and guest IP ("IP") are shown. There is no RAM pill in the VM stats bar.
-
-Example: `[ vCPU  ██░░ 18% ]  [ Disk  ↑0.2  ↓1.4 MB/s ]  [ Net  ↑0.1  ↓0.8 MB/s ]  [ Uptime  4h 23m ]  [ Host  myvm ]  [ IP  192.168.1.10 ]`
+The VM page shows these as a row of figures under its header while the VM runs ([UI-VM.md](UI-VM.md)): address and host name (from the guest agent, when it answers), uptime, CPU, disk and network rates.
 
 When the VM is **stopped**: shows a single muted label "Stopped" with no metrics. When **paused**: shows "Paused".
 
