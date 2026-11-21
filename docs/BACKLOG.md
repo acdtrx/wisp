@@ -337,12 +337,6 @@ the lookup itself; the GET through the SSRF guard succeeds). Where the images ar
 published needs looking up before the fix. **Revisit trigger:** a user downloading Home
 Assistant OS, or the next work on the library presets.
 
-**Container sections take no busy reason.** While a job holds a container, its header
-actions are disabled with the job's title as the reason, but its sections (mounts, env,
-services, devices) keep their Save enabled and meet a 409 `CONTAINER_BUSY` instead; the VM
-page's sections take the reason (found 2026-11-20, in milestone 2's fixes). **Revisit
-trigger:** the next work on the container detail sections, or a user meeting that 409.
-
 **A self-update whose backend never comes back waits for ever.** Once the install job
 reports `restarting`, the page waits for its stream to end in `JOB_GONE` after the
 restart; a backend that never returns leaves the wait unsettled, so the "stuck" note

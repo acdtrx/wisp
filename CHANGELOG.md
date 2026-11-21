@@ -3,6 +3,12 @@
 ## 2026-11-20
 
 ### New Features
+- **The container page in groups** — a container's settings show as text in groups (Image, Environment, Storage, Network, Limits and restarts, Start-up and backups, Advanced; an app's own groups first), each changed in a small form with its own Save, or by a switch or a button that acts at once. Its figures (address, local name, uptime, CPU, memory) sit at the top instead of a bar at the bottom, and Kill, Rename, Change icon, Back up now, Eject and Delete are in a More menu.
+- **An app container's rows are saved one at a time** — a Caddy site, a Zot or Samba user, a Samba share, a Jellyfin library is added, edited or removed on its own; Jellyfin's GPU switch acts at once.
+- **Removing stored data asks first** — removing a mount kept on the host, or a Samba share kept on the host (also when it moves to a storage mount), names the files that go before it acts.
+- **A container announces a service in a form that offers the image's exposed ports**; the exposed ports no longer show on their own.
+- **New container is a short form**: a name, and an image or an app.
+- **Forms open as a sheet from the bottom on a phone**, every dialog in the app with them.
 - **One install and update path that ends usable** — install and every update run the same re-runnable setup, which ends with VM and container networking working. Setup makes the bridge `br0` on the host's uplink through netplan, keeps the host's address and DHCP lease, checks the result, and puts the original back when the check fails or the step is stopped. The original netplan file is kept under `/var/lib/wisp/network-before-bridge`, and `docs/specs/DEPLOYMENT.md` gives a four-command recovery for the console.
 - **Supported hosts are netplan hosts** — Debian or Ubuntu with systemd 254 or newer (Debian 13, Ubuntu 24.04 and later), the network run by netplan with the networkd renderer, a plain Ethernet uplink on DHCP or a static address. Any other host is refused before anything changes, with a code and a remedy listed in `docs/specs/DEPLOYMENT.md`. **These hosts no longer update:** releases older than v2.0.2; Arch; systemd older than 254 (Debian 12, Ubuntu 22.04); and a host whose network NetworkManager, plain systemd-networkd or ifupdown runs, including one an earlier release bridged with `nmcli` or networkd files. Their update is refused and rolls back, and the host stays on its release until netplan runs its network.
 - **A host without KVM installs** — it runs containers, and setup's last lines say how to turn virtualization on.
