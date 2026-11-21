@@ -1,59 +1,47 @@
+import { lazy, Suspense, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Fragment, useState, useEffect, lazy, Suspense,
-} from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { renamedPath } from '../../utils/renamedPath.js';
-import {
-  Play, Square, Zap, RotateCcw, Pause, PlayCircle,
-  Trash2, Loader2, Code2, Archive,
+  Archive, Loader2, Pause, Play, PlayCircle, RotateCcw, Smile, Square, TextCursorInput, Trash2, Zap,
 } from 'lucide-react';
 
-import { useVm, useVmStore, useVmStatsStore } from '../../store/vmStore.js';
-import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
-import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
-import { useWorkloadBusy, useWorkloadBackup, workloadBusyReason } from '../../store/backgroundJobsStore.js';
 import { startBackup } from '../../api/backups.js';
-import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import XMLModal from './XMLModal.jsx';
-import BackupModal from '../shared/BackupModal.jsx';
-import GeneralSection from '../sections/GeneralSection.jsx';
-import DisksSection from '../sections/DisksSection.jsx';
-import USBSection from '../sections/USBSection.jsx';
-import AdvancedSection from '../sections/AdvancedSection.jsx';
-import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
-import CloudInitSection from '../sections/CloudInitSection.jsx';
-import { liveData } from '../../store/streamStore.js';
-import { RECORD } from '../../store/records.js';
+import { useCommand } from '../../hooks/useCommand.js';
 import { useRecord } from '../../hooks/useRecord.js';
+import { useWorkloadBackup, useWorkloadBusy, workloadBusyReason } from '../../store/backgroundJobsStore.js';
+import { RECORD } from '../../store/records.js';
+import { liveData } from '../../store/streamStore.js';
+import { useVm, useVmStatsStore, useVmStore } from '../../store/vmStore.js';
+import { renamedPath } from '../../utils/renamedPath.js';
+import { vmLocked } from '../../utils/workloadLocks.js';
+import BackupModal from '../shared/BackupModal.jsx';
+import CommandErrors from '../shared/CommandErrors.jsx';
+import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import WorkloadGone from '../shared/WorkloadGone.jsx';
-import RecordGate from '../shared/RecordGate.jsx';
+import GroupCard from '../shared/GroupCard.jsx';
+import GroupSwitch from '../shared/GroupSwitch.jsx';
+import IconPickerModal from '../shared/IconPickerModal.jsx';
+import MoreMenu from '../shared/MoreMenu.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import RecordGate from '../shared/RecordGate.jsx';
+import RenameDialog from '../shared/RenameDialog.jsx';
+import WorkloadGone from '../shared/WorkloadGone.jsx';
+import { getDefaultIconId, getVmIcon } from '../shared/vmIcons.jsx';
+import VmDisksGroup from './VmDisksGroup.jsx';
+import VmFigures from './VmFigures.jsx';
+import VmFirstBootGroup from './VmFirstBootGroup.jsx';
+import VmNetworkGroup from './VmNetworkGroup.jsx';
+import VmSizeGroup from './VmSizeGroup.jsx';
+import VmSystemGroup from './VmSystemGroup.jsx';
+import VmUsbGroup from './VmUsbGroup.jsx';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
-function SectionSkeleton({ count = 3 }) {
-  return Array.from({ length: count }, (_, i) => (
-    <div key={i} className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-3 animate-pulse">
-      <div className="h-4 w-32 rounded-sm bg-surface" />
-      <div className="space-y-2">
-        <div className="h-3 w-full rounded-sm bg-surface" />
-        <div className="h-3 w-2/3 rounded-sm bg-surface" />
-      </div>
-    </div>
-  ));
-}
+const headerBtn = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 lg:h-8 lg:w-8';
+const headerBtnPlain = `${headerBtn} border border-surface-border text-text-secondary hoverable:hover:bg-surface hoverable:hover:text-text-primary`;
+const headerBtnPrimary = `${headerBtn} bg-accent text-white hoverable:hover:bg-accent-hover`;
 
-function TabSpinner() {
-  return (
-    <div className="flex flex-1 items-center justify-center text-sm text-text-muted">
-      <Loader2 size={20} className="animate-spin" />
-    </div>
-  );
-}
-
-/** Icon color by VM state (used on the VM icon in the title bar). */
+/** Icon colour by VM state. */
 const STATE_ICON_COLOR = {
   running: 'text-status-running',
   blocked: 'text-status-running',
@@ -65,81 +53,72 @@ const STATE_ICON_COLOR = {
   nostate: 'text-text-secondary',
 };
 
-function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading, hint, badge }) {
-  const base = 'relative flex shrink-0 items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
-  const variants = {
-    default: 'border border-surface-border text-text-secondary hover:bg-surface hover:text-text-primary',
-    danger: 'border border-status-stopped/30 text-status-stopped hover:bg-status-stopped-soft',
-    primary: 'bg-accent text-white hover:bg-accent-hover',
-  };
-  const tip = hint ?? label;
+const STATE_PILL = {
+  running: 'bg-status-running-soft text-status-running',
+  blocked: 'bg-status-running-soft text-status-running',
+  paused: 'bg-status-warning-soft text-status-warning',
+  pmsuspended: 'bg-status-warning-soft text-status-warning',
+  crashed: 'bg-status-stopped-soft text-status-stopped',
+};
 
+const STATE_TEXT = { shutoff: 'Stopped', nostate: 'Stopped', shutdown: 'Shutting down', pmsuspended: 'Suspended', blocked: 'Running' };
+
+const LOCKED = 'stop the VM first';
+
+function TabSpinner() {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || loading}
-      title={tip}
-      aria-label={tip}
-      className={`${base} ${variants[variant]}`}
-    >
-      {loading ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}
-      {badge && (
-        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-warning" />
-      )}
+    <div className="flex flex-1 items-center justify-center">
+      <Loader2 size={24} className="animate-spin text-text-muted" />
+    </div>
+  );
+}
+
+/** A header action: an icon, busy while its command runs. */
+function HeaderAction({ icon: Icon, label, onClick, reason, loading, primary = false }) {
+  const name = reason ? `${label}: ${reason}` : label;
+  return (
+    <button type="button" onClick={onClick} disabled={!!reason || loading} title={name} aria-label={name} className={primary ? headerBtnPrimary : headerBtnPlain}>
+      {loading ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <Icon size={17} aria-hidden />}
     </button>
   );
 }
 
-export default function OverviewPanel({ name: routeName }) {
-  const { record, config: vmConfig, seed } = useVm(routeName);
+/**
+ * A VM's page (docs/specs/UI-VM.md): the header with its state and actions, the figures
+ * while it runs, then its groups. Every group shows the server's state as text; an Edit
+ * opens a small form, a switch or a row action acts at once. The groups marked "needs
+ * shut off" share one lock (`vmLocked`).
+ */
+export default function OverviewPanel({ name }) {
+  const { record, config: loadedConfig, seed, item } = useVm(name);
   const settingsRecord = useRecord(RECORD.SETTINGS);
-  const vmStats = useVmStatsStore(liveData);
-  const actionLoading = useVmStore((s) => s.actions[routeName] ?? null);
-  const actionError = useVmStore((s) => s.errors[routeName] ?? null);
-  const iconChanging = useVmStore((s) => !!s.iconChanges[routeName]);
-  const dismissActionError = useVmStore((s) => s.dismissActionError);
-  const setVmIcon = useVmStore((s) => s.setVmIcon);
-  const startVM = useVmStore((s) => s.startVM);
-  const stopVM = useVmStore((s) => s.stopVM);
-  const forceStopVM = useVmStore((s) => s.forceStopVM);
-  const rebootVM = useVmStore((s) => s.rebootVM);
-  const suspendVM = useVmStore((s) => s.suspendVM);
-  const resumeVM = useVmStore((s) => s.resumeVM);
-  const deleteVM = useVmStore((s) => s.deleteVM);
-
-  const vmName = routeName;
-  // A job on this VM holds the backend's per-VM operation lock (start, delete and
-  // every edit of the definition or disks → 409 VM_BUSY), so it blocks the
-  // conflicting actions here and in every section editor below.
-  const vmOperationJob = useWorkloadBusy({ type: 'vm', name: vmName });
-  const busyHint = workloadBusyReason(vmOperationJob);
-  const backupJob = useWorkloadBackup({ type: 'vm', name: vmName });
+  const stats = useVmStatsStore(liveData);
+  const actionLoading = useVmStore((s) => s.actions[name] ?? null);
+  const actionError = useVmStore((s) => s.errors[name] ?? null);
+  const iconChanging = useVmStore((s) => !!s.iconChanges[name]);
+  const store = useVmStore.getState;
 
   const { tab } = useParams();
   const navigate = useNavigate();
   const activeTab = tab === 'console' ? 'console' : 'overview';
 
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  /* The page's actions (a switch, a row's Remove): their errors are the page's. */
+  const act = useCommand();
+  /* The open dialog: 'delete', 'rename', 'icon' or 'backup'. */
+  const [dialog, setDialog] = useState(null);
   const [deleteDisks, setDeleteDisks] = useState(true);
-  const [xmlModalOpen, setXmlModalOpen] = useState(false);
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [backupModalOpen, setBackupModalOpen] = useState(false);
 
-  useEffect(() => {
-    setBackupModalOpen(false);
-  }, [vmName]);
+  const busyJob = useWorkloadBusy({ type: 'vm', name });
+  const busy = workloadBusyReason(busyJob) ?? null;
+  const backupJob = useWorkloadBackup({ type: 'vm', name });
 
-  if (record.status === 'gone') return <WorkloadGone what="VM" name={routeName} />;
+  if (record.status === 'gone') return <WorkloadGone what="VM" name={name} />;
 
-  /* The header may paint from the list item while the config loads; the body is the
-   * record's alone, behind its gate (loading, its error with a Retry). With neither,
-   * the page is the gate. */
-  const shown = vmConfig ?? seed;
-  if (!shown) {
+  const config = loadedConfig ?? seed;
+  if (!config) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6">
-        <RecordGate record={record} what={`VM ${routeName}`} loading={<Loader2 size={24} className="animate-spin text-text-muted" />}>
+        <RecordGate record={record} what={`VM ${name}`} loading={<Loader2 size={24} className="animate-spin text-text-muted" />}>
           {() => null}
         </RecordGate>
         {record.status === 'error' && (
@@ -151,169 +130,113 @@ export default function OverviewPanel({ name: routeName }) {
     );
   }
 
-  const state = shown.state;
-  const isRunning = state === 'running' || state === 'blocked';
+  const state = config.state;
   const isStopped = state === 'shutoff' || state === 'nostate';
+  const isRunning = state === 'running' || state === 'blocked';
   const isPaused = state === 'paused' || state === 'pmsuspended';
-  const iconColorClass = STATE_ICON_COLOR[state] || STATE_ICON_COLOR.nostate;
-  const name = routeName;
+  /* The one lock of the groups that need the VM shut off. */
+  const lockReason = vmLocked(state) ? LOCKED : undefined;
+  const staleBinary = !!(stats?.staleBinary || item?.staleBinary);
+  const needsStart = !!config.pendingRestart || staleBinary;
+  const IconComp = getVmIcon(config.iconId || getDefaultIconId(config.osCategory)).component;
+  const notRunning = isRunning ? undefined : 'it is not running';
 
+  const update = (changes) => updateVM(name, changes);
 
-  const handleDelete = async () => {
-    setDeleteDialogOpen(false);
-    if (await deleteVM(name, deleteDisks)) navigate('/host/overview');
-    // Do not reset deleteDisks here so the checkbox stays selected if delete fails and user retries
-  };
-
-  const handleOpenBackup = () => setBackupModalOpen(true);
-
-  /* A section's save: the PATCH, ending at its ack (the form then reads its record). */
-  const handleSectionSave = (changes) => updateVM(name, changes);
-
-  /* After a save that renamed the VM (at its ack; the server takes the name exactly as
-   * sent): the page follows to the new name, whose page reads its record, but only if the
-   * router still shows this VM's page — the user may have moved on. */
-  const handleRenamed = (target) => {
-    useVmStore.getState().followRename(name, target);
-    /* The router's location now (BrowserRouter's is the window's), also once this
-     * page has unmounted: its tab, under the new name. */
+  const followRename = (target) => {
+    store().followRename(name, target);
     const path = renamedPath(window.location.pathname, 'vm', name, target);
     if (path) navigate(path, { replace: true });
   };
 
-  const iconId = shown.iconId || getDefaultIconId(shown.osCategory);
-  const IconComp = getVmIcon(iconId).component;
+  const handleDelete = async () => {
+    setDialog(null);
+    if (await store().deleteVM(name, deleteDisks)) navigate('/host/overview');
+  };
+
+  const tabButton = (id, label, extra = '') => (
+    <button
+      type="button"
+      onClick={() => navigate(`/vm/${encodeURIComponent(name)}/${id}`)}
+      aria-current={activeTab === id ? 'page' : undefined}
+      className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${extra} ${
+        activeTab === id ? 'border-accent font-semibold text-accent-text' : 'border-transparent text-text-muted hover:text-text-primary'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const moreItems = [
+    [
+      isPaused
+        ? { icon: PlayCircle, label: 'Resume', onClick: () => store().resumeVM(name), reason: busy ?? undefined }
+        : { icon: Pause, label: 'Pause', onClick: () => store().suspendVM(name), reason: busy ?? notRunning },
+      { icon: Zap, label: 'Force stop', onClick: () => store().forceStopVM(name), reason: busy ?? (isStopped ? 'it is not running' : undefined) },
+    ],
+    [
+      { icon: TextCursorInput, label: 'Rename', onClick: () => setDialog('rename'), reason: busy ?? lockReason },
+      { icon: Smile, label: 'Change icon', onClick: () => setDialog('icon'), reason: busy ?? undefined },
+      { icon: Archive, label: 'Back up now', onClick: () => setDialog('backup'), reason: busy ?? lockReason },
+    ],
+    [
+      { icon: Trash2, label: 'Delete', danger: true, onClick: () => setDialog('delete'), reason: busy ?? undefined },
+    ],
+  ];
+
+  const groupProps = { config, busy, act, update };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header row: VM name + status | tabs | actions. Below lg it wraps to
-          two rows (title+tabs / actions) instead of clipping in a fixed h-11. */}
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-surface-border bg-surface-card px-4 py-1 lg:h-11 lg:flex-nowrap lg:py-0">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            onClick={() => setIconPickerOpen(true)}
-            disabled={!!vmOperationJob || iconChanging}
-            className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 disabled:cursor-not-allowed disabled:hover:bg-transparent ${iconColorClass}`}
-            title={busyHint ?? 'Change icon'}
-          >
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-surface-border bg-surface-card px-4 py-1 lg:flex-nowrap lg:py-0">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className={`shrink-0 ${STATE_ICON_COLOR[state] || STATE_ICON_COLOR.nostate}`} aria-hidden>
             {iconChanging ? <Loader2 size={18} className="animate-spin" /> : <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />}
-          </button>
-          <span className="truncate text-sm font-semibold text-text-primary">{name}</span>
-          <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-muted shrink-0">vm</span>
-          {/* Overview is the only tab once Console is hidden on mobile — drop the strip below lg */}
-          <div className="hidden border-l border-surface-border pl-3 lg:flex">
-            <button
-              type="button"
-              onClick={() => navigate(`/vm/${encodeURIComponent(name)}/overview`)}
-              className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'overview' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Overview
-            </button>
-            {/* VNC console is desktop-only — hidden below lg */}
-            <button
-              type="button"
-              onClick={() => navigate(`/vm/${encodeURIComponent(name)}/console`)}
-              className={`hidden lg:block border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'console' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
-              }`}
-            >
-              Console
-            </button>
-          </div>
+          </span>
+          <h1 className="truncate text-sm font-semibold text-text-primary">{name}</h1>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${STATE_PILL[state] ?? 'bg-surface text-text-muted'}`}>
+            {STATE_TEXT[state] ?? state ?? 'unknown'}
+          </span>
+          <span className="hidden shrink-0 text-xs text-text-muted sm:inline">{config.osCategory === 'windows' ? 'Windows VM' : 'Linux VM'}</span>
+          {/* The console is desktop-only: below lg Overview is the one tab, so none shows. */}
+          <nav className="hidden border-l border-surface-border pl-2 lg:flex" aria-label="VM tabs">
+            {tabButton('overview', 'Overview')}
+            {tabButton('console', 'Console')}
+          </nav>
         </div>
-        {/* Below lg the actions become a full-width horizontally-scrollable row
-            (primary actions leftmost); at lg+ they wrap right-aligned as before. */}
-        <div className="flex w-full shrink-0 items-center justify-start gap-1 overflow-x-auto lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible">
-          {shown.pendingRestart && (
+        <div className="flex w-full shrink-0 items-center justify-end gap-1.5 pb-1 lg:w-auto lg:pb-0">
+          {needsStart && (
             <span
-              className="shrink-0 rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1"
-              title="Saved changes apply when the VM is stopped and started again — a guest reboot keeps the running configuration"
+              className="mr-auto shrink-0 rounded-full bg-status-warning-soft px-2 py-0.5 text-[11px] font-medium text-status-warning lg:mr-1"
+              title={staleBinary && !config.pendingRestart
+                ? 'QEMU was updated since the VM started: stop and start it to run the new one. A reboot keeps the running QEMU.'
+                : 'Saved changes apply when the VM is stopped and started again. A reboot from the guest or Restart keeps the running settings.'}
             >
-              Restart required
+              Stop and start to apply
             </span>
           )}
-          <ActionButton
-            icon={Play} label="Start"
-            onClick={() => startVM(name)}
-            disabled={!isStopped || !!vmOperationJob}
-            hint={busyHint}
-            loading={actionLoading === 'start'}
-            variant="primary"
-          />
-          <ActionButton
-            icon={Square} label="Stop"
-            onClick={() => stopVM(name)}
-            disabled={isStopped || !!vmOperationJob}
-            hint={busyHint}
-            loading={actionLoading === 'stop'}
-          />
-          <ActionButton
-            icon={Zap} label="Force Stop"
-            onClick={() => forceStopVM(name)}
-            disabled={isStopped || !!vmOperationJob}
-            hint={busyHint}
-            loading={actionLoading === 'force-stop'}
-            variant="danger"
-          />
-          <ActionButton
-            icon={RotateCcw} label="Reboot"
-            onClick={() => rebootVM(name)}
-            disabled={!isRunning || !!vmOperationJob}
-            loading={actionLoading === 'reboot'}
-            badge={!!vmStats?.staleBinary}
-            hint={busyHint ?? (vmStats?.staleBinary ? 'Reboot (qemu binary updated since VM started)' : undefined)}
-          />
-          <ActionButton
-            icon={Pause} label="Suspend"
-            onClick={() => suspendVM(name)}
-            disabled={!isRunning || !!vmOperationJob}
-            hint={busyHint}
-            loading={actionLoading === 'suspend'}
-          />
-          <ActionButton
-            icon={PlayCircle} label="Resume"
-            onClick={() => resumeVM(name)}
-            disabled={!isPaused || !!vmOperationJob}
-            hint={busyHint}
-            loading={actionLoading === 'resume'}
-          />
-          <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
-          <ActionButton
-            icon={Archive} label="Backup"
-            onClick={handleOpenBackup}
-            disabled={!isStopped || !!vmOperationJob}
-            hint={busyHint}
-          />
-          <ActionButton
-            icon={Trash2} label="Delete"
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={!!vmOperationJob}
-            hint={busyHint}
-            variant="danger"
-            loading={actionLoading === 'delete'}
-          />
-          {/* View XML is a debug affordance — desktop only */}
-          <span className="hidden lg:contents">
-            <ActionButton
-              icon={Code2} label="View XML"
-              onClick={() => setXmlModalOpen(true)}
-            />
-          </span>
+          {isStopped && (
+            <HeaderAction icon={Play} label="Start" primary onClick={() => store().startVM(name)} reason={busy} loading={actionLoading === 'start'} />
+          )}
+          {!isStopped && (
+            <>
+              <HeaderAction icon={Square} label="Stop" onClick={() => store().stopVM(name)} reason={busy} loading={actionLoading === 'stop' || actionLoading === 'force-stop'} />
+              <HeaderAction icon={RotateCcw} label="Restart" onClick={() => store().rebootVM(name)} reason={busy ?? notRunning} loading={actionLoading === 'reboot'} />
+            </>
+          )}
+          <MoreMenu items={moreItems} triggerClassName={headerBtnPlain} />
         </div>
       </div>
 
-      {/* Error display - visible in both tabs; each error stays until dismissed */}
-      {actionError && (
-        <ErrorBanner className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" error={actionError} onDismiss={() => dismissActionError(name)} />
-      )}
-      {record.data != null && (
-        <RecordError className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" record={record} what="VM" />
+      {(actionError || act.errors.length > 0 || (record.data != null && record.error)) && (
+        <div className="shrink-0 space-y-1.5 border-b border-surface-border bg-surface px-4 py-2">
+          <ErrorBanner error={actionError} onDismiss={() => store().dismissActionError(name)} />
+          <CommandErrors commands={[act]} prefix={(_key, _cmd, about) => about} />
+          {record.data != null && <RecordError record={record} what="VM" />}
+        </div>
       )}
 
       {activeTab === 'console' ? (
-        /* Every tab's body is the record's: behind its gate, like the overview's. */
         <RecordGate record={record} what="VM" loading={<TabSpinner />}>
           {() => (
             <Suspense fallback={<TabSpinner />}>
@@ -322,109 +245,88 @@ export default function OverviewPanel({ name: routeName }) {
           )}
         </RecordGate>
       ) : (
-      /* Overview content */
-      <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
-        {vmOperationJob && (
-          <p className="flex items-center gap-1.5 rounded-md border border-status-warning/30 bg-status-warning-soft px-3 py-2 text-xs text-status-warning">
-            <Loader2 size={13} aria-hidden className="shrink-0 animate-spin" />
-            “{vmOperationJob.title}” is running — changes to this VM&rsquo;s configuration, disks and cloud-init are unavailable until it finishes.
-          </p>
-        )}
-
-        {/* Sections */}
-        <RecordGate record={record} what="VM" loading={<SectionSkeleton count={5} />}>
-          {/* Keyed by the workload: a section's own state (its commands' errors) is this
-              workload's. */}
-          {() => (
-          <Fragment key={name}>
-            <GeneralSection
-              vmConfig={vmConfig}
-              isCreating={false}
-              onSave={handleSectionSave}
-              onRenamed={handleRenamed}
-              busyReason={busyHint}
-            />
-
-            <DisksSection
-              vmConfig={vmConfig}
-              busyReason={busyHint}
-            />
-
-            <USBSection vmConfig={vmConfig} busyReason={busyHint} />
-
-            <VmNetworkInterfacesSection
-              vmConfig={vmConfig}
-              isCreating={false}
-              onSave={handleSectionSave}
-              busyReason={busyHint}
-            />
-
-            <AdvancedSection
-              vmConfig={vmConfig}
-              isCreating={false}
-              onSave={handleSectionSave}
-              busyReason={busyHint}
-            />
-
-            {vmConfig.osCategory !== 'windows' && (
-              <CloudInitSection
-                vmConfig={vmConfig}
-                isCreating={false}
-                busyReason={busyHint}
-              />
-            )}
-          </Fragment>
-          )}
-        </RecordGate>
-      </div>
+        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-6 lg:py-5">
+          <div className="mx-auto max-w-3xl space-y-3">
+            <div className="px-1 pb-1">
+              <VmFigures state={state} />
+            </div>
+            <RecordGate
+              record={record}
+              what="VM"
+              loading={<div className="flex justify-center py-8 text-text-muted"><Loader2 size={20} className="animate-spin" /></div>}
+            >
+              {() => (
+                <>
+                  <VmSizeGroup {...groupProps} lockReason={lockReason} />
+                  <VmDisksGroup {...groupProps} lockReason={lockReason} />
+                  <VmNetworkGroup {...groupProps} lockReason={lockReason} />
+                  {config.osCategory !== 'windows' && <VmFirstBootGroup {...groupProps} />}
+                  <VmUsbGroup {...groupProps} />
+                  <GroupCard title="Start-up">
+                    <GroupSwitch
+                      label="Start with the host"
+                      hint="Started when the host boots."
+                      checked={config.autostart === true}
+                      onChange={(on) => act.run(() => update({ autostart: on }), { key: 'autostart', about: `Couldn't turn start with the host ${on ? 'on' : 'off'}` })}
+                      busy={act.isBusy('autostart')}
+                      reason={busy ?? undefined}
+                    />
+                  </GroupCard>
+                  <VmSystemGroup {...groupProps} lockReason={lockReason} />
+                </>
+              )}
+            </RecordGate>
+          </div>
+        </div>
       )}
 
-      {/* Delete dialog */}
       <ConfirmDialog
-        open={deleteDialogOpen}
-        title="Delete VM"
+        open={dialog === 'delete'}
+        title={`Delete ${name}?`}
         confirmLabel="Delete"
         onConfirm={handleDelete}
-        onCancel={() => { setDeleteDialogOpen(false); setDeleteDisks(true); }}
+        onCancel={() => { setDialog(null); setDeleteDisks(true); }}
       >
-        <p>Are you sure you want to delete &ldquo;{name}&rdquo;? This cannot be undone.</p>
-        <label className="mt-3 flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-          <input
-            type="checkbox"
-            checked={deleteDisks}
-            onChange={(e) => setDeleteDisks(e.target.checked)}
-            className="rounded-sm border-surface-border"
-          />
-          Also delete disk images
+        <p>The VM and its definition are deleted. This cannot be undone.</p>
+        <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-text-secondary">
+          <input type="checkbox" checked={deleteDisks} onChange={(e) => setDeleteDisks(e.target.checked)} className="rounded-sm border-surface-border" />
+          Also delete its disks and its folder on this host
         </label>
+        {!deleteDisks && (
+          <p className="mt-2 text-xs text-text-muted">
+            Its folder stays on the host, and a new VM named &ldquo;{name}&rdquo; can&rsquo;t be created until that folder is moved or removed.
+          </p>
+        )}
       </ConfirmDialog>
 
-      {/* XML modal */}
-      <XMLModal
-        open={xmlModalOpen}
-        vmName={name}
-        onClose={() => setXmlModalOpen(false)}
+      {dialog === 'rename' && (
+        <RenameDialog
+          name={name}
+          maxLength={128}
+          hint="Letters, digits, dots, dashes and underscores; its disks and page follow it."
+          update={update}
+          onRenamed={followRename}
+          onClose={() => setDialog(null)}
+        />
+      )}
+
+      <IconPickerModal
+        open={dialog === 'icon'}
+        currentIconId={config.iconId || getDefaultIconId(config.osCategory)}
+        onSelect={(iconId) => store().setVmIcon(name, iconId)}
+        onClose={() => setDialog(null)}
       />
 
-      {/* Backup modal */}
-      {backupModalOpen && (
+      {dialog === 'backup' && (
         <BackupModal
           name={name}
           subjectLabel="VM"
           settingsRecord={settingsRecord}
           runningJobId={backupJob?.jobId ?? null}
           start={(destinationIds) => startBackup(name, { destinationIds })}
-          onClose={() => setBackupModalOpen(false)}
+          onClose={() => setDialog(null)}
         />
       )}
-
-      {/* Icon picker */}
-      <IconPickerModal
-        open={iconPickerOpen}
-        currentIconId={shown.iconId || getDefaultIconId(shown.osCategory)}
-        onSelect={(selectedIconId) => setVmIcon(name, selectedIconId)}
-        onClose={() => setIconPickerOpen(false)}
-      />
     </div>
   );
 }

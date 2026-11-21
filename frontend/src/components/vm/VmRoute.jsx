@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import OverviewPanel from './OverviewPanel.jsx';
-import VMStatsBar from './VMStatsBar.jsx';
 import { useVm, useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { hasOpenLayer } from '../../lib/layers.js';
@@ -48,9 +47,8 @@ export default function VmRoute() {
   }, [navigate]);
 
   return (
-    <>
-      <OverviewPanel name={decodedName} />
-      <VMStatsBar name={decodedName} />
-    </>
+    /* Keyed by the VM: what the page holds (its actions' errors, an open dialog) is this
+       VM's. */
+    <OverviewPanel key={decodedName} name={decodedName} />
   );
 }
