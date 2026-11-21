@@ -194,6 +194,28 @@ command acks.
 
 Why here: graded "strained", and it needs phase 3's job and error shapes.
 
+Done 2026-11-21, merged to `main` from `anchor/frontend-data-flow`. Built as listed below,
+then simplified on the user's decisions of 2026-11-21, after five review rounds went into
+forms that had to follow the server while being edited:
+
+- The app shows the server's state, except what is being edited: a form follows its
+  record until the first edit, then keeps the user's values until Save or undo; the last
+  save wins. A modal editor takes what it edits when it opens.
+- A command is busy until the server answers (its ack, or its job's end), replacing
+  2026-11-15's "until the stream brings the new state". The wait-for-a-frame path is gone.
+- One lock rule per kind: what needs the workload offline is usable only when the VM is
+  shut off, or the container stopped.
+- A rename made elsewhere is followed by the workload's uuid, in a simple form.
+
+What the phase taught, for the ones after it: rule and spec text is written by the design
+session and agreed by the user, never by the builder; a review looks for defects a user
+would hit, not for wording or commit history; a case that needs two tabs is not solved
+unless the user asks for it.
+
+The user is reconsidering phase 6 as a redesign of the workload pages (one way to view,
+one way to edit; the operating system picks a VM's technical settings), in discussion
+since 2026-11-21.
+
 - One `useRecord` hook for "read on mount, numbered reads, follow a cue", replacing 11
   components and 3 store copies (D-1).
 - One section-form hook, replacing the copied `form` / `original` / `init` blocks; the
