@@ -115,7 +115,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
   return (
     <>
       <UpdateCard
-        title="OS Update"
+        title="OS update"
         titleIcon={<Package size={14} strokeWidth={2} />}
         description={description}
         available={available}

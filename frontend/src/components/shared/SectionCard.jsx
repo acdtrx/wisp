@@ -1,93 +1,38 @@
-import { ChevronDown, ChevronRight, Lock, Loader2, Save } from 'lucide-react';
 import HelpIcon from './HelpIcon.jsx';
 import CommandErrors from './CommandErrors.jsx';
 
 /**
- * The card every form section sits in (docs/specs/UI.md, SectionCard). A section's
- * errors — its command hooks' (`commands`), one banner per failed key — show in the
- * section, below the header, each dismissed on its own.
+ * A card of a Host page (docs/specs/UI.md, SectionCard), the same look as a workload
+ * page's group (GroupCard): its title, with an optional icon and help, and its actions
+ * (`headerAction`) on the right. A section's errors — its command hooks' (`commands`),
+ * one banner per failed key — show below the header, each dismissed on its own.
  */
 export default function SectionCard({
   title,
   titleIcon,
   helpText,
   children,
-  onSave,
-  saving,
-  isDirty,
-  saveDisabledReason,
-  requiresRestart,
-  collapsible,
-  collapsed,
-  onToggleCollapse,
-  locked,
-  lockedMessage,
   commands = [],
   errorPrefix,
   showsError,
   headerAction,
 }) {
   return (
-    <div className="rounded-card border border-surface-border bg-surface-card">
-      <div
-        className={`flex items-center justify-between px-5 py-3 ${collapsible ? 'cursor-pointer select-none' : ''}`}
-        onClick={collapsible ? onToggleCollapse : undefined}
-      >
-        <div className="flex items-center gap-2">
-          {collapsible && (
-            collapsed
-              ? <ChevronRight size={14} className="text-text-muted" />
-              : <ChevronDown size={14} className="text-text-muted" />
-          )}
+    <section className="rounded-card border border-surface-border bg-surface-card shadow-card">
+      <header className="flex min-h-11 items-center gap-1 py-1.5 pl-4 pr-2">
+        <h2 className="mr-auto flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
           {titleIcon && (
-            <span className="inline-flex shrink-0 text-text-muted" aria-hidden>
+            <span className="inline-flex shrink-0" aria-hidden>
               {titleIcon}
             </span>
           )}
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-            {title}
-          </h3>
+          <span className="truncate">{title}</span>
           {helpText && <HelpIcon text={helpText} />}
-          {locked && (
-            <span className="flex items-center gap-1 text-[10px] text-text-muted">
-              <Lock size={11} />
-              {lockedMessage || 'Offline only'}
-            </span>
-          )}
-        </div>
-
-        <div
-          className="flex items-center gap-2"
-          onClick={collapsible ? (e) => e.stopPropagation() : undefined}
-        >
-          {requiresRestart && (
-            <span className="rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning">
-              Restart required
-            </span>
-          )}
-          {isDirty && onSave && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onSave(); }}
-              disabled={saving || !!saveDisabledReason}
-              title={saveDisabledReason}
-              className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-hover disabled:opacity-50 transition-colors duration-150"
-            >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              Save
-            </button>
-          )}
-          {headerAction}
-        </div>
-      </div>
-
-      <CommandErrors className="mx-5 mb-3" commands={commands} prefix={errorPrefix} shows={showsError} />
-
-      {(!collapsible || !collapsed) && (
-        <div className="border-t border-surface-border px-5 py-4">
-          {children}
-        </div>
-      )}
-    </div>
+        </h2>
+        {headerAction}
+      </header>
+      <CommandErrors className="mx-4 mb-2" commands={commands} prefix={errorPrefix} shows={showsError} />
+      <div className="px-4 pb-3">{children}</div>
+    </section>
   );
 }

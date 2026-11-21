@@ -521,7 +521,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
 
   const sectionCardNode = (
     <SectionCard
-      title="Image Library"
+      title="Image library"
       titleIcon={<Images size={14} strokeWidth={2} />}
       headerAction={libraryHeaderAction}
       commands={[removal, rename]}

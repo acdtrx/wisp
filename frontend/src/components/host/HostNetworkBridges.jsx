@@ -55,7 +55,7 @@ export default function HostNetworkBridges() {
 
   return (
     <SectionCard
-      title="Network Bridges"
+      title="Network bridges"
       titleIcon={<Network size={14} strokeWidth={2} />}
       helpText="Bridges are how VMs and containers connect to networks. Add one from the header. The host handles VLAN tagging — guests connect untagged."
       headerAction={headerAdd}

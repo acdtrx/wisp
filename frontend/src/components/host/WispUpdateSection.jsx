@@ -260,7 +260,7 @@ export default function WispUpdateSection() {
   return (
     <>
       <UpdateCard
-        title="Wisp Update"
+        title="Wisp update"
         titleIcon={<Rocket size={14} strokeWidth={2} />}
         description={description}
         available={available && !installing}
