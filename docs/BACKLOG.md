@@ -80,6 +80,15 @@ lower open-files limit didn't change it. Cause unknown (capabilities, seccomp, t
 container's DNS?). Found while building a test share in the command-acks milestone 5 run,
 2026-11-16. **Revisit trigger:** a user running a file server in a container.
 
+**A Linux VM created with BIOS firmware has no ACPI.** `vmManagerCreate.js` gives a
+Linux domain `<features><acpi/></features>` only with UEFI (`getLinuxFeatures`, used
+when `isUEFI`), so a BIOS one has none: an Ubuntu 26.04 cloud image booted that way
+stopped at 2.7 s into early boot and never reached its network, and switching the VM to
+UEFI then answers 500 `LIBVIRT_ERROR` ("UEFI requires ACPI on this architecture")
+(found in the frontend data flow milestone 3 run, 2026-11-21, on a throwaway VM).
+**Revisit trigger:** a user creating a Linux VM with BIOS firmware, or changing its
+firmware afterwards.
+
 **The image update status could carry the containers the last check flagged.** The
 image library's status line reads the update status record (`lastCheckedAt`,
 `imagesUpdated`); how many containers a check flagged reaches only the tab that ran the
