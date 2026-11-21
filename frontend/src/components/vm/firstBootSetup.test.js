@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extrasText, keyText, setupForm, setupProblem, setupSent, storedSetup } from './firstBootSetup.js';
+import { extrasText, setupForm, setupProblem, setupSent, storedSetup } from './firstBootSetup.js';
 
 const stored = {
   enabled: true, hostname: 'archy', username: 'alex', password: 'set', sshKey: 'ssh-ed25519 AAAA alex@laptop',
-  sshKeySource: 'manual', growPartition: true, packageUpgrade: false, installQemuGuestAgent: true, installAvahiDaemon: false,
+  growPartition: true, packageUpgrade: false, installQemuGuestAgent: true, installAvahiDaemon: false,
 };
 
 test('the read placeholder is no setup; a soft-disabled one is a setup', () => {
@@ -24,12 +24,12 @@ test('Save turns the setup on, keeps a stored password unless one is typed', () 
   assert.equal(setupSent(setupForm(null), null, 'vm1').password, '');
 });
 
-test('an empty host name is the VM name; an emptied key has no source', () => {
-  const form = { ...setupForm(stored), hostname: '  ', sshKey: '' };
-  const sent = setupSent(form, stored, 'renamed');
+test('an empty host name is the VM name; the keys go as picked, with no source', () => {
+  const form = { ...setupForm(stored), hostname: '  ' };
+  const sent = setupSent(form, stored, 'renamed', 'ssh-rsa AAA x\nssh-ed25519 BBB y');
   assert.equal(sent.hostname, 'renamed');
-  assert.equal(sent.sshKeySource, '');
-  assert.equal(setupSent({ ...setupForm(null), sshKey: 'ssh-rsa AAA x' }, null, 'v').sshKeySource, 'manual');
+  assert.equal(sent.sshKey, 'ssh-rsa AAA x\nssh-ed25519 BBB y');
+  assert.equal('sshKeySource' in sent, false);
 });
 
 test('a new setup starts from the defaults and needs a valid user', () => {
@@ -43,9 +43,6 @@ test('a new setup starts from the defaults and needs a valid user', () => {
   assert.equal(setupProblem({ ...form, hostname: 'my-vm' }, 'my.vm'), null);
 });
 
-test('the page names the key and the extras', () => {
-  assert.equal(keyText(stored), 'alex@laptop');
-  assert.equal(keyText({ sshKey: 'ssh-rsa AAA', sshKeySource: 'github:alex' }), 'From GitHub (alex)');
-  assert.equal(keyText({ sshKey: '' }), 'None');
+test('the page names the extras', () => {
   assert.equal(extrasText(stored), 'grows the disk, installs the guest agent');
 });

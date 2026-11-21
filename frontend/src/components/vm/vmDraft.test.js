@@ -12,7 +12,7 @@ const LIBRARY = [
 
 test('a Linux image: the cloud image (by its library name) copied and grown, first boot setup with package update off', () => {
   const draft = { ...defaultVmDraft(LIBRARY), name: 'my.vm_1', image: 'ubuntu-26.04-server-cloudimg-amd64.img', password: 'pw' };
-  const body = createVmBody(draft, LIBRARY);
+  const body = createVmBody(draft, LIBRARY, 'ssh-ed25519 AAAA1 a\nssh-rsa BBBB2');
   assert.deepEqual(
     { ...body, cloudInit: undefined },
     {
@@ -24,6 +24,8 @@ test('a Linux image: the cloud image (by its library name) copied and grown, fir
   assert.equal(body.cloudInit.packageUpgrade, false);
   assert.equal(body.cloudInit.password, 'pw');
   assert.equal(body.cloudInit.enabled, true);
+  assert.equal(body.cloudInit.sshKey, 'ssh-ed25519 AAAA1 a\nssh-rsa BBBB2');
+  assert.equal('sshKeySource' in body.cloudInit, false);
 });
 
 test('a Linux installer: the ISO in CD 1, a new disk, no first boot setup', () => {

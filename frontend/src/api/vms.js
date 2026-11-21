@@ -105,7 +105,3 @@ export function updateCloudInit(name, config) {
 export function deleteCloudInit(name) {
   return api(`/api/vms/${encodeURIComponent(name)}/cloudinit`, { method: 'DELETE' });
 }
-
-export function fetchGithubKeys(username, { signal } = {}) {
-  return api(`/api/github/keys/${encodeURIComponent(username)}`, { signal });
-}

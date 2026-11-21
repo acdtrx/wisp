@@ -12,13 +12,15 @@ import { formatSize } from '../../utils/formatters.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
 import RecordError from '../shared/RecordError.jsx';
-import SshKeyField from './SshKeyField.jsx';
+import SshKeyPicker from './SshKeyPicker.jsx';
+import { defaultKeys, sshKeyText } from './sshKeyChoice.js';
 import { CUSTOM_SIZE, SIZE_PRESETS, coresText, memoryText, withPreset } from './vmForms.js';
 import {
   RUNS, createVmBody, defaultVmDraft, driverIso, hostnameFromName, imagesFor, vmDraftProblems, withRuns,
 } from './vmDraft.js';
 
 const NO_FILES = [];
+const NO_KEYS = [];
 
 const STEP_LABELS = {
   validating: 'Checking…',
@@ -61,13 +63,15 @@ function Choices({ label, choices, value, onChange, disabled }) {
 
 /**
  * New VM (docs/specs/UI-VM.md, New VM): a name, what it runs (its profile), the image,
- * a size, a disk, and for a Linux image its user and SSH key. The server sets the rest
+ * a size, a disk, and for a Linux image its user, password and SSH keys (the list's
+ * defaults preselected). The server sets the rest
  * from the profile. The VM is created shut off; its page opens if the user is still here.
  */
 export default function CreateVMPanel() {
   const navigate = useNavigate();
   const libraryRecord = useRecord(RECORD.LIBRARY);
   const library = libraryRecord.data ?? NO_FILES;
+  const keyList = useRecord(RECORD.SETTINGS).data?.sshKeys ?? NO_KEYS;
   const [draft, setDraft] = useState(() => defaultVmDraft(null));
   const [showPassword, setShowPassword] = useState(false);
   const set = (field, value) => setDraft((d) => ({ ...d, [field]: value }));
@@ -78,6 +82,8 @@ export default function CreateVMPanel() {
   const effective = draft.runs === 'windows-11' && !driversPicked && !draft.drivers
     ? { ...draft, drivers: driverIso(library)?.name ?? '' }
     : draft;
+  /* The keys picked; until the user picks, the list's defaults, also when it loads late. */
+  const chosenKeys = draft.sshKeys ?? defaultKeys(keyList);
 
   const create = useCommand();
   const creating = create.busy;
@@ -99,7 +105,7 @@ export default function CreateVMPanel() {
   const submit = (e) => {
     e.preventDefault();
     if (blocked || creating) return;
-    const body = createVmBody(effective, library);
+    const body = createVmBody(effective, library, sshKeyText(chosenKeys, keyList));
     create.run(() => createVM(body), {
       job: true,
       onAck: (ack) => setJobId(ack.jobId),
@@ -232,7 +238,12 @@ export default function CreateVMPanel() {
                   </div>
                 </FormField>
               </div>
-              <SshKeyField idPrefix="new-vm" sshKey={effective.sshKey} onChange={(key) => setDraft((d) => ({ ...d, ...key }))} />
+              <SshKeyPicker
+                idPrefix="new-vm"
+                chosen={chosenKeys}
+                disabled={creating}
+                onChange={(update) => setDraft((d) => ({ ...d, sshKeys: update(d.sshKeys ?? defaultKeys(keyList)) }))}
+              />
             </fieldset>
           )}
 

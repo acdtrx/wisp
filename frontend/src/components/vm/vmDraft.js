@@ -38,7 +38,7 @@ function draftFor(runs, library, base) {
 }
 
 export const defaultVmDraft = (library) => draftFor('linux-image', library, {
-  name: '', username: 'wisp', password: '', sshKey: '', sshKeySource: '',
+  name: '', username: 'wisp', password: '', sshKeys: null,
 });
 
 /** The draft once "Runs" changes: its image, drivers, size and disk start afresh. */
@@ -72,10 +72,10 @@ export function vmDraftProblems(draft, library) {
 /**
  * The create request (`POST /api/vms`) for the draft. A disk image is copied and grown
  * to the disk size; an ISO goes in CD 1 with a new disk of that size. A Linux image
- * takes its first boot setup (package update off). Library files go by name: the
- * server finds them in its image library, wherever that is.
+ * takes its first boot setup (package update off), `sshKey` its keys, one per line.
+ * Library files go by name: the server finds them in its image library, wherever that is.
  */
-export function createVmBody(draft, library) {
+export function createVmBody(draft, library, sshKey = '') {
   const r = runsOf(draft.runs);
   const file = imagesFor(draft.runs, library).find((f) => f.name === draft.image);
   const { vcpus, memoryMiB } = sizeSent(draft);
@@ -95,8 +95,7 @@ export function createVmBody(draft, library) {
       hostname: hostnameFromName(draft.name),
       username: draft.username.trim(),
       password: draft.password,
-      sshKey: draft.sshKey.trim(),
-      sshKeySource: draft.sshKey.trim() ? (draft.sshKeySource || 'manual') : '',
+      sshKey,
       growPartition: true,
       packageUpgrade: false,
       installQemuGuestAgent: true,

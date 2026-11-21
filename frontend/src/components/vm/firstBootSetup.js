@@ -13,14 +13,13 @@ export function storedSetup(data) {
 }
 
 /** The form for the stored setup (none: what setting one up starts from). The host name
- *  is empty for "the VM's name"; the password is empty for "keep the stored one". */
+ *  is empty for "the VM's name"; the password is empty for "keep the stored one". The
+ *  SSH keys are picked apart from it (sshKeyChoice.js). */
 export function setupForm(stored) {
   return {
     hostname: stored?.hostname ?? '',
     username: stored?.username || 'wisp',
     password: '',
-    sshKey: stored?.sshKey ?? '',
-    sshKeySource: stored?.sshKeySource ?? '',
     packageUpgrade: stored?.packageUpgrade ?? false,
     growPartition: stored?.growPartition ?? true,
     installQemuGuestAgent: stored?.installQemuGuestAgent ?? true,
@@ -28,16 +27,16 @@ export function setupForm(stored) {
   };
 }
 
-/** What Save sends (`PUT`): on, the host name the VM's name when empty, and a password
- *  only when typed ("set" keeps the stored one, "" means none). */
-export function setupSent(form, stored, vmName) {
+/** What Save sends (`PUT`): on, the host name the VM's name when empty, a password
+ *  only when typed ("set" keeps the stored one, "" means none), and `sshKey` the keys
+ *  picked, one per line. */
+export function setupSent(form, stored, vmName, sshKey) {
   return {
     enabled: true,
     hostname: form.hostname.trim() || vmName,
     username: form.username.trim(),
     password: form.password || (stored?.password === 'set' ? 'set' : ''),
-    sshKey: form.sshKey.trim(),
-    sshKeySource: form.sshKey.trim() ? (form.sshKeySource || 'manual') : '',
+    sshKey,
     growPartition: form.growPartition,
     packageUpgrade: form.packageUpgrade,
     installQemuGuestAgent: form.installQemuGuestAgent,
@@ -59,15 +58,6 @@ export function setupProblem(form, vmName) {
   }
   if (!USERNAME.test(form.username.trim())) return 'The user starts with a lowercase letter, then lowercase letters, digits, dashes or underscores.';
   return null;
-}
-
-/** The SSH key as the page names it: where it came from, or its own comment. */
-export function keyText(stored) {
-  const key = (stored?.sshKey ?? '').trim();
-  if (!key) return 'None';
-  if (stored.sshKeySource?.startsWith('github:')) return `From GitHub (${stored.sshKeySource.slice(7)})`;
-  const comment = key.split(/\s+/)[2];
-  return comment || 'One key';
 }
 
 /** What else the setup does at first boot, in words (none: null). */

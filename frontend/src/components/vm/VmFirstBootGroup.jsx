@@ -14,19 +14,22 @@ import GroupCard from '../shared/GroupCard.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
-import SshKeyField from './SshKeyField.jsx';
-import { extrasText, keyText, setupForm, setupProblem, setupSent, storedSetup } from './firstBootSetup.js';
+import SshKeyPicker from './SshKeyPicker.jsx';
+import { extrasText, setupForm, setupProblem, setupSent, storedSetup } from './firstBootSetup.js';
+import { defaultKeys, keysText, sshKeyText, vmKeyLines } from './sshKeyChoice.js';
 
 const REMOVE_ABOUT = "Couldn't remove the first boot setup";
+const NO_KEYS = [];
 
 /**
- * A Linux VM's first boot setup (cloud-init): its host name, user, password, SSH key and
- * options. Edit saves it and rebuilds its setup disk (turning a stored, switched-off setup
+ * A Linux VM's first boot setup (cloud-init): its host name, user, password, SSH keys
+ * (named by Wisp's list) and options. Edit saves it and rebuilds its setup disk (turning a stored, switched-off setup
  * back on); Remove deletes it, after asking. Both work while the VM runs: the guest
  * reads the setup at its next boot.
  */
 export default function VmFirstBootGroup({ config, busy, act }) {
   const record = useRecord(RECORD.VM_CLOUD_INIT, config.name);
+  const keyList = useRecord(RECORD.SETTINGS).data?.sshKeys ?? NO_KEYS;
   const stored = storedSetup(record.data);
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -62,7 +65,7 @@ export default function VmFirstBootGroup({ config, busy, act }) {
               { label: 'Host name', value: stored.hostname || `${config.name} (the VM’s name)` },
               { label: 'User', value: stored.username || '—' },
               { label: 'Password', value: stored.password === 'set' ? 'Set' : 'Not set' },
-              { label: 'SSH key', value: keyText(stored) },
+              { label: 'SSH keys', value: keysText(stored.sshKey, keyList) },
               { label: 'Package update', value: stored.packageUpgrade ? 'On' : 'Off' },
               { label: 'Also', value: extrasText(stored) },
             ]}
@@ -89,8 +92,14 @@ export default function VmFirstBootGroup({ config, busy, act }) {
 }
 
 function SetupEditor({ vmName, stored, onClose }) {
-  const { form, setField, setForm } = useEditor(() => setupForm(stored));
+  const { form, setField } = useEditor(() => setupForm(stored));
   const save = useCommand();
+  const keyList = useRecord(RECORD.SETTINGS).data?.sshKeys ?? NO_KEYS;
+  /* The keys picked: the VM's own, or for a new setup the list's defaults until the
+   * user picks (null: not touched, so defaults that load late still count). */
+  const [own] = useState(() => vmKeyLines(stored?.sshKey));
+  const [picked, setPicked] = useState(() => (stored ? own : null));
+  const chosen = picked ?? defaultKeys(keyList);
   const [showPassword, setShowPassword] = useState(false);
   const problem = setupProblem(form, vmName);
 
@@ -102,7 +111,7 @@ function SetupEditor({ vmName, stored, onClose }) {
       blocked={problem}
       onClose={onClose}
       size="lg"
-      onSubmit={() => save.run(() => updateCloudInit(vmName, setupSent(form, stored, vmName))).then((ok) => { if (ok) onClose(); })}
+      onSubmit={() => save.run(() => updateCloudInit(vmName, setupSent(form, stored, vmName, sshKeyText(chosen, keyList)))).then((ok) => { if (ok) onClose(); })}
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label="Host name" htmlFor="fb-hostname" hint={form.hostname ? null : 'Empty: the VM’s name.'}>
@@ -112,7 +121,7 @@ function SetupEditor({ vmName, stored, onClose }) {
           <input id="fb-user" type="text" value={form.username} onChange={(e) => setField('username', e.target.value)} autoComplete="off" spellCheck={false} className="input-field" />
         </FormField>
       </div>
-      <FormField label="Password" htmlFor="fb-password" hint={stored?.password === 'set' ? 'Empty: keep the stored password.' : 'Empty: no password; sign in with the SSH key.'}>
+      <FormField label="Password" htmlFor="fb-password" hint={stored?.password === 'set' ? 'Empty: keep the stored password.' : 'Empty: no password; sign in with an SSH key.'}>
         <div className="flex items-stretch gap-2">
           <input
             id="fb-password"
@@ -134,10 +143,11 @@ function SetupEditor({ vmName, stored, onClose }) {
           </button>
         </div>
       </FormField>
-      <SshKeyField
+      <SshKeyPicker
         idPrefix="fb"
-        sshKey={form.sshKey}
-        onChange={(key) => setForm((f) => ({ ...f, ...key }))}
+        chosen={chosen}
+        own={own}
+        onChange={(update) => setPicked((p) => update(p ?? defaultKeys(keyList)))}
       />
       <div className="grid gap-2 sm:grid-cols-2">
         <FormCheckbox label="Update the packages" checked={form.packageUpgrade} onChange={(e) => setField('packageUpgrade', e.target.checked)} />
