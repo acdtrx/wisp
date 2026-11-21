@@ -28,6 +28,16 @@ test('a clean form follows its record; an edited one ignores it', () => {
   assert.deepEqual(s.start, { name: 'b' });
 });
 
+test('an edit undone shows the record as it is now, a change made while it was edited included', () => {
+  let s = initialFormState(record('a'), toForm);
+  s = editForm(s, (f) => ({ ...f, name: 'typed' }));
+  s = followRecord(s, record('c'), toForm);
+  s = editForm(s, (f) => ({ ...f, name: 'a' }));
+  s = followRecord(s, s.data, toForm);
+  assert.deepEqual(s.form, { name: 'c' });
+  assert.equal(isDirty(s), false);
+});
+
 test('the same record data is no change; no record yet is no form', () => {
   const data = record('a');
   const s = initialFormState(data, toForm);

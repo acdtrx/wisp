@@ -11,8 +11,9 @@
  *   and follows its record again (a record that changed while the save ran is taken at
  *   once). A failed save leaves the form as typed.
  *
- * @typedef {{ data: unknown, start: any, form: any, saving: boolean, savedFrom: unknown }} FormState
- *   `data`: the record data the form last saw; `savedFrom`: the data when the save began
+ * @typedef {{ data: unknown, from: unknown, start: any, form: any, saving: boolean, savedFrom: unknown }} FormState
+ *   `data`: the record data the form last saw; `from`: the data its starting values came
+ *   from; `savedFrom`: the data when the save began
  */
 
 const keyOf = (values) => JSON.stringify(values ?? null);
@@ -35,18 +36,18 @@ const valuesOf = (data, toForm) => (data == null ? null : toForm(data));
 /** @returns {FormState} */
 export const initialFormState = (data, toForm) => {
   const values = valuesOf(data, toForm);
-  return { data, start: values, form: values, saving: false, savedFrom: undefined };
+  return { data, from: data, start: values, form: values, saving: false, savedFrom: undefined };
 };
 
 export const isDirty = (state) => state.form != null && !sameValues(state.form, state.start);
 
-/** The record's data now (`data`): a clean form takes its values, an edited one only
- *  notes it. The same data is no change. */
+/** The record's data now (`data`): a clean form shows it — data that changed while the
+ *  form was edited included, once the edit is undone — and an edited one only notes it. */
 export function followRecord(state, data, toForm) {
-  if (data === state.data) return state;
-  if (state.saving || isDirty(state)) return { ...state, data };
-  const values = valuesOf(data, toForm);
-  return { ...state, data, start: values, form: values };
+  const next = data === state.data ? state : { ...state, data };
+  if (next.saving || isDirty(next) || next.from === next.data) return next;
+  const values = valuesOf(next.data, toForm);
+  return { ...next, from: next.data, start: values, form: values };
 }
 
 /** An edit (`update` of the values); with no form, nothing. */
@@ -58,7 +59,7 @@ export function editForm(state, update) {
 /** Undo the edit: the record's values as they are now. */
 export const resetForm = (state, toForm) => {
   const values = valuesOf(state.data, toForm);
-  return { ...state, start: values, form: values };
+  return { ...state, from: state.data, start: values, form: values };
 };
 
 export const beginSave = (state) => ({ ...state, saving: true, savedFrom: state.data });
@@ -68,9 +69,9 @@ export const beginSave = (state) => ({ ...state, saving: true, savedFrom: state.
 export function endSave(state, toForm) {
   if (state.data !== state.savedFrom) {
     const values = valuesOf(state.data, toForm);
-    return { ...state, saving: false, savedFrom: undefined, start: values, form: values };
+    return { ...state, saving: false, savedFrom: undefined, from: state.data, start: values, form: values };
   }
-  return { ...state, saving: false, savedFrom: undefined, start: state.form };
+  return { ...state, saving: false, savedFrom: undefined, from: state.data, start: state.form };
 }
 
 /** The save failed: the form stays as typed. */
