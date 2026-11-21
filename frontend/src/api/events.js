@@ -38,22 +38,10 @@ export function assertChangeKind(kind) {
 const topicHandlers = new Map();
 /** topic -> last payload seen — replayed to late subscribers */
 const lastFrames = new Map();
-/** Commands waiting for a frame: { topic, matches(data), release } */
-const frameWaiters = new Set();
 let closeFn = null;
 /** The ApiError Wisp refused the shared stream with, which ended it; kept until the
  *  last subscriber leaves, so a late subscriber is told too. */
 let refusal = null;
-
-/** Release the waiters a frame satisfies (every waiter when `frame` is null), with
- *  the re-reads the frame's handlers started. */
-function releaseFrameWaiters(frame, rereads = []) {
-  for (const waiter of frameWaiters) {
-    if (frame && (waiter.topic !== frame.topic || !waiter.matches(frame.data))) continue;
-    frameWaiters.delete(waiter);
-    waiter.release(rereads);
-  }
-}
 
 function dispatch(frame) {
   if (!frame || typeof frame.topic !== 'string' || !('data' in frame)) return;
@@ -61,31 +49,13 @@ function dispatch(frame) {
    * instead, so replaying the last cue would only repeat that GET. */
   if (frame.topic !== TOPIC.CHANGES) lastFrames.set(frame.topic, frame.data);
   const handlers = topicHandlers.get(frame.topic);
-  /* A handler that starts a re-read returns its promise: a command waiting on this
-   * frame waits for those to settle too. A re-read shows its own failure as its
-   * record's error state (store/recordCache.js), so the failure reaches the user once
-   * whether or not a command waits; the catch only keeps a stray rejection from going
-   * unhandled. */
-  const rereads = [];
-  if (handlers) {
-    for (const handler of handlers) {
-      const result = handler.onData(frame.data);
-      if (result && typeof result.then === 'function') {
-        result.catch(() => {});
-        rereads.push(result);
-      }
-    }
-  }
-  releaseFrameWaiters(frame, rereads);
+  if (handlers) for (const handler of handlers) handler.onData(frame.data);
 }
 
 /** The connection dropped (no `err`: openStream reconnects), or Wisp refused the
  *  stream (`err`: it has ended, and no frame will come). */
 function streamDown(err) {
-  if (err) {
-    refusal = err;
-    releaseFrameWaiters(null);
-  }
+  if (err) refusal = err;
   for (const handlers of topicHandlers.values()) {
     for (const handler of handlers) handler.onStreamDown?.(err);
   }
@@ -131,7 +101,6 @@ export function subscribeTopic(topic, onData, onStreamDown) {
       closeFn = null;
       lastFrames.clear(); // next connect (e.g. after re-login) starts from server snapshots
       refusal = null; // and asks again
-      releaseFrameWaiters(null); // no stream, no frame to wait for
     }
   };
 }
@@ -157,10 +126,7 @@ export function reconnectEvents() {
  * frame is replayed to a late subscriber.
  *
  * @param {string[]} kinds — `CHANGE_KIND`s, e.g. `[CHANGE_KIND.SETTINGS]`
- * @param {(change: { kind: string, id?: string }) => (Promise<unknown> | void)} onChange —
- *   return the promise of a re-read it starts, so a command waiting on the frame
- *   waits for it to settle too (`sendAndAwaitChange`); the re-read shows its own
- *   failure
+ * @param {(change: { kind: string, id?: string }) => void} onChange
  * @returns {() => void} unsubscribe
  */
 export function subscribeChanges(kinds, onChange) {
@@ -168,109 +134,6 @@ export function subscribeChanges(kinds, onChange) {
   const wanted = new Set(kinds);
   return subscribeTopic(TOPIC.CHANGES, (change) => {
     if (!change || typeof change.kind !== 'string') return;
-    if (change.kind === CHANGE_KIND.ALL || wanted.has(change.kind)) return onChange(change);
-    return undefined;
+    if (change.kind === CHANGE_KIND.ALL || wanted.has(change.kind)) onChange(change);
   });
-}
-
-/** Send, then wait for the first frame of `topic` that `matches`; the wait starts
- *  before the request, since the frame can beat the ack. */
-/** How long a command waits for its frame (and the re-reads it starts) after the ack.
- *  The command was accepted, so the wait then ends with no error (FRONTEND-RULES, Data;
- *  CODING-RULES §6: nothing waits forever). */
-const FRAME_WAIT_MS = 30_000;
-
-async function sendAndAwaitFrame(topic, matches, send) {
-  if (!closeFn || refusal) return send();
-  let release;
-  const frame = new Promise((resolve) => { release = resolve; });
-  const waiter = { topic, matches, release };
-  frameWaiters.add(waiter);
-  let ack;
-  try {
-    ack = await send();
-  } catch (err) {
-    frameWaiters.delete(waiter);
-    throw err;
-  }
-  let timer;
-  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, FRAME_WAIT_MS, null); });
-  try {
-    const rereads = await Promise.race([frame, deadline]);
-    if (rereads === null) {
-      frameWaiters.delete(waiter); // no frame within the deadline: the command still stands
-      return ack;
-    }
-    /* Every re-read the frame started settles before the command resolves (within the
-     * same deadline). The ack already succeeded, so the command resolves either way: a
-     * failed re-read shows in its own view. A matching frame that arrives before the
-     * command's own (a reconnect's snapshot, another cue for the same record) can still
-     * resolve it onto the old state: docs/BACKLOG.md, "A command's busy wait can end on
-     * a frame it didn't cause". */
-    await Promise.race([Promise.allSettled(rereads), deadline]);
-    return ack;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
- * Send a command whose new state arrives on `topic`, and resolve with its ack once
- * the topic's next frame has arrived too: the control that sent it stays busy until
- * the client holds the new state, so a quick second click can't act on the old one.
- * The first frame of the topic that `matches` ends the wait — by default any frame,
- * a reconnect snapshot included — and so does 30 s without one. An error from the
- * command ends it at once. With no stream open, or one Wisp refused, there is no
- * frame to wait for.
- *
- * @template T
- * @param {string} topic
- * @param {() => Promise<T>} send
- * @param {(data: any) => boolean} [matches] — a frame that carries the command's
- *   new state; a narrower test waits until the stream brings that state
- * @returns {Promise<T>}
- */
-export function sendAndAwaitTopic(topic, send, matches = () => true) {
-  assertTopic(topic);
-  return sendAndAwaitFrame(topic, matches, send);
-}
-
-/**
- * Like `sendAndAwaitTopic`, for a command whose new state is announced on the
- * `changes` topic: resolves once a `changes` frame names that record (`kind`,
- * `id`) or the connect snapshot `{ kind: 'all' }` arrives and every re-read its
- * subscribers started (each returns its promise) has settled. A failed re-read
- * doesn't fail the command, whose ack succeeded: it shows in its own view.
- *
- * @template T
- * @param {string} kind
- * @param {string} id
- * @param {() => Promise<T>} send
- * @returns {Promise<T>}
- */
-export function sendAndAwaitChange(kind, id, send) {
-  assertChangeKind(kind);
-  return sendAndAwaitFrame(
-    TOPIC.CHANGES,
-    (change) => change?.kind === CHANGE_KIND.ALL || (change?.kind === kind && change?.id === id),
-    send,
-  );
-}
-
-/**
- * `sendAndAwaitChange` for a kind with no `id` (one record or a whole list, e.g.
- * `tokens`, `library`).
- *
- * @template T
- * @param {string} kind
- * @param {() => Promise<T>} send
- * @returns {Promise<T>}
- */
-export function sendAndAwaitKindChange(kind, send) {
-  assertChangeKind(kind);
-  return sendAndAwaitFrame(
-    TOPIC.CHANGES,
-    (change) => change?.kind === CHANGE_KIND.ALL || (change?.kind === kind && change?.id === undefined),
-    send,
-  );
 }

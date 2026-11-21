@@ -19,7 +19,6 @@ import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import Modal from '../shared/Modal.jsx';
 import SectionCard from '../shared/SectionCard.jsx';
@@ -36,7 +35,7 @@ import {
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND, JOB_KIND } from '../../../../shared/wireNames.js';
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 
 const NO_ROWS = [];
 
@@ -295,7 +294,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   const skipped = checkEvents?.skipped ?? null;
   const checkState = { running: check.busy, currentRef: checking?.ref ?? null };
   const checkOptions = (ref) => ({
-    rereads: [[RECORD.IMAGE_UPDATE_STATUS], [RECORD.CONTAINER_IMAGES]],
     onAck: ({ jobId }) => setCheckJob({ jobId, ref }),
     onDone: (result) => setFlaggedContainers(result.flaggedContainers),
   });
@@ -391,7 +389,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   /* Done once the list holds the file: it arrives on the `library` cue. */
   const handleUpload = (file) => {
     setUploadProgress(0);
-    upload.run(() => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => uploadFile(file, setUploadProgress)))
+    upload.run(() => uploadFile(file, setUploadProgress))
       .then(() => setUploadProgress(0));
   };
 
@@ -408,15 +406,15 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (target.kind === 'oci') {
       /* A job: busy until it ended and the images, read again after it, have landed. */
       removal.run(() => deleteContainerImage(target.ref), {
-        job: true, rereads: [[RECORD.CONTAINER_IMAGES]], key: `oci:${target.ref}`,
+        job: true, key: `oci:${target.ref}`,
       });
     } else {
-      removal.run(() => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => deleteFile(target.name)), { key: `file:${target.name}` });
+      removal.run(() => deleteFile(target.name), { key: `file:${target.name}` });
     }
   };
 
   const handleRename = (oldName, newName) => rename.run(
-    () => sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => renameFile(oldName, newName)),
+    () => renameFile(oldName, newName),
     { key: oldName },
   );
 
@@ -432,7 +430,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!url) return;
     urlDownload.run(() => startDownloadFromUrl(url), {
       job: true,
-      rereads: [[RECORD.LIBRARY]],
       onAck: ({ jobId }) => setUrlJobId(jobId),
       onDone: () => {
         setUrlModalOpen(false);
@@ -458,7 +455,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!start) return;
     preset.run(start, {
       job: true,
-      rereads: [[RECORD.LIBRARY]],
       onAck: ({ jobId, title }) => setPresetJob({ jobId, title }),
     });
   };

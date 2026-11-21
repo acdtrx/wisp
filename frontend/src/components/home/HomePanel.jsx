@@ -50,8 +50,7 @@ export default function HomePanel() {
 
   const [editing, setEditing] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
-  /* A group add or move in flight, until its frame lands: a second one would act on
-   * the groups as they were (the same default name, a stale order). */
+  /* A group add or move in flight, until the server answers. */
   const groupsCommand = useCommand();
   const groupsBusy = groupsCommand.busy;
   const dismissLoadError = useHomeStore((s) => s.dismissError);

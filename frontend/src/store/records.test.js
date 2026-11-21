@@ -6,11 +6,6 @@ import { installBrowser } from '../testing/fakeBrowser.js';
 installBrowser();
 const { RECORD, RECORD_KINDS } = await import('./records.js');
 
-test('a command waits for the re-read of every kind but a mount\'s disk usage', () => {
-  const unawaited = Object.entries(RECORD_KINDS).filter(([, k]) => k.awaited === false).map(([name]) => name);
-  assert.deepEqual(unawaited, [RECORD.CONTAINER_MOUNT_USAGE]);
-});
-
 test('every kind named by a workload can be gone, by its subject\'s own not-found only', () => {
   const gone = Object.fromEntries(Object.entries(RECORD_KINDS).filter(([, k]) => k.goneCodes).map(([name, k]) => [name, k.goneCodes]));
   assert.deepEqual(gone, {

@@ -77,8 +77,6 @@ export const RECORD_KINDS = {
   [RECORD.CONTAINER_MOUNT_USAGE]: {
     fetch: (name, o) => containersApi.getContainerMountUsage(name, o),
     goneCodes: CONTAINER_GONE,
-    // A figure derived from the mounts, slow to gather: no command waits for it.
-    awaited: false,
     cues: [changeOf(CHANGE_KIND.CONTAINER)],
   },
   [RECORD.CONTAINER_RUNS]: {

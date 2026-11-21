@@ -1,25 +1,11 @@
 import { useMemo } from 'react';
 
-import {
-  assertChangeKind, assertTopic, sendAndAwaitChange, sendAndAwaitTopic,
-} from '../api/events.js';
+import { assertTopic } from '../api/events.js';
 import { errorText } from '../api/errors.js';
 import { useRecord } from '../hooks/useRecord.js';
 import { runCommand } from './commands.js';
 import { createStreamStore, liveData, streamSource, topicSource } from './streamStore.js';
-import {
-  renamesBetween, withEntry, withError, withErrorsRenamed, withoutError, withoutErrorsOfVanished,
-} from './workloadActions.js';
-
-/** A list frame matcher: the list shows workload `name` out of `state`, the one it was
- *  in before the command — moved on, or gone (an error frame never matches). */
-function listShowsLeft(name, state) {
-  return (list) => {
-    if (!Array.isArray(list)) return false;
-    const item = list.find((w) => w.name === name);
-    return !item || item.state !== state;
-  };
-}
+import { withEntry, withError, withErrorsRenamed, withoutError, withoutErrorsOfVanished } from './workloadActions.js';
 
 /**
  * A workload's config as its page shows it: the record, with the list item's `fields`
@@ -43,38 +29,26 @@ export function liveConfig(config, item, fields, liveState) {
  *
  * @param {object} spec
  * @param {string} spec.listTopic — the list's `TOPIC`
- * @param {string} spec.changeKind — the `CHANGE_KIND` naming a workload's config
  * @param {string} spec.record — the `RECORD` kind of a workload's config
  * @param {(item: object) => object} spec.seed — what a page's header paints from the
  *   list item while the config loads
  * @param {string[]} spec.listFields — the config fields the list keeps current
  * @param {(name: string) => string} spec.statsUrl — a workload's stats stream
  * @param {(command: object) => object} spec.commands — the kind's commands, built from
- *   `command`: `{ job(name, action, start, rereads?), icon(name, send), atAck(name, action, send), untilListLeaves(name, action, fromState, send) }`
+ *   `command`: `{ job(name, action, start), icon(name, send), atAck(name, action, send) }`
 */
 export function createWorkloadStore(spec) {
   assertTopic(spec.listTopic);
-  assertChangeKind(spec.changeKind);
 
   const useStatsStore = createStreamStore({ source: streamSource(spec.statsUrl) });
-
-  /** The last list seen: a list's renames are read against it. A refusal empties the
-   *  store's data but is no list, so it does not move this. */
-  let lastList = null;
 
   const useStore = createStreamStore({
     source: topicSource(spec.listTopic),
     toData: (frame) => (Array.isArray(frame) ? frame : undefined),
-    /* A renamed workload's error follows it to its new name; a deleted one's goes. */
+    /* A workload the list no longer lists takes its error with it. */
     onData: (list, set) => {
       if (!list) return;
-      const previous = lastList;
-      lastList = list;
-      set((prev) => {
-        let errors = prev.errors;
-        for (const [from, to] of renamesBetween(previous, list)) errors = withErrorsRenamed(errors, from, to);
-        return { errors: withoutErrorsOfVanished(errors, new Set(list.map((w) => w.name))) };
-      });
+      set((prev) => ({ errors: withoutErrorsOfVanished(prev.errors, new Set(list.map((w) => w.name))) }));
     },
     extend: (set) => {
       /** Each slot's own run: an action's end clears a busy slot only while it still
@@ -108,18 +82,13 @@ export function createWorkloadStore(spec) {
       }
 
       const command = {
-        /** A command that runs as a job: busy until the job ended and the records it
-         *  changes (by default the workload's config), read again after it, have
-         *  landed (store/commands.js). */
-        job: (name, action, start, rereads = [[spec.record, name]]) => withAction(name, action, () =>
-          runCommand(start, { job: true, rereads })),
-        /** The icon change: busy in its own control's slot, failing into the workload's error. */
-        icon: (name, send) => withAction(name, 'icon', () => sendAndAwaitChange(spec.changeKind, name, send), 'iconChanges'),
-        /** A request the workload may ignore: busy until the ack. */
+        /** A command that runs as a job: busy until the job ended (store/commands.js). */
+        job: (name, action, start) => withAction(name, action, () => runCommand(start, { job: true })),
+        /** The icon change: busy in its own control's slot until the ack, failing into
+         *  the workload's error. */
+        icon: (name, send) => withAction(name, 'icon', send, 'iconChanges'),
+        /** A command that ends at its ack: busy until then. */
         atAck: (name, action, send) => withAction(name, action, send),
-        /** Busy until a list frame shows the workload out of `fromState`. */
-        untilListLeaves: (name, action, fromState, send) => withAction(name, action, () =>
-          sendAndAwaitTopic(spec.listTopic, send, listShowsLeft(name, fromState))),
       };
 
       return {
@@ -173,12 +142,5 @@ export function createWorkloadStore(spec) {
     return { record, config, seed, item };
   }
 
-  /**
-   * Send a command that changes workload `name` (a section's save, a row's action):
-   * resolves once the `changes` topic names it and the re-reads that starts have
-   * landed, rejects with its error. The section's command hook holds its busy flag.
-   */
-  const awaitChange = (name, send) => sendAndAwaitChange(spec.changeKind, name, send);
-
-  return { useStore, useStatsStore, useWorkload, awaitChange };
+  return { useStore, useStatsStore, useWorkload };
 }

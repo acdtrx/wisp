@@ -13,7 +13,6 @@ import {
 import {
   addContainerService, updateContainerService, removeContainerService,
 } from '../../api/containers.js';
-import { awaitContainerChange } from '../../store/containerStore.js';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -335,7 +334,7 @@ function ServiceEditor({ strip, containerName, onClose }) {
   };
 
   const handleDelete = () => serviceCmd.run(
-    () => awaitContainerChange(containerName, () => removeContainerService(containerName, strip.port)),
+    () => removeContainerService(containerName, strip.port),
     { key: 'delete', onDone: onClose },
   );
 

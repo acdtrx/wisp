@@ -35,7 +35,7 @@ export default function HostNetworkBridges() {
   const eligibleParents = Array.isArray(bridges.data?.eligibleParents) ? bridges.data.eligibleParents : NO_BRIDGES;
 
   const onDelete = (name) => remove.run(() => deleteManagedNetworkBridge(name), {
-    job: true, rereads: [[RECORD.NETWORK_BRIDGES], [RECORD.HOST_BRIDGES]], key: name,
+    job: true, key: name,
   });
 
   const openCreate = () => setCreateOpen(true);

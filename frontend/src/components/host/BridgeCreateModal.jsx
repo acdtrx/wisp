@@ -8,7 +8,6 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { createManagedNetworkBridge } from '../../api/host.js';
-import { RECORD } from '../../store/records.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { autoFocusField } from '../../lib/focus.js';
@@ -51,7 +50,7 @@ function BridgeCreateEditor({ open, eligibleParents, onClose }) {
   const handleCreate = () => {
     if (!canCreate) return;
     create.run(() => createManagedNetworkBridge(baseBridge, Number(vlanId)), {
-      job: true, rereads: [[RECORD.NETWORK_BRIDGES], [RECORD.HOST_BRIDGES]], onDone: onClose,
+      job: true, onDone: onClose,
     });
   };
 

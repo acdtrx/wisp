@@ -4,7 +4,6 @@ import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
-import { awaitVmChange } from '../../store/vmStore.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useForm, useHeld } from '../../hooks/useForm.js';
 import { RECORD } from '../../store/records.js';
@@ -125,7 +124,7 @@ export default function CloudInitSection({ vmConfig, isCreating, draft, onDraft,
   const handleSave = () => edit.save((values) => op.run(() => updateCloudInit(vmName, values), { key: 'save' }))
     .then((ok) => { if (ok) setEditing(false); });
 
-  const handleDelete = () => op.run(() => awaitVmChange(vmName, () => deleteCloudInit(vmName)), {
+  const handleDelete = () => op.run(() => deleteCloudInit(vmName), {
     key: 'delete', onDone: () => setEditing(false),
   });
 

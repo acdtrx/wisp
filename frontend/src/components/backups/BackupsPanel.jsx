@@ -25,7 +25,6 @@ import {
   restoreContainerBackupInPlace,
   deleteContainerBackup,
 } from '../../api/backups.js';
-import { sendAndAwaitTopic } from '../../api/events.js';
 import {
   useBackgroundJobsStore, workloadBusyJob, workloadBackupJob, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
@@ -37,7 +36,7 @@ import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import CommandErrors from '../shared/CommandErrors.jsx';
-import { JOB_KIND, TOPIC } from '../../../../shared/wireNames.js';
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { useBackupsStore } from '../../store/backupsStore.js';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
@@ -311,9 +310,9 @@ export default function BackupsPanel() {
     if (!deleteTarget) return;
     const { group, backup } = deleteTarget;
     setDeleteTarget(null);
-    remove.run(() => sendAndAwaitTopic(TOPIC.BACKUPS, () => (backup.kind === 'container'
+    remove.run(() => (backup.kind === 'container'
       ? deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp })
-      : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp }))), {
+      : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp })), {
       key: backupKey(backup), about: aboutOf(backup, group),
     });
   };

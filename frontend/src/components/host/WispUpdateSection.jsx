@@ -13,7 +13,6 @@ import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import {
@@ -21,7 +20,6 @@ import {
   installWispUpdate,
 } from '../../api/updates.js';
 import { CLIENT_CODES } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
@@ -117,7 +115,7 @@ export default function WispUpdateSection() {
   const available = (wispUpdate?.available ?? hydrated?.available) === true;
   const lastChecked = wispUpdate?.lastChecked ?? hydrated?.lastChecked ?? null;
 
-  const handleCheck = () => check.run(() => sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate));
+  const handleCheck = () => check.run(checkForWispUpdate);
 
   /* Save the channel, then check on it right away: the backend reads the
    * setting at check time, so the card would otherwise keep showing the
@@ -132,7 +130,7 @@ export default function WispUpdateSection() {
         setPendingChannel(null);
         throw err;
       }
-      await sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate);
+      await checkForWispUpdate();
     }, { key: 'channel' });
   };
 

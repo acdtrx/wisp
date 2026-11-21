@@ -22,7 +22,6 @@ import NicModelPills from './NicModelPills.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import { awaitVmChange } from '../../store/vmStore.js';
 import { RECORD } from '../../store/records.js';
 import { vmLocked } from '../../utils/workloadLocks.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -108,8 +107,8 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, draft
       return;
     }
     const next = configNics.filter((n) => n.id !== nic.id);
-    /* A remove is a command: busy until the VM's change is in. */
-    remove.run(() => awaitVmChange(vmConfig.name, () => onSave({ nics: nicsForApi(next) })), { key: nic.id, about: nic.mac });
+    /* A remove is a command: busy until the server answers. */
+    remove.run(() => onSave({ nics: nicsForApi(next) }), { key: nic.id, about: nic.mac });
   };
 
   /* Create stays desktop-oriented (UI.md § Responsive behavior): its draft rows

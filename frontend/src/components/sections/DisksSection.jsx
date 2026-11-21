@@ -27,7 +27,6 @@ import {
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
-import { awaitVmChange } from '../../store/vmStore.js';
 import { vmLocked } from '../../utils/workloadLocks.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import {
@@ -156,7 +155,7 @@ export default function DisksSection({
     };
 
   function executeDiskOperation(actionName, fn, afterSuccess) {
-    op.run(() => awaitVmChange(vmName, fn), { key: actionName, onDone: afterSuccess });
+    op.run(fn, { key: actionName, onDone: afterSuccess });
   }
 
   function openPicker(context) {

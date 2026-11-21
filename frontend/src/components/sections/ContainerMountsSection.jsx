@@ -39,7 +39,6 @@ import {
   uploadMountZip,
 } from '../../api/containers.js';
 import { formatSize } from '../../utils/formatters.js';
-import { awaitContainerChange } from '../../store/containerStore.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import RecordError from '../shared/RecordError.jsx';
 import { RECORD } from '../../store/records.js';
@@ -164,7 +163,7 @@ export default function ContainerMountsSection({ config }) {
   /* The removal is a job: busy until it ended and the container's config, read
    * again after it, has landed. */
   const handleRemove = (row) => removal.run(() => removeContainerMount(config.name, row.name), {
-    job: true, rereads: [[RECORD.CONTAINER, config.name]], key: row.name,
+    job: true, key: row.name,
   });
 
   const runUploadForRow = (row, send, options = {}) => upload.run(send, { ...options, key: row.name });
@@ -174,7 +173,7 @@ export default function ContainerMountsSection({ config }) {
     e.target.value = '';
     if (!file) return;
     if (row.type !== 'file') return;
-    runUploadForRow(row, () => awaitContainerChange(config.name, () => uploadMountFile(config.name, row.name, file)));
+    runUploadForRow(row, () => uploadMountFile(config.name, row.name, file));
   };
 
   const handleZipUpload = (row, e) => {
@@ -184,7 +183,7 @@ export default function ContainerMountsSection({ config }) {
     if (row.type !== 'directory') return;
     // The upload answers once received; the extract is a job.
     runUploadForRow(row, () => uploadMountZip(config.name, row.name, file), {
-      job: true, rereads: [[RECORD.CONTAINER, config.name]],
+      job: true,
     });
   };
 

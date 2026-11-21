@@ -7,7 +7,7 @@ import {
   Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2,
 } from 'lucide-react';
 
-import { useContainer, useContainerStore, awaitContainerChange } from '../../store/containerStore.js';
+import { useContainer, useContainerStore } from '../../store/containerStore.js';
 import { useWorkloadBusy, useWorkloadBackup, workloadBusyReason } from '../../store/backgroundJobsStore.js';
 import { updateContainer, ejectContainerApp } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
@@ -143,8 +143,8 @@ export default function ContainerOverviewPanel({ name: routeName }) {
 
   /* A form's save: the PATCH, ending at its ack (the form then reads its record). */
   const handleSectionSave = (changes) => updateContainer(name, changes);
-  /* A section's command (a device toggle): busy until the container's change is in. */
-  const handleSectionCommand = (changes) => awaitContainerChange(name, () => updateContainer(name, changes));
+  /* A section's command (a device toggle): busy until the server answers. */
+  const handleSectionCommand = (changes) => updateContainer(name, changes);
 
   /* After a save that renamed the container (at its ack; the server takes the name as
    * sent, after validation, and the section assignment moves with it): the page follows
@@ -318,7 +318,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
             <AppConfigWrapper
               config={config}
               onSave={handleSectionSave}
-              onEject={() => awaitContainerChange(name, () => ejectContainerApp(name))}
+              onEject={() => ejectContainerApp(name)}
             />
           ) : (
             <>

@@ -4,7 +4,6 @@ import { AlertTriangle, Loader2, Plus, Unplug, Usb } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import UsbAttachModal from '../shared/UsbAttachModal.jsx';
 import { attachUSBToVM, detachUSBFromVM } from '../../api/vms.js';
-import { awaitVmChange } from '../../store/vmStore.js';
 import { useUsbStore } from '../../store/usbStore.js';
 import { CONNECTION } from '../../store/streamStore.js';
 import {
@@ -52,12 +51,12 @@ export default function USBSection({ vmConfig, busyReason }) {
   }, [connectUsb, disconnectUsb]);
 
   const handleAttach = (vendorId, productId) => op.run(
-    () => awaitVmChange(vmName, () => attachUSBToVM(vmName, vendorId, productId)),
+    () => attachUSBToVM(vmName, vendorId, productId),
     { key: `${vendorId}:${productId}`, onDone: () => setAttachModalOpen(false) },
   );
 
   const handleDetach = (vendorId, productId) => op.run(
-    () => awaitVmChange(vmName, () => detachUSBFromVM(vmName, vendorId, productId)),
+    () => detachUSBFromVM(vmName, vendorId, productId),
     { key: `${vendorId}:${productId}` },
   );
 

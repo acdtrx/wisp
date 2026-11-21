@@ -6,7 +6,6 @@ import { backupDestinations } from '../../utils/backupDestinations.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { useFollowJob } from '../../hooks/useFollowJob.js';
-import { RECORD } from '../../store/records.js';
 
 // How long to keep showing "Backup complete." before the modal auto-dismisses.
 // Long enough to be a clear "did it succeed?" signal, short enough that the
@@ -40,7 +39,6 @@ export default function BackupModal({
 
   /* The backup changes the backup lists: they are read again once it ended. */
   const followOptions = {
-    rereads: [[RECORD.VM_BACKUPS], [RECORD.CONTAINER_BACKUPS]],
     onAck: (ack) => setJobId(ack.jobId),
     onDone: () => setDone(true),
   };

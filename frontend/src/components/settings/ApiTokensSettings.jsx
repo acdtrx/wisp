@@ -18,11 +18,9 @@ import { createApiToken, deleteApiToken } from '../../api/authTokens.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -66,7 +64,7 @@ export default function ApiTokensSettings() {
   const handleCreate = () => {
     if (!newLabel.trim()) return;
     /* The secret is shown once, from the 201; the list row arrives with the cue. */
-    create.run(() => sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => createApiToken({ label: newLabel.trim(), scope: newScope })), {
+    create.run(() => createApiToken({ label: newLabel.trim(), scope: newScope }), {
       onDone: (created) => {
         setMinted({ label: created.label, token: created.token });
         setCopied(false);
@@ -81,7 +79,7 @@ export default function ApiTokensSettings() {
     if (!deleteTarget) return;
     const { id } = deleteTarget;
     setDeleteTarget(null);
-    revoke.run(() => sendAndAwaitKindChange(CHANGE_KIND.TOKENS, () => deleteApiToken(id)), { key: id });
+    revoke.run(() => deleteApiToken(id), { key: id });
   };
 
   const copyToken = async () => {

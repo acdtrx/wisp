@@ -16,7 +16,6 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import EnvVarEditorModal, { rowsFromEnv } from './EnvVarEditorModal.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-import { awaitContainerChange } from '../../store/containerStore.js';
 
 const MASK = '••••••••';
 
@@ -41,8 +40,8 @@ export default function ContainerEnvSection({ config, onSave }) {
    * restart badge. Failures propagate so the modal can show them and stay open. */
   const submitEnvPatch = ({ envPatch }) => onSave({ envPatch });
 
-  /* A row's remove is a command: busy until the container's change is in. */
-  const removeRow = (row) => remove.run(() => awaitContainerChange(config.name, () => onSave({ envPatch: { [row.key]: null } })), { key: row.key });
+  /* A row's remove is a command: busy until the server answers. */
+  const removeRow = (row) => remove.run(() => onSave({ envPatch: { [row.key]: null } }), { key: row.key });
 
   const headerAdd = (
     <button

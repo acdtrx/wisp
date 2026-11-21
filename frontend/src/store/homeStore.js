@@ -1,5 +1,4 @@
 import * as homeApi from '../api/homepage.js';
-import { sendAndAwaitTopic } from '../api/events.js';
 import { TOPIC } from '../../../shared/wireNames.js';
 import { createStreamStore, topicSource } from './streamStore.js';
 
@@ -20,8 +19,6 @@ function uniqueDefaultName(groups) {
   }
   return candidate;
 }
-
-const onHomeTopic = (send) => sendAndAwaitTopic(TOPIC.HOME, send);
 
 /**
  * Home page state, from the `home` topic: `data` is the `{ tiles, groups }`
@@ -46,27 +43,27 @@ export const useHomeStore = createStreamStore({
      *  @returns {Promise<string>} the new group's id */
     createGroup: async () => {
       const name = uniqueDefaultName(get().data?.groups ?? []);
-      const { id } = await onHomeTopic(() => homeApi.createGroup(name));
+      const { id } = await homeApi.createGroup(name);
       set({ pendingRenameId: id });
       return id;
     },
 
-    renameGroup: (id, name) => onHomeTopic(() => homeApi.renameGroup(id, name)),
+    renameGroup: (id, name) => homeApi.renameGroup(id, name),
 
-    deleteGroup: (id) => onHomeTopic(() => homeApi.deleteGroup(id)),
+    deleteGroup: (id) => homeApi.deleteGroup(id),
 
-    reorderGroups: (ids) => onHomeTopic(() => homeApi.reorderGroups(ids)),
+    reorderGroups: (ids) => homeApi.reorderGroups(ids),
 
     assignTile: ({ tileId, groupId, index }) =>
-      onHomeTopic(() => homeApi.assignTile({ tileId, groupId, index })),
+      homeApi.assignTile({ tileId, groupId, index }),
 
-    setTileOverride: (patch) => onHomeTopic(() => homeApi.setTileOverride(patch)),
+    setTileOverride: (patch) => homeApi.setTileOverride(patch),
 
-    addManualTile: (tile) => onHomeTopic(() => homeApi.addManualTile(tile)),
+    addManualTile: (tile) => homeApi.addManualTile(tile),
 
-    updateManualTile: (id, patch) => onHomeTopic(() => homeApi.updateManualTile(id, patch)),
+    updateManualTile: (id, patch) => homeApi.updateManualTile(id, patch),
 
-    removeManualTile: (id) => onHomeTopic(() => homeApi.removeManualTile(id)),
+    removeManualTile: (id) => homeApi.removeManualTile(id),
 
     clearPendingRenameId: () => set({ pendingRenameId: null }),
   }),

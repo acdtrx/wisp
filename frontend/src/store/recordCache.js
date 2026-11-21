@@ -19,8 +19,6 @@ import { isErrorFrame } from './streamStore.js';
  * @property {RecordCue[]} cues
  * @property {string[]} [goneCodes] - the error codes that mean the record does not exist
  *   (its subject's own not-found): such an answer is "gone"; any other is an error
- * @property {boolean} [awaited] - false for a best-effort figure derived from a record
- *   (a mount's disk usage): a command waiting on a cue does not wait for its re-read
  *
  * @typedef {'idle' | 'loading' | 'ready' | 'error' | 'gone'} RecordStatus
  * @typedef {{ data: any, status: RecordStatus, error: import('../api/errors.js').ApiError | null, reading: boolean }} RecordSnapshot
@@ -130,13 +128,6 @@ export function createRecordCache(kinds) {
     return promise;
   }
 
-  /** What a cue's handler returns: the read, for a command waiting on the frame, unless
-   *  the kind is a best-effort figure no command waits for. */
-  const cued = (entry) => {
-    const promise = read(entry);
-    return entry.spec.awaited === false ? undefined : promise;
-  };
-
   function start(entry) {
     entry.live = true;
     read(entry);
@@ -145,29 +136,33 @@ export function createRecordCache(kinds) {
     /* Every record follows the connect frame `{ kind: 'all' }`: anything may have
      * changed while the stream was down. */
     entry.offs.push(subscribeChanges(changeKinds, (change) => {
-      if (change.kind === CHANGE_KIND.ALL) return cued(entry);
+      if (change.kind === CHANGE_KIND.ALL) {
+        read(entry);
+        return;
+      }
       const cue = cues.find((c) => c.change === change.kind);
-      if (cue?.byId && change.id !== (cue.idOf ? cue.idOf(entry.id) : entry.id)) return undefined;
-      return cued(entry);
+      if (cue?.byId && change.id !== (cue.idOf ? cue.idOf(entry.id) : entry.id)) return;
+      read(entry);
     }));
     for (const cue of cues.filter((c) => c.topic)) {
       let seen = false;
       let lastKey;
       entry.offs.push(subscribeTopic(cue.topic, (frame) => {
         if (cue.key) {
-          if (isErrorFrame(frame)) return undefined;
+          if (isErrorFrame(frame)) return;
           const key = cue.key(frame, entry.id);
           const changed = seen && !sameValue(key, lastKey);
           seen = true;
           lastKey = key;
-          return changed ? cued(entry) : undefined;
+          if (changed) read(entry);
+          return;
         }
         /* The first frame is the topic's state as the record is read: no news. */
         if (!seen) {
           seen = true;
-          return undefined;
+          return;
         }
-        return cued(entry);
+        read(entry);
       }));
     }
   }
@@ -227,14 +222,6 @@ export function createRecordCache(kinds) {
       if (!entry?.live) return Promise.resolve();
       const pending = [...entry.inflight.values()].at(-1);
       return pending ?? read(entry);
-    },
-
-    /** A command's re-read: a read sent now, after the command's change, whatever is on
-     *  its way; resolves when it settles, `true` when it answered (`false`: it failed).
-     *  Nothing is read for a record no view shows. */
-    reread(kind, id) {
-      const entry = entryOf(kind, id);
-      return entry?.live ? read(entry) : Promise.resolve(true);
     },
 
     /** Dismiss the record's error while its data is shown. */

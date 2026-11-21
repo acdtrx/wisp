@@ -34,7 +34,7 @@ const BUSY_MESSAGE = 'Another package manager operation is running on the host. 
 
 /* The package check and the upgrade are jobs that change the package list: each is
  * busy until its job ended and the list, read again after it, has landed. */
-const PACKAGE_JOB = { job: true, rereads: [[RECORD.OS_UPDATE_PACKAGES]] };
+const PACKAGE_JOB = { job: true };
 
 export default function OsUpdateSection({ onRequestRestart }) {
   const stats = useStatsStore((s) => s.data);

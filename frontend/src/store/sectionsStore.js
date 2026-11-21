@@ -1,5 +1,4 @@
 import * as sectionsApi from '../api/sections.js';
-import { sendAndAwaitTopic } from '../api/events.js';
 import { TOPIC } from '../../../shared/wireNames.js';
 import { createStreamStore, topicSource } from './streamStore.js';
 
@@ -39,8 +38,6 @@ function uniqueDefaultName(sections) {
   return candidate;
 }
 
-const onSectionsTopic = (send) => sendAndAwaitTopic(TOPIC.SECTIONS, send);
-
 /**
  * The sidebar's sections, from the `sections` topic: `data` is the
  * `{ sections, assignments }` envelope, which the server sends on connect and
@@ -59,14 +56,14 @@ export const useSectionsStore = createStreamStore({
 
     /* Writes answer with an ack; each resolves once the new envelope has arrived on
      * the `sections` topic too. */
-    renameSection: (id, name) => onSectionsTopic(() => sectionsApi.renameSection(id, name)),
+    renameSection: (id, name) => sectionsApi.renameSection(id, name),
 
-    deleteSection: (id) => onSectionsTopic(() => sectionsApi.deleteSection(id)),
+    deleteSection: (id) => sectionsApi.deleteSection(id),
 
-    reorderSections: (orderedIds) => onSectionsTopic(() => sectionsApi.reorderSections(orderedIds)),
+    reorderSections: (orderedIds) => sectionsApi.reorderSections(orderedIds),
 
     assignWorkload: ({ type, name, sectionId }) =>
-      onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId })),
+      sectionsApi.assignWorkload({ type, name, sectionId }),
 
     /**
      * Create a new section with an auto-suffixed default name, assign the given
@@ -77,8 +74,8 @@ export const useSectionsStore = createStreamStore({
      */
     createAndAssign: async ({ type, name }) => {
       const defaultName = uniqueDefaultName(get().data.sections);
-      const { id } = await onSectionsTopic(() => sectionsApi.createSection(defaultName));
-      await onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId: id }));
+      const { id } = await sectionsApi.createSection(defaultName);
+      await sectionsApi.assignWorkload({ type, name, sectionId: id });
       set({ pendingRenameId: id });
     },
 

@@ -19,7 +19,7 @@ export function useRunningJob(match) {
  *
  * @param {ReturnType<import('./useCommand.js').useCommand>} command
  * @param {string | null} jobId
- * @param {{ key?: unknown, rereads?: Array<[string, unknown?]>, onAck?: Function, onDone?: Function }} options
+ * @param {{ key?: unknown, onAck?: Function, onDone?: Function }} options
  */
 export function useFollowJob(command, jobId, options) {
   const followed = useRef(null);

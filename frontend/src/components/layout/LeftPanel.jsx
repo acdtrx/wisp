@@ -348,8 +348,7 @@ export default function LeftPanel() {
 
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
-  /* A section create or move in flight, until its frame lands: a second one would
-   * act on the sections as they were (the same default name, a stale order). */
+  /* A section create or move in flight, until the server answers. */
   const sectionsCommand = useCommand();
   const sectionsBusy = sectionsCommand.busy;
 

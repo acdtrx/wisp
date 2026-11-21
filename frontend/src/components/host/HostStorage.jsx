@@ -27,7 +27,6 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
-import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
 import { CONNECTION } from '../../store/streamStore.js';
 import {
@@ -43,7 +42,6 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const NO_STATUS = [];
 
@@ -161,11 +159,11 @@ function useMountRowCommands() {
     /** Whether a command runs on the row: every control of the row is disabled then. */
     busy: (id) => removal.isBusy(id) || toggleCommand.isBusy(id),
     remove: (id) => removal.run(() => deleteMount(id), {
-      job: true, rereads: [[RECORD.SETTINGS], [RECORD.HOST_MOUNT_STATUS]], key: id,
+      job: true, key: id,
     }),
     toggle: (id, mounted) => (mounted
-      ? toggleCommand.run(() => unmountMount(id), { job: true, rereads: [[RECORD.HOST_MOUNT_STATUS]], key: id })
-      : toggleCommand.run(() => sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id)), { key: id })),
+      ? toggleCommand.run(() => unmountMount(id), { job: true, key: id })
+      : toggleCommand.run(() => mountMount(id), { key: id })),
   };
 }
 

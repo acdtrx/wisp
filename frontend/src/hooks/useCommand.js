@@ -10,6 +10,8 @@ import * as cs from './commandState.js';
  * disables the control of a key in flight (`isBusy(key)`), so a click is never
  * ignored; the in-flight guard is a ref, so a second click that lands before the
  * re-render cannot start a second run either. A view with one command names no key.
+ * A command is busy until the server answers: its ack, or for one that runs as a job
+ * (`job`), the job's end.
  *
  * `run(fn, options)` resolves `true` when the command succeeded, `false` when it
  * failed (its error is then held) or its key was already in flight. `fn`'s answer, a
@@ -17,7 +19,7 @@ import * as cs from './commandState.js';
  *
  * @returns {{
  *   run: (fn: () => Promise<unknown>, options?: { key?: unknown, about?: unknown, job?: boolean,
- *     rereads?: Array<[string, unknown?]>, onAck?: (ack: any) => void, onDone?: (result: unknown) => void }) => Promise<boolean>,
+ *     onAck?: (ack: any) => void, onDone?: (result: unknown) => void }) => Promise<boolean>,
  *   busy: boolean, isBusy: (key?: unknown) => boolean, running: unknown[], aboutOf: (key: unknown) => unknown,
  *   error: unknown, errorOf: (key: unknown) => unknown, errors: Array<{ key: unknown, error: unknown, about: unknown }>,
  *   dismiss: (key?: unknown) => void, fail: (error: unknown, key?: unknown) => void }}
