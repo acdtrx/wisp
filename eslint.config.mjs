@@ -119,7 +119,9 @@ export default [
       parserOptions: { ecmaFeatures: { jsx: true } },
       globals: browser,
     },
-    rules: { ...correctness, 'react-hooks/rules-of-hooks': 'error' },
+    /* A name that shadows another hides it: a row's variable named like a hook above it
+     * reads the row's value where the hook's was meant. */
+    rules: { ...correctness, 'no-shadow': 'error', 'react-hooks/rules-of-hooks': 'error' },
   },
   {
     // The unit tests and their browser stand-ins run under Node.
