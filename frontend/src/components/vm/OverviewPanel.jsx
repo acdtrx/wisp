@@ -2,12 +2,13 @@ import {
   Fragment, useState, useEffect, lazy, Suspense,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { renamedPath } from '../../store/renameFollow.js';
 import {
   Play, Square, Zap, RotateCcw, Pause, PlayCircle,
   Trash2, Loader2, Code2, Archive,
 } from 'lucide-react';
 
-import { useVm, useVmStore, useVmStatsStore, awaitVmChange } from '../../store/vmStore.js';
+import { useVm, useVmStore, useVmStatsStore } from '../../store/vmStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
@@ -166,17 +167,18 @@ export default function OverviewPanel({ name: routeName }) {
 
   const handleOpenBackup = () => setBackupModalOpen(true);
 
-  /* A rename is followed from the request: the server takes the name exactly as
-   * sent, and announces the change under it. */
-  const handleSectionSave = async (changes) => {
-    const renamed = typeof changes.name === 'string' && changes.name !== name;
-    const target = renamed ? changes.name : name;
-    await awaitVmChange(target, () => updateVM(name, changes));
-    if (!renamed) return;
+  /* A section's save: the PATCH, ending at its ack (the form then reads its record). */
+  const handleSectionSave = (changes) => updateVM(name, changes);
+
+  /* After a save that renamed the VM (at its ack; the server takes the name exactly as
+   * sent): the page follows to the new name, whose page reads its record, but only if the
+   * router still shows this VM's page — the user may have moved on. */
+  const handleRenamed = (target) => {
     useVmStore.getState().followRename(name, target);
-    /* The page follows only if it still shows this VM: the user may have moved on. */
-    if (useVmStore.getState().selected !== name) return;
-    navigate(`/vm/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
+    /* The router's location now (BrowserRouter's is the window's), also once this
+     * page has unmounted: its tab, under the new name. */
+    const path = renamedPath(window.location.pathname, 'vm', name, target);
+    if (path) navigate(path, { replace: true });
   };
 
   const iconId = shown.iconId || getDefaultIconId(shown.osCategory);
@@ -339,6 +341,7 @@ export default function OverviewPanel({ name: routeName }) {
               vmConfig={vmConfig}
               isCreating={false}
               onSave={handleSectionSave}
+              onRenamed={handleRenamed}
               busyReason={busyHint}
             />
 

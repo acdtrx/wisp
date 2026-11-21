@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Lock } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm } from '../../hooks/useForm.js';
+import { changedFields } from '../../hooks/formState.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
+import { vmLocked } from '../../utils/workloadLocks.js';
 
 const FIRMWARE_OPTIONS = [
   { value: 'bios', label: 'BIOS' },
@@ -40,6 +45,9 @@ const BOOT_DEVICES = [
   { value: 'network', label: 'Network' },
 ];
 
+/** The fields locked unless the VM is shut off (workloadLocks.js). */
+const OFFLINE_ONLY = ['machineType', 'cpuMode', 'firmware', 'nestedVirt', 'vtpm'];
+
 function advancedFormFromVmConfig(vmConfig) {
   const machineRaw = vmConfig.machineType || '';
   const machineValue = machineRaw.includes('q35') ? 'q35' : machineRaw.includes('440') ? 'pc-i440fx' : machineRaw || 'q35';
@@ -59,91 +67,51 @@ function advancedFormFromVmConfig(vmConfig) {
   };
 }
 
-export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormChange, busyReason }) {
-  const isRunning = vmConfig.state === 'running' || vmConfig.state === 'blocked';
-  const offlineOnly = isRunning && !isCreating;
+/**
+ * The VM's firmware, machine, CPU model, devices and boot order. Editing a VM, the
+ * form follows its config record; creating, the panel's draft (`draft`, written
+ * through `onDraft(update)`) is the only state.
+ */
+export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, onSave, busyReason }) {
+  const offlineOnly = !isCreating && vmLocked(vmConfig.state);
 
   const [collapsed, setCollapsed] = useState(true);
 
-  const defaults = {
-    firmware: 'bios', machineType: 'q35', cpuMode: 'host-passthrough',
-    videoDriver: 'virtio', graphicsType: 'vnc', bootOrder: ['hd'],
-    bootMenu: false, memBalloon: true, guestAgent: true,
-    vtpm: false, virtioRng: true, nestedVirt: false,
-  };
-  const [form, setForm] = useState(defaults);
-  const [original, setOriginal] = useState(defaults);
+  const record = useRecord(isCreating ? null : RECORD.VM, vmConfig.name);
+  /* A locked field shows its stored value, and is neither sent nor a change. */
+  const edit = useForm(record, advancedFormFromVmConfig, undefined, { locked: offlineOnly ? OFFLINE_ONLY : [] });
+  const form = isCreating ? draft : edit.form;
   const save = useCommand();
 
-  const init = useCallback(() => {
-    const data = advancedFormFromVmConfig(vmConfig);
-    setForm(data);
-    setOriginal(data);
-  }, [
-    vmConfig?.firmware, vmConfig?.machineType, vmConfig?.cpuMode, vmConfig?.videoModel,
-    vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.bootMenu, vmConfig?.memBalloon,
-    vmConfig?.guestAgent, vmConfig?.vtpm, vmConfig?.virtioRng, vmConfig?.nestedVirt,
-  ]);
-
-  useEffect(() => {
-    if (isCreating) return;
-    init();
-  }, [init, isCreating]);
-
-  useEffect(() => {
-    if (!isCreating) return;
-    const data = advancedFormFromVmConfig(vmConfig);
-    setForm((prev) => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
-  }, [
-    isCreating,
-    vmConfig?.firmware, vmConfig?.machineType, vmConfig?.cpuMode, vmConfig?.videoModel,
-    vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.bootMenu, vmConfig?.memBalloon,
-    vmConfig?.guestAgent, vmConfig?.vtpm, vmConfig?.virtioRng, vmConfig?.nestedVirt,
-  ]);
-
-  const isDirty = JSON.stringify(form) !== JSON.stringify(original);
-  const updateField = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    if (isCreating && onFormChange) onFormChange({ [key]: value });
-  };
+  /* A field's write as a functional update of the value it replaces. */
+  const updateWith = (key, update) => (isCreating
+    ? onDraft((d) => ({ ...d, [key]: update(d[key]) }))
+    : edit.setForm((f) => ({ ...f, [key]: update(f[key]) })));
+  const updateField = (key, value) => updateWith(key, () => value);
 
   const hasHyperv = vmConfig.features?.hyperv;
 
-  const toggleBootDev = (dev) => {
-    setForm((prev) => {
-      const order = [...prev.bootOrder];
-      const idx = order.indexOf(dev);
-      if (idx >= 0) {
-        if (order.length <= 1) return prev;
-        order.splice(idx, 1);
-      } else {
-        order.push(dev);
-      }
-      const next = { ...prev, bootOrder: order };
-      if (isCreating && onFormChange) onFormChange({ bootOrder: order });
-      return next;
-    });
-  };
-
-  const handleSave = () => {
-    const changes = {};
-    for (const key of Object.keys(form)) {
-      if (JSON.stringify(form[key]) !== JSON.stringify(original[key])) {
-        changes[key] = form[key];
-      }
+  const toggleBootDev = (dev) => updateWith('bootOrder', (current) => {
+    const order = [...current];
+    const idx = order.indexOf(dev);
+    if (idx >= 0) {
+      if (order.length <= 1) return current;
+      order.splice(idx, 1);
+    } else {
+      order.push(dev);
     }
-    save.run(() => onSave(changes), {
-      onDone: () => { if (Object.keys(changes).length > 0) setOriginal(form); },
-    });
-  };
+    return order;
+  });
+
+  const handleSave = () => edit.save((values, saved) => save.run(() => onSave(changedFields(values, saved))));
 
   return (
     <SectionCard
       title="Advanced"
-      isDirty={isCreating ? false : isDirty}
+      isDirty={isCreating ? false : edit.dirty}
       onSave={isCreating ? undefined : handleSave}
       saveDisabledReason={isCreating ? undefined : busyReason}
-      saving={save.busy}
+      saving={edit.saving}
       requiresRestart={!!vmConfig.pendingRestart}
       collapsible
       collapsed={collapsed}

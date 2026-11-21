@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { Lock, Network, Shuffle, Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import { randomMac } from '../../utils/randomMac.js';
-import { randomId } from '../../utils/randomId.js';
+import { newDraftNic } from '../vm/vmDraft.js';
+import { rowId } from '../../hooks/formState.js';
 import {
   DataTableScroll,
   DataTable,
@@ -21,7 +22,9 @@ import NicModelPills from './NicModelPills.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { awaitVmChange } from '../../store/vmStore.js';
 import { RECORD } from '../../store/records.js';
+import { vmLocked } from '../../utils/workloadLocks.js';
 import { useRecord } from '../../hooks/useRecord.js';
 
 const NO_BRIDGES = [];
@@ -30,9 +33,11 @@ const NO_BRIDGES = [];
 const draftIconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
-function initNicsFromConfig(nicsConfig) {
-  return (nicsConfig || []).map((nic, i) => ({
-    _key: nic._key ?? i,
+/** The NICs of a VM's config, as the rows show them, each with an id of its own (new
+ *  when the config's NICs change; they are the record's, never edited here). */
+function nicRows(nicsConfig) {
+  return (nicsConfig || []).map((nic) => ({
+    id: rowId(),
     type: nic.type || 'bridge',
     mac: nic.mac || '',
     source: nic.source || '',
@@ -40,99 +45,71 @@ function initNicsFromConfig(nicsConfig) {
   }));
 }
 
-function normalizeNicsForApi(nics) {
-  return nics.map(({ type, mac, source, model }) => ({
-    type,
-    mac,
-    source,
-    model,
-  }));
+/** The NIC list as the API takes it. */
+function nicsForApi(nics) {
+  return nics.map(({ type, mac, source, model }) => ({ type, mac, source, model }));
 }
 
-export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSave, onFormChange, busyReason }) {
-  const isStopped = vmConfig.state === 'shutoff' || vmConfig.state === 'nostate';
+/**
+ * The VM's network interfaces. Editing a VM, the rows are its config's, and each change
+ * is a command: the editor (one NIC, picked when it opens) or a remove. Creating, the
+ * panel's draft (`draft`, written through `onDraft(update)`) is the rows, edited in place.
+ */
+export default function VmNetworkInterfacesSection({ vmConfig, isCreating, draft, onDraft, onSave, busyReason }) {
+  const isStopped = !vmLocked(vmConfig.state);
   /* busyReason: another operation (a backup) holds the VM's backend lock —
    * a NIC save (PATCH) would be refused with 409 VM_BUSY. */
   const vmBusy = !!busyReason && !isCreating;
   const networkLocked = (!isStopped && !isCreating) || vmBusy;
 
-  const [nics, setNics] = useState(() => initNicsFromConfig(vmConfig.nics));
+  const configNics = useMemo(() => nicRows(vmConfig.nics), [vmConfig.nics]);
+  const nics = isCreating ? draft : configNics;
   /* The bridges a NIC can take, kept current as bridges are made or removed. */
   const bridgesRecord = useRecord(RECORD.HOST_BRIDGES);
   const bridges = bridgesRecord.data ?? NO_BRIDGES;
-  const nicsSignature = JSON.stringify(vmConfig.nics || []);
 
-  /* The row is snapshotted when the editor opens so a background refresh of
-   * `vmConfig.nics` can't reset the open form; `idx` is null when adding. */
-  const [editor, setEditor] = useState({ open: false, idx: null, nic: null });
-  /* A NIC's removal, keyed by its MAC. Each re-sends the whole `nics` array, so one
-   * runs at a time: the other rows' removes are disabled meanwhile. */
+  /* The editor: the position of the NIC it edits and the NIC as it opened (null to add). */
+  const [editor, setEditor] = useState({ open: false, index: null, opened: null });
+  /* A NIC's removal, keyed by its row (about: its MAC). Each re-sends the whole `nics`
+   * array, so one runs at a time: the other rows' controls and Add are disabled
+   * meanwhile. */
   const remove = useCommand();
 
-  useEffect(() => {
-    setNics(initNicsFromConfig(vmConfig.nics));
-  }, [nicsSignature]);
-
-  const syncNicsToParent = (nextNics) => {
-    if (isCreating && onFormChange) onFormChange({ nics: nextNics });
+  /* Create flow only: draft rows are edited in place in the panel's draft. */
+  const updateNic = (id, key, value) => {
+    onDraft((rows) => rows.map((n) => (n.id === id ? { ...n, [key]: value } : n)));
   };
 
-  /* Create flow only: draft rows are edited in place and pushed to the parent
-   * form. The parent sync stays outside setNics — calling it from inside the
-   * updater is a render-phase parent setState, which React warns about. */
-  const updateNic = (idx, key, value) => {
-    const next = nics.map((n, i) => (i === idx ? { ...n, [key]: value } : n));
-    setNics(next);
-    syncNicsToParent(next);
-  };
+  const addDraftNic = () => onDraft((rows) => [...rows, newDraftNic(bridges[0] || '')]);
 
-  const addDraftNic = () => {
-    const next = [
-      ...nics,
-      {
-        _key: randomId(),
-        type: 'bridge',
-        mac: randomMac(),
-        source: bridges[0] || '',
-        model: 'virtio',
-      },
-    ];
-    setNics(next);
-    syncNicsToParent(next);
-  };
-
-  const openEditor = (idx) => {
+  const openEditor = (index) => {
     if (networkLocked) return;
-    setEditor({ open: true, idx, nic: idx === null ? null : nics[idx] });
+    setEditor({ open: true, index, opened: index == null ? null : configNics[index] });
   };
 
-  const closeEditor = () => setEditor({ open: false, idx: null, nic: null });
+  const closeEditor = () => setEditor({ open: false, index: null, opened: null });
 
   /**
-   * Save path for the editor modal: every NIC change re-PATCHes the whole
-   * `nics` array (the documented exception, see docs/FRONTEND-RULES.md § Variants
-   * — **VM — Network interfaces**). Failures propagate so the modal can show
-   * them and stay open.
+   * The editor's command: every NIC change re-PATCHes the whole `nics` array (the
+   * documented exception, see docs/FRONTEND-RULES.md § Variants — **VM — Network
+   * interfaces**), built from the config as it is when the editor saves.
    */
-  const submitNic = async (fields) => {
-    const { idx } = editor;
-    const next = idx === null
-      ? [...nics, { _key: randomId(), type: 'bridge', ...fields }]
-      : nics.map((n, i) => (i === idx ? { ...n, ...fields } : n));
-    const result = await onSave({ nics: normalizeNicsForApi(next) });
-    setNics(next);
-    return result;
+  const submitNic = (fields, index) => {
+    const next = index === null
+      ? [...configNics, { type: 'bridge', ...fields }]
+      : configNics.map((n, i) => (i === index ? { ...n, ...fields } : n));
+    return onSave({ nics: nicsForApi(next) });
   };
 
-  const removeNicAt = (idx) => {
+  const removeNic = (nic) => {
     if (nics.length <= 1) return;
-    const next = nics.filter((_, i) => i !== idx);
     if (isCreating) {
-      setNics(next);
-      syncNicsToParent(next);
+      onDraft((rows) => rows.filter((n) => n.id !== nic.id));
       return;
     }
-    remove.run(() => onSave({ nics: normalizeNicsForApi(next) }), { key: nics[idx].mac, onDone: () => setNics(next) });
+    const next = configNics.filter((n) => n.id !== nic.id);
+    /* A remove is a command: busy until the VM's change is in. */
+    remove.run(() => awaitVmChange(vmConfig.name, () => onSave({ nics: nicsForApi(next) })), { key: nic.id, about: nic.mac });
   };
 
   /* Create stays desktop-oriented (UI.md § Responsive behavior): its draft rows
@@ -141,7 +118,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     <button
       type="button"
       onClick={() => (isCreating ? addDraftNic() : openEditor(null))}
-      disabled={networkLocked}
+      disabled={networkLocked || remove.busy}
       className={`${isCreating ? 'hidden sm:inline-flex' : 'inline-flex'} items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed`}
       title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to add a NIC' : 'Add NIC'}
       aria-label="Add NIC"
@@ -161,7 +138,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       }
       requiresRestart={!!vmConfig.pendingRestart}
       commands={[remove]}
-      errorPrefix={(mac) => `Couldn't remove the NIC ${mac}`}
+      errorPrefix={(key, command, mac) => `Couldn't remove the NIC ${mac ?? ''}`.trim()}
       headerAction={headerAdd}
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
@@ -195,21 +172,22 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               </tr>
             )}
             {nics.map((nic, idx) => {
-              const removing = remove.isBusy(nic.mac);
+              const removing = remove.isBusy(nic.id);
 
               return (
-                <tr key={nic._key} className={dataTableInteractiveRowClass}>
+                <tr key={nic.id} className={dataTableInteractiveRowClass}>
                   <DataTableTd dense className="text-xs font-medium text-text-secondary">
                     net{idx}
                   </DataTableTd>
                   <DataTableTd dense>
                     {isCreating ? (
+                      /* No bridge chosen: the first is the selected option, and what is sent. */
                       <select
-                        value={nic.source}
-                        onChange={(e) => updateNic(idx, 'source', e.target.value)}
+                        value={nic.source || bridges[0] || ''}
+                        onChange={(e) => updateNic(nic.id, 'source', e.target.value)}
                         className="input-field h-8 w-full min-w-24 max-w-44 text-xs"
                       >
-                        {!nic.source && <option value="">{bridgeChoice(bridgesRecord)}</option>}
+                        {!nic.source && bridges.length === 0 && <option value="">{bridgeChoice(bridgesRecord)}</option>}
                         {bridges.map((b) => (
                           <option key={b} value={b}>
                             {b}
@@ -233,7 +211,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                     {isCreating ? (
                       <NicModelPills
                         value={nic.model}
-                        onChange={(v) => updateNic(idx, 'model', v)}
+                        onChange={(v) => updateNic(nic.id, 'model', v)}
                       />
                     ) : (
                       <span className="text-sm text-text-secondary">{nic.model}</span>
@@ -245,12 +223,12 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         <input
                           type="text"
                           value={nic.mac}
-                          onChange={(e) => updateNic(idx, 'mac', e.target.value)}
+                          onChange={(e) => updateNic(nic.id, 'mac', e.target.value)}
                           className="input-field h-8 min-w-32 max-w-48 font-mono text-[11px]"
                         />
                         <button
                           type="button"
-                          onClick={() => updateNic(idx, 'mac', randomMac())}
+                          onClick={() => updateNic(nic.id, 'mac', randomMac())}
                           className={`${draftIconBtn} shrink-0`}
                           title="Randomize MAC"
                           aria-label="Randomize MAC"
@@ -283,7 +261,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                       {nics.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => removeNicAt(idx)}
+                          onClick={() => removeNic(nic)}
                           disabled={networkLocked || remove.busy}
                           className={`${isCreating ? draftIconBtn : rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                           title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to remove NICs' : 'Remove NIC'}
@@ -314,8 +292,9 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
 
       <NicEditorModal
         open={editor.open}
-        nic={editor.nic}
-        index={editor.idx === null ? nics.length : editor.idx}
+        vmName={vmConfig.name}
+        index={editor.index ?? nics.length}
+        opened={editor.opened}
         bridges={bridges}
         onSubmit={submitNic}
         onClose={closeEditor}

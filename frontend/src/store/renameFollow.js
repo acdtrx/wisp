@@ -32,3 +32,15 @@ function renamedTo(name, uuid, list) {
 
 /** What a page knows before its first event. */
 export const UNKNOWN = Object.freeze({ name: null, uuid: null, list: null });
+
+/**
+ * Where a save that renamed workload `name` of `kind` ('vm' or 'container') to `target`
+ * follows at its ack: the router's location `pathname` as it is then, under the new name
+ * (the tab it shows then kept), or null when it no longer shows that workload's page.
+ * The store's selection is no answer (a "gone" page clears it).
+ */
+export function renamedPath(pathname, kind, name, target) {
+  const page = `/${kind}/${encodeURIComponent(name)}`;
+  if (pathname !== page && !pathname.startsWith(`${page}/`)) return null;
+  return `/${kind}/${encodeURIComponent(target)}${pathname.slice(page.length)}`;
+}

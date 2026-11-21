@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
@@ -6,6 +6,7 @@ import Toggle from '../shared/Toggle.jsx';
 import { updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
 import { awaitVmChange } from '../../store/vmStore.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm, useHeld } from '../../hooks/useForm.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -30,7 +31,9 @@ function Field({ label, children }) {
   );
 }
 
-const DEFAULTS = {
+/** The form's values with nothing stored: what Configure starts from. The hostname is
+ *  empty: the VM's name is its placeholder, and what Save stores when it stays empty. */
+const CLOUD_INIT_DEFAULTS = {
   enabled: true,
   hostname: '',
   username: 'wisp',
@@ -43,114 +46,91 @@ const DEFAULTS = {
   installAvahiDaemon: true,
 };
 
-export default function CloudInitSection({ vmConfig, isCreating, initialCloudInit, onCloudInitChange, busyReason }) {
+/** The edit form from the stored cloud-init (none: the defaults). */
+function storedForm(data) {
+  const config = data && !isBareCloudInitPlaceholder(data) ? data : null;
+  if (!config) return { ...CLOUD_INIT_DEFAULTS };
+  return {
+    enabled: config.enabled !== false,
+    hostname: config.hostname || '',
+    username: config.username || 'wisp',
+    password: '',
+    sshKey: config.sshKey || '',
+    sshKeySource: config.sshKeySource || '',
+    growPartition: config.growPartition ?? true,
+    packageUpgrade: config.packageUpgrade ?? false,
+    installQemuGuestAgent: config.installQemuGuestAgent ?? true,
+    installAvahiDaemon: config.installAvahiDaemon ?? true,
+  };
+}
+
+/**
+ * What Save sends, against the stored cloud-init (`data`, read by the VM's name as it is
+ * now, `vmName`): an empty hostname means that name, which the placeholder shows and
+ * which is stored; a blank password keeps the one on file ("Leave blank to keep
+ * unchanged": the API reads '' as no password, 'set' as keep).
+ */
+function cloudInitSent(form, data, vmName) {
+  const stored = data && !isBareCloudInitPlaceholder(data) ? data : null;
+  return {
+    ...form,
+    hostname: form.hostname || vmName,
+    password: form.password || (stored?.password === 'set' ? 'set' : ''),
+  };
+}
+
+/**
+ * The cloud-init section. Editing a VM's, the form follows its cloud-init record.
+ * Creating, the panel's draft (`draft`, written through `onDraft(update)`) is the only
+ * state: the section reads it and writes it, and the panel converts it at submit.
+ */
+export default function CloudInitSection({ vmConfig, isCreating, draft, onDraft, busyReason }) {
   const vmName = vmConfig.name;
 
   const [collapsed, setCollapsed] = useState(!isCreating);
   const cloudInit = useRecord(RECORD.VM_CLOUD_INIT, isCreating ? null : vmName);
   const config = cloudInit.data && !isBareCloudInitPlaceholder(cloudInit.data) ? cloudInit.data : null;
-  /* Until the first read lands, and when it fails, nothing may offer to
-   * configure cloud-init: a failed read is not "no configuration", and
-   * Configure would overwrite the real one. */
-  const [form, setForm] = useState(() => {
-    const hostname = (initialCloudInit?.hostname) || vmConfig.name || '';
-    if (initialCloudInit && typeof initialCloudInit === 'object') {
-      return {
-        ...DEFAULTS,
-        ...initialCloudInit,
-        password: initialCloudInit.password || '',
-        hostname,
-        enabled: initialCloudInit.enabled !== false,
-      };
-    }
-    return { ...DEFAULTS, hostname };
-  });
+  /* Until the first read lands, and when it fails, nothing may offer to configure
+   * cloud-init: a failed read is not "no configuration", and Configure would overwrite
+   * the real one. */
+  const edit = useForm(cloudInit, storedForm, cloudInitSent);
+  const form = isCreating ? draft : edit.form;
+  const setFields = (fields) => (isCreating ? onDraft((d) => ({ ...d, ...fields })) : edit.setForm((f) => ({ ...f, ...fields })));
+  const updateField = (key, value) => setFields({ [key]: value });
   const [editing, setEditing] = useState(isCreating);
   /* Save and remove write the VM's cloud-init (one at a time: both are disabled while
    * either runs); the GitHub key lookup is a command of its own. */
   const op = useCommand();
   const keyLookup = useCommand();
   const fetchingKeys = keyLookup.busy;
-  const saving = op.busy;
+  const saving = edit.saving || op.busy;
   const [ghUsername, setGhUsername] = useState('');
   const [ghKeys, setGhKeys] = useState([]);
-  const [showPassword, setShowPassword] = useState(false);
-  const prevVmNameRef = useRef(vmName);
-  // In create mode, keep hostname prefilled with VM name when name changes (until user edits hostname)
-  useEffect(() => {
-    if (!isCreating || vmName === prevVmNameRef.current) return;
-    const prevName = prevVmNameRef.current;
-    prevVmNameRef.current = vmName;
-    setForm(prev => {
-      const wasSynced = prev.hostname === prevName || prev.hostname === '';
-      return wasSynced ? { ...prev, hostname: vmName } : prev;
-    });
-  }, [isCreating, vmName]);
-
-  const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
-
-  useEffect(() => {
-    if (!isCreating || !onCloudInitChange || !form) return;
-    onCloudInitChange({
-      enabled: form.enabled !== false,
-      hostname: form.hostname,
-      username: form.username,
-      password: form.password,
-      sshKey: form.sshKey,
-      growPartition: form.growPartition,
-      packageUpgrade: form.packageUpgrade,
-      installQemuGuestAgent: form.installQemuGuestAgent,
-      installAvahiDaemon: form.installAvahiDaemon,
-    });
-  }, [
-    isCreating,
-    onCloudInitChange,
-    form.enabled,
-    form.hostname,
-    form.username,
-    form.password,
-    form.sshKey,
-    form.growPartition,
-    form.packageUpgrade,
-    form.installQemuGuestAgent,
-    form.installAvahiDaemon,
-  ]);
+  /* The password revealed: held on the form as it is, a reset hides it again (the create
+   * draft is never reset). */
+  const [showPassword, setShowPassword] = useHeld(edit.generation);
+  const toggleShowPassword = () => setShowPassword((on) => (on ? null : true));
 
   const startEditing = () => {
-    if (config) {
-      setForm({
-        enabled: config.enabled !== false,
-        hostname: config.hostname || vmName,
-        username: config.username || 'wisp',
-        password: '',
-        sshKey: config.sshKey || '',
-        sshKeySource: config.sshKeySource || '',
-        growPartition: config.growPartition ?? true,
-        packageUpgrade: config.packageUpgrade ?? false,
-        installQemuGuestAgent: config.installQemuGuestAgent ?? true,
-        installAvahiDaemon: config.installAvahiDaemon ?? true,
-      });
-    } else {
-      setForm({ ...DEFAULTS, hostname: vmName });
-    }
+    edit.reset();
     setEditing(true);
     setCollapsed(false);
   };
 
-  const cancelEditing = () => setEditing(false);
-
-  const handleSave = () => {
-    // A blank password keeps the one on file ("Leave blank to keep
-    // unchanged"): the API reads '' as no password and 'set' as keep.
-    const password = form.password || (config?.password === 'set' ? 'set' : '');
-    op.run(() => awaitVmChange(vmName, () => updateCloudInit(vmName, { ...form, password })), {
-      key: 'save', onDone: () => setEditing(false),
-    });
+  const cancelEditing = () => {
+    edit.reset();
+    setEditing(false);
   };
+
+  const handleSave = () => edit.save((values) => op.run(() => updateCloudInit(vmName, values), { key: 'save' }))
+    .then((ok) => { if (ok) setEditing(false); });
 
   const handleDelete = () => op.run(() => awaitVmChange(vmName, () => deleteCloudInit(vmName)), {
     key: 'delete', onDone: () => setEditing(false),
   });
+
+  /* One write for the key and its source, so neither is lost to the other. */
+  const pickKey = (key, user) => setFields({ sshKey: key, sshKeySource: `github:${user}` });
 
   const handleFetchGithubKeys = () => {
     const user = ghUsername.trim();
@@ -159,32 +139,33 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       onDone: (data) => {
         const keys = data.keys || [];
         setGhKeys(keys);
-        if (keys.length > 0) {
-          updateField('sshKey', keys[0]);
-          updateField('sshKeySource', `github:${user}`);
-        }
+        if (keys.length > 0) pickKey(keys[0], user);
       },
     });
   };
 
-  // For create mode, return inline form fields only
+  const editForm = form && (
+    <EditForm
+      form={form}
+      hostnamePlaceholder={vmName || 'my-vm'}
+      updateField={updateField}
+      cloudInitEnabled={form.enabled !== false}
+      showPassword={showPassword}
+      toggleShowPassword={toggleShowPassword}
+      ghUsername={ghUsername}
+      setGhUsername={setGhUsername}
+      ghKeys={ghKeys}
+      fetchingKeys={fetchingKeys}
+      onFetchGithubKeys={handleFetchGithubKeys}
+      onSelectKey={(key) => pickKey(key, ghUsername.trim())}
+    />
+  );
+
   if (isCreating) {
     return (
-      <SectionCard title="Cloud-Init" commands={[op, keyLookup]}
-      errorPrefix={(key, command) => (command === keyLookup ? 'GitHub keys' : undefined)}>
-        <EditForm
-          form={form}
-          updateField={updateField}
-          cloudInitEnabled={form.enabled !== false}
-          showPassword={showPassword}
-          setShowPassword={setShowPassword}
-          ghUsername={ghUsername}
-          setGhUsername={setGhUsername}
-          ghKeys={ghKeys}
-          fetchingKeys={fetchingKeys}
-          onFetchGithubKeys={handleFetchGithubKeys}
-          onSelectKey={(key) => { updateField('sshKey', key); updateField('sshKeySource', `github:${ghUsername}`); }}
-        />
+      <SectionCard title="Cloud-Init" commands={[keyLookup]}
+      errorPrefix={() => 'GitHub keys'}>
+        {editForm}
       </SectionCard>
     );
   }
@@ -200,7 +181,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       commands={[op, keyLookup]}
       errorPrefix={(key, command) => (command === keyLookup ? 'GitHub keys' : undefined)}
     >
-      {!editing ? (
+      {!editing || !form ? (
         <div className="space-y-3">
           {cloudInit.data != null && <RecordError record={cloudInit} what="cloud-init configuration" />}
           {cloudInit.data == null ? (
@@ -222,7 +203,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
                   label="Cloud Init"
                   value={config.enabled === false ? 'Off' : 'On'}
                 />
-                <SummaryRow label="Hostname" value={config.hostname || '—'} />
+                <SummaryRow label="Hostname" value={config.hostname || `${vmName} (VM name)`} />
                 <SummaryRow label="Username" value={config.username || '—'} />
                 <SummaryRow
                   label="Password"
@@ -280,19 +261,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
         </div>
       ) : (
         <div className="space-y-4">
-          <EditForm
-            form={form}
-            updateField={updateField}
-            cloudInitEnabled={form.enabled !== false}
-            showPassword={showPassword}
-            setShowPassword={setShowPassword}
-            ghUsername={ghUsername}
-            setGhUsername={setGhUsername}
-            ghKeys={ghKeys}
-            fetchingKeys={fetchingKeys}
-            onFetchGithubKeys={handleFetchGithubKeys}
-            onSelectKey={(key) => { updateField('sshKey', key); updateField('sshKeySource', `github:${ghUsername}`); }}
-          />
+          {editForm}
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleSave}
@@ -331,8 +300,8 @@ function SummaryRow({ label, value }) {
 }
 
 function EditForm({
-  form, updateField, cloudInitEnabled,
-  showPassword, setShowPassword,
+  form, hostnamePlaceholder, updateField, cloudInitEnabled,
+  showPassword, toggleShowPassword,
   ghUsername, setGhUsername, ghKeys, fetchingKeys,
   onFetchGithubKeys, onSelectKey,
 }) {
@@ -346,7 +315,7 @@ function EditForm({
             type="text"
             value={form.hostname}
             onChange={(e) => updateField('hostname', e.target.value)}
-            placeholder="my-vm"
+            placeholder={hostnamePlaceholder}
             disabled={subDisabled}
             className="input-field disabled:opacity-50"
           />
@@ -374,7 +343,7 @@ function EditForm({
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={toggleShowPassword}
               disabled={subDisabled}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary disabled:opacity-40"
             >

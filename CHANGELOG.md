@@ -50,12 +50,18 @@
 - **A failed SMB connection test shows as a dismissible error** in the share dialog.
 - **An install that does not finish can be dismissed**, which stops waiting for the backend.
 - **A Retry shows its read on its way** ("Retrying…").
+- **A cloud-init hostname can be cleared**: left empty, it means the VM's name as it is now, which the field's placeholder shows and Save or Create stores.
 - **The backup schedule saves Local first, then the network mount**: a backup writes them in that order, so a failing mount never skips Local; ticking a destination off and on again is no change.
 - **Clearing the server name in App Config restores the default name**, instead of being ignored.
 - **A modal editor's Save stays busy until the saved values are on screen**; the editor shows a change saved elsewhere to what it edits, and says so when it was removed.
+- **A VM's section keeps its unsaved edits when another section is saved**, here or in another tab, and resets when its own values are saved elsewhere; after its own save, busy until then, it shows the values as stored. Cloud-init's edit form follows the same rule.
 - **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
 - **SSO's Save is off, with its reason, while a changed issuer or client ID waits for the client secret** (it was on, and said so only when clicked).
 - **The VLAN bridge dialog takes the first parent bridge** even when it is opened before the bridges have loaded (Create stayed disabled).
+- **A NIC's MAC is saved trimmed and in lower case**; changing only its case is no change.
+- **The RAM unit you chose is kept** while the size is the one you typed: 0.5 GB stays 0.5 GB after a save (it showed 512 MB).
+- **A VM's settings that need it offline are editable only when it is shut off**: its name, CPU, RAM and the Advanced offline-only fields are now locked also while it is paused, shutting down, crashed, suspended, has no state or is of unknown state; its disks and NICs also while it has no state. CD-ROM changes still work on a running VM.
+- **A VM's CPU and RAM show a value the server refuses under the field**, cleared or below 1 CPU or 128 MB, with Save (creating, Create) off and the reason (a cleared field was sent as 1 CPU or 0 MB).
 
 ## 2026-11-17
 

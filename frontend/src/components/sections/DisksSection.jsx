@@ -28,6 +28,7 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
 import { awaitVmChange } from '../../store/vmStore.js';
+import { vmLocked } from '../../utils/workloadLocks.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import {
   detachDiskFromVM,
@@ -91,16 +92,21 @@ const diskErrorPrefix = (key) => {
 export default function DisksSection({
   vmConfig,
   isCreating,
-  createDisk,
-  onCreateDiskChange,
-  createDisk2,
-  onCreateDisk2Change,
-  cdrom1Path,
-  cdrom2Path,
-  onCdromChange,
+  draft,
+  onDraft,
   busyReason,
 }) {
-  const isStopped = vmConfig.state === 'shutoff' || vmConfig.state === 'nostate' || isCreating;
+  /* Creating, the panel's draft (`draft`: `disk`, `disk2`, the CD-ROM paths) is the only
+   * state; every write goes through `onDraft(update)`. */
+  const setCreateSlot = (slot, update) => onDraft((d) => ({ ...d, [slot]: update(d[slot]) }));
+  const setCdrom = (slot, path, name) => onDraft((d) => ({
+    ...d,
+    [slot === 'sdc' ? 'cdrom1Path' : 'cdrom2Path']: path,
+    [slot === 'sdc' ? 'cdrom1Name' : 'cdrom2Name']: name,
+  }));
+  const cdrom1Path = draft?.cdrom1Path ?? null;
+  const cdrom2Path = draft?.cdrom2Path ?? null;
+  const isStopped = isCreating || !vmLocked(vmConfig.state);
   /* Another operation on this VM (a backup) holds the backend's per-VM lock:
    * every disk / CD-ROM change would be refused with 409 VM_BUSY. */
   const vmBusy = !!busyReason;
@@ -108,16 +114,18 @@ export default function DisksSection({
 
   /* The row commands, named by action and slot (`detach-sdb`, `iso-sdc`), each with its
    * error. They take the VM's lock, so one runs at a time: the rows disable the others
-   * while it runs (`loading`, the one in flight). */
+   * while it runs (`loading`, the one in flight), and the header's Add and Attach too:
+   * the server takes one change to a VM's disks at a time (409 VM_BUSY). */
   const op = useCommand();
   const loading = op.running[0] ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerContext, setPickerContext] = useState(null);
-  /* The disk is snapshotted when the editor opens so a background refresh of
-   * `vmConfig.disks` can't reset the open form; `disk` is null when adding. */
-  const [editor, setEditor] = useState({ open: false, slot: 'sdb', disk: null });
-  /** Create VM: draft for adding sda/sdb from header (new or existing image picked). */
-  const [createDiskDraft, setCreateDiskDraft] = useState(null);
+  /* The disk editor: its slot, and whether it edits the disk there (picked when it
+   * opens) or adds one. */
+  const [editor, setEditor] = useState({ open: false, slot: 'sdb', editing: false });
+  /* The new disk row open in create mode: its slot and starting values. The row is an
+   * input to adding a disk to the draft: it keeps its own values until confirmed. */
+  const [newDiskRow, setNewDiskRow] = useState(null);
 
   const localDisks = (vmConfig.disks || []).filter((d) => d.device === 'disk');
   const cdroms = (vmConfig.disks || []).filter((d) => d.device === 'cdrom');
@@ -129,7 +137,7 @@ export default function DisksSection({
   const sde = cdroms.find((d) => d.slot === 'sde');
 
   const disk =
-    createDisk || {
+    draft?.disk || {
       type: 'none',
       sizeGB: 32,
       bus: 'virtio',
@@ -138,7 +146,7 @@ export default function DisksSection({
       resizeGB: null,
     };
   const disk2 =
-    createDisk2 || {
+    draft?.disk2 || {
       type: 'none',
       sizeGB: 32,
       bus: 'virtio',
@@ -169,7 +177,7 @@ export default function DisksSection({
             ctx.slot === 'sda'
               ? disk?.bus || 'virtio'
               : disk2?.bus || disk?.bus || 'virtio';
-          setCreateDiskDraft({
+          setNewDiskRow({
             slot: ctx.slot,
             mode: 'existing',
             path: imagePath,
@@ -177,13 +185,11 @@ export default function DisksSection({
             resizeGB: null,
             bus,
           });
-        } else if (ctx.slot === 'sda' && onCreateDiskChange) {
-          onCreateDiskChange({ ...disk, type: 'existing', sourcePath: imagePath, sourceName: file.name });
-        } else if (ctx.slot === 'sdb' && onCreateDisk2Change) {
-          onCreateDisk2Change({ ...disk2, type: 'existing', sourcePath: imagePath, sourceName: file.name });
+        } else {
+          setCreateSlot(ctx.slot === 'sda' ? 'disk' : 'disk2', (cur) => ({ ...cur, type: 'existing', sourcePath: imagePath, sourceName: file.name }));
         }
-      } else if (ctx.type === 'cdrom' && ctx.slot && onCdromChange) {
-        onCdromChange(ctx.slot, imagePath, file.name);
+      } else if (ctx.type === 'cdrom' && ctx.slot) {
+        setCdrom(ctx.slot, imagePath, file.name);
       }
       return;
     }
@@ -196,7 +202,7 @@ export default function DisksSection({
 
   function openDiskEditor(slot) {
     const existing = slot === 'sda' ? sda : sdb;
-    setEditor({ open: true, slot, disk: existing || null });
+    setEditor({ open: true, slot, editing: !!existing });
   }
 
   function handlePlusCdrom() {
@@ -214,91 +220,89 @@ export default function DisksSection({
   }
 
   /* The first free block-disk slot — sda on a VM created without disks (or
-   * whose sda was unmounted), else sdb. The button is disabled, not hidden,
-   * while the VM runs. */
+   * whose sda was unmounted), else sdb. The button is disabled (not hidden)
+   * while the VM is not shut off. */
   const freeDiskSlot = !sda ? 'sda' : !sdb ? 'sdb' : null;
 
   const canAddFirstCreateDisk =
-    !!isCreating && disk.type === 'none' && !createDiskDraft;
+    !!isCreating && disk.type === 'none' && !newDiskRow;
   const canAddSecondCreateDisk =
     !!isCreating &&
     disk.type !== 'none' &&
     disk2.type === 'none' &&
-    !createDiskDraft;
+    !newDiskRow;
 
-  function confirmCreateDiskDraft() {
-    if (!createDiskDraft) return;
-    const d = createDiskDraft;
+  function confirmNewDisk(d) {
     const baseBus = d.bus || 'virtio';
     if (d.slot === 'sda') {
       if (d.mode === 'new') {
-        onCreateDiskChange?.({
+        setCreateSlot('disk', () => ({
           type: 'new',
           sizeGB: Math.max(1, parseInt(d.sizeGB, 10) || 32),
           bus: baseBus,
           sourcePath: null,
           sourceName: null,
           resizeGB: null,
-        });
+        }));
       } else {
-        onCreateDiskChange?.({
+        setCreateSlot('disk', () => ({
           type: 'existing',
           sourcePath: d.path,
           sourceName: d.name,
           bus: baseBus,
           resizeGB: d.resizeGB != null && d.resizeGB > 0 ? Number(d.resizeGB) : null,
-        });
+        }));
       }
     } else if (d.slot === 'sdb') {
       if (d.mode === 'new') {
-        onCreateDisk2Change?.({
+        setCreateSlot('disk2', () => ({
           type: 'new',
           sizeGB: Math.max(1, parseInt(d.sizeGB, 10) || 32),
           bus: baseBus,
           sourcePath: null,
           sourceName: null,
           resizeGB: null,
-        });
+        }));
       } else {
-        onCreateDisk2Change?.({
+        setCreateSlot('disk2', () => ({
           type: 'existing',
           sourcePath: d.path,
           sourceName: d.name,
           bus: baseBus,
           resizeGB: d.resizeGB != null && d.resizeGB > 0 ? Number(d.resizeGB) : null,
-        });
+        }));
       }
     }
-    setCreateDiskDraft(null);
+    setNewDiskRow(null);
   }
 
   function clearCreateDiskSlot(slot) {
     if (slot === 'sda') {
-      onCreateDiskChange?.({
+      setCreateSlot('disk', (cur) => ({
         type: 'none',
         sizeGB: 32,
-        bus: disk.bus || 'virtio',
+        bus: cur?.bus || 'virtio',
         sourcePath: null,
         sourceName: null,
         resizeGB: null,
-      });
-      onCreateDisk2Change?.({
+      }));
+      setCreateSlot('disk2', () => ({
         type: 'none',
         sizeGB: 32,
         bus: 'virtio',
         sourcePath: null,
         sourceName: null,
         resizeGB: null,
-      });
+      }));
     } else {
-      onCreateDisk2Change?.({
+      setCreateSlot('disk2', (cur) => ({
         type: 'none',
         sizeGB: 32,
-        bus: disk2.bus || 'virtio',
+        bus: cur?.bus || 'virtio',
         sourcePath: null,
         sourceName: null,
         resizeGB: null,
-      });
+      }));
     }
   }
 
@@ -310,7 +314,7 @@ export default function DisksSection({
               <button
                 type="button"
                 onClick={() =>
-                  setCreateDiskDraft({
+                  setNewDiskRow({
                     slot: 'sda',
                     mode: 'new',
                     sizeGB: 32,
@@ -341,7 +345,7 @@ export default function DisksSection({
               <button
                 type="button"
                 onClick={() =>
-                  setCreateDiskDraft({
+                  setNewDiskRow({
                     slot: 'sdb',
                     mode: 'new',
                     sizeGB: 32,
@@ -390,7 +394,7 @@ export default function DisksSection({
             <button
               type="button"
               onClick={() => openDiskEditor(freeDiskSlot)}
-              disabled={!isStopped || vmBusy}
+              disabled={!isStopped || vmBusy || !!loading}
               className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
               title={busyReason || (isStopped ? `Add a disk as ${freeDiskSlot} (new or from the library)` : 'Stop the VM to add a disk')}
               aria-label="Add disk"
@@ -402,7 +406,7 @@ export default function DisksSection({
           <button
             type="button"
             onClick={handlePlusCdrom}
-            disabled={!canAddAnotherCdrom() || vmBusy}
+            disabled={!canAddAnotherCdrom() || vmBusy || !!loading}
             className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
             title={busyReason || 'Attach ISO (opens image library)'}
             aria-label="Attach ISO"
@@ -417,7 +421,7 @@ export default function DisksSection({
     const showCreateEmptyHint =
       disk.type === 'none' &&
       disk2.type === 'none' &&
-      !createDiskDraft;
+      !newDiskRow;
     return (
       <SectionCard
         title="Disks"
@@ -459,35 +463,35 @@ export default function DisksSection({
                   </td>
                 </tr>
               )}
-              {createDiskDraft?.slot === 'sda' && (
-                <CreateDiskDraftTableRow
-                  draft={createDiskDraft}
-                  setDraft={setCreateDiskDraft}
-                  onConfirm={confirmCreateDiskDraft}
-                  onCancel={() => setCreateDiskDraft(null)}
+              {newDiskRow?.slot === 'sda' && (
+                <NewDiskRow
+                  key={`${newDiskRow.mode}:${newDiskRow.path ?? ''}`}
+                  initial={newDiskRow}
+                  onConfirm={confirmNewDisk}
+                  onCancel={() => setNewDiskRow(null)}
                 />
               )}
               {disk.type !== 'none' && (
                 <CreateCommittedDiskRow
                   slot="sda"
                   disk={disk}
-                  onChange={onCreateDiskChange}
+                  onChange={(changes) => setCreateSlot('disk', (cur) => ({ ...cur, ...changes }))}
                   onRemove={() => clearCreateDiskSlot('sda')}
                 />
               )}
-              {createDiskDraft?.slot === 'sdb' && (
-                <CreateDiskDraftTableRow
-                  draft={createDiskDraft}
-                  setDraft={setCreateDiskDraft}
-                  onConfirm={confirmCreateDiskDraft}
-                  onCancel={() => setCreateDiskDraft(null)}
+              {newDiskRow?.slot === 'sdb' && (
+                <NewDiskRow
+                  key={`${newDiskRow.mode}:${newDiskRow.path ?? ''}`}
+                  initial={newDiskRow}
+                  onConfirm={confirmNewDisk}
+                  onCancel={() => setNewDiskRow(null)}
                 />
               )}
               {disk2.type !== 'none' && (
                 <CreateCommittedDiskRow
                   slot="sdb"
                   disk={disk2}
-                  onChange={onCreateDisk2Change}
+                  onChange={(changes) => setCreateSlot('disk2', (cur) => ({ ...cur, ...changes }))}
                   onRemove={() => clearCreateDiskSlot('sdb')}
                 />
               )}
@@ -495,14 +499,14 @@ export default function DisksSection({
                 <CreateCdromTableRow
                   slot="sdc"
                   path={cdrom1Path}
-                  onClear={() => onCdromChange?.('sdc', null, null)}
+                  onClear={() => setCdrom('sdc', null, null)}
                 />
               )}
               {cdrom2Path && (
                 <CreateCdromTableRow
                   slot="sdd"
                   path={cdrom2Path}
-                  onClear={() => onCdromChange?.('sdd', null, null)}
+                  onClear={() => setCdrom('sdd', null, null)}
                 />
               )}
             </tbody>
@@ -615,9 +619,9 @@ export default function DisksSection({
         open={editor.open}
         vmName={vmName}
         slot={editor.slot}
-        disk={editor.disk}
+        editing={editor.editing}
         defaultBus={sda?.bus || 'virtio'}
-        onClose={() => setEditor({ open: false, slot: 'sdb', disk: null })}
+        onClose={() => setEditor({ open: false, slot: 'sdb', editing: false })}
       />
 
       <ImageLibraryModal
@@ -783,22 +787,24 @@ function CdromRowActions({ slot, busyReason, loading, onSwap, onEject }) {
   );
 }
 
-/** Create VM: confirm/cancel row after choosing New or picking an image (defer). */
-function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
-  const slot = draft.slot;
+/** Create VM: confirm/cancel row after choosing New or picking an image (defer). Its
+ *  values are an input to adding the disk: the row's own, handed to `onConfirm`. */
+function NewDiskRow({ initial, onConfirm, onCancel }) {
+  const [values, setValues] = useState(initial);
+  const slot = values.slot;
   return (
     <>
       <tr className={dataTableInteractiveRowClass}>
         <DataTableTd dense className="text-xs font-semibold text-text-secondary">{slot}</DataTableTd>
         <DataTableTd dense className="text-xs text-text-primary">
-          {draft.mode === 'new' ? (
+          {values.mode === 'new' ? (
             <label className="flex items-center gap-1 text-[11px] text-text-secondary">
               <input
                 type="number"
                 min={1}
-                value={draft.sizeGB}
+                value={values.sizeGB}
                 onChange={(e) =>
-                  setDraft((d) =>
+                  setValues((d) =>
                     d && d.mode === 'new'
                       ? { ...d, sizeGB: parseInt(e.target.value, 10) || 32 }
                       : d,
@@ -814,10 +820,10 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
                 type="number"
                 min={1}
                 placeholder="optional"
-                value={draft.resizeGB ?? ''}
+                value={values.resizeGB ?? ''}
                 onChange={(e) => {
                   const v = e.target.value;
-                  setDraft((d) =>
+                  setValues((d) =>
                     d?.mode === 'existing' ? { ...d, resizeGB: v === '' ? null : parseFloat(v) } : d,
                   );
                 }}
@@ -828,21 +834,21 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
           )}
         </DataTableTd>
         <DataTableTd dense className={`${imageColClass} text-xs text-text-primary`}>
-          {draft.mode === 'existing' ? (
-            <span className="truncate block" title={draft.path}>
-              {draft.name}
+          {values.mode === 'existing' ? (
+            <span className="truncate block" title={values.path}>
+              {values.name}
             </span>
           ) : (
             <span className="text-text-muted">—</span>
           )}
         </DataTableTd>
         <DataTableTd dense className="text-xs text-text-muted">
-          {draft.mode === 'existing' ? guessImageTypeFromFileName(draft.name) : '—'}
+          {values.mode === 'existing' ? guessImageTypeFromFileName(values.name) : '—'}
         </DataTableTd>
         <DataTableTd dense>
           <select
-            value={draft.bus}
-            onChange={(e) => setDraft((d) => (d ? { ...d, bus: e.target.value } : d))}
+            value={values.bus}
+            onChange={(e) => setValues((d) => (d ? { ...d, bus: e.target.value } : d))}
             className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
           >
             <option value="virtio">VirtIO</option>
@@ -855,9 +861,9 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
           <DataTableRowActions forceVisible>
             <button
               type="button"
-              onClick={onConfirm}
+              onClick={() => onConfirm(values)}
               className={rowActionIconBtnPrimary}
-              title={draft.mode === 'new' ? 'Add disk' : 'Add disk from image'}
+              title={values.mode === 'new' ? 'Add disk' : 'Add disk from image'}
               aria-label="Confirm"
             >
               <Check size={14} aria-hidden />
@@ -912,7 +918,7 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
                 type="number"
                 min={1}
                 value={sizeGB}
-                onChange={(e) => onChange?.({ ...disk, sizeGB: parseInt(e.target.value, 10) || 32 })}
+                onChange={(e) => onChange?.({ sizeGB: parseInt(e.target.value, 10) || 32 })}
                 className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
               />
               <span>GB</span>
@@ -926,7 +932,6 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
                 value={resizeGB ?? ''}
                 onChange={(e) =>
                   onChange?.({
-                    ...disk,
                     resizeGB: e.target.value === '' ? null : parseFloat(e.target.value),
                   })
                 }
@@ -943,7 +948,7 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
         <DataTableTd dense>
           <select
             value={bus}
-            onChange={(e) => onChange?.({ ...disk, bus: e.target.value })}
+            onChange={(e) => onChange?.({ bus: e.target.value })}
             className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
           >
             <option value="virtio">VirtIO</option>

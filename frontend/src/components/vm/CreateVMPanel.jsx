@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
@@ -13,6 +13,7 @@ import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.j
 import CloudInitSection from '../sections/CloudInitSection.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
+import { createVmBody, defaultVmDraft, draftProblem, generalProblems, takesCloudInit, withGeneral } from './vmDraft.js';
 
 const NO_BRIDGES = [];
 
@@ -27,39 +28,12 @@ const STEP_LABELS = {
   error: 'Error',
 };
 
-const defaultForm = () => ({
-  name: '',
-  osType: 'Linux',
-  osVariant: 'generic',
-  vcpus: 2,
-  memoryMiB: 2048,
-  autostart: false,
-  firmware: 'uefi',
-  machineType: 'q35',
-  cpuMode: 'host-passthrough',
-  videoDriver: 'virtio',
-  graphicsType: 'vnc',
-  bootOrder: ['hd', 'cdrom', 'network'],
-  bootMenu: true,
-  memBalloon: true,
-  guestAgent: true,
-  vtpm: false,
-  virtioRng: true,
-  nestedVirt: false,
-  nics: [{ type: 'bridge', source: '', model: 'virtio', mac: '' }],
-  disk: { type: 'none', sizeGB: 32, bus: 'virtio', sourcePath: null, sourceName: null, resizeGB: null },
-  disk2: { type: 'none', sizeGB: 32, bus: 'virtio', sourcePath: null, sourceName: null, resizeGB: null },
-  cdrom1Path: null,
-  cdrom2Path: null,
-  cdrom1Name: null,
-  cdrom2Name: null,
-  cloudInit: { enabled: true, hostname: '', username: 'wisp', growPartition: true, packageUpgrade: true, installQemuGuestAgent: true, installAvahiDaemon: true },
-});
-
 export default function CreateVMPanel() {
   const navigate = useNavigate();
 
-  const [form, setForm] = useState(defaultForm);
+  /* The only state of the VM being created (vmDraft.js): each section reads and writes
+   * its part, and the request is made from it once, at Create. */
+  const [draft, setDraft] = useState(defaultVmDraft);
   const bridges = useRecord(RECORD.HOST_BRIDGES).data ?? NO_BRIDGES;
   /* The create: a job, busy until it ended; its progress shows by the Create button. */
   const create = useCommand();
@@ -76,132 +50,29 @@ export default function CreateVMPanel() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  /* The first NIC takes the first bridge once the bridges are known. With none (or
-   * none loaded), no invented bridge: an empty source lets the server use its default. */
-  useEffect(() => {
-    if (!bridges.length) return;
-    setForm((prev) => {
-      if (!prev.nics?.length || prev.nics[0].source) return prev;
-      const nics = prev.nics.map((nic, i) => (i === 0 ? { ...nic, source: bridges[0] } : nic));
-      return { ...prev, nics };
-    });
-  }, [bridges]);
-
-  const vmConfig = useCallback(() => ({
-    name: form.name,
+  /* What the sections show of the VM besides their own values. */
+  const config = {
+    name: draft.general.name,
     state: 'creating',
-    osCategory: form.osType === 'Windows' ? 'windows' : 'linux',
-    osType: form.osType,
-    osVariant: form.osVariant,
-    vcpus: form.vcpus,
-    memoryMiB: form.memoryMiB,
-    autostart: form.autostart,
-    firmware: form.firmware,
-    machineType: form.machineType,
-    cpuMode: form.cpuMode,
-    videoModel: form.videoDriver,
-    graphics: { type: form.graphicsType },
-    bootOrder: form.bootOrder,
-    bootMenu: form.bootMenu,
-    memBalloon: form.memBalloon,
-    guestAgent: form.guestAgent,
-    vtpm: form.vtpm,
-    virtioRng: form.virtioRng,
-    nestedVirt: form.nestedVirt,
-    nics: form.nics,
-    disks: [],
-    features: form.osType === 'Windows' ? { hyperv: true } : {},
-  }), [form]);
+    features: draft.general.osType === 'Windows' ? { hyperv: true } : {},
+  };
 
-  const handleGeneralSave = useCallback((changes) => {
-    setForm((prev) => ({ ...prev, ...changes }));
-    return Promise.resolve({ requiresRestart: false });
-  }, []);
+  /* A section's writes: functional updates of its part of the draft. */
+  const part = (key) => (update) => setDraft((d) => ({ ...d, [key]: update(d[key]) }));
+  const onGeneral = (update) => setDraft((d) => withGeneral(d, update(d.general)));
 
-  const handleAdvancedSave = useCallback((changes) => {
-    setForm((prev) => ({ ...prev, ...changes }));
-    return Promise.resolve({ requiresRestart: false });
-  }, []);
-
-  const handleCdromChange = useCallback((slot, path, name) => {
-    setForm((prev) => ({
-      ...prev,
-      [slot === 'sdc' ? 'cdrom1Path' : 'cdrom2Path']: path,
-      [slot === 'sdc' ? 'cdrom1Name' : 'cdrom2Name']: name,
-    }));
-  }, []);
-
-  const handleCloudInitChange = useCallback((c) => {
-    setForm((prev) => ({ ...prev, cloudInit: c }));
-  }, []);
+  /* A CPU or RAM the server refuses shows its problem under its field and keeps Create
+   * off, with the reason; what has no field of its own (a name, a disk image) is said
+   * when Create is clicked. */
+  const fieldProblem = Object.values(generalProblems(draft.general))[0] ?? null;
 
   const handleCreate = () => {
-    const name = (form.name || '').trim();
-    if (!name) {
-      create.fail('VM name is required');
+    const problem = draftProblem(draft);
+    if (problem) {
+      create.fail(problem);
       return;
     }
-    if (form.disk?.type === 'existing' && !form.disk?.sourcePath) {
-      create.fail('Please select an existing disk image');
-      return;
-    }
-    if (form.disk2?.type === 'existing' && !form.disk2?.sourcePath) {
-      create.fail('Please select an existing disk image for the second disk');
-      return;
-    }
-
-    const spec = {
-      name,
-      osType: form.osType,
-      osVariant: form.osVariant ?? 'generic',
-      vcpus: form.vcpus,
-      memoryMiB: form.memoryMiB,
-      autostart: form.autostart,
-      firmware: form.firmware,
-      machineType: form.machineType,
-      cpuMode: form.cpuMode,
-      videoDriver: form.videoDriver,
-      graphicsType: form.graphicsType,
-      bootOrder: form.bootOrder,
-      bootMenu: form.bootMenu,
-      memBalloon: form.memBalloon,
-      guestAgent: form.guestAgent,
-      vtpm: form.vtpm,
-      virtioRng: form.virtioRng,
-      nestedVirt: form.nestedVirt,
-      nics: form.nics.map((n) => ({
-        type: n.type || 'bridge',
-        source: n.source || bridges[0] || undefined,
-        model: n.model || 'virtio',
-        mac: n.mac || undefined,
-      })),
-      disk:
-        form.disk?.type === 'none'
-          ? { type: 'none', bus: form.disk?.bus || 'virtio' }
-          : {
-              type: form.disk?.type || 'new',
-              sizeGB: form.disk?.sizeGB ?? 32,
-              bus: form.disk?.bus || 'virtio',
-              sourcePath: form.disk?.sourcePath || undefined,
-              resizeGB: form.disk?.resizeGB != null && form.disk.resizeGB > 0 ? form.disk.resizeGB : undefined,
-            },
-      disk2: form.disk2?.type && form.disk2.type !== 'none' ? {
-        type: form.disk2.type,
-        sizeGB: form.disk2.sizeGB ?? 32,
-        bus: form.disk2.bus || 'virtio',
-        sourcePath: form.disk2.type === 'existing' ? form.disk2.sourcePath : undefined,
-        resizeGB: form.disk2.resizeGB != null && form.disk2.resizeGB > 0 ? form.disk2.resizeGB : undefined,
-      } : undefined,
-      cdrom1Path: form.cdrom1Path || undefined,
-      cdrom2Path: form.cdrom2Path || undefined,
-      cloudInit:
-        form.osType !== 'Windows' &&
-        form.cloudInit &&
-        (form.disk?.type === 'existing' || form.disk2?.type === 'existing')
-          ? form.cloudInit
-          : undefined,
-    };
-
+    const spec = createVmBody(draft, bridges);
     create.run(() => createVM(spec), {
       job: true,
       onAck: ({ jobId }) => setCreateJobId(jobId),
@@ -211,7 +82,6 @@ export default function CreateVMPanel() {
     }).then(() => setCreateJobId(null));
   };
 
-  const config = vmConfig();
   const displayStep = activeCreate?.step ?? (creating ? 'validating' : null);
   const displayPercent = activeCreate?.percent ?? null;
 
@@ -219,51 +89,13 @@ export default function CreateVMPanel() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-1 flex-col overflow-y-auto px-6 py-5">
         <div className="space-y-5">
-          <GeneralSection vmConfig={config} isCreating onSave={handleGeneralSave} onFormChange={(changes) => setForm((prev) => {
-            const next = { ...prev, ...changes };
-            if (changes.osType === 'Windows') {
-              next.vtpm = true;
-              next.vcpus = 4;
-              next.memoryMiB = 8192;
-              next.firmware = 'uefi-secure';
-              next.disk = { ...(prev.disk || {}), bus: 'scsi' };
-              next.disk2 = { ...(prev.disk2 || {}), bus: 'scsi' };
-            } else if (changes.osType === 'Linux') {
-              next.vcpus = 2;
-              next.memoryMiB = 2048;
-              next.firmware = 'uefi';
-              next.disk = { ...(prev.disk || {}), bus: 'virtio' };
-              next.disk2 = { ...(prev.disk2 || {}), bus: 'virtio' };
-            }
-            return next;
-          })} />
-          <DisksSection
-            vmConfig={config}
-            isCreating
-            createDisk={form.disk}
-            onCreateDiskChange={(disk) => setForm((prev) => ({ ...prev, disk }))}
-            createDisk2={form.disk2}
-            onCreateDisk2Change={(disk2) => setForm((prev) => ({ ...prev, disk2 }))}
-            cdrom1Path={form.cdrom1Path}
-            cdrom2Path={form.cdrom2Path}
-            onCdromChange={handleCdromChange}
-          />
-          {form.osType !== 'Windows' &&
-            (form.disk?.type === 'existing' || form.disk2?.type === 'existing') && (
-            <CloudInitSection
-              vmConfig={{ ...config, name: form.name }}
-              isCreating
-              initialCloudInit={form.cloudInit}
-              onCloudInitChange={handleCloudInitChange}
-            />
+          <GeneralSection vmConfig={config} isCreating draft={draft.general} onDraft={onGeneral} />
+          <DisksSection vmConfig={config} isCreating draft={draft.disks} onDraft={part('disks')} />
+          {takesCloudInit(draft) && (
+            <CloudInitSection vmConfig={config} isCreating draft={draft.cloudInit} onDraft={part('cloudInit')} />
           )}
-          <VmNetworkInterfacesSection
-            vmConfig={config}
-            isCreating
-            onSave={handleAdvancedSave}
-            onFormChange={(changes) => setForm((prev) => ({ ...prev, ...changes }))}
-          />
-          <AdvancedSection vmConfig={config} isCreating onSave={handleAdvancedSave} onFormChange={(changes) => setForm((prev) => ({ ...prev, ...changes }))} />
+          <VmNetworkInterfacesSection vmConfig={config} isCreating draft={draft.nics} onDraft={part('nics')} />
+          <AdvancedSection vmConfig={config} isCreating draft={draft.advanced} onDraft={part('advanced')} />
         </div>
 
         <ErrorBanner className="mt-4" error={create.error} onDismiss={create.dismiss} />
@@ -278,7 +110,8 @@ export default function CreateVMPanel() {
           <button
             type="button"
             onClick={handleCreate}
-            disabled={creating}
+            disabled={creating || !!fieldProblem}
+            title={fieldProblem ?? undefined}
             className="flex items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-150"
           >
             {creating && <Loader2 size={18} className="animate-spin" />}
