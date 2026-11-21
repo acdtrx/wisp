@@ -15,7 +15,9 @@ export default function Software({ onRequestRestart }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
-        {settingsRecord.data != null && <RecordError record={settingsRecord} what="settings" />}
+        {/* The settings carry the update channel: their failure is this page's notice,
+            before they loaded (with a Retry) or over them. */}
+        <RecordError record={settingsRecord} what="settings" />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Suspense fallback={null}>
             <WispUpdateSection />
