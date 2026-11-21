@@ -8,13 +8,13 @@ their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
 **The cloud-init hostname falls back to the VM name.** An empty hostname field means the
-VM's name, and Save or Create sends it (`cloudInitSent` in
-`frontend/src/components/sections/CloudInitSection.jsx`, `createVmBody` in
-`frontend/src/components/vm/vmDraft.js`), but a VM name may hold `.` or `_` or run to
-128 characters, which the hostname schema (an RFC
-1123 label, at most 63) refuses, so saving answers 400 until the user edits the field
-(found 2026-11-20, with the 128-character VM names). **Revisit trigger:** a VM named
-with a dot, an underscore or past 63 characters gets cloud-init.
+VM's name, and Create sends it (`createVmBody` in `frontend/src/components/vm/vmDraft.js`),
+but a VM name may hold `.` or `_` or run to 128 characters, which the hostname schema (an
+RFC 1123 label, at most 63) refuses, so creating answers 400 until the user types a host
+name (found 2026-11-20, with the 128-character VM names). The VM page's first boot setup
+form says so and keeps Save off instead (`setupProblem` in
+`frontend/src/components/vm/firstBootSetup.js`). **Revisit trigger:** a VM named with a
+dot, an underscore or past 63 characters gets cloud-init at create.
 
 **No check refuses a duplicate JSX prop.** A component given the same prop twice keeps
 the last one silently: that is how a doubled `saveDisabledReason` on the VM General card
@@ -24,8 +24,8 @@ is installed (`eslint-plugin-react`'s `jsx-no-duplicate-props` would be one, a n
 dependency). **Revisit trigger:** another duplicate prop found in review or as a bug.
 
 **The cloud-init form's `packageUpgrade` default differs by path.** Configuring a VM's
-cloud-init starts it off (`CLOUD_INIT_DEFAULTS` in
-`frontend/src/components/sections/CloudInitSection.jsx`); creating a VM starts it on
+first boot setup starts it off (`setupForm` in
+`frontend/src/components/vm/firstBootSetup.js`); creating a VM starts it on
 (`defaultVmDraft` in `frontend/src/components/vm/vmDraft.js`). One default would be
 the user's pick (found 2026-11-21). **Revisit trigger:** a guest configured with package
 upgrades off, or on, that the user did not expect.
