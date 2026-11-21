@@ -19,17 +19,20 @@ export const serverForm = (settings) => ({ serverName: settings.serverName ?? ''
 /** No name is null (the server's default name); no URL is null (the default announcement). */
 export const serverSent = (form) => ({ serverName: trim(form.serverName) || null, advertisedUrl: trim(form.advertisedUrl) || null });
 
-export function serverProblem(form) {
-  const url = trim(form.advertisedUrl);
+/** Why a URL field's value is no http or https URL (`what` names it), or null; empty is fine. */
+function urlProblem(value, what) {
+  const url = trim(value);
   if (!url) return null;
   let parsed;
   try {
     parsed = new URL(url);
   } catch {
-    return 'The advertised URL is a full URL: http://… or https://…';
+    return `The ${what} is a full URL: http://… or https://…`;
   }
-  return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? null : 'The advertised URL starts with http:// or https://';
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? null : `The ${what} starts with http:// or https://`;
 }
+
+export const serverProblem = (form) => urlProblem(form.advertisedUrl, 'advertised URL');
 
 // ─── Storage paths ──────────────────────────────
 
@@ -119,9 +122,8 @@ export function secretOwed(form, settings) {
     && (trim(form.issuer) !== trim(oidc.issuer) || trim(form.clientId) !== trim(oidc.clientId));
 }
 
-export const oidcProblem = (form, settings) => (secretOwed(form, settings) && !form.clientSecret
-  ? 'Re-enter the client secret when changing the issuer or client ID.'
-  : null);
+export const oidcProblem = (form, settings) => urlProblem(form.issuer, 'issuer URL')
+  ?? (secretOwed(form, settings) && !form.clientSecret ? 'Re-enter the client secret when changing the issuer or client ID.' : null);
 
 /** Why the SSO switch cannot turn on, or null: it needs the issuer, client ID and secret stored. */
 export function ssoSwitchReason(settings) {

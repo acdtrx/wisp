@@ -62,6 +62,10 @@ test('single sign-on: the secret write-only and owed again for a new issuer or c
   assert.match(oidcProblem(moved, SETTINGS), /Re-enter the client secret/);
   assert.equal(oidcProblem({ ...moved, clientSecret: 'new' }, SETTINGS), null);
   assert.equal(oidcProblem(start, SETTINGS), null);
+  // An issuer that is no http or https URL is refused; an empty one is not (it turns SSO off).
+  assert.match(oidcProblem({ ...start, issuer: 'id.example.com' }, SETTINGS), /issuer URL is a full URL/);
+  assert.match(oidcProblem({ ...start, issuer: 'ftp://id.example.com', clientSecret: 'x' }, SETTINGS), /issuer URL starts with http/);
+  assert.equal(oidcProblem({ ...start, issuer: '' }, SETTINGS), null);
   assert.equal(ssoSwitchReason(SETTINGS), null);
   assert.match(ssoSwitchReason({ oidc: { enabled: false, issuer: 'https://x', clientId: 'w', hasClientSecret: false } }), /first/);
   // Turning it off is always allowed.
