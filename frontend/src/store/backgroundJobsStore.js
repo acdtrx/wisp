@@ -165,9 +165,10 @@ function followJob(jobId) {
 /**
  * Follow a job by the jobId its ack named, listed by the topic yet or not:
  * resolve with its result, or reject with its error, an ApiError as `api()`
- * throws (`JOB_GONE` when the server no longer knows the job). A cancelled job
- * (an interruptible one, cut at shutdown) resolves with no result. The job runs
- * on the server whether or not anyone waits for it.
+ * throws: how the job ended when it did not end done — its error event,
+ * `JOB_CANCELLED` (an interruptible job cut at shutdown: not a success) or
+ * `JOB_GONE` (the server no longer knows the job). The job runs on the server
+ * whether or not anyone waits for it.
  * @param {string} jobId
  * @returns {Promise<unknown>}
  */
@@ -183,7 +184,7 @@ export function awaitJob(jobId) {
           resolve(progress.result);
           return true;
         case 'cancelled':
-          resolve(undefined);
+          reject(new ApiError({ code: CLIENT_CODES.JOB_CANCELLED, detail: 'The job was cancelled before it finished' }));
           return true;
         case 'error':
           reject(progress.error);
@@ -201,6 +202,22 @@ export function awaitJob(jobId) {
 }
 
 /**
+ * The jobs running now, as the tray shows them: listed by the topic and not yet ended,
+ * a terminal event already received counting as the end. The one answer to "which jobs
+ * are running" (docs/FRONTEND-RULES.md, Data).
+ * @param {Record<string, BackgroundJobRow>} jobs
+ * @returns {BackgroundJobRow[]}
+ */
+export function runningJobs(jobs) {
+  return Object.values(jobs).filter((j) => j.status === 'running');
+}
+
+/** `runningJobs` for a component: their count (a stable value to select). */
+export function useRunningJobCount() {
+  return useBackgroundJobsStore((s) => runningJobs(s.jobs).length);
+}
+
+/**
  * The running job that holds a workload (its subject), or null: while it runs,
  * the server refuses the workload's other operations with its busy error.
  * @param {Record<string, BackgroundJobRow>} jobs
@@ -209,9 +226,7 @@ export function awaitJob(jobId) {
  */
 export function workloadBusyJob(jobs, { type, name }) {
   if (!name) return null;
-  return Object.values(jobs).find(
-    (j) => j.status === 'running' && j.subject?.type === type && j.subject?.name === name,
-  ) ?? null;
+  return runningJobs(jobs).find((j) => j.subject?.type === type && j.subject?.name === name) ?? null;
 }
 
 /** `workloadBusyJob` for a component: re-renders when that workload's busy job changes. */
@@ -231,8 +246,8 @@ const BACKUP_KINDS = new Set([JOB_KIND.VM_BACKUP, JOB_KIND.CONTAINER_BACKUP, JOB
  */
 export function workloadBackupJob(jobs, { type, name }) {
   if (!name) return null;
-  return Object.values(jobs).find(
-    (j) => j.status === 'running' && BACKUP_KINDS.has(j.kind) && j.subject?.type === type && j.subject?.name === name,
+  return runningJobs(jobs).find(
+    (j) => BACKUP_KINDS.has(j.kind) && j.subject?.type === type && j.subject?.name === name,
   ) ?? null;
 }
 

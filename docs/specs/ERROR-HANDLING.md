@@ -449,6 +449,7 @@ The client gives the errors it makes itself codes of its own, never sent by the 
 | `UPLOAD_STALLED` | The upload made no progress for its idle bound |
 | `UPLOAD_CANCELLED` | The upload was cancelled |
 | `JOB_GONE` | The job a wait follows is gone: its progress stream answers 404 (it expired, or never existed). A dropped stream reconnects and replays instead |
+| `JOB_CANCELLED` | The job a wait follows was cancelled before it finished (an interruptible job cut at shutdown): the command did not succeed (settled 2026-11-21) |
 
 ### Error bar
 

@@ -22,6 +22,8 @@ export const CLIENT_CODES = Object.freeze({
   UPLOAD_CANCELLED: 'UPLOAD_CANCELLED',
   /** The server no longer knows the job a wait follows (it expired, or never existed). */
   JOB_GONE: 'JOB_GONE',
+  /** The job a wait follows was cancelled before it finished (cut at shutdown): not a success. */
+  JOB_CANCELLED: 'JOB_CANCELLED',
 });
 
 export class ApiError extends Error {

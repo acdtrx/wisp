@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ListTodo } from 'lucide-react';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { runningJobs, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
 
@@ -58,7 +58,7 @@ export default function BackgroundJobsIndicator() {
   const close = useCallback(() => setOpen(false), []);
 
   const list = Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt);
-  const running = list.filter((j) => j.status === 'running').length;
+  const running = runningJobs(jobs).length;
 
   /* Nothing to open: no row, and no stream error to show. */
   const isEmpty = list.length === 0 && !streamError;

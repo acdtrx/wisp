@@ -140,7 +140,7 @@ test("a job's error event becomes an ApiError on its row, and awaitJob rejects w
   assert.equal(error, job.error);
 });
 
-test('a cancelled job ends its row with no error, and awaitJob resolves with no result', async () => {
+test('a cancelled job ends its row with no error, and awaitJob fails it as cancelled', async () => {
   const send = await connectTopic();
   await send([row('c1', { kind: JOB_KIND.OS_UPDATE_CHECK })]);
   const outcome = awaitJob('c1').then((value) => ({ value }), (error) => ({ error }));
@@ -152,7 +152,9 @@ test('a cancelled job ends its row with no error, and awaitJob resolves with no 
   const job = store.getState().jobs.c1;
   assert.equal(job.status, 'cancelled');
   assert.equal(job.error, null);
-  assert.deepEqual(await outcome, { value: undefined });
+  const { error } = await outcome;
+  assert.equal(error.code, 'JOB_CANCELLED');
+  assert.match(error.detail, /cancelled/);
 });
 
 test('a dropped progress stream reconnects and replays; the wait goes on', async () => {
