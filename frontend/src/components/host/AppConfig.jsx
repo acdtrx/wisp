@@ -3,6 +3,7 @@ import Toggle from '../shared/Toggle.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
 import OidcSettings from '../settings/OidcSettings.jsx';
 import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
+import SshKeysSettings from '../settings/SshKeysSettings.jsx';
 import { updateSettings } from '../../api/settings.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -122,6 +123,8 @@ export default function AppConfig() {
           )}
         </RecordGate>
       </SectionCard>
+
+      <SshKeysSettings />
 
       <OidcSettings />
 

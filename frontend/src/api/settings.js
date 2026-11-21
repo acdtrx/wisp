@@ -14,6 +14,26 @@ export async function updateOidcSettings(body) {
   await api('/api/settings/oidc', { method: 'PATCH', body });
 }
 
+/** Answers `201 { id }`: the key arrives with the settings (the `settings` cue). */
+export function addSshKey(body) {
+  return api('/api/settings/ssh-keys', { method: 'POST', body });
+}
+
+/** Answers `201 { added, alreadyListed }`: the new keys' ids, and how many were listed already. */
+export function importGithubKeys(user) {
+  return api('/api/settings/ssh-keys/github', { method: 'POST', body: { user } });
+}
+
+/** `{ name }`, `{ default }` or both. Answers 204, like `addSshKey`. */
+export async function updateSshKey(id, body) {
+  await api(`/api/settings/ssh-keys/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+}
+
+/** Answers 204. No VM changes: each keeps its own copy of its keys. */
+export async function removeSshKey(id) {
+  await api(`/api/settings/ssh-keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export function getMountStatus({ signal } = {}) {
   return api('/api/host/mounts/status', { signal });
 }

@@ -12,10 +12,10 @@ const VARIANT = {
  * An action of a group or of one of its rows: an icon (an Add pairs a `Plus` with the
  * kind it adds, `kindIcon`), named by `label` on hover and to a screen reader. A
  * disabled action says why in `reason`, shown in its place; `busy` while its command
- * runs.
+ * runs. `pressed` (true or false) makes it a toggle: its icon filled while on.
  */
 export default function GroupAction({
-  icon: Icon, kindIcon: KindIcon, label, onClick, disabled = false, reason, busy = false, variant = 'plain',
+  icon: Icon, kindIcon: KindIcon, label, onClick, disabled = false, reason, busy = false, variant = 'plain', pressed,
 }) {
   const off = disabled || !!reason || busy;
   const name = reason ? `${label}: ${reason}` : label;
@@ -26,11 +26,12 @@ export default function GroupAction({
       disabled={off}
       title={name}
       aria-label={name}
-      className={`${BASE} ${VARIANT[variant]}`}
+      aria-pressed={pressed}
+      className={`${BASE} ${VARIANT[variant]}${pressed ? ' text-accent-text' : ''}`}
     >
       {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : (
         <span className="inline-flex items-center">
-          <Icon size={KindIcon ? 12 : 15} aria-hidden />
+          <Icon size={KindIcon ? 12 : 15} fill={pressed ? 'currentColor' : 'none'} aria-hidden />
           {KindIcon && <KindIcon size={15} aria-hidden />}
         </span>
       )}
