@@ -6,6 +6,7 @@ import UsbAttachModal from '../shared/UsbAttachModal.jsx';
 import { attachUSBToVM, detachUSBFromVM } from '../../api/vms.js';
 import { runVMCommand } from '../../store/vmStore.js';
 import { useUsbStore } from '../../store/usbStore.js';
+import { CONNECTION } from '../../store/streamStore.js';
 import {
   DataTableScroll,
   DataTable,
@@ -29,7 +30,7 @@ const iconBtn =
 
 export default function USBSection({ vmConfig, busyReason }) {
   const hostDevices = useUsbStore((s) => s.data);
-  const hostError = useUsbStore((s) => (s.connected === false && !s.refused
+  const hostError = useUsbStore((s) => (s.connection === CONNECTION.DROPPED
     ? 'The USB device stream is not connected — retrying…'
     : s.error));
   const connectUsb = useUsbStore((s) => s.connect);

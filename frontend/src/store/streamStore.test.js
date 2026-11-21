@@ -39,13 +39,13 @@ async function connect(store, id = 'a') {
 }
 
 const fields = (store) => {
-  const { data, connected, error, refused } = store.getState();
-  return { data, connected, error, refused };
+  const { data, connection, error } = store.getState();
+  return { data, connection, error };
 };
 
-test('before any answer: the empty data, connected null, no error', () => {
+test('before any answer: the empty data, connecting, no error', () => {
   const store = listStore({ empty: [] });
-  assert.deepEqual(fields(store), { data: [], connected: null, error: null, refused: false });
+  assert.deepEqual(fields(store), { data: [], connection: 'connecting', error: null });
 });
 
 test('a good frame is the data; an error frame keeps it and says why; the next good frame clears that', async () => {
@@ -53,13 +53,13 @@ test('a good frame is the data; an error frame keeps it and says why; the next g
   const { stream } = await connect(store);
   stream.frame([1]);
   await settle();
-  assert.deepEqual(fields(store), { data: [1], connected: true, error: null, refused: false });
+  assert.deepEqual(fields(store), { data: [1], connection: 'open', error: null });
   stream.frame({ error: 'LIBVIRT_ERROR', detail: 'Failed to list VMs' });
   await settle();
-  assert.deepEqual(fields(store), { data: [1], connected: true, error: 'Failed to list VMs', refused: false });
+  assert.deepEqual(fields(store), { data: [1], connection: 'open', error: 'Failed to list VMs' });
   stream.frame([2]);
   await settle();
-  assert.deepEqual(fields(store), { data: [2], connected: true, error: null, refused: false });
+  assert.deepEqual(fields(store), { data: [2], connection: 'open', error: null });
   store.getState().disconnect();
 });
 
@@ -69,7 +69,7 @@ test('a frame toData rejects is skipped', async () => {
   stream.frame([1]);
   stream.frame({ not: 'a list' });
   await settle();
-  assert.deepEqual(fields(store), { data: [1], connected: true, error: null, refused: false });
+  assert.deepEqual(fields(store), { data: [1], connection: 'open', error: null });
   store.getState().disconnect();
 });
 
@@ -81,7 +81,7 @@ test('a dropped connection keeps the data and the error, and reconnects', async 
   await settle();
   stream.drop();
   await settle();
-  assert.deepEqual(fields(store), { data: [1], connected: false, error: 'gather failed', refused: false });
+  assert.deepEqual(fields(store), { data: [1], connection: 'dropped', error: 'gather failed' });
   mock.timers.tick(1100);
   await settle();
   assert.equal(net.made('/api/s/a').length, 2);
@@ -94,14 +94,14 @@ test('a refusal clears the data and shows why; onData sees the cleared data; ret
   store.getState().connect('a');
   (await net.next('/api/s/a')).respond(jsonResponse({ error: 'VM_NOT_FOUND', detail: 'No VM named a' }, 404));
   await settle();
-  assert.deepEqual(fields(store), { data: [], connected: false, error: 'No VM named a', refused: true });
+  assert.deepEqual(fields(store), { data: [], connection: 'refused', error: 'No VM named a' });
   assert.deepEqual(seen, [[]]);
   store.getState().retry();
   const again = respondWithStream(await net.next('/api/s/a'));
   await settle();
   again.frame([3]);
   await settle();
-  assert.deepEqual(fields(store), { data: [3], connected: true, error: null, refused: false });
+  assert.deepEqual(fields(store), { data: [3], connection: 'open', error: null });
   store.getState().disconnect();
 });
 
@@ -125,7 +125,7 @@ test('connect opens once; a scoped stream\'s disconnect closes the request and c
   await settle();
   store.getState().disconnect();
   assert.equal(request.signal.aborted, true);
-  assert.deepEqual(fields(store), { data: null, connected: null, error: null, refused: false });
+  assert.deepEqual(fields(store), { data: null, connection: 'connecting', error: null });
   assert.equal(store.getState().extra, 1);
 });
 
@@ -145,5 +145,5 @@ test('a topic store keeps its data when it disconnects: the next connect is answ
   await settle();
   store.getState().disconnect();
   assert.deepEqual(store.getState().data, [{ name: 'peer' }]);
-  assert.equal(store.getState().connected, null);
+  assert.equal(store.getState().connection, 'connecting');
 });

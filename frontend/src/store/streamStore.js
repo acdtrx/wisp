@@ -32,10 +32,15 @@ export function streamSource(url) {
   };
 }
 
+/** A stream's connection: `connecting` until it answers (and while it reconnects after a
+ *  retry), `open` while frames come, `dropped` once the connection broke (the client
+ *  reconnects), `refused` once Wisp refused the stream, which ended it. */
+export const CONNECTION = Object.freeze({ CONNECTING: 'connecting', OPEN: 'open', DROPPED: 'dropped', REFUSED: 'refused' });
+
 /** A store's data while its stream runs and its last gather succeeded, else null:
  *  what a view shows as live (the stats bars). */
 export function liveData(state) {
-  return state.connected && !state.error ? state.data : null;
+  return state.connection === CONNECTION.OPEN && !state.error ? state.data : null;
 }
 
 /**
@@ -46,11 +51,9 @@ export function liveData(state) {
  *
  * - `data` — what the last good frame brought (`empty` before one, after a refusal,
  *   and after a scoped stream's disconnect);
- * - `connected` — `null` until the stream answers, `true` while frames come, `false`
- *   once the connection dropped (the client reconnects) or Wisp refused the stream;
+ * - `connection` — a `CONNECTION`;
  * - `error` — the text of the last error frame (the gather failed; `data` keeps the
- *   last good payload) or of the refusal, until a good frame;
- * - `refused` — Wisp refused the stream, which ended it, until `retry()`.
+ *   last good payload) or of the refusal, until a good frame; a drop keeps both.
  *
  * @param {object} spec
  * @param {{ open: Function, retry?: Function, scoped: boolean }} spec.source —
@@ -67,7 +70,7 @@ export function createStreamStore({ source, toData = (frame) => frame, empty = n
   return create((set, get) => {
     let close = null;
     let openedWith = [];
-    const cleared = { data: empty, connected: null, error: null, refused: false };
+    const cleared = { data: empty, connection: CONNECTION.CONNECTING, error: null };
 
     function changeData(next) {
       set(next);
@@ -76,20 +79,20 @@ export function createStreamStore({ source, toData = (frame) => frame, empty = n
 
     function onFrame(frame) {
       if (isErrorFrame(frame)) {
-        set({ connected: true, error: errorText(frame) });
+        set({ connection: CONNECTION.OPEN, error: errorText(frame) });
         return;
       }
       const data = toData(frame);
       if (data === undefined) return;
-      changeData({ data, connected: true, error: null, refused: false });
+      changeData({ data, connection: CONNECTION.OPEN, error: null });
     }
 
     function onDown(refusal) {
       if (!refusal) {
-        set({ connected: false });
+        set({ connection: CONNECTION.DROPPED });
         return;
       }
-      changeData({ data: empty, connected: false, error: errorText(refusal), refused: true });
+      changeData({ data: empty, connection: CONNECTION.REFUSED, error: errorText(refusal) });
     }
 
     function open(args) {
@@ -116,12 +119,12 @@ export function createStreamStore({ source, toData = (frame) => frame, empty = n
         if (!close) return;
         shut();
         if (source.scoped) changeData(cleared);
-        else set({ connected: null });
+        else set({ connection: CONNECTION.CONNECTING });
       },
 
       retry: () => {
         if (!close) return;
-        set({ refused: false });
+        set({ connection: CONNECTION.CONNECTING });
         if (source.retry) {
           source.retry();
           return;

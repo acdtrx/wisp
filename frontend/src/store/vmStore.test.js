@@ -34,7 +34,7 @@ test('a list frame is the list', async () => {
   stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', state: 'running' }] });
   await settle();
   assert.deepEqual(store.getState().data, [{ name: 'a', state: 'running' }]);
-  assert.equal(store.getState().connected, true);
+  assert.equal(store.getState().connection, 'open');
 });
 
 test('an error frame on the list keeps the list and shows the error', async () => {

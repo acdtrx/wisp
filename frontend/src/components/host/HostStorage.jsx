@@ -29,6 +29,7 @@ import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
+import { CONNECTION } from '../../store/streamStore.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import {
   deleteMount,
@@ -77,7 +78,7 @@ export default function HostStorage() {
   const disks = useDiskStore((s) => s.data);
   const connectDisks = useDiskStore((s) => s.connect);
   const disconnectDisks = useDiskStore((s) => s.disconnect);
-  const diskStreamError = useDiskStore((s) => (s.connected === false && !s.refused
+  const diskStreamError = useDiskStore((s) => (s.connection === CONNECTION.DROPPED
     ? 'The device stream is not connected — retrying…'
     : s.error));
 

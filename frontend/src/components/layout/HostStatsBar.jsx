@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { Box, Monitor } from 'lucide-react';
 import { useStatsStore } from '../../store/statsStore.js';
+import { CONNECTION } from '../../store/streamStore.js';
 import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
 
 export default function HostStatsBar({ embedded = false }) {
-  const { data: stats, connected, error, refused, connect, disconnect } = useStatsStore();
-  const refusal = refused ? error : null;
+  const { data: stats, connection, error, connect, disconnect } = useStatsStore();
+  const refusal = connection === CONNECTION.REFUSED ? error : null;
 
   useEffect(() => {
     connect();
@@ -21,7 +22,7 @@ export default function HostStatsBar({ embedded = false }) {
       </span>
     ) : (
       <span className="text-xs text-text-muted whitespace-nowrap">
-        {error ? 'Stats unavailable' : connected ? 'Loading stats…' : 'Connecting…'}
+        {error ? 'Stats unavailable' : connection === CONNECTION.OPEN ? 'Loading stats…' : 'Connecting…'}
       </span>
     );
     if (embedded) {

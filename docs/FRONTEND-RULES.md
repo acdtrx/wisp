@@ -14,8 +14,9 @@ holds the UI library's rules.
   - Applied: mirror a stream (a topic of the `/api/events` singleton, or a scoped
     stream) in a store made by the one helper, `createStreamStore`
     (`store/streamStore.js`): `connect` / `disconnect` / `retry`, and `{ data,
-    connected, error, refused }`, an error frame shown beside the last good data, a
-    drop keeping both, a refusal shown in the data's place. Every stream goes
+    connection, error }`, `connection` one of connecting, open, dropped, refused; an
+    error frame shown beside the last good data, a drop keeping both, a refusal shown
+    in the data's place. Every stream goes
     through the one client, `openStream` (`api/sse.js`), a job's progress too (it
     ends at the terminal frame). The VM and container stores are one base
     (`store/workloadStore.js`) with a spec each. The wire's names (topics, change
