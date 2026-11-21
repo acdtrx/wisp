@@ -302,8 +302,12 @@ and `check-error-messages.mjs` find imports, calls and strings through `scripts/
 which strips comments by hand: a `/*` or a lone backtick in JSX text, a regex after `i++ /`,
 or the word "import" in text can make them miss code or read text as code.
 `check-exports.mjs` reads a real parse (ESLint's `Linter`, with a rule of its own) and fails
-on a file that does not parse; the others should move to the same parsed reader.
-**Revisit trigger:** one of those checks passing or failing on text rather than code, or the
+on a file that does not parse; the others should move to the same parsed reader. And
+`check-imports.mjs` covers only `backend/src`, `backend/migrations` and `shared/`: a
+frontend import of a name its module does not export is caught only by the frontend build,
+which `npm run check` does not run (found 2026-11-21: views kept importing a removed
+`useHeld` and the check passed). **Revisit trigger:** one of those checks passing or failing
+on text rather than code, a frontend import of a missing name reaching a commit, or the
 next work on the checks.
 
 **Unused exports in `backend/src` and `shared/` are not checked.** `scripts/check-exports.mjs`
