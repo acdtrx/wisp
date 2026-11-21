@@ -1,158 +1,150 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 
+import { createContainer } from '../../api/containers.js';
+import { getAppList } from '../../apps/appRegistry.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useJobProgress } from '../../hooks/useJobProgress.js';
+import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import { createContainer } from '../../api/containers.js';
-import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
-import { getAppList } from '../../apps/appRegistry.js';
+import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
+import ContainerImageField from './ContainerImageField.jsx';
+import { containerDraftProblems, createContainerBody, defaultContainerDraft, draftWithApp } from './containerDraft.js';
 
 const STEP_LABELS = {
-  validating: 'Validating…',
-  'using-local': 'Using local image…',
-  pulling: 'Pulling image…',
+  validating: 'Checking…',
+  'using-local': 'Using the local image…',
+  pulling: 'Pulling the image…',
   pulled: 'Image pulled',
-  creating: 'Creating container…',
+  creating: 'Creating the container…',
   created: 'Finishing…',
-  done: 'Ready — configure and start when ready',
-  error: 'Error',
 };
 
+const PLAIN = 'plain';
+
+/**
+ * New container (docs/specs/UI-CONTAINER.md, New container): a name, and either an
+ * image or one of the apps, which fills in its image. The container is created
+ * stopped; its page opens if the user is still here when the create ends.
+ */
 export default function CreateContainerPanel() {
   const navigate = useNavigate();
+  const apps = getAppList();
+  const [draft, setDraft] = useState(defaultContainerDraft);
 
-  const [selectedApp, setSelectedApp] = useState(null);
-  const [draft, setDraft] = useState({
-    name: '',
-    image: '',
-  });
-
-  /* The create: a job, busy until it ended; its progress shows by the Create button. */
+  /* The create: a job, busy until it ended; its progress shows by Create. */
   const create = useCommand();
   const creating = create.busy;
-  const [createJobId, setCreateJobId] = useState(null);
-  const row = useJobProgress(createJobId);
+  const [jobId, setJobId] = useState(null);
+  const progress = useJobProgress(jobId);
 
-  /* The create job outlives this panel (it keeps running in the jobs
-   * tray), so its completion only opens the new workload while the user is
-   * still here — never yanks them away from wherever they went meanwhile. */
+  /* The create outlives this page (it stays in the jobs tray): its end opens the new
+   * container only while the user is still here. */
   const mountedRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
-  const appList = getAppList();
+  const problems = containerDraftProblems(draft);
+  const blocked = Object.values(problems)[0] ?? null;
+  const app = apps.find((a) => a.id === draft.app) ?? null;
+  const imageEditable = !app || app.allowCustomImage;
 
-  const handleSelectApp = (appId) => {
-    const next = appId || null;
-    if (next === selectedApp) return;
-    setSelectedApp(next);
-    if (next) {
-      const app = appList.find((a) => a.id === next);
-      if (app?.defaultImage) {
-        setDraft((prev) => ({ ...prev, image: app.defaultImage }));
-      }
-    } else {
-      setDraft((prev) => ({ ...prev, image: '' }));
-    }
-  };
+  const options = [{ value: PLAIN, label: 'An image' }, ...apps.map((a) => ({ value: a.id, label: a.label }))];
 
-  const handleCreate = () => {
-    const spec = {
-      name: draft.name.trim(),
-      image: draft.image.trim(),
-    };
-    if (selectedApp) spec.app = selectedApp;
-
-    create.run(() => createContainer(spec), {
+  const submit = (e) => {
+    e.preventDefault();
+    if (blocked || creating) return;
+    const body = createContainerBody(draft);
+    create.run(() => createContainer(body), {
       job: true,
-      onAck: ({ jobId }) => setCreateJobId(jobId),
+      onAck: (ack) => setJobId(ack.jobId),
       onDone: () => {
-        if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
+        if (mountedRef.current) navigate(`/container/${encodeURIComponent(body.name)}/overview`);
       },
-    }).then(() => setCreateJobId(null));
+    }).then(() => setJobId(null));
   };
 
-  const config = {
-    name: draft.name,
-    image: draft.image,
-    state: 'creating',
-  };
-
-  const canCreate = draft.name.trim() && draft.image.trim() && !creating;
-
-  const progressStep = row?.step ?? (creating ? 'validating' : null);
-  const progressDetail = row?.detail ?? null;
-
-  const appSelector = (
-    <select
-      value={selectedApp || ''}
-      onChange={(e) => handleSelectApp(e.target.value)}
-      className="input-field h-7 text-[11px] min-w-[140px]"
-    >
-      <option value="">Generic Container</option>
-      {appList.map((app) => (
-        <option key={app.id} value={app.id}>{app.label}</option>
-      ))}
-    </select>
-  );
+  const step = progress?.step ?? (creating ? 'validating' : null);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-surface-card px-4 py-3">
+      <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card px-4">
         <button
+          type="button"
           onClick={() => navigate('/host/overview')}
-          className="rounded-md p-1 text-text-muted hover:text-text-primary hover:bg-surface transition-colors duration-150"
+          className="rounded-md p-2 text-text-muted transition-colors duration-150 hoverable:hover:bg-surface hoverable:hover:text-text-primary lg:p-1"
           title="Back"
+          aria-label="Back"
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={18} aria-hidden />
         </button>
-        <h2 className="text-sm font-semibold text-text-primary">Create Container</h2>
+        <h1 className="text-sm font-semibold text-text-primary">New container</h1>
       </div>
 
-      <div className="flex flex-1 flex-col overflow-y-auto px-6 py-5">
-        <div className="space-y-5">
-          <p className="text-xs text-text-muted">
-            Enter a name and image. After creation the container stays stopped so you can configure it, then start it from the overview.
-          </p>
+      <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5">
+        <form onSubmit={submit} className="mx-auto max-w-xl space-y-4 rounded-card border border-surface-border bg-surface-card p-4 shadow-card">
+          <FormField label="Name" htmlFor="new-container-name">
+            <input
+              id="new-container-name"
+              ref={autoFocusField}
+              type="text"
+              value={draft.name}
+              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              disabled={creating}
+              maxLength={63}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="web"
+              className="input-field"
+            />
+          </FormField>
 
-          <ContainerGeneralSection
-            config={config}
-            isCreating
-            draft={draft}
-            onDraft={setDraft}
-            headerAction={appSelector}
-          />
-        </div>
+          <FormField label="Runs">
+            <RadioPills
+              options={options}
+              value={draft.app ?? PLAIN}
+              disabled={creating}
+              onChange={(v) => setDraft((d) => draftWithApp(d, v === PLAIN ? null : v, apps))}
+            />
+          </FormField>
 
-        <ErrorBanner className="mt-4" error={create.error} onDismiss={create.dismiss} />
-
-        <div className="sticky bottom-0 mt-6 flex items-center justify-end gap-3 border-t border-surface-border bg-surface pt-4 pb-2">
-          {creating && progressStep && (
-            <div className="flex max-w-[min(100%,28rem)] flex-col items-end gap-0.5 text-xs text-text-muted">
-              <div className="flex items-center gap-2">
-                <Loader2 size={14} className="animate-spin shrink-0" />
-                <span>{STEP_LABELS[progressStep] || progressStep}</span>
-              </div>
-              {progressDetail && (
-                <span className="max-w-full wrap-break-word text-right text-[11px] leading-snug text-text-muted/90">
-                  {progressDetail}
-                </span>
-              )}
-            </div>
-          )}
-          <button
-            onClick={handleCreate}
-            disabled={!canCreate}
-            className="flex items-center gap-2 rounded-md bg-accent px-5 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+          <FormField
+            label="Image"
+            htmlFor="new-container-image"
+            hint={app ? `${app.description}. The app sets up its own configuration.` : 'It stays stopped after it is created, so you can set it up before its first start.'}
           >
-            {creating ? <Loader2 size={16} className="animate-spin" /> : null}
-            Create Container
-          </button>
-        </div>
+            <ContainerImageField
+              id="new-container-image"
+              value={draft.image}
+              onChange={(image) => setDraft((d) => ({ ...d, image }))}
+              disabled={creating || !imageEditable}
+            />
+          </FormField>
+
+          <ErrorBanner error={create.error} onDismiss={create.dismiss} />
+
+          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-surface-border pt-3">
+            {creating && step && (
+              <span className="mr-auto flex min-w-0 items-center gap-2 text-xs text-text-muted" role="status">
+                <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden />
+                <span className="truncate" title={progress?.detail ?? undefined}>
+                  {STEP_LABELS[step] ?? step}{progress?.detail ? ` ${progress.detail}` : ''}
+                </span>
+              </span>
+            )}
+            <button type="button" onClick={() => navigate('/host/overview')} className={formModalNeutralBtn}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!!blocked || creating} title={blocked ?? undefined} className={formModalPrimaryBtn}>
+              {creating && <Loader2 size={14} className="animate-spin" aria-hidden />}
+              Create
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
