@@ -93,8 +93,8 @@ export const backupBodySchema = {
 
 /*
  * A VM's cloud-init settings, as saved and as read back. `password` reads back
- * as `set` or `''`, never the value; `sshKeySource` records where the key came
- * from (`github:<user>`).
+ * as `set` or `''`, never the value. `sshKey` is the VM's own copy of its keys, one
+ * per line.
  */
 const cloudInitFields = {
   enabled: { type: 'boolean' },
@@ -105,7 +105,6 @@ const cloudInitFields = {
   password: { type: 'string', maxLength: 256, pattern: '^[^\\r\\n]*$' },
   // SSH key may be one or more lines (e.g. several keys joined by \n). Length-cap to keep the user-data ISO bounded.
   sshKey: { type: 'string', maxLength: 16384 },
-  sshKeySource: { type: 'string', maxLength: 64, pattern: '^[a-zA-Z0-9:_-]*$' },
   growPartition: { type: 'boolean' },
   packageUpgrade: { type: 'boolean' },
   installQemuGuestAgent: { type: 'boolean' },

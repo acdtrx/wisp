@@ -1,6 +1,4 @@
 {
-  "route": "GET /api/vms/:name/cloudinit",
-  "status": 200,
   "body": {
     "enabled": true,
     "growPartition": true,
@@ -10,7 +8,8 @@
     "packageUpgrade": true,
     "password": "set",
     "sshKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotARealKey user@example",
-    "sshKeySource": "github:user",
     "username": "user"
-  }
+  },
+  "route": "GET /api/vms/:name/cloudinit",
+  "status": 200
 }
