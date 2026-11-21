@@ -9,7 +9,7 @@
 // desktop stays light. See docs/FRONTEND-RULES.md § Wisp's design.
 
 /** Mirrored by the no-flash script in index.html — change both together. */
-export const THEME_STORAGE_KEY = 'wisp_theme';
+const THEME_STORAGE_KEY = 'wisp_theme';
 
 const PREFERENCES = ['light', 'dark', 'system'];
 const DARK_QUERY = '(prefers-color-scheme: dark)';

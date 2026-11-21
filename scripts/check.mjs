@@ -20,6 +20,7 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
  */
 const CHECKS = [
   { name: 'imports', command: ['node', 'scripts/check-imports.mjs'] },
+  { name: 'exports', command: ['node', 'scripts/check-exports.mjs'], needs: ['.'] },
   { name: 'fences', command: ['node', 'scripts/check-fences.mjs'] },
   { name: 'lint', command: ['npm', 'run', 'lint', '--silent'], needs: ['.'] },
   { name: 'shell', command: ['node', 'scripts/check-shell.mjs'] },

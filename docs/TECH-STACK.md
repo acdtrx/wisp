@@ -88,9 +88,13 @@
   states its dependencies; the form hook owns what the sections' effects kept by
   hand). No style rule. A hand-written scan was rejected: an undefined name needs scope
   analysis (settled 2026-11-18).
-- **The other checks are dependency-free Node scripts** in `scripts/` (`check-imports`,
-  `check-fences`, the shell check): dumb scans for what ESLint does not see (the
-  fences, names across backend files, facade parity, cycles, shell syntax). ESLint
+- **The other checks are Node scripts** in `scripts/` (`check-imports`, `check-fences`,
+  the shell check): dependency-free scans for what ESLint does not see (the fences,
+  names across backend files, facade parity, cycles, shell syntax). `check-exports` —
+  an export under `frontend/src` that nothing imports fails it — reads imports and
+  exports from a real parse, through ESLint's `Linter` and a rule of its own (settled
+  2026-11-21: a hand lexer misreads text as code), and fails on a file that does not
+  parse. ESLint
   covers `shared/` too, and holds the wire's names: `no-restricted-syntax` selectors
   built from `shared/wireNames.js` refuse a topic, change kind or job kind written as
   a string.

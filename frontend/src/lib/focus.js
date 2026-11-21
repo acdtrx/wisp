@@ -9,12 +9,12 @@
 /** The same query as the 16px-field rule in index.css, so the two agree. */
 const TOUCH_QUERY = '(hover: none) and (pointer: coarse)';
 
-export function isTouchDevice() {
+function isTouchDevice() {
   return typeof window !== 'undefined' && window.matchMedia?.(TOUCH_QUERY).matches === true;
 }
 
 /** Whether focusing `el` can open an on-screen keyboard. */
-export function isTextField(el) {
+function isTextField(el) {
   if (!el || !el.tagName) return false;
   const tag = el.tagName.toLowerCase();
   if (tag === 'textarea' || tag === 'select') return true;

@@ -6,7 +6,7 @@ import ZotAppSection from './zot/ZotAppSection.jsx';
 import TinySambaAppSection from './tinySamba/TinySambaAppSection.jsx';
 import JellyfinAppSection from './jellyfin/JellyfinAppSection.jsx';
 
-export const APP_REGISTRY = {
+const APP_REGISTRY = {
   'caddy-reverse-proxy': {
     label: 'Caddy Reverse Proxy',
     description: 'HTTPS reverse proxy with Let\'s Encrypt and Cloudflare DNS',

@@ -16,7 +16,7 @@ const GAP = 4;
  * fit below), aligned to the anchor's `align` edge, shifted to stay inside
  * the viewport.
  */
-export function useClampToViewport(open, anchorRef, popRef, { align = 'end', side = 'bottom' } = {}) {
+function useClampToViewport(open, anchorRef, popRef, { align = 'end', side = 'bottom' } = {}) {
   const [style, setStyle] = useState({ position: 'fixed', top: 0, left: 0, visibility: 'hidden' });
   const measure = useCallback(() => {
     const anchor = anchorRef.current;

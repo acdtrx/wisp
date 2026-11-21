@@ -15,7 +15,7 @@ export function consoleWsUrl(path) {
  * WebSocket has no connect timeout of its own, and a half-open network leaves it
  * CONNECTING for minutes. The close then takes the console's usual retry path.
  */
-export const WS_CONNECT_TIMEOUT_MS = 15_000;
+const WS_CONNECT_TIMEOUT_MS = 15_000;
 
 export function closeIfNotOpenWithin(ws, ms = WS_CONNECT_TIMEOUT_MS) {
   const timer = setTimeout(() => {

@@ -47,13 +47,9 @@ export const dataTableInteractiveRowClass =
 /** Horizontal inset for every `<th>` / `<td>` (symmetric; do not use `pr-*` alone). */
 export const dataTableCellPadX = 'px-4';
 
-export const dataTableThPadComfortable = `${dataTableCellPadX} py-2 font-medium`;
+const dataTableThPadComfortable = `${dataTableCellPadX} py-2 font-medium`;
 
-export const dataTableThPadDense = `${dataTableCellPadX} py-1.5 font-medium`;
-
-export const dataTableTdPadComfortable = `${dataTableCellPadX} py-2.5`;
-
-export const dataTableTdPadDense = `${dataTableCellPadX} py-1.5`;
+const dataTableThPadDense = `${dataTableCellPadX} py-1.5 font-medium`;
 
 /** Full-width empty / loading rows (`colSpan`) — horizontal inset matches data cells. */
 export const dataTableEmptyCellClass = `${dataTableCellPadX} py-4`;

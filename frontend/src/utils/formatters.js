@@ -21,21 +21,6 @@ export function formatUptimeMs(ms) {
   return `${minutes}m`;
 }
 
-/**
- * Format uptime given in seconds (e.g. host uptime).
- */
-export function formatUptimeSeconds(seconds) {
-  if (seconds == null || seconds < 0) return '—';
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const parts = [];
-  if (d > 0) parts.push(`${d} day${d !== 1 ? 's' : ''}`);
-  if (h > 0) parts.push(`${h}h`);
-  if (m > 0 || parts.length === 0) parts.push(`${m}m`);
-  return parts.join(' ');
-}
-
 export function formatSize(bytes) {
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];

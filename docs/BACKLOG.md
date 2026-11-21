@@ -288,6 +288,22 @@ a backup code: the managers' backup paths leave such failures uncoded (phase 5's
 containerManager work). **Revisit trigger:** the next work on VM create defaults or
 firmware edits, or a client that branches on a backup failure's code.
 
+**The source checks read code with a hand lexer.** `check-imports.mjs`, `check-fences.mjs`
+and `check-error-messages.mjs` find imports, calls and strings through `scripts/sourceScan.mjs`,
+which strips comments by hand: a `/*` or a lone backtick in JSX text, a regex after `i++ /`,
+or the word "import" in text can make them miss code or read text as code.
+`check-exports.mjs` reads a real parse (ESLint's `Linter`, with a rule of its own) and fails
+on a file that does not parse; the others should move to the same parsed reader.
+**Revisit trigger:** one of those checks passing or failing on text rather than code, or the
+next work on the checks.
+
+**Unused exports in `backend/src` and `shared/` are not checked.** `scripts/check-exports.mjs`
+scans `frontend/src` only: an export of a backend or shared module that nothing imports
+passes. The backend's facades (`lib/<module>/index.js`, bound per platform) and the
+dynamic imports of the `linux/` files need the scan to follow them first. **Revisit
+trigger:** dead backend code found that a check would have caught, or the next work on the
+checks.
+
 **A rename leaves the workload's backups under its old name.** Backups live in per-name
 folders at each destination (`<root>/vms/<name>/<timestamp>/`,
 `<root>/containers/<name>/<timestamp>/`), and a rename moves neither folder: on each
