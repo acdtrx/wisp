@@ -12,7 +12,7 @@
  * instead of deleting it. A saved Local share removed from the form, or switched to a storage
  * mount, loses its local files on Save, so Save asks first.
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import {
   Plus,
   Trash2,
@@ -39,16 +39,18 @@ import {
   DataTableTd,
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
-import { randomId } from '../../utils/randomId.js';
-import { RECORD } from '../../store/records.js';
-import { useRecord } from '../../hooks/useRecord.js';
+import { rowId } from '../../hooks/formState.js';
 import RecordGate from '../../components/shared/RecordGate.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 const PROTOCOLS = ['SMB1', 'SMB2', 'SMB3'];
+const NO_SHARES = new Set();
 const ICON_MODEL_DEFAULT = 'TimeCapsule6,106';
 const ICON_MODEL_DISABLED = '-';
 
@@ -63,24 +65,73 @@ function parseAppConfig(config) {
       minProtocol: PROTOCOLS.includes(server.minProtocol) ? server.minProtocol : 'SMB3',
       iconModel: typeof server.iconModel === 'string' && server.iconModel ? server.iconModel : ICON_MODEL_DEFAULT,
     },
-    users: (ac.users || []).map((u) => ({
-      id: randomId(),
+    /* A row's id is its identity in this form only (new at every reset), never sent. */
+    users: (ac.users || []).filter(Boolean).map((u) => ({
+      id: rowId(),
       name: u.name ?? '',
       password: '',
       hasPassword: !!u.password?.isSet,
       passwordDirty: false,
     })),
-    shares: (ac.shares || []).map((s) => ({
-      id: randomId(),
+    shares: (ac.shares || []).filter(Boolean).map((s) => ({
+      id: rowId(),
       name: s.name ?? '',
       originalName: s.name ?? '',
       guest: !!s.guest,
       sourceId: s.source?.sourceId ?? '',
       subPath: s.source?.subPath ?? '',
-      access: (s.access || []).map((a) => ({ user: a.user, level: a.level })),
-      expanded: false,
+      access: (s.access || []).filter(Boolean).map((a) => ({ user: a.user, level: a.level })),
     })),
   };
+}
+
+/** What Save sends for the form: the app config as the PATCH takes it. A user's password
+ *  goes only when its field was typed in; a loaded share names the name it was loaded
+ *  with (`previousName`), so a rename moves its Local directory. */
+function appConfigToSend(form) {
+  const declaredUsers = form.users.map((u) => u.name.trim()).filter((n) => n.length > 0);
+  return {
+    server: {
+      workgroup: form.server.workgroup.trim(),
+      netbiosName: form.server.netbiosName.trim(),
+      /* As typed: a cleared field is no UID, and blocks Save with its reason. */
+      dataUid: form.server.dataUid,
+      minProtocol: form.server.minProtocol,
+      iconModel: form.server.iconModel,
+    },
+    users: form.users.map((u) => {
+      const entry = { name: u.name.trim() };
+      if (u.passwordDirty && u.password) entry.password = u.password;
+      return entry;
+    }),
+    shares: form.shares.map((s) => {
+      const out = {
+        name: s.name.trim(),
+        guest: !!s.guest,
+        /* By user: the order the levels were set in is no change. */
+        access: s.guest ? [] : s.access.filter((a) => declaredUsers.includes(a.user)).sort((a, b) => a.user.localeCompare(b.user)),
+      };
+      if (s.originalName) out.previousName = s.originalName;
+      if (s.sourceId) out.source = { sourceId: s.sourceId, subPath: (s.subPath || '').trim() };
+      return out;
+    }),
+  };
+}
+
+/** What keeps the values from being saved, by the path of the value each is about:
+ *  pre-flight guards that mirror tiny-samba's validation, so users see issues here
+ *  instead of a "reload failed" error from smbd (the form hook keeps those of values
+ *  the user changed). */
+function appConfigProblems(form) {
+  const problems = {};
+  if (!isValidUid(form.server.dataUid)) problems['server.dataUid'] = 'Data UID must be a whole number from 0 to 65535.';
+  const declaredUsers = form.users.map((u) => u.name.trim()).filter((n) => n.length > 0);
+  form.shares.forEach((s, i) => {
+    if (!s.guest && s.access.filter((a) => declaredUsers.includes(a.user)).length === 0) {
+      problems[`shares.${i},users`] = `Share "${s.name.trim() || '(unnamed)'}" needs at least one user with access (or set Guest on).`;
+    }
+  });
+  return problems;
 }
 
 /**
@@ -113,12 +164,20 @@ export default function TinySambaAppSection({ config, onSave }) {
   const settings = settingsRecord.data;
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
-  const [form, setForm] = useState(() => parseAppConfig(config));
-  const [original, setOriginal] = useState(() => parseAppConfig(config));
+  /* The form follows the container's config record by value: a save elsewhere that
+   * leaves this app's settings as they were leaves its edits. */
+  const record = useRecord(RECORD.CONTAINER, config.name);
+  const { form, saved: original, generation, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
+    record, parseAppConfig, appConfigToSend, { problems: appConfigProblems },
+  );
   const save = useCommand();
-  /** { appConfig, names } while the delete-share-data confirm is open. */
-  const [pendingDataLoss, setPendingDataLoss] = useState(null);
-  const [showPasswords, setShowPasswords] = useState({});
+  /* Held on the form as it is (a reset drops them): the delete-share-data confirm
+   * (`{ names }`), and what the view keeps on a row by its id. */
+  const [dataLoss, setDataLoss] = useHeld(generation);
+  const [shownPasswords, setShowPasswords] = useHeld(generation);
+  const showPasswords = shownPasswords ?? {};
+  const [openShares, setExpandedShares] = useHeld(generation);
+  const expandedShares = openShares ?? NO_SHARES;
   const [serverOpen, setServerOpen] = useState(true);
   const [usersOpen, setUsersOpen] = useState(true);
   const [sharesOpen, setSharesOpen] = useState(true);
@@ -126,49 +185,6 @@ export default function TinySambaAppSection({ config, onSave }) {
   // Reset on appConfig identity change. We hash users / shares at the field level rather than
   // trusting object identity because the parent containerStore replaces the full config object
   // on every SSE tick.
-  const appConfigKey = useMemo(() => JSON.stringify(config?.metadata?.appConfig || {}), [config?.metadata?.appConfig]);
-  useEffect(() => {
-    const parsed = parseAppConfig(config);
-    setForm(parsed);
-    setOriginal(parsed);
-    setShowPasswords({});
-    setPendingDataLoss(null);
-  }, [appConfigKey]);
-
-  const isDirty = useCallback(() => {
-    const o = original;
-    const f = form;
-    if (
-      f.server.workgroup !== o.server.workgroup
-      || f.server.netbiosName !== o.server.netbiosName
-      || Number(f.server.dataUid) !== Number(o.server.dataUid)
-      || f.server.minProtocol !== o.server.minProtocol
-      || f.server.iconModel !== o.server.iconModel
-    ) return true;
-    if (f.users.length !== o.users.length) return true;
-    for (let i = 0; i < f.users.length; i++) {
-      if (f.users[i].name !== o.users[i]?.name) return true;
-      if (f.users[i].passwordDirty) return true;
-    }
-    if (f.shares.length !== o.shares.length) return true;
-    for (let i = 0; i < f.shares.length; i++) {
-      const fs = f.shares[i];
-      const os = o.shares[i];
-      if (!os) return true;
-      if (
-        fs.name !== os.name
-        || fs.guest !== os.guest
-        || (fs.sourceId || '') !== (os.sourceId || '')
-        || (fs.subPath || '') !== (os.subPath || '')
-      ) return true;
-      if (fs.access.length !== os.access.length) return true;
-      for (let j = 0; j < fs.access.length; j++) {
-        if (fs.access[j].user !== os.access[j]?.user) return true;
-        if (fs.access[j].level !== os.access[j]?.level) return true;
-      }
-    }
-    return false;
-  }, [form, original]);
 
   const updateServer = (field, value) => {
     setForm((prev) => ({ ...prev, server: { ...prev.server, [field]: value } }));
@@ -178,7 +194,7 @@ export default function TinySambaAppSection({ config, onSave }) {
     setForm((prev) => ({
       ...prev,
       users: [...prev.users, {
-        id: randomId(), name: '', password: '', hasPassword: false, passwordDirty: true,
+        id: rowId(), name: '', password: '', hasPassword: false, passwordDirty: true,
       }],
     }));
   };
@@ -205,20 +221,21 @@ export default function TinySambaAppSection({ config, onSave }) {
     });
   };
   const toggleShowPassword = (id) => {
-    setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
+    setShowPasswords((prev) => ({ ...prev, [id]: !prev?.[id] }));
   };
 
   const addShare = () => {
+    const id = rowId();
+    setExpandedShares((open) => new Set(open ?? NO_SHARES).add(id));
     setForm((prev) => ({
       ...prev,
       shares: [...prev.shares, {
-        id: randomId(),
+        id,
         name: '',
         guest: false,
         sourceId: '',
         subPath: '',
         access: [],
-        expanded: true,
       }],
     }));
   };
@@ -244,10 +261,11 @@ export default function TinySambaAppSection({ config, onSave }) {
     setForm((prev) => ({ ...prev, shares: prev.shares.filter((s) => s.id !== id) }));
   };
   const toggleShareExpanded = (id) => {
-    setForm((prev) => ({
-      ...prev,
-      shares: prev.shares.map((s) => (s.id === id ? { ...s, expanded: !s.expanded } : s)),
-    }));
+    setExpandedShares((open) => {
+      const next = new Set(open ?? NO_SHARES);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   };
   const setShareAccess = (shareId, userName, level) => {
     setForm((prev) => ({
@@ -261,81 +279,25 @@ export default function TinySambaAppSection({ config, onSave }) {
     }));
   };
 
-  /** Build the PATCH body from the form; throws on a pre-flight problem. */
-  const buildAppConfig = () => {
-    const declaredUsers = form.users
-      .map((u) => u.name.trim())
-      .filter((n) => n.length > 0);
+  const commitSave = () => saveForm((appConfig) => save.run(() => onSave(appConfig)));
 
-    // Pre-flight guards mirror tiny-samba's validation so users see issues here instead of
-    // a "reload failed" error from smbd.
-    for (const s of form.shares) {
-      if (!s.guest) {
-        const liveAccess = s.access.filter((a) => declaredUsers.includes(a.user));
-        if (liveAccess.length === 0) {
-          const label = s.name.trim() || '(unnamed)';
-          throw new Error(`Share "${label}" needs at least one user with access (or set Guest on).`);
-        }
-      }
-    }
-
-    return {
-      server: {
-        workgroup: form.server.workgroup.trim(),
-        netbiosName: form.server.netbiosName.trim(),
-        dataUid: Number(form.server.dataUid),
-        minProtocol: form.server.minProtocol,
-        iconModel: form.server.iconModel,
-      },
-      users: form.users.map((u) => {
-        const entry = { name: u.name.trim() };
-        if (u.passwordDirty && u.password) {
-          entry.password = u.password;
-        }
-        return entry;
-      }),
-      shares: form.shares.map((s) => {
-        const out = {
-          name: s.name.trim(),
-          guest: !!s.guest,
-          access: s.guest
-            ? []
-            : s.access.filter((a) => declaredUsers.includes(a.user)),
-        };
-        if (s.originalName) out.previousName = s.originalName;
-        if (s.sourceId) {
-          out.source = { sourceId: s.sourceId, subPath: (s.subPath || '').trim() };
-        }
-        return out;
-      }),
-    };
-  };
-
-  const commitSave = (appConfig) => save.run(() => onSave(appConfig));
+  const uidProblem = problems['server.dataUid'] ?? null;
 
   const handleSave = () => {
-    let appConfig;
-    try {
-      appConfig = buildAppConfig();
-    } catch (err) {
-      save.fail(err);
-      return;
-    }
+    if (blocked) return;
     const names = sharesLosingData(original, form);
     if (names.length > 0) {
-      setPendingDataLoss({ appConfig, names });
+      setDataLoss({ names });
       return;
     }
-    commitSave(appConfig);
+    commitSave();
   };
 
   const confirmDataLoss = () => {
-    const { appConfig } = pendingDataLoss;
-    setPendingDataLoss(null);
-    commitSave(appConfig);
+    setDataLoss(null);
+    commitSave();
   };
 
-  const dirty = isDirty();
   const declaredUserNames = form.users.map((u) => u.name.trim()).filter(Boolean);
 
   // ── shared classes ────────────────────────────────────────────────
@@ -349,7 +311,8 @@ export default function TinySambaAppSection({ config, onSave }) {
       title="Tiny Samba Configuration"
       titleIcon={<Network size={14} />}
       onSave={handleSave}
-      saving={save.busy}
+      saving={saving}
+      saveDisabledReason={blocked ?? undefined}
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
       commands={[save]}
@@ -399,13 +362,14 @@ export default function TinySambaAppSection({ config, onSave }) {
                       inputMode="numeric"
                       pattern="[0-9]*"
                       maxLength={5}
-                      className={`input-field text-right ${isValidUid(form.server.dataUid) ? '' : 'border-status-stopped'}`}
+                      className={`input-field text-right ${uidProblem ? 'border-status-stopped' : ''}`}
                       value={form.server.dataUid}
                       onChange={(e) => {
                         const v = e.target.value.replace(/[^0-9]/g, '');
                         updateServer('dataUid', v === '' ? '' : Number(v));
                       }}
                     />
+                    {uidProblem && <p className="mt-1 text-[11px] text-status-stopped">{uidProblem}</p>}
                   </div>
                   <div className="w-32">
                     <label className="text-xs font-medium text-text-secondary mb-1.5 block">Min protocol</label>
@@ -548,35 +512,40 @@ export default function TinySambaAppSection({ config, onSave }) {
                   No shares configured. Add one to expose a directory over SMB.
                 </p>
               )}
-              {form.shares.map((share) => (
-                <ShareRow
-                  key={share.id}
-                  share={share}
-                  storageMounts={storageMounts}
-                  declaredUserNames={declaredUserNames}
-                  onUpdate={updateShare}
-                  onRemove={removeShare}
-                  onToggleExpanded={toggleShareExpanded}
-                  onSetAccess={setShareAccess}
-                />
+              {form.shares.map((share, i) => (
+                <Fragment key={share.id}>
+                  <ShareRow
+                    share={share}
+                    expanded={expandedShares.has(share.id)}
+                    storageMounts={storageMounts}
+                    declaredUserNames={declaredUserNames}
+                    onUpdate={updateShare}
+                    onRemove={removeShare}
+                    onToggleExpanded={toggleShareExpanded}
+                    onSetAccess={setShareAccess}
+                  />
+                  {problems[`shares.${i},users`] && (
+                    <p className="px-1 text-[11px] text-status-stopped">{problems[`shares.${i},users`]}</p>
+                  )}
+                </Fragment>
               ))}
             </div>
           )}
         </div>
 
         <ConfirmDialog
-          open={!!pendingDataLoss}
+          open={!!dataLoss}
           title="Delete share data?"
           confirmLabel="Delete and save"
           onConfirm={confirmDataLoss}
-          onCancel={() => setPendingDataLoss(null)}
+          onCancel={() => setDataLoss(null)}
         >
           <p>
-            Saving permanently deletes the files of {pendingDataLoss?.names.length === 1 ? 'this share' : 'these shares'} from
+            Saving permanently deletes the files of {dataLoss?.names.length === 1 ? 'this share' : 'these shares'} from
             the container&rsquo;s local storage — removed, or moved to a storage mount:
           </p>
           <ul className="mt-2 list-disc pl-5 font-mono text-xs text-text-primary">
-            {pendingDataLoss?.names.map((n) => <li key={n}>{n}</li>)}
+            {dataLoss?.names.map((n) => <li key={n}>{n}</li>)}
           </ul>
           <p className="mt-2 text-xs text-text-muted">
             This cannot be undone. Data already on a storage mount is never touched.
@@ -589,7 +558,7 @@ export default function TinySambaAppSection({ config, onSave }) {
   );
 }
 
-function ShareRow({ share, storageMounts, declaredUserNames, onUpdate, onRemove, onToggleExpanded, onSetAccess }) {
+function ShareRow({ share, expanded, storageMounts, declaredUserNames, onUpdate, onRemove, onToggleExpanded, onSetAccess }) {
   const accessByUser = useMemo(() => {
     const map = new Map();
     for (const a of share.access) map.set(a.user, a.level);
@@ -603,10 +572,10 @@ function ShareRow({ share, storageMounts, declaredUserNames, onUpdate, onRemove,
           type="button"
           onClick={() => onToggleExpanded(share.id)}
           className="text-text-muted hover:text-text-primary shrink-0"
-          title={share.expanded ? 'Collapse' : 'Expand'}
-          aria-label={share.expanded ? 'Collapse share' : 'Expand share'}
+          title={expanded ? 'Collapse' : 'Expand'}
+          aria-label={expanded ? 'Collapse share' : 'Expand share'}
         >
-          {share.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
         <input
           type="text"
@@ -658,7 +627,7 @@ function ShareRow({ share, storageMounts, declaredUserNames, onUpdate, onRemove,
           <Trash2 size={13} />
         </button>
       </div>
-      {share.expanded && (
+      {expanded && (
         <div className="border-t border-surface-border px-3 py-3 bg-surface-card">
           {share.guest ? (
             <p className="text-xs text-text-muted">

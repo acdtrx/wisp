@@ -1,12 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import RadioPills from '../shared/RadioPills.jsx';
 import { Cpu, MemoryStick, RefreshCw, Images } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import HelpIcon from '../shared/HelpIcon.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
-import { formatCommandLine, parseCommandLine } from '../../utils/commandLine.js';
+import { containerGeneralForm, containerGeneralProblems, containerGeneralSent } from './containerGeneralForm.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm } from '../../hooks/useForm.js';
+import { changedFields } from '../../hooks/formState.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
+import { containerLocked } from '../../utils/workloadLocks.js';
 
 /** Same control pattern as AdvancedSection (machine type, CPU model). */
 const RESTART_OPTIONS = [
@@ -20,127 +25,53 @@ function RestartPolicyPills({ value, onChange }) {
   return <RadioPills options={RESTART_OPTIONS} value={value} onChange={onChange} />;
 }
 
-export function buildGeneralFormDefaults(config) {
-  return {
-    name: config.name || '',
-    image: config.image || '',
-    command: formatCommandLine(config.command),
-    cpuLimit: config.cpuLimit ?? '',
-    memoryLimitMiB: config.memoryLimitMiB ?? '',
-    restartPolicy: config.restartPolicy || 'unless-stopped',
-    autostart: config.autostart ?? false,
-    autoBackup: config.autoBackup ?? false,
-    runAsRoot: config.runAsRoot ?? false,
-    localDns: config.localDns === true,
-  };
-}
-
-export default function ContainerGeneralSection({ config, isCreating, onSave, onFormChange, headerAction }) {
-  const [form, setForm] = useState(() => buildGeneralFormDefaults(config));
-  const [original, setOriginal] = useState(() => buildGeneralFormDefaults(config));
-  const save = useCommand();
+/**
+ * The container's name, image, command, limits and run options. Editing a container,
+ * the form follows its config record; creating, the panel's draft (`draft`: the name
+ * and image, written through `onDraft(update)`) is the only state.
+ */
+export default function ContainerGeneralSection({ config, isCreating, draft, onDraft, onSave, onRenamed, headerAction }) {
   /* The restart badge follows the container's `pendingRestart`. */
   const requiresRestart = !isCreating && !!config?.pendingRestart;
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  /* Name is editable in create mode and on stopped containers; renaming a
-   * running/paused container would have to stop the task first, which is too
-   * much side effect for an inline field edit. Same gating idea as the
-   * Network section's MAC/interface fields. */
-  const nameEditable = isCreating || !['running', 'paused', 'pausing'].includes(config?.state);
+  /* Name is editable in create mode and when the container is stopped (workloadLocks.js). */
+  const nameEditable = isCreating || !containerLocked(config?.state);
 
-  const init = useCallback(() => {
-    const d = buildGeneralFormDefaults(config);
-    setForm(d);
-    setOriginal(d);
-    /* command serialised so re-renders with same-contents arrays don't trigger re-init */
-  }, [
-    config?.name,
-    config?.image,
-    JSON.stringify(config?.command ?? null),
-    config?.cpuLimit,
-    config?.memoryLimitMiB,
-    config?.restartPolicy,
-    config?.autostart,
-    config?.autoBackup,
-    config?.runAsRoot,
-    config?.localDns,
-  ]);
+  const record = useRecord(isCreating ? null : RECORD.CONTAINER, config.name);
+  /* A locked name shows the stored one, and a name left in the field is neither sent
+   * nor a change. */
+  const edit = useForm(record, containerGeneralForm, containerGeneralSent, {
+    locked: nameEditable ? [] : ['name'],
+    problems: containerGeneralProblems,
+  });
+  const form = isCreating ? draft : edit.form;
+  const save = useCommand();
 
-  useEffect(() => {
-    if (!isCreating) init();
-  }, [init, isCreating]);
+  /* What keeps the values from being saved, shown beside its field: Save is blocked
+   * with the first (the form hook keeps those of values the user changed). */
+  const problems = isCreating ? {} : edit.problems;
+  const nameError = problems.name ?? null;
+  const blocked = isCreating ? null : edit.blocked;
 
-  // In create mode, sync image from parent when it changes externally (e.g. app selector prefill)
-  useEffect(() => {
-    if (isCreating && config?.image !== undefined && config.image !== form.image) {
-      setForm((prev) => ({ ...prev, image: config.image }));
-    }
-  }, [isCreating, config?.image]);
-
-  /* A name edit left in the field when the container starts is dropped: the field is
-   * locked then, and must neither block Save nor be sent. */
-  useEffect(() => {
-    if (!isCreating && !nameEditable) {
-      setForm((prev) => (prev.name === config?.name ? prev : { ...prev, name: config?.name ?? '' }));
-    }
-  }, [isCreating, nameEditable, config?.name]);
-
-  const isDirty = JSON.stringify(form) !== JSON.stringify(original);
-  /* An empty name is never a rename: Save stays blocked until the field holds one. */
-  const nameError = !isCreating && nameEditable && form.name.trim() === '' ? 'Name is required' : null;
-
-  const updateField = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    if (isCreating && onFormChange) onFormChange({ [key]: value });
-  };
+  const updateField = (key, value) => (isCreating
+    ? onDraft((d) => ({ ...d, [key]: value }))
+    : edit.setField(key, value));
 
   const handleSave = () => {
-    if (nameError) return;
-    save.run(async () => {
-      const changes = {};
-      /* Compared with the stored name: a padded name saved earlier snapped the form, not
-       * the container, so it is no rename once the padding goes. */
-      const trimmedName = form.name.trim();
-      if (nameEditable && trimmedName !== config.name) changes.name = trimmedName;
-      if (form.image !== original.image) changes.image = form.image;
-      /* `original.command` is always formatter output, so parsing it gives the stored argv;
-       * a re-quoted but identical command is not sent. */
-      let commandText = form.command;
-      if (form.command !== original.command) {
-        const argv = parseCommandLine(form.command);
-        const command = argv.length ? argv : null;
-        const stored = parseCommandLine(original.command);
-        if (JSON.stringify(argv) !== JSON.stringify(stored)) changes.command = command;
-        commandText = formatCommandLine(command);
-      }
-      if (String(form.cpuLimit) !== String(original.cpuLimit)) {
-        changes.cpuLimit = form.cpuLimit ? parseFloat(form.cpuLimit) : null;
-      }
-      if (String(form.memoryLimitMiB) !== String(original.memoryLimitMiB)) {
-        changes.memoryLimitMiB = form.memoryLimitMiB ? parseInt(form.memoryLimitMiB, 10) : null;
-      }
-      if (form.restartPolicy !== original.restartPolicy) changes.restartPolicy = form.restartPolicy;
-      if (form.autostart !== original.autostart) changes.autostart = form.autostart;
-      if (form.autoBackup !== original.autoBackup) changes.autoBackup = form.autoBackup;
-      if (form.runAsRoot !== original.runAsRoot) changes.runAsRoot = form.runAsRoot;
-      if (form.localDns !== original.localDns) changes.localDns = form.localDns;
-
-      /* Values that only re-format the stored ones write nothing, so no change cue
-       * would end the wait: nothing is sent. */
-      if (Object.keys(changes).length > 0) await onSave(changes);
-      /* Snap form + original to the values we actually sent. Without this, cosmetic-only
-       * diffs (trailing whitespace in command, "2" vs "2.0" in cpuLimit, etc.) keep
-       * isDirty=true when the server stores the normalized value and the parent's
-       * config prop doesn't change (so the init useEffect doesn't re-fire). */
-      const canonical = { ...form, name: nameEditable ? trimmedName : config.name, command: commandText };
-      setForm(canonical);
-      setOriginal(canonical);
-    });
+    if (blocked) return;
+    /* A save that renames the container ends at its ack and the page follows to the new
+     * name, whose page reads its record like any page: this form goes with the old one. */
+    const changes = changedFields(containerGeneralSent(edit.form), containerGeneralSent(edit.saved));
+    if (changes.name) {
+      save.run(() => onSave(changes)).then((ok) => { if (ok) onRenamed?.(changes.name); });
+      return;
+    }
+    edit.save((values, saved) => save.run(() => onSave(changedFields(values, saved))));
   };
 
   return (
-    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={save.busy} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} commands={[save]} headerAction={headerAction}>
+    <SectionCard title="General" isDirty={!isCreating && edit.dirty} onSave={isCreating ? undefined : handleSave} saving={edit.saving || save.busy} saveDisabledReason={blocked ?? undefined} requiresRestart={requiresRestart} commands={[save]} headerAction={headerAction}>
       <div className="space-y-3">
         <div className="flex items-end gap-4 flex-wrap">
           <Field
@@ -173,7 +104,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
 
               <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border max-sm:hidden" />
 
-              <Field label="CPU" icon={Cpu} className="w-16">
+              <Field label="CPU" icon={Cpu} problem={problems.cpuLimit} className="w-16">
                 <input
                   type="number"
                   min={0.1}
@@ -185,7 +116,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
                 />
               </Field>
 
-              <Field label="RAM (MiB)" icon={MemoryStick} className="w-24">
+              <Field label="RAM (MiB)" icon={MemoryStick} problem={problems.memoryLimitMiB} className="w-24">
                 <input
                   type="number"
                   min={32}
@@ -239,6 +170,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
         <div className="flex items-end gap-4 flex-wrap">
           <Field
             label="Command Override"
+            problem={problems.command}
             helpText={'Arguments separated by spaces, quoted like a shell: \'a b\' or "a b" is one argument. No shell runs — for pipes, && or $VARS use sh -c \'…\'. Empty = image default.'}
             className="flex-1 min-w-[240px]"
           >
@@ -288,7 +220,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
 }
 
 
-function Field({ label, icon: Icon, helpText, className, children }) {
+function Field({ label, icon: Icon, helpText, problem, className, children }) {
   return (
     <div className={className}>
       <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
@@ -297,6 +229,7 @@ function Field({ label, icon: Icon, helpText, className, children }) {
         {helpText && <HelpIcon text={helpText} size={12} />}
       </label>
       {children}
+      {problem && <p className="mt-1 text-[11px] text-status-stopped">{problem}</p>}
     </div>
   );
 }

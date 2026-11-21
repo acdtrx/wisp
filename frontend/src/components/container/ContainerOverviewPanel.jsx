@@ -2,6 +2,7 @@ import {
   Fragment, useState, useEffect, lazy, Suspense,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { renamedPath } from '../../store/renameFollow.js';
 import {
   Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2,
 } from 'lucide-react';
@@ -140,18 +141,21 @@ export default function ContainerOverviewPanel({ name: routeName }) {
 
   const handleOpenBackup = () => setBackupModalOpen(true);
 
-  /* A rename is followed from the request: the server takes the name as sent (after
-   * validation) and announces the change under it. The section assignment moves with
-   * the rename and reaches the sidebar on the sections topic. */
-  const handleSectionSave = async (changes) => {
-    const renamed = typeof changes.name === 'string' && changes.name !== '' && changes.name !== name;
-    const target = renamed ? changes.name : name;
-    await awaitContainerChange(target, () => updateContainer(name, changes));
-    if (!renamed) return;
+  /* A form's save: the PATCH, ending at its ack (the form then reads its record). */
+  const handleSectionSave = (changes) => updateContainer(name, changes);
+  /* A section's command (a device toggle): busy until the container's change is in. */
+  const handleSectionCommand = (changes) => awaitContainerChange(name, () => updateContainer(name, changes));
+
+  /* After a save that renamed the container (at its ack; the server takes the name as
+   * sent, after validation, and the section assignment moves with it): the page follows
+   * to the new name, whose page reads its record, but only if the router still shows
+   * this container's page — the user may have moved on. */
+  const handleRenamed = (target) => {
     useContainerStore.getState().followRename(name, target);
-    /* The page follows only if it still shows this container: the user may have moved on. */
-    if (useContainerStore.getState().selected !== name) return;
-    navigate(`/container/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
+    /* The router's location now (BrowserRouter's is the window's), also once this
+     * page has unmounted: its tab, under the new name. */
+    const path = renamedPath(window.location.pathname, 'container', name, target);
+    if (path) navigate(path, { replace: true });
   };
 
   return (
@@ -309,7 +313,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
               workload's. */}
           {() => (
           <Fragment key={name}>
-          <ContainerGeneralSection config={config} onSave={handleSectionSave} />
+          <ContainerGeneralSection config={config} onSave={handleSectionSave} onRenamed={handleRenamed} />
           {config.metadata?.app && getAppEntry(config.metadata.app) ? (
             <AppConfigWrapper
               config={config}
@@ -323,7 +327,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
             </>
           )}
           <ContainerNetworkSection config={config} onSave={handleSectionSave} />
-          <ContainerDevicesSection config={config} onSave={handleSectionSave} />
+          <ContainerDevicesSection config={config} onSave={handleSectionCommand} />
           </Fragment>
           )}
           </RecordGate>

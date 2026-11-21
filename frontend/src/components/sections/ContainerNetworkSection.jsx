@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Network, Shuffle, Radio, Plus, X, Loader2,
 } from 'lucide-react';
@@ -6,7 +6,6 @@ import {
 import SectionCard from '../shared/SectionCard.jsx';
 import Modal from '../shared/Modal.jsx';
 import { randomMac } from '../../utils/randomMac.js';
-import { isVlanLikeBridgeName } from '../../utils/bridgeNames.js';
 import {
   KNOWN_SERVICE_TYPES, DEFAULT_TXT_FOR_TYPE, isValidServiceType,
   parsePortLabel, suggestTypeForPort,
@@ -18,8 +17,12 @@ import { awaitContainerChange } from '../../store/containerStore.js';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm } from '../../hooks/useForm.js';
+import { changedFields, rowId } from '../../hooks/formState.js';
 import CommandErrors from '../shared/CommandErrors.jsx';
+import { EditorGone } from '../shared/FormModalChrome.jsx';
 import { RECORD } from '../../store/records.js';
+import { containerLocked } from '../../utils/workloadLocks.js';
 import { useRecord } from '../../hooks/useRecord.js';
 
 const NO_BRIDGES = [];
@@ -62,7 +65,7 @@ function emptyDraft(port, suggestedType) {
     port: port == null ? '' : String(port),
     typeSelect: type,
     customType: '',
-    txtPairs: Object.entries(txt).map(([k, v]) => [k, String(v)]),
+    txtPairs: txtRows(txt),
   };
 }
 
@@ -72,7 +75,7 @@ function draftFromService(service) {
     port: String(service.port),
     typeSelect: isKnown ? service.type : '__custom__',
     customType: isKnown ? '' : service.type,
-    txtPairs: Object.entries(service.txt || {}).map(([k, v]) => [k, String(v)]),
+    txtPairs: txtRows(service.txt),
   };
 }
 
@@ -80,9 +83,14 @@ function effectiveType(draft) {
   return draft.typeSelect === '__custom__' ? draft.customType.trim() : draft.typeSelect;
 }
 
+/** TXT records as the editor's rows: each a row of its own (`rowId`), never sent. */
+function txtRows(txt) {
+  return Object.entries(txt || {}).map(([k, v]) => ({ id: rowId(), k, v: String(v) }));
+}
+
 function txtPairsToObject(pairs) {
   const out = {};
-  for (const [k, v] of pairs) {
+  for (const { k, v } of pairs) {
     const key = (k || '').trim();
     if (!key) continue;
     out[key] = v == null ? '' : String(v);
@@ -90,245 +98,76 @@ function txtPairsToObject(pairs) {
   return out;
 }
 
-export default function ContainerNetworkSection({
-  config, onSave, isCreating = false, onFormChange,
-}) {
+/** The section's values from a container's config. */
+const networkForm = (config) => ({ mac: config.network?.mac || '', interface: config.network?.interface || '' });
+
+/** What Save sends: the MAC trimmed and in lower case, the interface trimmed (none: null). */
+const networkSent = (f) => ({ mac: f.mac.trim().toLowerCase(), interface: f.interface.trim() || null });
+
+const NETWORK_FIELDS = ['mac', 'interface'];
+
+export default function ContainerNetworkSection({ config, onSave }) {
   const net = config.network || {};
   const isUp = config.state === 'running';
-  const macEditable = isCreating ? false : !['running', 'paused', 'pausing'].includes(config.state);
-  const interfaceEditable = isCreating ? true : !['running', 'paused', 'pausing'].includes(config.state);
+  /* The MAC and the interface are editable only when the container is stopped
+   * (workloadLocks.js). */
+  const editable = !containerLocked(config.state);
 
-  const [macDraft, setMacDraft] = useState(() => net.mac || '');
-  const [originalMac, setOriginalMac] = useState(() => net.mac || '');
-  const [interfaceDraft, setInterfaceDraft] = useState(() => net.interface || '');
-  const [originalInterface, setOriginalInterface] = useState(() => net.interface || '');
+  const record = useRecord(RECORD.CONTAINER, config.name);
+  /* Locked, both fields show the stored values and are neither sent nor a change. */
+  const { form, setField, dirty, saving, save: saveForm } = useForm(record, networkForm, networkSent, { locked: editable ? [] : NETWORK_FIELDS });
   const save = useCommand();
-  /* A service's save or removal, from the editor modal. */
-  const serviceCmd = useCommand();
   /* The restart badge follows the container's `pendingRestart`. */
-  const requiresRestart = !isCreating && !!config.pendingRestart;
+  const requiresRestart = !!config.pendingRestart;
   /* The bridges a container can join, kept current as bridges are made or removed. */
   const bridgesRecord = useRecord(RECORD.HOST_BRIDGES);
   const bridges = bridgesRecord.data ?? NO_BRIDGES;
 
-  /** Service editor strip state: { port: number|null, hasExisting, portEditable, draft } */
+  /** The service editor open: `{ port, hasExisting, portEditable }` (port null: a new
+   *  port is typed). The editor keeps its own values. */
   const [strip, setStrip] = useState(null);
-  const servicesEnabled = !isCreating && config.localDns === true;
-  const pills = isCreating ? [] : buildPortPills(config.exposedPorts, config.services);
+  const servicesEnabled = config.localDns === true;
+  const pills = buildPortPills(config.exposedPorts, config.services);
 
   const closeStrip = useCallback(() => setStrip(null), []);
-  const handleStripClose = useCallback(() => {
-    if (!serviceCmd.busy) closeStrip();
-  }, [serviceCmd.busy, closeStrip]);
-  const openStripForPort = (port, service) => {
-    serviceCmd.dismiss();
-    serviceCmd.dismiss('delete');
-    if (service) {
-      setStrip({
-        port, hasExisting: true, portEditable: false,
-        draft: draftFromService(service),
-      });
-    } else {
-      const suggested = suggestTypeForPort(port);
-      setStrip({
-        port, hasExisting: false, portEditable: false,
-        draft: emptyDraft(port, suggested),
-      });
-    }
-  };
-  const openStripForAdd = () => {
-    serviceCmd.dismiss();
-    serviceCmd.dismiss('delete');
-    setStrip({
-      port: null, hasExisting: false, portEditable: true,
-      draft: emptyDraft(null, null),
-    });
-  };
-  const updateDraft = (patch) => {
-    setStrip((s) => (s ? { ...s, draft: { ...s.draft, ...patch } } : s));
-  };
-  const setTypeChoice = (value) => {
-    if (value === '__custom__') {
-      setStrip((s) => (s ? { ...s, draft: { ...s.draft, typeSelect: value } } : s));
-      return;
-    }
-    const defaults = DEFAULT_TXT_FOR_TYPE[value] || {};
-    setStrip((s) => (s ? {
-      ...s,
-      draft: {
-        ...s.draft,
-        typeSelect: value,
-        customType: '',
-        // Replace TXT defaults only when user has not customized them
-        txtPairs: s.draft.txtPairs.length === 0
-          ? Object.entries(defaults).map(([k, v]) => [k, String(v)])
-          : s.draft.txtPairs,
-      },
-    } : s));
-  };
-  const updateTxtPair = (idx, which, value) => {
-    setStrip((s) => {
-      if (!s) return s;
-      const next = s.draft.txtPairs.map((pair, i) => (
-        i === idx ? (which === 'k' ? [value, pair[1]] : [pair[0], value]) : pair
-      ));
-      return { ...s, draft: { ...s.draft, txtPairs: next } };
-    });
-  };
-  const addTxtPair = () => {
-    setStrip((s) => (s ? {
-      ...s, draft: { ...s.draft, txtPairs: [...s.draft.txtPairs, ['', '']] },
-    } : s));
-  };
-  const removeTxtPair = (idx) => {
-    setStrip((s) => (s ? {
-      ...s,
-      draft: { ...s.draft, txtPairs: s.draft.txtPairs.filter((_, i) => i !== idx) },
-    } : s));
-  };
+  const openStripForPort = (port, service) => setStrip({ port, hasExisting: !!service, portEditable: false });
+  const openStripForAdd = () => setStrip({ port: null, hasExisting: false, portEditable: true });
 
-  const handleStripSave = async () => {
-    if (!strip) return;
-    const type = effectiveType(strip.draft);
-    if (!isValidServiceType(type)) {
-      serviceCmd.fail('Type must look like _name._tcp or _name._udp');
-      return;
-    }
-    let port = strip.port;
-    if (strip.portEditable) {
-      const parsed = parseInt(strip.draft.port, 10);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-        serviceCmd.fail('Port must be an integer between 1 and 65535');
-        return;
-      }
-      port = parsed;
-    }
-    const txt = txtPairsToObject(strip.draft.txtPairs);
-    /* An unchanged service writes nothing, so no change cue would end the wait. */
-    const stored = strip.hasExisting ? (config.services || []).find((s) => s.port === port) : null;
-    if (stored && stored.type === type && JSON.stringify(stored.txt || {}) === JSON.stringify(txt)) {
-      setStrip(null);
-      return;
-    }
-    serviceCmd.run(() => awaitContainerChange(config.name, () => (strip.hasExisting
-      ? updateContainerService(config.name, port, { type, txt })
-      : addContainerService(config.name, { port, type, txt }))), { onDone: () => setStrip(null) });
-  };
-
-  const handleStripDelete = () => {
-    if (!strip || !strip.hasExisting || strip.port == null) return;
-    serviceCmd.run(() => awaitContainerChange(config.name, () => removeContainerService(config.name, strip.port)), {
-      key: 'delete',
-      onDone: () => setStrip(null),
-    });
-  };
-
-  const syncFromConfig = useCallback(() => {
-    const m = config.network?.mac || '';
-    setMacDraft(m);
-    setOriginalMac(m);
-    const iface = config.network?.interface || '';
-    setInterfaceDraft(iface);
-    setOriginalInterface(iface);
-  }, [config.name, config.network?.mac, config.network?.interface]);
-
-  useEffect(() => {
-    syncFromConfig();
-  }, [syncFromConfig]);
-
-  useEffect(() => {
-    setStrip(null);
-  }, [config.name]);
-
-  /* Create flow: the first plain bridge is the default, once the bridges are known. */
-  useEffect(() => {
-    if (!isCreating || config.network?.interface || bridges.length === 0) return;
-    const pick = bridges.find((name) => !isVlanLikeBridgeName(name)) ?? bridges[0];
-    setInterfaceDraft(pick);
-    setOriginalInterface(pick);
-    onFormChange?.({
-      network: {
-        ...(config.network || {}),
-        interface: pick,
-      },
-    });
-  }, [isCreating, config.network?.interface, onFormChange, bridges]);
-
-  const norm = (s) => (s || '').trim().toLowerCase();
-  const normInterface = (s) => (s || '').trim();
-  const interfaceChanged = interfaceEditable && normInterface(interfaceDraft) !== normInterface(originalInterface);
-  const isDirty = (macEditable && norm(macDraft) !== norm(originalMac))
-    || interfaceChanged;
-
-  const applyInterfaceDraft = (value) => {
-    setInterfaceDraft(value);
-    if (!isCreating || !onFormChange) return;
-    onFormChange({
-      network: {
-        ...(config.network || {}),
-        interface: value || undefined,
-      },
-    });
-  };
-
-  const handleSave = async () => {
-    if (isCreating) {
-      setOriginalInterface(interfaceDraft.trim());
-      return;
-    }
-    save.run(async () => {
-      const changes = {};
-      const networkChanges = {};
-      if (macEditable && norm(macDraft) !== norm(originalMac)) {
-        networkChanges.mac = macDraft.trim();
-      }
-      if (interfaceChanged) {
-        const trimmed = interfaceDraft.trim();
-        networkChanges.interface = trimmed || null;
-      }
-      // The server merges these onto the stored network: only what changed is sent.
-      if (Object.keys(networkChanges).length > 0) changes.network = networkChanges;
-      await onSave(changes);
-      setOriginalMac(macDraft.trim());
-      setOriginalInterface(interfaceDraft.trim());
-    });
-  };
+  const handleSave = () => saveForm((values, saved) => save.run(() => onSave({ network: changedFields(values, saved) })));
 
   return (
     <SectionCard
       title="Network"
       titleIcon={<Network size={14} />}
-      locked={!macEditable && !isCreating}
+      locked={!editable}
       lockedMessage="Stop the container to edit network settings"
-      isDirty={isDirty}
+      isDirty={dirty}
       onSave={handleSave}
-      saving={save.busy}
+      saving={saving}
       commands={[save]}
       requiresRestart={requiresRestart}
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         <Field label="Interface">
-          {interfaceEditable ? (
+          {editable ? (
             <select
-              value={interfaceDraft}
-              onChange={(e) => applyInterfaceDraft(e.target.value)}
+              value={form.interface}
+              onChange={(e) => setField('interface', e.target.value)}
               className="input-field h-8 min-w-[130px] max-w-[180px]"
             >
-              {!interfaceDraft && <option value="">{bridgeChoice(bridgesRecord)}</option>}
+              {!form.interface && <option value="">{bridgeChoice(bridgesRecord)}</option>}
               {bridges.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
-              {interfaceDraft && !bridges.includes(interfaceDraft) && (
-                <option value={interfaceDraft}>{interfaceDraft}</option>
+              {form.interface && !bridges.includes(form.interface) && (
+                <option value={form.interface}>{form.interface}</option>
               )}
             </select>
           ) : (
             <span className="text-sm text-text-primary font-mono">{net.interface || '—'}</span>
           )}
         </Field>
-        {!isCreating ? (
-          <>
         <Field label="Type">
           <span className="text-sm text-text-primary font-medium">{net.type}</span>
         </Field>
@@ -342,19 +181,19 @@ export default function ContainerNetworkSection({
           </Field>
         )}
         <Field label="MAC Address">
-          {macEditable ? (
+          {editable ? (
             <>
               <input
                 type="text"
-                value={macDraft}
-                onChange={(e) => setMacDraft(e.target.value)}
+                value={form.mac}
+                onChange={(e) => setField('mac', e.target.value)}
                 className="input-field h-8 w-[200px] shrink-0 font-mono text-[11px]"
                 spellCheck={false}
                 autoComplete="off"
               />
               <button
                 type="button"
-                onClick={() => setMacDraft(randomMac())}
+                onClick={() => setField('mac', randomMac())}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-surface-border text-text-muted hover:bg-surface hover:text-text-secondary transition-colors duration-150"
                 title="Randomize MAC"
               >
@@ -370,10 +209,8 @@ export default function ContainerNetworkSection({
             {isUp ? 'Up' : 'Down'}
           </span>
         </Field>
-          </>
-        ) : null}
       </div>
-      {!isCreating && (pills.length > 0 || servicesEnabled) && (
+      {(pills.length > 0 || servicesEnabled) && (
         <div className="mt-3 pt-3 border-t border-surface-border">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-text-secondary">Exposed Ports</span>
@@ -416,149 +253,233 @@ export default function ContainerNetworkSection({
             )}
           </div>
 
-          <Modal
-            open={!!(strip && servicesEnabled)}
-            onClose={handleStripClose}
-            title={
-              strip?.portEditable
-                ? 'Advertise new service'
-                : strip
-                  ? `${strip.hasExisting ? 'Service' : 'Advertise service'} for port ${strip.port}`
-                  : ''
-            }
-            size="xl"
-            closeOnEscape={!serviceCmd.busy}
-          >
-            {strip && (
-              <>
-              <CommandErrors className="mb-2" commands={[serviceCmd]} prefix={(key) => (key === 'delete' ? "Couldn't remove the service" : undefined)} />
-
-              <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-                {strip.portEditable && (
-                  <Field label="Port">
-                    <input
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={strip.draft.port}
-                      onChange={(e) => updateDraft({ port: e.target.value })}
-                      className="input-field h-8 w-[100px] font-mono text-xs"
-                      placeholder="445"
-                    />
-                  </Field>
-                )}
-                <Field label="Type">
-                  <select
-                    value={strip.draft.typeSelect}
-                    onChange={(e) => setTypeChoice(e.target.value)}
-                    className="input-field h-8 min-w-[180px] text-xs"
-                  >
-                    {KNOWN_SERVICE_TYPES.map((t) => (
-                      <option key={t.type} value={t.type}>{`${t.label} (${t.type})`}</option>
-                    ))}
-                    <option value="__custom__">Custom…</option>
-                  </select>
-                </Field>
-                {strip.draft.typeSelect === '__custom__' && (
-                  <Field label="Custom type">
-                    <input
-                      type="text"
-                      value={strip.draft.customType}
-                      onChange={(e) => updateDraft({ customType: e.target.value })}
-                      placeholder="_xyz._tcp"
-                      className="input-field h-8 w-[180px] font-mono text-xs"
-                      spellCheck={false}
-                      autoComplete="off"
-                    />
-                  </Field>
-                )}
-              </div>
-
-              <div className="mt-3">
-                <span className="text-xs font-medium text-text-secondary">TXT records</span>
-                <div className="mt-1 space-y-1">
-                  {strip.draft.txtPairs.length === 0 && (
-                    <span className="text-[11px] text-text-muted">No TXT records.</span>
-                  )}
-                  {strip.draft.txtPairs.map(([k, v], idx) => (
-                    <div key={idx} className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={k}
-                        onChange={(e) => updateTxtPair(idx, 'k', e.target.value)}
-                        placeholder="key"
-                        className="input-field h-7 w-[160px] shrink-0 font-mono text-[11px]"
-                        spellCheck={false}
-                        autoComplete="off"
-                      />
-                      <input
-                        type="text"
-                        value={v}
-                        onChange={(e) => updateTxtPair(idx, 'v', e.target.value)}
-                        placeholder="value"
-                        className="input-field h-7 min-w-0 flex-1 font-mono text-[11px]"
-                        spellCheck={false}
-                        autoComplete="off"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeTxtPair(idx)}
-                        className="rounded-sm p-2 lg:p-1 text-text-muted hover:bg-surface-card hover:text-text-primary"
-                        title="Remove TXT record"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={addTxtPair}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-text-muted hover:text-text-primary"
-                >
-                  <Plus size={11} /> add TXT
-                </button>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <div>
-                  {strip.hasExisting && (
-                    <button
-                      type="button"
-                      onClick={handleStripDelete}
-                      disabled={serviceCmd.busy}
-                      className="rounded-md border border-status-stopped/30 px-2 py-1 text-[11px] font-medium text-status-stopped hover:bg-status-stopped-soft disabled:opacity-50"
-                    >
-                      Remove advertisement
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={closeStrip}
-                    disabled={serviceCmd.busy}
-                    className="rounded-md border border-surface-border px-2.5 py-1 text-[11px] font-medium text-text-secondary hover:bg-surface-card disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleStripSave}
-                    disabled={serviceCmd.busy}
-                    className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-                  >
-                    {serviceCmd.busy ? <Loader2 size={11} className="animate-spin" /> : null}
-                    Save
-                  </button>
-                </div>
-              </div>
-              </>
-            )}
-          </Modal>
+          <ServiceEditorModal strip={servicesEnabled ? strip : null} containerName={config.name} onClose={closeStrip} />
         </div>
       )}
     </SectionCard>
+  );
+}
+
+/**
+ * The editor of one advertised service (modal form editor): its record is the
+ * container's config, the service picked by its port when it opens (`strip`); a new
+ * one starts from the port's suggested type. It mounts when it opens.
+ */
+/** What a service editor's Save writes: its port (a form value: typed for a new port,
+ *  else the port it opened on), its type, its TXT records. */
+function serviceSent(d) {
+  return { port: parseInt(d.port, 10), type: effectiveType(d), txt: txtPairsToObject(d.txtPairs) };
+}
+
+/** What a service editor's values lack to be saved, by the field each is about. */
+function serviceProblems(d) {
+  const { port, type } = serviceSent(d);
+  const problems = {};
+  if (!Number.isInteger(port) || port < 1 || port > 65535) problems.port = 'Port must be an integer between 1 and 65535';
+  if (!isValidServiceType(type)) problems['typeSelect,customType'] = 'Type must look like _name._tcp or _name._udp';
+  return problems;
+}
+
+function ServiceEditorModal(props) {
+  return props.strip ? <ServiceEditor {...props} /> : null;
+}
+
+function ServiceEditor({ strip, containerName, onClose }) {
+  const record = useRecord(RECORD.CONTAINER, containerName);
+  const [blank] = useState(() => emptyDraft(strip.port, strip.port == null ? null : suggestTypeForPort(strip.port)));
+  const { form: draft, setForm, dirty, saving, blocked: problem, save: saveForm } = useForm(
+    record,
+    (config) => {
+      if (!strip.hasExisting) return blank;
+      const service = (config.services || []).find((svc) => svc.port === strip.port);
+      return service ? draftFromService(service) : null;
+    },
+    serviceSent,
+    { problems: serviceProblems, creating: !strip.hasExisting },
+  );
+  const serviceCmd = useCommand();
+  const busy = saving || serviceCmd.busy;
+
+  const updateDraft = (patch) => setForm((d) => ({ ...d, ...patch }));
+  const setTypeChoice = (value) => {
+    if (value === '__custom__') {
+      updateDraft({ typeSelect: value });
+      return;
+    }
+    const defaults = DEFAULT_TXT_FOR_TYPE[value] || {};
+    setForm((d) => ({
+      ...d,
+      typeSelect: value,
+      customType: '',
+      // Replace TXT defaults only when user has not customized them
+      txtPairs: d.txtPairs.length === 0 ? txtRows(defaults) : d.txtPairs,
+    }));
+  };
+  const updateTxtPair = (id, which, value) => setForm((d) => ({
+    ...d,
+    txtPairs: d.txtPairs.map((pair) => (pair.id === id ? { ...pair, [which]: value } : pair)),
+  }));
+  const addTxtPair = () => setForm((d) => ({ ...d, txtPairs: [...d.txtPairs, { id: rowId(), k: '', v: '' }] }));
+  const removeTxtPair = (id) => setForm((d) => ({ ...d, txtPairs: d.txtPairs.filter((pair) => pair.id !== id) }));
+
+  /* An edit needs a change that sends something; a new service only valid values (the
+   * first problem that stands shows under them). */
+  const canSave = draft != null && !problem && (!strip.hasExisting || dirty) && !busy;
+
+  const handleSave = () => {
+    if (!canSave) return;
+    saveForm((values) => serviceCmd.run(() => (strip.hasExisting
+      ? updateContainerService(containerName, values.port, { type: values.type, txt: values.txt })
+      : addContainerService(containerName, values))))
+      .then((ok) => { if (ok) onClose(); });
+  };
+
+  const handleDelete = () => serviceCmd.run(
+    () => awaitContainerChange(containerName, () => removeContainerService(containerName, strip.port)),
+    { key: 'delete', onDone: onClose },
+  );
+
+  return (
+    <Modal
+      open
+      onClose={() => { if (!busy) onClose(); }}
+      title={strip.portEditable
+        ? 'Advertise new service'
+        : `${strip.hasExisting ? 'Service' : 'Advertise service'} for port ${strip.port}`}
+      size="xl"
+      closeOnEscape={!busy}
+    >
+      {/* Its own delete closes the editor: "gone" is for a removal from elsewhere. */}
+      {draft == null ? (serviceCmd.isBusy('delete') ? null : <EditorGone what="service" />) : (
+      <>
+      <CommandErrors className="mb-2" commands={[serviceCmd]} prefix={(key) => (key === 'delete' ? "Couldn't remove the service" : undefined)} />
+
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+        {strip.portEditable && (
+          <Field label="Port">
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={draft.port}
+              onChange={(e) => updateDraft({ port: e.target.value })}
+              className="input-field h-8 w-[100px] font-mono text-xs"
+              placeholder="445"
+            />
+          </Field>
+        )}
+        <Field label="Type">
+          <select
+            value={draft.typeSelect}
+            onChange={(e) => setTypeChoice(e.target.value)}
+            className="input-field h-8 min-w-[180px] text-xs"
+          >
+            {KNOWN_SERVICE_TYPES.map((t) => (
+              <option key={t.type} value={t.type}>{`${t.label} (${t.type})`}</option>
+            ))}
+            <option value="__custom__">Custom…</option>
+          </select>
+        </Field>
+        {draft.typeSelect === '__custom__' && (
+          <Field label="Custom type">
+            <input
+              type="text"
+              value={draft.customType}
+              onChange={(e) => updateDraft({ customType: e.target.value })}
+              placeholder="_xyz._tcp"
+              className="input-field h-8 w-[180px] font-mono text-xs"
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </Field>
+        )}
+      </div>
+
+      <div className="mt-3">
+        <span className="text-xs font-medium text-text-secondary">TXT records</span>
+        <div className="mt-1 space-y-1">
+          {draft.txtPairs.length === 0 && (
+            <span className="text-[11px] text-text-muted">No TXT records.</span>
+          )}
+          {draft.txtPairs.map(({ id, k, v }) => (
+            <div key={id} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={k}
+                onChange={(e) => updateTxtPair(id, 'k', e.target.value)}
+                placeholder="key"
+                className="input-field h-7 w-[160px] shrink-0 font-mono text-[11px]"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <input
+                type="text"
+                value={v}
+                onChange={(e) => updateTxtPair(id, 'v', e.target.value)}
+                placeholder="value"
+                className="input-field h-7 min-w-0 flex-1 font-mono text-[11px]"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={() => removeTxtPair(id)}
+                className="rounded-sm p-2 lg:p-1 text-text-muted hover:bg-surface-card hover:text-text-primary"
+                title="Remove TXT record"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={addTxtPair}
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-text-muted hover:text-text-primary"
+        >
+          <Plus size={11} /> add TXT
+        </button>
+      </div>
+
+      {problem && <p className="mt-2 text-[11px] text-text-muted">{problem}</p>}
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div>
+          {strip.hasExisting && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={busy}
+              className="rounded-md border border-status-stopped/30 px-2 py-1 text-[11px] font-medium text-status-stopped hover:bg-status-stopped-soft disabled:opacity-50"
+            >
+              Remove advertisement
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md border border-surface-border px-2.5 py-1 text-[11px] font-medium text-text-secondary hover:bg-surface-card disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave}
+            title={problem ?? undefined}
+            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+            Save
+          </button>
+        </div>
+      </div>
+      </>
+      )}
+    </Modal>
   );
 }
 

@@ -4,17 +4,19 @@
  * acceleration toggle, and the published URL Jellyfin advertises to clients
  * on the LAN.
  */
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import { Cpu, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
 import HelpIcon from '../../components/shared/HelpIcon.jsx';
-import { RECORD } from '../../store/records.js';
-import { useRecord } from '../../hooks/useRecord.js';
 import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
 import RecordGate from '../../components/shared/RecordGate.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm, useHeld } from '../../hooks/useForm.js';
+import { rowId } from '../../hooks/formState.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -40,17 +42,12 @@ function isValidSubPath(value) {
   return !t.split('/').filter(Boolean).some((seg) => seg === '..' || seg === '.');
 }
 
-let nextRowId = 1;
-function makeRowId() {
-  nextRowId += 1;
-  return `lib-${Date.now()}-${nextRowId}`;
-}
-
 function librariesFromConfig(config) {
   const ac = config?.metadata?.appConfig || {};
   const list = Array.isArray(ac.libraries) ? ac.libraries : [];
+  /* A row's id is its identity in this form only (new at every reset), never sent. */
   return list.map((lib) => ({
-    rowId: makeRowId(),
+    rowId: rowId(),
     label: lib?.label || '',
     sourceId: lib?.sourceId || '',
     subPath: lib?.subPath || '',
@@ -66,89 +63,81 @@ function parseAppConfig(config) {
   };
 }
 
-function librariesEqual(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i];
-    const y = b[i];
-    if ((x.label || '') !== (y.label || '')) return false;
-    if ((x.sourceId || '') !== (y.sourceId || '')) return false;
-    if ((x.subPath || '') !== (y.subPath || '')) return false;
+/** What Save sends for the form. */
+function appConfigToSend(form) {
+  return {
+    libraries: form.libraries.map((lib) => ({
+      label: (lib.label || '').trim(),
+      sourceId: lib.sourceId,
+      subPath: (lib.subPath || '').trim(),
+    })),
+    gpuEnabled: form.gpuEnabled,
+    publishedUrl: form.publishedUrl,
+  };
+}
+
+/** What a library row lacks to be saved (`libraries`: every row, for duplicates), or null. */
+function libraryRowError(lib, libraries) {
+  const label = (lib.label || '').trim();
+  if (!label) return 'Label required';
+  if (!isValidLibraryLabel(label)) {
+    if (RESERVED_LIBRARY_LABELS.has(label)) return `"${label}" is reserved`;
+    return 'Invalid label';
   }
-  return true;
+  if (libraries.filter((other) => (other.label || '').trim() === label).length > 1) return 'Duplicate label';
+  if (!lib.sourceId) return 'Source required';
+  if (!isValidSubPath(lib.subPath)) return 'Invalid sub-path';
+  return null;
+}
+
+/** What keeps the libraries from being saved, by the row each is about (the form hook
+ *  keeps those of rows the user changed). */
+function libraryProblems(form) {
+  const problems = {};
+  form.libraries.forEach((lib, i) => {
+    const error = libraryRowError(lib, form.libraries);
+    if (error) problems[`libraries.${i}`] = `Library ${(lib.label || '').trim() || i + 1}: ${error}`;
+  });
+  return problems;
 }
 
 export default function JellyfinAppSection({ config, onSave }) {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
 
-  const [form, setForm] = useState(() => parseAppConfig(config));
-  const [original, setOriginal] = useState(() => parseAppConfig(config));
+  /* The form follows the container's config record by value: a save elsewhere that
+   * leaves this app's settings as they were leaves its edits. */
+  const record = useRecord(RECORD.CONTAINER, config.name);
+  const { form, generation, setForm, dirty, saving, problems, blocked, save: saveForm } = useForm(
+    record, parseAppConfig, appConfigToSend, { problems: libraryProblems },
+  );
   const gpus = useRecord(RECORD.HOST_GPUS);
   const hostGpus = gpus.data ? (Array.isArray(gpus.data.gpus) ? gpus.data.gpus : []) : (gpus.error ? [] : null);
   /* A failed read of the host's GPUs shows once, in the Devices section: here the
    * choice is only unavailable. */
   const gpuUnknown = gpus.data == null && gpus.status === 'error';
   const save = useCommand();
-  const saving = save.busy;
 
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
-
-  useEffect(() => {
-    const parsed = parseAppConfig(config);
-    setForm(parsed);
-    setOriginal(parsed);
-  }, [JSON.stringify(config?.metadata?.appConfig)]);
-
-  const dirty = useMemo(() => (
-    !librariesEqual(form.libraries, original.libraries)
-    || form.gpuEnabled !== original.gpuEnabled
-    || form.publishedUrl !== original.publishedUrl
-  ), [form, original]);
-
-  const labelCounts = useMemo(() => {
-    const counts = new Map();
-    for (const lib of form.libraries) {
-      const key = (lib.label || '').trim();
-      if (!key) continue;
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
-    return counts;
-  }, [form.libraries]);
-
-  const rowError = useCallback((lib) => {
-    const label = (lib.label || '').trim();
-    if (!label) return 'Label required';
-    if (!isValidLibraryLabel(label)) {
-      if (RESERVED_LIBRARY_LABELS.has(label)) return `"${label}" is reserved`;
-      return 'Invalid label';
-    }
-    if ((labelCounts.get(label) || 0) > 1) return 'Duplicate label';
-    if (!lib.sourceId) return 'Source required';
-    if (!isValidSubPath(lib.subPath)) return 'Invalid sub-path';
-    return null;
-  }, [labelCounts]);
-
-  const hasRowErrors = useMemo(
-    () => form.libraries.some((lib) => rowError(lib) !== null),
-    [form.libraries, rowError],
-  );
 
   const gpuAvailable = Array.isArray(hostGpus) && hostGpus.length > 0;
   const gpuLabel = gpuAvailable
     ? `${hostGpus[0].vendorName || hostGpus[0].vendor}${hostGpus[0].model ? ` — ${hostGpus[0].model}` : ''}`
     : null;
 
-  const removeLibrary = useCallback((rowId) => {
-    setForm((f) => ({ ...f, libraries: f.libraries.filter((lib) => lib.rowId !== rowId) }));
-  }, []);
+  const removeLibrary = useCallback((id) => {
+    setForm((f) => ({ ...f, libraries: f.libraries.filter((lib) => lib.rowId !== id) }));
+  }, [setForm]);
 
-  /* Modal form editor state — rowId null means "add". */
-  const [editor, setEditor] = useState({ open: false, rowId: null });
-  const editingLibrary = editor.rowId != null
+  /* The library editor: the row it edits (null to add one) and the form as it was when
+   * it opened. A reset of the form (a save elsewhere) closes it, and an edit whose row
+   * is gone never applies to another. */
+  const [editor, setEditor] = useHeld(generation);
+  const editingLibrary = editor?.rowId != null
     ? form.libraries.find((lib) => lib.rowId === editor.rowId) || null
     : null;
+  const editorOpen = editor != null && (editor.rowId == null || editingLibrary != null);
 
   const validateModalLabel = useCallback((label, editing) => {
     const t = (label || '').trim();
@@ -163,25 +152,14 @@ export default function JellyfinAppSection({ config, onSave }) {
     return clash ? 'A library with this label already exists' : null;
   }, [form.libraries]);
 
+  const editingRow = editor?.rowId ?? null;
   const applyLibrary = useCallback((values) => {
-    setForm((f) => (editor.rowId != null
-      ? { ...f, libraries: f.libraries.map((lib) => (lib.rowId === editor.rowId ? { ...lib, ...values } : lib)) }
-      : { ...f, libraries: [...f.libraries, { rowId: makeRowId(), ...values }] }));
-  }, [editor.rowId]);
+    setForm((f) => (editingRow != null
+      ? { ...f, libraries: f.libraries.map((lib) => (lib.rowId === editingRow ? { ...lib, ...values } : lib)) }
+      : { ...f, libraries: [...f.libraries, { rowId: rowId(), ...values }] }));
+  }, [editingRow, setForm]);
 
-  const handleSave = () => save.run(async () => {
-    const appConfig = {
-      libraries: form.libraries.map((lib) => ({
-        label: (lib.label || '').trim(),
-        sourceId: lib.sourceId,
-        subPath: (lib.subPath || '').trim(),
-      })),
-      gpuEnabled: form.gpuEnabled,
-      publishedUrl: form.publishedUrl,
-    };
-    await onSave(appConfig);
-    setOriginal(form);
-  });
+  const handleSave = () => saveForm((appConfig) => save.run(() => onSave(appConfig)));
 
   return (
     <SectionCard
@@ -189,8 +167,9 @@ export default function JellyfinAppSection({ config, onSave }) {
       requiresRestart={!!config?.pendingRestart}
       commands={[save]}
       onSave={handleSave}
-      saving={save.busy}
-      isDirty={dirty && !hasRowErrors}
+      saving={saving}
+      isDirty={dirty}
+      saveDisabledReason={blocked ?? undefined}
     >
       <RecordGate record={settingsRecord} what="storage settings">
         {() => (
@@ -211,8 +190,8 @@ export default function JellyfinAppSection({ config, onSave }) {
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {form.libraries.map((lib) => {
-                      const err = rowError(lib);
+                    {form.libraries.map((lib, i) => {
+                      const err = problems[`libraries.${i}`] ?? null;
                       const source = storageMounts.find((m) => m.id === lib.sourceId);
                       return (
                         <div key={lib.rowId} className="space-y-0.5">
@@ -227,7 +206,7 @@ export default function JellyfinAppSection({ config, onSave }) {
                               className={iconBtn}
                               title="Edit library"
                               aria-label="Edit library"
-                              onClick={() => setEditor({ open: true, rowId: lib.rowId })}
+                              onClick={() => setEditor({ rowId: lib.rowId })}
                             >
                               <Pencil size={13} />
                             </button>
@@ -255,7 +234,7 @@ export default function JellyfinAppSection({ config, onSave }) {
                     className={iconBtn}
                     title="Add library"
                     aria-label="Add library"
-                    onClick={() => setEditor({ open: true, rowId: null })}
+                    onClick={() => setEditor({ rowId: null })}
                   >
                     <Plus size={14} />
                   </button>
@@ -263,13 +242,13 @@ export default function JellyfinAppSection({ config, onSave }) {
               </div>
 
               <JellyfinLibraryEditorModal
-                open={editor.open}
+                open={editorOpen}
                 library={editingLibrary}
                 storageMounts={storageMounts}
                 validateLabel={validateModalLabel}
                 validateSubPath={isValidSubPath}
                 onApply={applyLibrary}
-                onClose={() => setEditor({ open: false, rowId: null })}
+                onClose={() => setEditor(null)}
               />
 
               <div>

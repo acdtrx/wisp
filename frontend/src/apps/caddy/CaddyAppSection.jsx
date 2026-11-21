@@ -4,7 +4,6 @@
  * reveals the API token field, then a Hosts sub-header with add button,
  * then the hosts table.
  */
-import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Globe, Eye, EyeOff, Server } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
@@ -19,8 +18,11 @@ import {
   DataTableTd,
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
-import { randomId } from '../../utils/randomId.js';
+import { rowId } from '../../hooks/formState.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -34,39 +36,37 @@ function parseAppConfig(config) {
     cloudflareDnsEnabled: ac.cloudflareDnsEnabled ?? (ac.cloudflareApiToken?.isSet ?? false),
     cloudflareApiToken: '',
     cloudflareTokenIsSet: ac.cloudflareApiToken?.isSet ?? false,
-    cloudflareTokenDirty: false,
-    hosts: (ac.hosts || []).map((h) => ({
-      id: randomId(),
+    /* A row's id is its identity in this form only (new at every reset), never sent. */
+    hosts: (ac.hosts || []).filter(Boolean).map((h) => ({
+      id: rowId(),
       subdomain: h.subdomain ?? '',
       target: h.target ?? '',
     })),
   };
 }
 
+/** What Save sends for the form: the token only when typed in (none stored: empty). */
+function appConfigToSend(form) {
+  const appConfig = {
+    domain: form.domain.trim(),
+    email: form.email.trim(),
+    cloudflareDnsEnabled: form.cloudflareDnsEnabled,
+    hosts: form.hosts.map((h) => ({ subdomain: h.subdomain.trim(), target: h.target.trim() })),
+  };
+  if (form.cloudflareApiToken) appConfig.cloudflareApiToken = form.cloudflareApiToken;
+  else if (!form.cloudflareTokenIsSet) appConfig.cloudflareApiToken = '';
+  return appConfig;
+}
+
 export default function CaddyAppSection({ config, onSave }) {
-  const [form, setForm] = useState(() => parseAppConfig(config));
-  const [original, setOriginal] = useState(() => parseAppConfig(config));
+  /* The form follows the container's config record by value: a save elsewhere that
+   * leaves this app's settings as they were leaves its edits. */
+  const record = useRecord(RECORD.CONTAINER, config.name);
+  const { form, generation, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
   const save = useCommand();
-  const [showToken, setShowToken] = useState(false);
-
-  useEffect(() => {
-    const parsed = parseAppConfig(config);
-    setForm(parsed);
-    setOriginal(parsed);
-  }, [config?.metadata?.appConfig?.domain, config?.metadata?.appConfig?.email, JSON.stringify(config?.metadata?.appConfig?.hosts), config?.metadata?.appConfig?.cloudflareDnsEnabled, config?.metadata?.appConfig?.cloudflareApiToken?.isSet]);
-
-  const isDirty = useCallback(() => {
-    if (form.domain !== original.domain) return true;
-    if (form.email !== original.email) return true;
-    if (form.cloudflareDnsEnabled !== original.cloudflareDnsEnabled) return true;
-    if (form.cloudflareTokenDirty) return true;
-    if (form.hosts.length !== original.hosts.length) return true;
-    for (let i = 0; i < form.hosts.length; i++) {
-      if (form.hosts[i].subdomain !== original.hosts[i]?.subdomain) return true;
-      if (form.hosts[i].target !== original.hosts[i]?.target) return true;
-    }
-    return false;
-  }, [form, original]);
+  /* The token revealed: held on the form as it is, a reset hides it again. */
+  const [showToken, setShowToken] = useHeld(generation);
+  const toggleShowToken = () => setShowToken((on) => (on ? null : true));
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -82,7 +82,7 @@ export default function CaddyAppSection({ config, onSave }) {
   const addHost = () => {
     setForm((prev) => ({
       ...prev,
-      hosts: [...prev.hosts, { id: randomId(), subdomain: '', target: '' }],
+      hosts: [...prev.hosts, { id: rowId(), subdomain: '', target: '' }],
     }));
   };
 
@@ -93,32 +93,14 @@ export default function CaddyAppSection({ config, onSave }) {
     }));
   };
 
-  const handleSave = () => save.run(async () => {
-      const appConfig = {
-        domain: form.domain.trim(),
-        email: form.email.trim(),
-        cloudflareDnsEnabled: form.cloudflareDnsEnabled,
-        hosts: form.hosts.map((h) => ({
-          subdomain: h.subdomain.trim(),
-          target: h.target.trim(),
-        })),
-      };
-      if (form.cloudflareTokenDirty) {
-        appConfig.cloudflareApiToken = form.cloudflareApiToken;
-      } else if (!form.cloudflareTokenIsSet) {
-        appConfig.cloudflareApiToken = '';
-      }
-      await onSave(appConfig);
-  });
-
-  const dirty = isDirty();
+  const handleSave = () => saveForm((appConfig) => save.run(() => onSave(appConfig)));
 
   return (
     <SectionCard
       title="Caddy Reverse Proxy Configuration"
       titleIcon={<Globe size={14} />}
       onSave={handleSave}
-      saving={save.busy}
+      saving={saving}
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
       commands={[save]}
@@ -179,17 +161,14 @@ export default function CaddyAppSection({ config, onSave }) {
                 <input
                   type={showToken ? 'text' : 'password'}
                   className="input-field flex-1"
-                  placeholder={form.cloudflareTokenIsSet && !form.cloudflareTokenDirty ? 'Set (leave empty to keep)' : 'Cloudflare API token'}
+                  placeholder={form.cloudflareTokenIsSet ? 'Set (leave empty to keep)' : 'Cloudflare API token'}
                   value={form.cloudflareApiToken}
-                  onChange={(e) => {
-                    updateField('cloudflareApiToken', e.target.value);
-                    updateField('cloudflareTokenDirty', true);
-                  }}
+                  onChange={(e) => updateField('cloudflareApiToken', e.target.value)}
                 />
                 <button
                   type="button"
                   className={iconBtn}
-                  onClick={() => setShowToken((v) => !v)}
+                  onClick={toggleShowToken}
                   title={showToken ? 'Hide token' : 'Show token'}
                   aria-label={showToken ? 'Hide token' : 'Show token'}
                 >

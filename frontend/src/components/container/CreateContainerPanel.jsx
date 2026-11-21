@@ -24,7 +24,7 @@ export default function CreateContainerPanel() {
   const navigate = useNavigate();
 
   const [selectedApp, setSelectedApp] = useState(null);
-  const [form, setForm] = useState({
+  const [draft, setDraft] = useState({
     name: '',
     image: '',
   });
@@ -53,21 +53,17 @@ export default function CreateContainerPanel() {
     if (next) {
       const app = appList.find((a) => a.id === next);
       if (app?.defaultImage) {
-        setForm((prev) => ({ ...prev, image: app.defaultImage }));
+        setDraft((prev) => ({ ...prev, image: app.defaultImage }));
       }
     } else {
-      setForm((prev) => ({ ...prev, image: '' }));
+      setDraft((prev) => ({ ...prev, image: '' }));
     }
-  };
-
-  const handleFormChange = (changes) => {
-    setForm((prev) => ({ ...prev, ...changes }));
   };
 
   const handleCreate = () => {
     const spec = {
-      name: form.name.trim(),
-      image: form.image.trim(),
+      name: draft.name.trim(),
+      image: draft.image.trim(),
     };
     if (selectedApp) spec.app = selectedApp;
 
@@ -81,12 +77,12 @@ export default function CreateContainerPanel() {
   };
 
   const config = {
-    name: form.name,
-    image: form.image,
+    name: draft.name,
+    image: draft.image,
     state: 'creating',
   };
 
-  const canCreate = form.name.trim() && form.image.trim() && !creating;
+  const canCreate = draft.name.trim() && draft.image.trim() && !creating;
 
   const progressStep = row?.step ?? (creating ? 'validating' : null);
   const progressDetail = row?.detail ?? null;
@@ -126,8 +122,8 @@ export default function CreateContainerPanel() {
           <ContainerGeneralSection
             config={config}
             isCreating
-            onSave={() => Promise.resolve({})}
-            onFormChange={handleFormChange}
+            draft={draft}
+            onDraft={setDraft}
             headerAction={appSelector}
           />
         </div>

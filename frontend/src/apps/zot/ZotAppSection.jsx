@@ -5,7 +5,6 @@
  * and they are independent code paths, so htpasswd keeps working when the IdP is down —
  * and it stays the only way `docker login` can authenticate without an API key.
  */
-import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Container, Eye, EyeOff, UserPlus, KeyRound } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
@@ -20,8 +19,11 @@ import {
   DataTableTd,
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
-import { randomId } from '../../utils/randomId.js';
+import { rowId } from '../../hooks/formState.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useForm, useHeld } from '../../hooks/useForm.js';
+import { useRecord } from '../../hooks/useRecord.js';
+import { RECORD } from '../../store/records.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -39,8 +41,9 @@ function parseAppConfig(config) {
   const oidc = ac.oidc || {};
   return {
     externalUrl: ac.externalUrl ?? '',
-    users: (ac.users || []).map((u) => ({
-      id: randomId(),
+    /* A row's id is its identity in this form only (new at every reset), never sent. */
+    users: (ac.users || []).filter(Boolean).map((u) => ({
+      id: rowId(),
       username: u.username ?? '',
       password: '',
       hasPassword: u.hasPassword ?? false,
@@ -52,44 +55,45 @@ function parseAppConfig(config) {
     oidcClientId: oidc.clientId ?? '',
     oidcClientSecret: '',
     oidcSecretIsSet: oidc.clientSecret?.isSet ?? false,
-    oidcSecretDirty: false,
     oidcScopes: (oidc.scopes || []).join(' ') || DEFAULT_SCOPES,
     oidcUsernameClaim: oidc.usernameClaim || USERNAME_CLAIMS[0],
   };
 }
 
+/** What Save sends for the form. A password goes only when typed in: the backend
+ *  recovers the stored hash by username (a renamed user reads as new and is rejected
+ *  without one). The OIDC secret goes only when retyped, or when none is stored:
+ *  omitting it keeps the stored one. */
+function appConfigToSend(form) {
+  const users = form.users.map((u) => {
+    const entry = { username: u.username.trim() };
+    if (u.passwordDirty && u.password) entry.password = u.password;
+    return entry;
+  });
+  const oidc = {
+    enabled: form.oidcEnabled,
+    name: form.oidcName.trim(),
+    issuer: form.oidcIssuer.trim(),
+    clientId: form.oidcClientId.trim(),
+    scopes: form.oidcScopes.split(/[\s,]+/).filter(Boolean),
+    usernameClaim: form.oidcUsernameClaim,
+  };
+  if (form.oidcClientSecret || !form.oidcSecretIsSet) oidc.clientSecret = form.oidcClientSecret;
+  return { users, externalUrl: form.externalUrl.trim(), oidc };
+}
+
 export default function ZotAppSection({ config, onSave }) {
-  const [form, setForm] = useState(() => parseAppConfig(config));
-  const [original, setOriginal] = useState(() => parseAppConfig(config));
+  /* The form follows the container's config record by value: a save elsewhere that
+   * leaves this app's settings as they were leaves its edits. */
+  const record = useRecord(RECORD.CONTAINER, config.name);
+  const { form, generation, setForm, dirty, saving, save: saveForm } = useForm(record, parseAppConfig, appConfigToSend);
   const save = useCommand();
-  const [showPasswords, setShowPasswords] = useState({});
-  const [showSecret, setShowSecret] = useState(false);
-
-  const appConfigSig = JSON.stringify(config?.metadata?.appConfig);
-  useEffect(() => {
-    const parsed = parseAppConfig(config);
-    setForm(parsed);
-    setOriginal(parsed);
-    setShowPasswords({});
-    setShowSecret(false);
-  }, [appConfigSig]);
-
-  const isDirty = useCallback(() => {
-    if (form.externalUrl !== original.externalUrl) return true;
-    if (form.oidcEnabled !== original.oidcEnabled) return true;
-    if (form.oidcName !== original.oidcName) return true;
-    if (form.oidcIssuer !== original.oidcIssuer) return true;
-    if (form.oidcClientId !== original.oidcClientId) return true;
-    if (form.oidcSecretDirty) return true;
-    if (form.oidcScopes !== original.oidcScopes) return true;
-    if (form.oidcUsernameClaim !== original.oidcUsernameClaim) return true;
-    if (form.users.length !== original.users.length) return true;
-    for (let i = 0; i < form.users.length; i++) {
-      if (form.users[i].username !== original.users[i]?.username) return true;
-      if (form.users[i].passwordDirty) return true;
-    }
-    return false;
-  }, [form, original]);
+  /* Held on the form as it is (a reset drops them): revealed passwords, by row id, and
+   * the revealed secret. */
+  const [shownPasswords, setShowPasswords] = useHeld(generation);
+  const showPasswords = shownPasswords ?? {};
+  const [showSecret, setShowSecret] = useHeld(generation);
+  const toggleShowSecret = () => setShowSecret((on) => (on ? null : true));
 
   const updateField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -107,7 +111,7 @@ export default function ZotAppSection({ config, onSave }) {
   const addUser = () => {
     setForm((prev) => ({
       ...prev,
-      users: [...prev.users, { id: randomId(), username: '', password: '', hasPassword: false, passwordDirty: true }],
+      users: [...prev.users, { id: rowId(), username: '', password: '', hasPassword: false, passwordDirty: true }],
     }));
   };
 
@@ -119,39 +123,11 @@ export default function ZotAppSection({ config, onSave }) {
   };
 
   const toggleShowPassword = (id) => {
-    setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
+    setShowPasswords((prev) => ({ ...prev, [id]: !prev?.[id] }));
   };
 
-  const handleSave = () => save.run(async () => {
-      const users = form.users.map((u) => {
-        // Omit the password when untouched — the backend recovers the stored hash by
-        // username. A renamed user reads as new and is rejected without a password.
-        const entry = { username: u.username.trim() };
-        if (u.passwordDirty && u.password) {
-          entry.password = u.password;
-        }
-        return entry;
-      });
+  const handleSave = () => saveForm((appConfig) => save.run(() => onSave(appConfig)));
 
-      const oidc = {
-        enabled: form.oidcEnabled,
-        name: form.oidcName.trim(),
-        issuer: form.oidcIssuer.trim(),
-        clientId: form.oidcClientId.trim(),
-        scopes: form.oidcScopes.split(/[\s,]+/).filter(Boolean),
-        usernameClaim: form.oidcUsernameClaim,
-      };
-      // Only send the secret when retyped; omitting it keeps the stored one. Sending ''
-      // when nothing is stored is how you'd clear it, which the backend then rejects
-      // while OIDC is enabled.
-      if (form.oidcSecretDirty || !form.oidcSecretIsSet) {
-        oidc.clientSecret = form.oidcClientSecret;
-      }
-
-      await onSave({ users, externalUrl: form.externalUrl.trim(), oidc });
-  });
-
-  const dirty = isDirty();
   const callbackUrl = form.externalUrl.trim()
     ? `${form.externalUrl.trim().replace(/\/+$/, '')}/zot/auth/callback/oidc`
     : null;
@@ -175,7 +151,7 @@ export default function ZotAppSection({ config, onSave }) {
       titleIcon={<Container size={14} />}
       helpText="The registry listens on port 5000. With no users and no SSO it allows anonymous push and pull — add users or enable OIDC to require authentication. Anonymous pull stays enabled either way."
       onSave={handleSave}
-      saving={save.busy}
+      saving={saving}
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
       commands={[save]}
@@ -336,17 +312,14 @@ export default function ZotAppSection({ config, onSave }) {
                       id="zot-oidc-client-secret"
                       type={showSecret ? 'text' : 'password'}
                       className="input-field flex-1"
-                      placeholder={form.oidcSecretIsSet && !form.oidcSecretDirty ? 'Set (leave empty to keep)' : 'client secret'}
+                      placeholder={form.oidcSecretIsSet ? 'Set (leave empty to keep)' : 'client secret'}
                       value={form.oidcClientSecret}
-                      onChange={(e) => {
-                        updateField('oidcClientSecret', e.target.value);
-                        updateField('oidcSecretDirty', true);
-                      }}
+                      onChange={(e) => updateField('oidcClientSecret', e.target.value)}
                     />
                     <button
                       type="button"
                       className={iconBtn}
-                      onClick={() => setShowSecret((v) => !v)}
+                      onClick={toggleShowSecret}
                       title={showSecret ? 'Hide secret' : 'Show secret'}
                       aria-label={showSecret ? 'Hide client secret' : 'Show client secret'}
                     >

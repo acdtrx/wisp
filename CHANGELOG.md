@@ -53,15 +53,22 @@
 - **A cloud-init hostname can be cleared**: left empty, it means the VM's name as it is now, which the field's placeholder shows and Save or Create stores.
 - **The backup schedule saves Local first, then the network mount**: a backup writes them in that order, so a failing mount never skips Local; ticking a destination off and on again is no change.
 - **Clearing the server name in App Config restores the default name**, instead of being ignored.
-- **A modal editor's Save stays busy until the saved values are on screen**; the editor shows a change saved elsewhere to what it edits, and says so when it was removed.
-- **A VM's section keeps its unsaved edits when another section is saved**, here or in another tab, and resets when its own values are saved elsewhere; after its own save, busy until then, it shows the values as stored. Cloud-init's edit form follows the same rule.
-- **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
 - **SSO's Save is off, with its reason, while a changed issuer or client ID waits for the client secret** (it was on, and said so only when clicked).
+- **A VM's or container's section keeps its unsaved edits when another section is saved**, here or in another tab, and resets when its own values are saved elsewhere; after its own save it shows the values as stored. The app sections (Caddy, Jellyfin, Tiny Samba, Zot) and cloud-init's edit form follow the same rule.
 - **The VLAN bridge dialog takes the first parent bridge** even when it is opened before the bridges have loaded (Create stayed disabled).
 - **A NIC's MAC is saved trimmed and in lower case**; changing only its case is no change.
 - **The RAM unit you chose is kept** while the size is the one you typed: 0.5 GB stays 0.5 GB after a save (it showed 512 MB).
-- **A VM's settings that need it offline are editable only when it is shut off**: its name, CPU, RAM and the Advanced offline-only fields are now locked also while it is paused, shutting down, crashed, suspended, has no state or is of unknown state; its disks and NICs also while it has no state. CD-ROM changes still work on a running VM.
+- **A container's name and network (MAC, interface) are editable only when it is stopped**: now locked also while it is created or of unknown state.
+- **A value already stored never blocks a save**: a disk whose size cannot be read takes a bus change, and a mount, a share or a library row whose stored value fails the editor's check saves its other fields.
+- **Tiny Samba and Jellyfin say what keeps Save off**: a share with no user with access, or a library row with a problem, shows it under the row, with Save off and the reason (Tiny Samba said so only when Save was clicked; Jellyfin hid Save).
 - **A VM's CPU and RAM show a value the server refuses under the field**, cleared or below 1 CPU or 128 MB, with Save (creating, Create) off and the reason (a cleared field was sent as 1 CPU or 0 MB).
+- **A Cloudflare token or a Zot OIDC client secret typed and cleared again keeps the stored one**, instead of saving it empty.
+- **A container's General section shows a command that does not parse** (a quote left open), and a CPU or RAM limit that is not a positive number, under its field as it is typed, with Save off and the reason given.
+- **Tiny Samba's Data UID, cleared, blocks Save with its reason** under the field (it was saved as 0).
+- **The mDNS service editor's Save needs a valid port and type**: what is missing shows as it is typed, and Save is off while nothing changed.
+- **A container's RAM limit must be a whole positive number of MiB** (1.5 was cut to 1).
+- **A Save — a section's, a settings form's, a modal editor's — stays busy until the saved values are on screen**, then shows them as the server stored them; a failed save keeps what was typed. A modal editor shows a change saved elsewhere to what it edits, and says so when it was removed.
+- **A VM's settings that need it offline are editable only when it is shut off**: its name, CPU, RAM and the Advanced offline-only fields are now locked also while it is paused, shutting down, crashed, suspended, has no state or is of unknown state; its disks and NICs also while it has no state. CD-ROM changes still work on a running VM.
 
 ## 2026-11-17
 

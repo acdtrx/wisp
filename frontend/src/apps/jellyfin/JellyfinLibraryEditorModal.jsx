@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import Modal from '../../components/shared/Modal.jsx';
 import {
@@ -14,12 +14,17 @@ const FORM_ID = 'jellyfin-library-editor-form';
  * Create/edit one Jellyfin media library (modal form editor). Unlike the Host
  * Mgmt editors this writes no API: the section owns the whole appConfig and a
  * single section Save persists it, so `onApply` just hands the edited library
- * back to the parent's form state. Create vs edit = presence of `library`.
+ * back to the parent's form state. Its values are an input to that apply, its own
+ * until then (no record of its own). Create vs edit = presence of `library`.
  *
  * Validation callbacks come from the section so the label rules (reserved
  * names, duplicates against the *other* rows) live in one place.
  */
-export default function JellyfinLibraryEditorModal({
+export default function JellyfinLibraryEditorModal(props) {
+  return props.open ? <JellyfinLibraryEditor {...props} /> : null;
+}
+
+function JellyfinLibraryEditor({
   open,
   library,
   storageMounts,
@@ -28,30 +33,28 @@ export default function JellyfinLibraryEditorModal({
   onApply,
   onClose,
 }) {
-  const empty = { label: '', sourceId: '', subPath: '' };
-  const [form, setForm] = useState(empty);
+  const [values, setValues] = useState(() => (library
+    ? { label: library.label, sourceId: library.sourceId, subPath: library.subPath }
+    : { label: '', sourceId: '', subPath: '' }));
+  const setField = (key, value) => setValues((v) => ({ ...v, [key]: value }));
+  const applied = { label: values.label.trim(), sourceId: values.sourceId, subPath: values.subPath.trim() };
 
-  useEffect(() => {
-    if (!open) return;
-    setForm(library ? { label: library.label, sourceId: library.sourceId, subPath: library.subPath } : empty);
-  }, [open, library]);
-
-  const labelError = useMemo(() => validateLabel(form.label, library), [validateLabel, form.label, library]);
+  const labelError = useMemo(() => validateLabel(values.label, library), [validateLabel, values.label, library]);
   const subPathError = useMemo(
-    () => (validateSubPath(form.subPath) ? null : 'Sub-path must be relative, without "." or ".." segments'),
-    [validateSubPath, form.subPath],
+    () => (validateSubPath(values.subPath) ? null : 'Sub-path must be relative, without "." or ".." segments'),
+    [validateSubPath, values.subPath],
   );
-  const sourceMissing = !form.sourceId;
+  const sourceMissing = !values.sourceId;
   const valid = !labelError && !subPathError && !sourceMissing;
 
-  const dirty = library
-    ? form.label !== library.label || form.sourceId !== library.sourceId || form.subPath !== library.subPath
-    : true;
+  /* An edit needs a change to what it applies; a new library only valid values. */
+  const dirty = !library || applied.label !== library.label.trim() || applied.sourceId !== library.sourceId
+    || applied.subPath !== (library.subPath || '').trim();
 
   const submit = (e) => {
     e.preventDefault();
     if (!valid || !dirty) return;
-    onApply({ label: form.label.trim(), sourceId: form.sourceId, subPath: form.subPath.trim() });
+    onApply(applied);
     onClose();
   };
 
@@ -62,7 +65,7 @@ export default function JellyfinLibraryEditorModal({
       size="sm"
       height="cap"
       title={library ? 'Edit media library' : 'Add media library'}
-      subtitle={form.label.trim() ? `/media/${form.label.trim()}` : 'Mounted at /media/<label>'}
+      subtitle={values.label.trim() ? `/media/${values.label.trim()}` : 'Mounted at /media/<label>'}
       footer={(
         <>
           <button type="button" className={formModalNeutralBtn} onClick={onClose}>Cancel</button>
@@ -83,8 +86,8 @@ export default function JellyfinLibraryEditorModal({
             type="text"
             className="input-field"
             placeholder="movies"
-            value={form.label}
-            onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+            value={values.label}
+            onChange={(e) => setField('label', e.target.value)}
             ref={autoFocusField}
           />
         </FormField>
@@ -97,8 +100,8 @@ export default function JellyfinLibraryEditorModal({
           <select
             id="jf-lib-source"
             className="input-field"
-            value={form.sourceId}
-            onChange={(e) => setForm((f) => ({ ...f, sourceId: e.target.value }))}
+            value={values.sourceId}
+            onChange={(e) => setField('sourceId', e.target.value)}
           >
             <option value="">— Select Storage source —</option>
             {storageMounts.map((m) => (
@@ -119,8 +122,8 @@ export default function JellyfinLibraryEditorModal({
             type="text"
             className="input-field"
             placeholder="Optional"
-            value={form.subPath}
-            onChange={(e) => setForm((f) => ({ ...f, subPath: e.target.value }))}
+            value={values.subPath}
+            onChange={(e) => setField('subPath', e.target.value)}
           />
         </FormField>
 
