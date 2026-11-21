@@ -132,6 +132,7 @@ export default function CaddyAppSection({ config, onSave }) {
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
     >
       <div className="space-y-4">
         {/* TLS fields — single row */}

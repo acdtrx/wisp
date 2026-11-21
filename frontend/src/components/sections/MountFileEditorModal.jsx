@@ -9,6 +9,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const contentText = (data) => (typeof data?.content === 'string' ? data.content : '');
 
@@ -106,9 +107,7 @@ export default function MountFileEditorModal({
             />
           )}
         </RecordGate>
-        {saveError && (
-          <p className="mt-2 text-xs text-status-stopped">{saveError}</p>
-        )}
+        <ErrorBanner className="mt-2" error={saveError} onDismiss={() => setSaveError(null)} />
       </div>
     </Modal>
   );

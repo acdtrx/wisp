@@ -5,7 +5,6 @@ import Modal from '../shared/Modal.jsx';
 import {
   FormField,
   FormCheckbox,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -15,6 +14,7 @@ import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -200,7 +200,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
             onChange={(e) => setForm((f) => ({ ...f, autoMount: e.target.checked }))}
           />
         </div>
-        <FormModalError error={error} />
+        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
       </form>
     </Modal>
   );

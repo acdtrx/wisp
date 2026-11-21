@@ -16,6 +16,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
 import RecordError from '../shared/RecordError.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 function formatBytes(bytes) {
   if (bytes >= 1024 ** 4) return `${formatDecimal(bytes / 1024 ** 4)} TB`;
@@ -349,7 +350,7 @@ export default function HostOverview() {
     return (
       <div className="flex flex-1 items-center justify-center">
         {statsError ? (
-          <p className="text-xs text-status-stopped" role="alert" title={statsError}>Stats unavailable</p>
+          <ErrorBanner error={statsError} prefix="Stats unavailable" />
         ) : (
           <Loader2 size={24} className="animate-spin text-text-muted" />
         )}

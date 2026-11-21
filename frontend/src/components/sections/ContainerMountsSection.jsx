@@ -280,6 +280,7 @@ export default function ContainerMountsSection({ config }) {
       helpText="Add or edit a mount in a form. Deletes and uploads apply to one row at a time. A secret file mount is write-only — its content can be replaced or cleared, never read back. On phones, tap a row to reach its actions."
       requiresRestart={!!config.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerAdds}
     >
       <div className="space-y-3">

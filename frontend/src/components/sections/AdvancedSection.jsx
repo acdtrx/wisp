@@ -158,6 +158,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed(!collapsed)}
       error={error}
+      onDismissError={() => setError(null)}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">

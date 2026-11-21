@@ -148,7 +148,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   };
 
   return (
-    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} error={error} headerAction={headerAction}>
+    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} error={error} onDismissError={() => setError(null)} headerAction={headerAction}>
       <div className="space-y-3">
         <div className="flex items-end gap-4 flex-wrap">
           <Field

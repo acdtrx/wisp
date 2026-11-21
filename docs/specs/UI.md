@@ -458,7 +458,7 @@ The primary container for all form sections. Features:
 - Optional: "Restart required" amber badge (left of Save in the header right cluster)
 - Optional: Save button (appears when `isDirty`, before `headerAction`)
 - Optional: lock icon with "Offline only" message
-- Optional: error message (red banner below header)
+- Optional: an error — a section's error shows in the section, below the header, and can be dismissed
 - Optional: **`headerAction`** — placed **last** on the right (e.g. **add** = accent **`Plus`+kind icon**); primary place for collection **add** actions
 - Content area separated by border-top
 

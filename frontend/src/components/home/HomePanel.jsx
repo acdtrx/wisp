@@ -7,6 +7,8 @@ import HomeMotes from './HomeMotes.jsx';
 import HomeGroup from './HomeGroup.jsx';
 import ManualLinkModal from './ManualLinkModal.jsx';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { CONNECTION } from '../../store/streamStore.js';
 
 const LIT_STATES = new Set(['running', 'blocked']);
 const NO_TILES = [];
@@ -39,6 +41,9 @@ export default function HomePanel() {
   const groups = home?.groups ?? NO_GROUPS;
   const loaded = home != null;
   const loadError = useHomeStore((s) => s.error);
+  const dismissLoadError = useHomeStore((s) => s.dismissError);
+  const retryHome = useHomeStore((s) => s.retry);
+  const homeRetrying = useHomeStore((s) => s.connection === CONNECTION.CONNECTING && s.error != null);
   const connectHome = useHomeStore((s) => s.connect);
   const disconnectHome = useHomeStore((s) => s.disconnect);
   const createGroup = useHomeStore((s) => s.createGroup);
@@ -150,11 +155,15 @@ export default function HomePanel() {
           </div>
         </header>
 
-        {loadError && (
-          <p className="mb-4 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-xs text-status-stopped" role="alert">
-            Couldn't load the home page: {loadError}
-          </p>
-        )}
+        <ErrorBanner
+          className="mb-4"
+          error={loadError}
+          prefix="Couldn't load the home page"
+          /* Nothing loaded: the page's error state, with a Retry. Over the home shown: dismiss. */
+          onRetry={loaded ? undefined : retryHome}
+          retrying={homeRetrying}
+          onDismiss={loaded ? dismissLoadError : undefined}
+        />
         {!loaded ? (
           loadError ? null : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-busy="true" aria-label="Loading home">

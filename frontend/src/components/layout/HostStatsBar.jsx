@@ -3,11 +3,14 @@ import { Box, Monitor } from 'lucide-react';
 import { useStatsStore } from '../../store/statsStore.js';
 import { CONNECTION } from '../../store/streamStore.js';
 import StatPill from '../shared/StatPill.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
 
 export default function HostStatsBar({ embedded = false }) {
-  const { data: stats, connection, error, connect, disconnect } = useStatsStore();
-  const refusal = connection === CONNECTION.REFUSED ? error : null;
+  const { data: stats, connection, error, connect, disconnect, retry } = useStatsStore();
+  /* Refused, or reconnecting after a Retry with the refusal still unanswered. */
+  const retrying = connection === CONNECTION.CONNECTING;
+  const refusal = connection === CONNECTION.REFUSED || (retrying && error) ? error : null;
 
   useEffect(() => {
     connect();
@@ -17,9 +20,7 @@ export default function HostStatsBar({ embedded = false }) {
   if (!stats) {
     // The events stream's state shows here: connecting, or ended because Wisp refused it.
     const loader = refusal ? (
-      <span className="min-w-0 truncate text-xs text-status-stopped" title={refusal} role="alert">
-        Live updates stopped: {refusal}
-      </span>
+      <ErrorBanner className="min-w-0 py-0.5" error={refusal} prefix="Live updates stopped" onRetry={retry} retrying={retrying} />
     ) : (
       <span className="text-xs text-text-muted whitespace-nowrap">
         {error ? 'Stats unavailable' : connection === CONNECTION.OPEN ? 'Loading stats…' : 'Connecting…'}

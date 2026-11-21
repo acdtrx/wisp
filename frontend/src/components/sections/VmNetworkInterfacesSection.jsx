@@ -171,6 +171,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       }
       requiresRestart={!!vmConfig.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerAdd}
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />

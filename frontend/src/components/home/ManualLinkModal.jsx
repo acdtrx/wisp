@@ -3,7 +3,6 @@ import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import {
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -12,6 +11,7 @@ import { getVmIcon } from '../shared/vmIcons.jsx';
 import { useHomeStore } from '../../store/homeStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const DEFAULT_ICON_ID = 'globe';
 
@@ -121,7 +121,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
               <span>{getVmIcon(iconId).name}</span>
             </button>
           </FormField>
-          <FormModalError error={error} />
+          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
         </form>
       </Modal>
       <IconPickerModal

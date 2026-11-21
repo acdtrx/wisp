@@ -5,7 +5,6 @@ import Modal from '../shared/Modal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import {
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -14,6 +13,7 @@ import { awaitContainerChange } from '../../store/containerStore.js';
 import { formatSize } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'secret-mount-content-form';
 
@@ -117,7 +117,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
               className="input-field min-h-32 w-full resize-y font-mono text-xs leading-relaxed"
             />
           </FormField>
-          <FormModalError error={error} />
+          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
         </form>
       </Modal>
 

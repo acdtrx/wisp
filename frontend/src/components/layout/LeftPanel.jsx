@@ -19,6 +19,8 @@ import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { useBusyCommand } from '../../hooks/useBusyCommand.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import { CONNECTION } from '../../store/streamStore.js';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -327,6 +329,10 @@ export default function LeftPanel() {
   const listError = vmListError || containerListError;
   /* Both lists are topics of the one events stream: reconnecting it asks for both. */
   const retryLists = () => useVmStore.getState().retry();
+  const dismissListError = () => {
+    useVmStore.getState().dismissError();
+    useContainerStore.getState().dismissError();
+  };
   const connectContainers = useContainerStore((s) => s.connect);
   const disconnectContainers = useContainerStore((s) => s.disconnect);
   const listFilter = useUiStore((s) => s.listFilter);
@@ -340,6 +346,8 @@ export default function LeftPanel() {
   const sections = useSectionsStore((s) => s.data.sections);
   const assignments = useSectionsStore((s) => s.data.assignments);
   const sectionsError = useSectionsStore((s) => s.error);
+  const sectionsRefused = useSectionsStore((s) => s.connection === CONNECTION.REFUSED);
+  const sectionsRetrying = useSectionsStore((s) => s.connection === CONNECTION.CONNECTING && s.error != null);
   const connectSections = useSectionsStore((s) => s.connect);
   const disconnectSections = useSectionsStore((s) => s.disconnect);
   const assignWorkload = useSectionsStore((s) => s.assignWorkload);
@@ -587,17 +595,22 @@ export default function LeftPanel() {
       {/* overscroll-contain stops the drawer's scroll from chaining to the
           content behind it on iOS when the list hits its top/bottom edge. */}
       <div className="flex-1 overflow-y-auto overscroll-contain py-1">
-        {listError && (
-          <div className="mx-3 my-2 flex items-center gap-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
-            <span className="min-w-0 flex-1 truncate" title={listError}>Couldn't load workloads: {listError}</span>
-            <button type="button" onClick={retryLists} className="shrink-0 rounded px-2 py-1 font-medium hover:underline">Retry</button>
-          </div>
-        )}
-        {sectionsError && (
-          <div className="mx-3 my-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
-            <span className="block truncate" title={sectionsError}>Couldn't load the sections: {sectionsError}</span>
-          </div>
-        )}
+        <ErrorBanner
+          className="mx-3 my-2"
+          error={listError}
+          prefix="Couldn't load workloads"
+          onRetry={retryLists}
+          onDismiss={listsLoaded ? dismissListError : undefined}
+        />
+        <ErrorBanner
+          className="mx-3 my-2"
+          error={sectionsError}
+          prefix="Couldn't load the sections"
+          /* Refused, nothing is shown: Retry. A failed gather over the sections shown: dismiss. */
+          onRetry={sectionsRefused ? retryLists : undefined}
+          retrying={sectionsRetrying}
+          onDismiss={sectionsRefused ? undefined : useSectionsStore.getState().dismissError}
+        />
         {!listsLoaded && totalCount === 0 ? (
           listError ? null : (
             <div className="space-y-2 px-3 py-2" aria-busy="true" aria-label="Loading workloads">

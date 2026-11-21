@@ -4,7 +4,6 @@ import { AlertTriangle, Loader2, Shuffle } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import {
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -12,6 +11,7 @@ import NicModelPills from './NicModelPills.jsx';
 import { randomMac } from '../../utils/randomMac.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'nic-editor-form';
 
@@ -152,7 +152,7 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
             </button>
           </div>
         </FormField>
-        <FormModalError error={error} />
+        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
       </form>
     </Modal>
   );

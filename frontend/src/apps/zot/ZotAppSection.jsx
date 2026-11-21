@@ -189,6 +189,7 @@ export default function ZotAppSection({ config, onSave }) {
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={addUserButton}
     >
       <div className="space-y-5">

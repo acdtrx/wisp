@@ -4,7 +4,6 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import {
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -14,6 +13,7 @@ import { addMount, patchMount, checkMountConnection } from '../../api/settings.j
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -242,7 +242,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
             />
           </FormField>
         </div>
-        <FormModalError error={error} />
+        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
       </form>
     </Modal>
   );

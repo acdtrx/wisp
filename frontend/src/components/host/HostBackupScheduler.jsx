@@ -95,6 +95,7 @@ export default function HostBackupScheduler() {
       saving={saving}
       isDirty={dirty}
       error={error}
+      onDismissError={() => setError(null)}
     >
       <RecordGate record={settingsRecord} what="settings">
         {() => (

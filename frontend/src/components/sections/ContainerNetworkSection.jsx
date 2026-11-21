@@ -316,6 +316,7 @@ export default function ContainerNetworkSection({
       onSave={handleSave}
       saving={saving}
       error={error}
+      onDismissError={() => setError(null)}
       requiresRestart={requiresRestart}
     >
       <RecordError record={bridgesRecord} what="host bridges" className="mb-2" />

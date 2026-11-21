@@ -54,9 +54,3 @@ export function FormCheckbox({ label, hint, checked, onChange, disabled = false,
     </label>
   );
 }
-
-/** Sticky error line for the bottom of a form-modal body. */
-export function FormModalError({ error }) {
-  if (!error) return null;
-  return <p className="mt-3 text-xs text-status-stopped">{error}</p>;
-}

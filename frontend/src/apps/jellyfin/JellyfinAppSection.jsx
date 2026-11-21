@@ -197,6 +197,7 @@ export default function JellyfinAppSection({ config, onSave }) {
       title="Jellyfin"
       requiresRestart={!!config?.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
       onSave={handleSave}
       saving={saving}
       isDirty={dirty && !hasRowErrors}

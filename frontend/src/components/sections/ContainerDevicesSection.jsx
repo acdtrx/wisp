@@ -99,6 +99,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
       helpText="Share a host GPU (Intel/AMD render node) with the container for hardware acceleration like media transcoding. Restart the container to apply changes."
       requiresRestart={!!config.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerAction}
     >
       {/* The host's GPUs, for the picker: their read's error state (a Retry before they

@@ -191,7 +191,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
   // For create mode, return inline form fields only
   if (isCreating) {
     return (
-      <SectionCard title="Cloud-Init" error={error}>
+      <SectionCard title="Cloud-Init" error={error} onDismissError={() => setError(null)}>
         <EditForm
           form={form}
           updateField={updateField}
@@ -218,6 +218,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed(!collapsed)}
       error={error}
+      onDismissError={() => setError(null)}
     >
       {!editing ? (
         <div className="space-y-3">

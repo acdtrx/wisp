@@ -59,6 +59,7 @@ export default function AppConfig() {
         saving={saving}
         isDirty={dirty}
         error={error}
+        onDismissError={() => setError(null)}
       >
         <RecordGate record={settingsRecord} what="settings">
           {() => (

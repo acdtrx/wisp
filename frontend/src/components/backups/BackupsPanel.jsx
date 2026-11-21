@@ -37,6 +37,7 @@ import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { errorText } from '../../api/errors.js';
 import { JOB_KIND, TOPIC } from '../../../../shared/wireNames.js';
 import { useBackupsStore } from '../../store/backupsStore.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
@@ -147,6 +148,7 @@ export default function BackupsPanel() {
   const loading = vmList.status === 'loading' || ctList.status === 'loading';
   const status = useBackupsStore((s) => s.data);
   const statusError = useBackupsStore((s) => s.error);
+  const dismissStatusError = useBackupsStore((s) => s.dismissError);
   const connectStatus = useBackupsStore((s) => s.connect);
   const disconnectStatus = useBackupsStore((s) => s.disconnect);
   useEffect(() => {
@@ -545,11 +547,7 @@ export default function BackupsPanel() {
 
       <div className="flex-1 space-y-3 px-4 py-4 lg:px-6 lg:py-5">
         <RecordError record={settingsRecord} what="settings" />
-        {statusError && (
-          <div className="rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped" role="alert">
-            Couldn't load the last backup attempts: {statusError}
-          </div>
-        )}
+        <ErrorBanner error={statusError} prefix="Couldn't load the last backup attempts" onDismiss={dismissStatusError} />
         <RecordError record={vmList} what="VM backups" />
         <RecordError record={ctList} what="container backups" />
         {loading ? (

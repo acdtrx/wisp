@@ -4,7 +4,6 @@ import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import {
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -12,6 +11,7 @@ import { createManagedNetworkBridge } from '../../api/host.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'bridge-create-form';
 
@@ -124,7 +124,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
             Bridge name:{' '}
             <span className="font-mono text-text-secondary">{bridgePreview || '—'}</span>
           </p>
-          <FormModalError error={error} />
+          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
         </form>
       )}
     </Modal>

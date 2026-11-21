@@ -6,12 +6,12 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import {
   FormCheckbox,
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'env-var-editor-form';
 
@@ -226,7 +226,7 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
             checked={form.secret}
             onChange={(e) => setForm((f) => ({ ...f, secret: e.target.checked }))}
           />
-          <FormModalError error={error} />
+          <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
         </form>
       </Modal>
 

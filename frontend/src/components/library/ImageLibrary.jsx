@@ -563,6 +563,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       titleIcon={<Images size={14} strokeWidth={2} />}
       headerAction={libraryHeaderAction}
       error={error || (readError ? `Couldn't load the library: ${errorText(readError)}` : undefined)}
+      onDismissError={() => setError(null)}
     >
           {(uploading || uploadError || presetError || presetDownloading) && (
             <div className="mb-4 border-b border-surface-border pb-4">

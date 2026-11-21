@@ -22,6 +22,7 @@ import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const NO_DEVICES = [];
 
@@ -30,9 +31,9 @@ const iconBtn =
 
 export default function USBSection({ vmConfig, busyReason }) {
   const hostDevices = useUsbStore((s) => s.data);
-  const hostError = useUsbStore((s) => (s.connection === CONNECTION.DROPPED
-    ? 'The USB device stream is not connected — retrying…'
-    : s.error));
+  const hostError = useUsbStore((s) => s.error);
+  const hostDropped = useUsbStore((s) => s.connection === CONNECTION.DROPPED);
+  const dismissHostError = useUsbStore((s) => s.dismissError);
   const connectUsb = useUsbStore((s) => s.connect);
   const disconnectUsb = useUsbStore((s) => s.disconnect);
 
@@ -132,6 +133,7 @@ export default function USBSection({ vmConfig, busyReason }) {
       title="USB Devices"
       titleIcon={<Usb size={14} strokeWidth={2} />}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerAttach}
     >
       <UsbAttachModal
@@ -143,12 +145,13 @@ export default function USBSection({ vmConfig, busyReason }) {
       />
 
       <RecordError record={attached} what="attached devices" className="my-1" />
-      {hostError && (
-        <p className="py-1 text-xs text-status-stopped" role="alert">{hostError}</p>
+      <ErrorBanner className="my-1" error={hostError} onDismiss={hostDevices ? dismissHostError : undefined} />
+      {hostDropped && (
+        <p className="py-1 text-xs text-text-muted" role="status">The USB device stream is not connected — retrying…</p>
       )}
       {/* Without the attached list (its read failed: the error state above; or the VM is
           gone: the page says so), no table that would read as "none attached". */}
-      {attached.data == null && !loading ? null : showSpinner && !(hostError && hostLoading) ? (
+      {attached.data == null && !loading ? null : showSpinner && !((hostError || hostDropped) && hostLoading) ? (
         <p className="text-xs text-text-muted py-2">Loading USB devices…</p>
       ) : hostLoading ? null : hostList.length === 0 && attachedDevices.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">

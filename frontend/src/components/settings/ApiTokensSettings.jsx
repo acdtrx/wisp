@@ -124,6 +124,7 @@ export default function ApiTokensSettings() {
       titleIcon={<KeyRound size={14} />}
       helpText={HELP}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerAdd}
     >
       <div className="space-y-4">

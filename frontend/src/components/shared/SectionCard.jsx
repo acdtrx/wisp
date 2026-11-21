@@ -1,6 +1,12 @@
 import { ChevronDown, ChevronRight, Lock, Loader2, Save } from 'lucide-react';
 import HelpIcon from './HelpIcon.jsx';
+import ErrorBanner from './ErrorBanner.jsx';
 
+/**
+ * The card every form section sits in (docs/specs/UI.md, SectionCard). A section's
+ * error shows in the section, below the header, and is dismissed with
+ * `onDismissError`.
+ */
 export default function SectionCard({
   title,
   titleIcon,
@@ -17,6 +23,7 @@ export default function SectionCard({
   locked,
   lockedMessage,
   error,
+  onDismissError,
   headerAction,
 }) {
   return (
@@ -73,11 +80,7 @@ export default function SectionCard({
         </div>
       </div>
 
-      {error && (
-        <div className="mx-5 mb-3 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-1.5 text-xs text-status-stopped">
-          {error}
-        </div>
-      )}
+      <ErrorBanner className="mx-5 mb-3" error={error} onDismiss={onDismissError} />
 
       {(!collapsible || !collapsed) && (
         <div className="border-t border-surface-border px-5 py-4">

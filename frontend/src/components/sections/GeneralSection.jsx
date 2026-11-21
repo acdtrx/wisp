@@ -123,6 +123,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       saving={saving}
       requiresRestart={!!vmConfig.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
     >
       <div className="space-y-0">
         <div className="flex items-end gap-4 flex-wrap">

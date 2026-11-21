@@ -43,6 +43,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const NO_STATUS = [];
 
@@ -78,9 +79,9 @@ export default function HostStorage() {
   const disks = useDiskStore((s) => s.data);
   const connectDisks = useDiskStore((s) => s.connect);
   const disconnectDisks = useDiskStore((s) => s.disconnect);
-  const diskStreamError = useDiskStore((s) => (s.connection === CONNECTION.DROPPED
-    ? 'The device stream is not connected — retrying…'
-    : s.error));
+  const diskStreamError = useDiskStore((s) => s.error);
+  const diskStreamDropped = useDiskStore((s) => s.connection === CONNECTION.DROPPED);
+  const dismissDiskStreamError = useDiskStore((s) => s.dismissError);
 
   useEffect(() => {
     connectDisks();
@@ -107,7 +108,7 @@ export default function HostStorage() {
   );
 
   return (
-    <SectionCard title="Storage" titleIcon={<Server size={14} strokeWidth={2} />} error={error}>
+    <SectionCard title="Storage" titleIcon={<Server size={14} strokeWidth={2} />} error={error} onDismissError={() => setError(null)}>
       <RecordGate record={settingsRecord} what="storage settings">
         {() => (
           <div className="space-y-6">
@@ -127,6 +128,8 @@ export default function HostStorage() {
               unadoptedDetected={unadoptedDetected}
               onError={setError}
               diskStreamError={diskStreamError}
+              diskStreamDropped={diskStreamDropped}
+              onDismissDiskStreamError={dismissDiskStreamError}
             />
           </div>
         )}
@@ -360,6 +363,8 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
 
 function RemovableDrivesSection({
   diskStreamError,
+  diskStreamDropped,
+  onDismissDiskStreamError,
   diskSaved,
   detectedDisks,
   unadoptedDetected,
@@ -411,14 +416,24 @@ function RemovableDrivesSection({
       .finally(() => setMountActionId(null));
   };
 
+  /* The device stream's state, in one place whether or not the tables have rows: an
+   * error frame as a banner (dismissible over the drives shown), a dropped connection
+   * as a status line while the client reconnects. */
+  const streamNotice = (
+    <>
+      <ErrorBanner error={diskStreamError} onDismiss={detectedDisks ? onDismissDiskStreamError : undefined} />
+      {diskStreamDropped && (
+        <p className="text-[11px] text-text-muted" role="status">The device stream is not connected — retrying…</p>
+      )}
+    </>
+  );
+
   const hasAnything = diskSaved.length > 0 || unadoptedDetected.length > 0;
   if (!hasAnything && (detectedDisks == null)) {
     return (
       <div className="space-y-2">
         <SubHeading label="Removable drives" />
-        {diskStreamError ? (
-          <p className="text-[11px] text-status-stopped" role="alert">{diskStreamError}</p>
-        ) : (
+        {diskStreamError || diskStreamDropped ? streamNotice : (
           <p className="text-[11px] text-text-muted">Connecting to device stream…</p>
         )}
       </div>
@@ -429,6 +444,7 @@ function RemovableDrivesSection({
     <div className="space-y-4">
       <div className="space-y-2">
         <SubHeading label="Removable drives" />
+        {streamNotice}
         <DataTableScroll>
           <DataTable>
             <thead>

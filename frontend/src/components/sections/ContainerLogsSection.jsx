@@ -9,6 +9,7 @@ import { isErrorFrame } from '../../store/streamStore.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const NO_RUNS = [];
 
@@ -123,9 +124,13 @@ export default function ContainerLogsSection({ containerName }) {
       {
         onDown: (err) => {
           // An error: the stream was refused (the run is gone, a bad query) and has ended.
-          // None: the connection dropped, and openStream reconnects.
+          // None: the connection dropped, and openStream reconnects: a status, not an error.
+          if (!err) {
+            setStreamState('dropped');
+            return;
+          }
           setStreamState('error');
-          setStreamError(err ? errorText(err) : 'The log stream was interrupted — reconnecting…');
+          setStreamError(errorText(err));
         },
       },
     );
@@ -299,14 +304,17 @@ export default function ContainerLogsSection({ containerName }) {
       >
         <RecordError record={runsRecord} what="runs" className="mb-2 font-sans" />
         {streamState === 'error' && (
-          <div className="mb-2 text-status-stopped" role="alert">{streamError}</div>
+          <ErrorBanner className="mb-2 font-sans" error={streamError} onDismiss={entries.length > 0 ? () => setStreamError(null) : undefined} />
+        )}
+        {streamState === 'dropped' && (
+          <p className="mb-2 font-sans text-text-muted" role="status">The log stream was interrupted — reconnecting…</p>
         )}
         {filtered.length === 0 ? (
           <span className="text-text-muted">
             {!selectedRunId
               ? (runsRecord.error ? null : runsLoading ? 'Loading runs…' : 'No logs available.')
               : streamState === 'connecting' ? 'Loading logs…'
-                : streamState === 'error' ? null
+                : streamState === 'error' || streamState === 'dropped' ? null
                   : 'No logs for this run.'}
           </span>
         ) : (

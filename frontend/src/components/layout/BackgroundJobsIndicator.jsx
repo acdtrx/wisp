@@ -4,6 +4,7 @@ import { ListTodo } from 'lucide-react';
 import { runningJobs, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 /** A row the topic lists as failed shows no text until its stream's replay brings the error. */
 function formatStep(row) {
@@ -51,6 +52,7 @@ function JobProgressBar({ percent, status }) {
 export default function BackgroundJobsIndicator() {
   const jobs = useBackgroundJobsStore((s) => s.jobs);
   const streamError = useBackgroundJobsStore((s) => s.error);
+  const dismissStreamError = useBackgroundJobsStore((s) => s.dismissError);
   const dismissJob = useBackgroundJobsStore((s) => s.dismissJob);
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
@@ -107,11 +109,12 @@ export default function BackgroundJobsIndicator() {
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs
           </div>
-          {streamError && (
-            <p className="mx-3 my-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
-              Couldn't load the job list: {streamError}
-            </p>
-          )}
+          <ErrorBanner
+            className="mx-3 my-2"
+            error={streamError}
+            prefix="Couldn't load the job list"
+            onDismiss={list.length > 0 ? dismissStreamError : undefined}
+          />
           <ul className="max-h-72 overflow-y-auto">
             {list.map((row) => (
               <li

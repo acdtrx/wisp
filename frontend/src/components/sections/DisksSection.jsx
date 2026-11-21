@@ -424,6 +424,7 @@ export default function DisksSection({
         titleIcon={<HardDrive size={14} strokeWidth={2} />}
         helpText="Add disks or attach an ISO from the header. Original images are never modified — copies are created for new VMs."
         error={error}
+        onDismissError={() => setError(null)}
         headerAction={headerActions}
       >
         <DataTableScroll>
@@ -526,6 +527,7 @@ export default function DisksSection({
       titleIcon={<HardDrive size={14} strokeWidth={2} />}
       helpText="Add or edit a block disk in a form — the VM must be stopped to add, resize, re-bus, or detach one. ISO attach, change, and eject work while it runs."
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerActions}
     >
       <DataTableScroll>

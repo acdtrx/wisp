@@ -46,7 +46,8 @@ export function liveData(state) {
 /**
  * The one way a store mirrors a stream (a topic of the events stream, or a scoped
  * stream): `connect(...args)` opens it, `disconnect()` closes it, `retry()` asks the
- * server again (the events stream reconnects, every topic with it). Each store has one
+ * server again (the events stream reconnects, every topic with it), `dismissError()`
+ * puts away an error shown over the data. Each store has one
  * component that connects it, so neither counts its callers. Every such store holds:
  *
  * - `data` — what the last good frame brought (`empty` before one, after a refusal,
@@ -121,6 +122,9 @@ export function createStreamStore({ source, toData = (frame) => frame, empty = n
         if (source.scoped) changeData(cleared);
         else set({ connection: CONNECTION.CONNECTING });
       },
+
+      /** Put away the error shown over the data (the next error frame brings it back). */
+      dismissError: () => set({ error: null }),
 
       retry: () => {
         if (!close) return;

@@ -5,7 +5,6 @@ import Modal from '../shared/Modal.jsx';
 import {
   FormCheckbox,
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -13,6 +12,7 @@ import { addContainerMount, updateContainerMount } from '../../api/containers.js
 import { awaitContainerChange } from '../../store/containerStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'container-mount-editor-form';
 
@@ -436,7 +436,7 @@ export default function ContainerMountEditorModal({
           </FormField>
         )}
 
-        <FormModalError error={error} />
+        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
       </form>
     </Modal>
   );

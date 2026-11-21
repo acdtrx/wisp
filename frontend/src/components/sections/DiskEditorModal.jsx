@@ -6,7 +6,6 @@ import Modal from '../shared/Modal.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import {
   FormField,
-  FormModalError,
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
@@ -22,6 +21,7 @@ import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
 
 const FORM_ID = 'disk-editor-form';
 
@@ -276,7 +276,7 @@ export default function DiskEditorModal({
 
         {busField}
 
-        <FormModalError error={error} />
+        <ErrorBanner className="mt-3" error={error} onDismiss={() => setError(null)} />
       </form>
     </Modal>
   );

@@ -94,6 +94,7 @@ export default function ContainerEnvSection({ config, onSave }) {
       helpText="Add or edit variables in a form. Marking a value as secret hides it — secrets are never read back, only overwritten. The dice generates a random secret, with a one-time copy."
       requiresRestart={requiresRestart}
       error={error}
+      onDismissError={() => setError(null)}
       headerAction={headerAdd}
     >
       <DataTableScroll>

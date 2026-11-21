@@ -365,6 +365,7 @@ export default function TinySambaAppSection({ config, onSave }) {
       isDirty={dirty}
       requiresRestart={!!config?.pendingRestart}
       error={error}
+      onDismissError={() => setError(null)}
     >
       <RecordGate record={settingsRecord} what="storage settings">
         {() => (
