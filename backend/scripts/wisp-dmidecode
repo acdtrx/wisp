@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Outputs JSON array of memory device info from dmidecode --type 17.
-# Must be run with sufficient privilege (root or sudo).
 # Usage: wisp-dmidecode
-set -euo pipefail
+# The host's memory devices (`dmidecode --type 17`) as one JSON array on stdout:
+# [] when DMI lists none. A dmidecode that is missing or fails is an error, never
+# an empty list.
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-DMIDECODE="${WISP_DMIDECODE_BIN:-dmidecode}"
+(( $# == 0 )) || refuse "usage: wisp-dmidecode (it takes no arguments)"
 
-# Parse stdout even if dmidecode exits non-zero (warnings); empty stdout → []
-out="$("$DMIDECODE" --type 17 2>/dev/null)" || true
-if [[ -z "$out" ]]; then
-  echo '[]'
-  exit 0
-fi
+rc=0
+capture "$QUICK_SEC" dmidecode --type 17 || rc=$?
+(( rc == 124 )) && fail "dmidecode did not finish within ${QUICK_SEC} s"
+(( rc == 127 )) && fail "dmidecode is not installed: run setup"
+(( rc == 0 )) || fail "dmidecode failed (exit $rc)${BOUNDED_ERR:+: $BOUNDED_ERR}"
+out="$CAPTURED"
 
 json_escape() {
   printf '%s' "$1" | sed 's/\r$//; s/^[[:space:]]*//; s/[[:space:]]*$//; s/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'

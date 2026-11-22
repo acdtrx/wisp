@@ -146,7 +146,8 @@ export async function getHostHardwareInfo() {
     disks: profilerParts ? profilerParts.disks : [],
     filesystems: getFilesystemUsage(),
     network,
-    memory: profilerParts ? profilerParts.memory : [],
+    memory: profilerParts ? profilerParts.memory : null,
+    memoryError: profilerParts ? null : 'system_profiler could not be read',
     pciDevices: profilerParts ? profilerParts.pciDevices : [],
     system: profilerParts?.system ?? null,
   };

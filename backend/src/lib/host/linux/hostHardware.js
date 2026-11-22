@@ -400,44 +400,45 @@ function resolveJedecManufacturer(raw) {
   return JEDEC_MANUFACTURERS[prefix] || raw;
 }
 
-async function runDmidecodeScript() {
-  try {
-    const { stdout } = await runPrivileged(helperPath('wisp-dmidecode'), [], { timeoutMs: 10000 });
-    const data = JSON.parse(stdout);
-    if (!Array.isArray(data)) return [];
-    for (let i = 0; i < data.length; i++) {
-      const dimm = data[i];
-      if (dimm.manufacturer) {
-        dimm.manufacturer = resolveJedecManufacturer(dimm.manufacturer);
-      }
-      dimm.slot = String(i + 1);
-    }
-    return data;
-  } catch (err) {
-    logHostFailure(err, 'RAM module read (wisp-dmidecode) failed');
-    return [];
-  }
-}
+/* The helper bounds dmidecode at 10 s (+2 to end): this ends after it. */
+const DMIDECODE_TIMEOUT_MS = 15_000;
 
 /**
- * RAM hardware info via wisp-dmidecode script (dmidecode --type memory).
- * Returns array of memory device info; empty array if script unavailable or not root.
- * @returns { Promise<{ type: string, sizeBytes: number, speedMts: number | null, slot: string, formFactor: string | null, manufacturer: string | null, voltage: string | null }[]> }
+ * The RAM modules DMI lists, through wisp-dmidecode: `{ memory, memoryError }`.
+ * `memory` is the list ([] when DMI lists none), or null when the read failed,
+ * and `memoryError` then says why.
+ * @returns {Promise<{ memory: { type: string, sizeBytes: number, speedMts: number | null, slot: string, formFactor: string | null, manufacturer: string | null, voltage: string | null }[] | null, memoryError: string | null }>}
  */
-export async function getRamInfo() {
-  return runDmidecodeScript();
+async function getRamInfo() {
+  let data;
+  try {
+    const { stdout } = await runPrivileged(helperPath('wisp-dmidecode'), [], { timeoutMs: DMIDECODE_TIMEOUT_MS });
+    data = JSON.parse(stdout);
+  } catch (err) {
+    logHostFailure(err, 'RAM module read (wisp-dmidecode) failed');
+    return { memory: null, memoryError: err.reason ? err.detail : `wisp-dmidecode answered something that is not JSON: ${err.message}` };
+  }
+  if (!Array.isArray(data)) return { memory: null, memoryError: 'wisp-dmidecode answered something that is not a list' };
+  for (let i = 0; i < data.length; i++) {
+    const dimm = data[i];
+    if (dimm.manufacturer) {
+      dimm.manufacturer = resolveJedecManufacturer(dimm.manufacturer);
+    }
+    dimm.slot = String(i + 1);
+  }
+  return { memory: data, memoryError: null };
 }
 
 /**
  * Aggregate hardware info for GET /api/host/hardware.
- * getRamInfo is async; others are sync. Caller can await getHostHardwareInfo().
+ * getRamInfo and the SMART reads are async; the others are sync.
  */
 export async function getHostHardwareInfo() {
   const cpu = getCpuInfo();
   const disks = await readAllDiskSmartSummaries(getDiskInfo());
   const filesystems = getFilesystemUsage();
   const network = getNetworkAdapters();
-  const memory = await getRamInfo();
+  const { memory, memoryError } = await getRamInfo();
   const pciDevices = getPciDevices();
   const system = getSystemInfo();
 
@@ -447,6 +448,7 @@ export async function getHostHardwareInfo() {
     filesystems,
     network,
     memory,
+    memoryError,
     pciDevices,
     system,
   };

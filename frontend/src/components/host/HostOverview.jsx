@@ -572,6 +572,7 @@ export default function HostOverview() {
         pciTempByAddress={buildPciTempByAddress(thermalZones)}
         motherboardAcpiZone={motherboardAcpiZone}
         memory={hardware?.memory}
+        memoryError={hardware?.memoryError}
         disks={disks}
         nvmeTempByDisk={nvmeTempByDisk}
       />
@@ -587,6 +588,7 @@ function HostHardwareInventorySection({
   pciTempByAddress,
   motherboardAcpiZone,
   memory,
+  memoryError,
   disks,
   nvmeTempByDisk,
 }) {
@@ -798,6 +800,9 @@ function HostHardwareInventorySection({
             </span>
           )}
         </p>
+      )}
+      {memoryError && (
+        <p className="text-sm text-status-warning mb-3">RAM modules could not be read: {memoryError}</p>
       )}
       {(hasMain || hasIo || hasOthers) ? (
         <DataTableScroll>

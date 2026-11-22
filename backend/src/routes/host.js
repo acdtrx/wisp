@@ -543,7 +543,7 @@ export default async function hostRoutes(fastify) {
               },
             },
             memory: {
-              type: 'array',
+              type: ['array', 'null'],
               items: {
                 type: 'object',
                 properties: {
@@ -558,6 +558,7 @@ export default async function hostRoutes(fastify) {
                 additionalProperties: false,
               },
             },
+            memoryError: { type: ['string', 'null'] },
             pciDevices: {
               type: 'array',
               items: {
