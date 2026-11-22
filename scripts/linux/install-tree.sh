@@ -12,7 +12,8 @@
 #   through to setup. It prints `phase: stop|copy|setup|start` lines and exits
 #   0 installed and Wisp ready; 1 Wisp did not stop (nothing changed); 2 the copy
 #   failed; 3 setup failed; 4 Wisp did not start. A TERM ends it within setup's
-#   stop bound (SETUP_STOP_SEC, scripts/linux/setup/bounds.sh). A later release
+#   stop bound (SETUP_STOP_SEC, scripts/linux/setup/bounds.sh), and any other
+#   phase at once. A later release
 #   may add phases or exit codes, never change the path, the arguments, what 0
 #   means, or lengthen that stop.
 set -uo pipefail
@@ -44,24 +45,41 @@ if ! flock -w "$LOCK_WAIT_SEC" 8; then
 fi
 
 # Each phase runs in the background and is waited for, so a TERM reaches this
-# script at once: it is passed to the phase (setup ends itself within its stop
-# bound; a copy or a systemctl ends at once), waited out, and the run exits 143.
+# script at once, and is passed on: setup, which stops itself in order within
+# its stop bound, gets it on its leader alone; any other phase (a function: a
+# systemctl, the copy) gets it in its whole process group — job control (set -m)
+# gives each phase one of its own — so the command it runs ends with it. The
+# phase is waited out and the run exits 143.
+set -m
 PHASE_PID=""
+PHASE_OWN_STOP=0
 STOPPING=0
+stop_phase() {
+  [[ -n "$PHASE_PID" ]] || return 0
+  if (( PHASE_OWN_STOP )); then
+    kill -TERM "$PHASE_PID" 2>/dev/null
+  else
+    kill -TERM -- "-$PHASE_PID" 2>/dev/null
+  fi
+}
 on_stop() {
   STOPPING=1
-  [[ -z "$PHASE_PID" ]] || kill -TERM "$PHASE_PID" 2>/dev/null
+  stop_phase
 }
 trap on_stop TERM INT
 
-# phase <name> <exit on failure> <cmd...>
+# phase <name> <exit on failure> <own-stop|group> <cmd...>
 phase() {
   local name="$1" code="$2" rc=0
-  shift 2
+  PHASE_OWN_STOP=0
+  [[ "$3" != own-stop ]] || PHASE_OWN_STOP=1
+  shift 3
   (( STOPPING )) && exit 143
   echo "phase: $name"
   "$@" &
   PHASE_PID=$!
+  # A stop that came before the pid was known is passed on now.
+  (( STOPPING )) && stop_phase
   while :; do
     wait "$PHASE_PID" && rc=0 || rc=$?
     kill -0 "$PHASE_PID" 2>/dev/null || break
@@ -81,8 +99,8 @@ copy_tree() {
   "$SCRIPT_DIR/setup/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR" && chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$INSTALL_DIR"
 }
 
-phase stop 1 stop_wisp
-phase copy 2 copy_tree
-phase setup 3 "$INSTALL_DIR/scripts/linux/setup/common-steps.sh" "$INSTALL_DIR" "$DEPLOY_USER"
-phase start 4 wisp_service start
+phase stop 1 group stop_wisp
+phase copy 2 group copy_tree
+phase setup 3 own-stop "$INSTALL_DIR/scripts/linux/setup/common-steps.sh" "$INSTALL_DIR" "$DEPLOY_USER"
+phase start 4 group wisp_service start
 exit 0
