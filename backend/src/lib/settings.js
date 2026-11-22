@@ -9,6 +9,7 @@ import {
   checkFsType,
   checkMountPath,
   checkOidc,
+  checkShare,
   checkUpdateChannel,
   defaultConfig,
   parseWispConfig,
@@ -397,11 +398,10 @@ function mountEntryFromBody(body, id) {
   const autoMount = body.autoMount !== false;
   const entry = { id, type, label: label || id.slice(0, 8), mountPath, autoMount };
   if (type === 'smb') {
-    const share = typeof body.share === 'string' ? body.share.trim() : '';
-    if (!share) {
+    if (typeof body.share !== 'string' || !body.share.trim()) {
       throw createAppError('MOUNT_INVALID', 'share is required for smb mounts');
     }
-    entry.share = share;
+    entry.share = checkShare(body.share);
     entry.username = typeof body.username === 'string' ? body.username.trim() : '';
     entry.password = typeof body.password === 'string' ? body.password : '';
   } else {
@@ -462,11 +462,10 @@ export async function updateMount(mountId, body) {
     }
     if (cur.type === 'smb') {
       if (body.share !== undefined) {
-        const s = typeof body.share === 'string' ? body.share.trim() : '';
-        if (!s) {
+        if (typeof body.share !== 'string' || !body.share.trim()) {
           throw createAppError('MOUNT_INVALID', 'share cannot be empty for smb mounts');
         }
-        cur.share = s;
+        cur.share = checkShare(body.share);
       }
       if (body.username !== undefined) {
         cur.username = typeof body.username === 'string' ? body.username.trim() : '';

@@ -5,6 +5,7 @@ import {
   updateMount,
   removeMount,
 } from '../lib/settings.js';
+import { checkShare } from '../lib/configSchema.js';
 import {
   mountSMB, unmountSMB, getMountStatus, checkSMBConnection, rmdirMountpoint,
   mountDisk, unmountDisk,
@@ -228,7 +229,7 @@ export default async function mountsRoutes(fastify) {
         throw createAppError('VALIDATION_FAILED', 'body/share is required unless body/id names a saved SMB mount');
       }
       try {
-        await checkSMBConnection(share, { username, password });
+        await checkSMBConnection(checkShare(share), { username, password });
       } catch (err) {
         throw asAppError(err, 'SMB connection check failed');
       }

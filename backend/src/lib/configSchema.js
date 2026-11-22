@@ -238,7 +238,11 @@ export function checkDestinationIds(value) {
   return [...new Set(value)];
 }
 
-/** A mount's mountPath: absolute, under MOUNT_ROOT, not MOUNT_ROOT itself. */
+/**
+ * A mount's mountPath, in the canonical form it is stored and used in (no `.`,
+ * `..` or empty part, no trailing `/`: the form wisp-mount takes and the mount
+ * table lists): absolute, under MOUNT_ROOT, not MOUNT_ROOT itself.
+ */
 export function checkMountPath(value) {
   const mountPath = typeof value === 'string' ? value.trim() : '';
   if (!mountPath.startsWith('/')) {
@@ -251,7 +255,37 @@ export function checkMountPath(value) {
   if (resolved === MOUNT_ROOT) {
     throw createAppError('MOUNT_INVALID', `mountPath cannot be ${MOUNT_ROOT} itself; pick a sub-directory`);
   }
-  return mountPath;
+  return resolved;
+}
+
+/** A stored mountPath: valid, and in its canonical form (migration 0016 brought older ones to it). */
+function checkStoredMountPath(value) {
+  const canonical = checkMountPath(value);
+  if (value !== canonical) {
+    throw createAppError('MOUNT_INVALID', `mountPath must be stored in canonical form (${JSON.stringify(canonical)})`);
+  }
+  return canonical;
+}
+
+/** The form wisp-mount takes a share in: //host/share[/folder…], no comma or control character. */
+const SHARE_FORM = /^\/\/[A-Za-z0-9._-]+(?:\/[^/,\p{Cc}]+)+$/u;
+
+/**
+ * An SMB share in the one form it is stored and mounted in: `//host/share` or
+ * `//host/share/folder`. Backslashes become slashes (`\\nas\share`), a run of
+ * slashes after the host one, and trailing slashes go; what then does not fit
+ * the form is refused.
+ */
+export function checkShare(value) {
+  const raw = typeof value === 'string' ? value.trim().replaceAll('\\', '/') : '';
+  const share = raw.startsWith('//') ? `//${raw.slice(2).replace(/\/{2,}/g, '/').replace(/\/+$/, '')}` : raw;
+  if (!SHARE_FORM.test(share)) {
+    throw createAppError(
+      'MOUNT_INVALID',
+      'share must be //host/share or //host/share/folder (a host name or address, then the share; no commas)',
+    );
+  }
+  return share;
 }
 
 export function checkFsType(value) {
@@ -322,7 +356,7 @@ function parseMount(d, where) {
     id: expectId(d.id, `${where}.id`),
     type,
     label: d.label === undefined ? '' : expectString(d.label, `${where}.label`).trim(),
-    mountPath: at(`${where}.mountPath`, () => checkMountPath(d.mountPath)),
+    mountPath: at(`${where}.mountPath`, () => checkStoredMountPath(d.mountPath)),
     autoMount: d.autoMount === undefined ? true : expectBoolean(d.autoMount, `${where}.autoMount`),
   };
   if (type === 'smb') {
