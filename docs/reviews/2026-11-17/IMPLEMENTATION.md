@@ -231,6 +231,13 @@ Phase 6 was then replaced by a redesign of the pages (see there).
 
 ### 5. Manager internals — L
 
+In progress since 2026-11-22 as `features/manager-internals.md`, from
+`anchor/manager-internals`, in five milestones ordered by what the user would notice.
+The two rulings this phase needed are made (2026-11-22): a manager does its job or says
+it could not ("strict manager": an error where a list answered "none", a refusal where a
+delete could not be checked), and a VM's firmware, machine type and disk bus are set at
+create and not changed afterwards.
+
 Ruled by the user on 2026-11-21, for the question this phase was holding: a backup in an
 older shape may be refused at restore. No code is kept to read an older shape; the user
 makes the backup again.
