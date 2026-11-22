@@ -7,35 +7,13 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
-**`wisp-port.sh`, and what else only an old updater reads, go in the release after the
-next one.** The updater of v2.8.0-beta.1 and v2.7.0 sources `backend/scripts/wisp-port.sh`
-from the tree it has just installed, to ask the new backend on its port (8080 without
-it). The next release still ships it, so a host on one of those releases updates to it
-by itself; from then on its updater no longer reads it. In the release after the next
-one, then, it moves into `install-root.sh`, its one other reader (and leaves
-`NOT_HELPERS` in scripts/check-shell.mjs), and at the same time can go what else only
-those updaters read from the new tree: `scripts/linux/setup/common-steps.sh` kept
-callable directly with `<install-dir> <deploy-user>` (the updaters since call
-`scripts/linux/install-tree.sh`), and `systemd/linux/wisp.service`'s `WISP_USER` and
-`WISP_PATH` placeholders as they render them (setup renders the unit too, and keeps
-whatever form it then chooses). `backend/package.json` and the public
-`/api/auth/oidc/status` stay for readers of their own. A host that skips the next
-release, still on v2.8.0-beta.1 or older then, no longer updates by itself and is
-updated by hand (`install.sh` or `push.sh`), as hosts older than v2.0.2 are (the user's
-choice, 2026-11-23: three installs in all). The versions in `backend/package.json` and
-`frontend/package.json` go in the same release (the next entry). **Revisit trigger:**
-the release after the next one is cut.
-
-**The versions in `backend/package.json` and `frontend/package.json` go in the release
-after the next one.** The root's is the one source since privileged helpers milestone 2
-(2026-11-22): the running release's version and a staged tree's are read there only.
-The backend of v2.8.0-beta.1 and v2.7.0 still checks a staged tree's
-`backend/package.json` version before it hands the update on, so the next release still
-carries all three, `scripts/release.sh` still writes them (and their lockfiles) and the
-release workflow still asserts they agree. In the release after the next one the two
-versions, their writes and their assertion go, with what the entry above lists; a host
-that skipped the next release is updated by hand, as it says (the user's choice,
-2026-11-23). **Revisit trigger:** the release after the next one is cut.
+**Two containers of the same name on two Wisp hosts get the same address.** The CNI DHCP
+daemon keys a lease by the container's name, the network's and the interface's
+(`<name>/wisp-bridge/eth0`), and sends that as its client identity, so the LAN's DHCP
+server gives a `ph-ctr` on one host and a `ph-ctr` on another the same address, each with
+its own MAC (seen on 2026-11-23: two nested hosts' `ph-ctr` both on 10.79.1.222, and
+tini's `ph-ctr` on the same address earlier). **Revisit trigger:** a user with two hosts,
+or a host and its backup, running a container of the same name.
 
 **A rolled-back release's staged tree stays under `/var/lib/wisp/updates`.** After a
 rollback the updater leaves the staged tree (`staging-<version>`) and the target file in
