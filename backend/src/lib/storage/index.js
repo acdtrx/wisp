@@ -31,6 +31,9 @@ export { restrictToOwner, describeModeChanges } from './fileModes.js';
 // Kernel mount table (/proc/self/mounts), decoded — the one reader for mount state
 export { readMountTable } from './mountTable.js';
 
+// A mount's size, read off the main thread with a bound (a dead share never stalls the backend)
+export { readMountSize, mountSizeReadsInFlight } from './mountSize.js';
+
 // Block-device enumeration + hotplug
 export const start = monitorImpl.start;
 export const stop = monitorImpl.stop;

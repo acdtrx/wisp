@@ -165,14 +165,16 @@ is about 129 KB, `specs/UI.md` about 78 KB. Shape: a shared core file plus one f
 area, content moved unchanged, links fixed across the docs. **Revisit trigger:** the next
 feature that works in either spec.
 
-**A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
-unresponsive SMB destination block the libuv thread pool and can't be timed out; running
-them as jobs contains the damage but doesn't fix it. The container mount-usage walk is one
-such caller: its 20 s budget answers the page, but a walk stuck in `lstat` on a dead
-hard-mounted source keeps one of libuv's 4 threads, so about 4 such page visits stall all
-file access, login password hashing included. Likely fix there: skip sizing a storage mount
-that isn't mounted, or run one walk per mount at a time. **Revisit trigger:** Wisp is seen
-stalled by an unresponsive SMB share.
+**A hung CIFS mount blocks Node's filesystem calls.** The readers of a share that remain
+on libuv's thread pool can each be held there by an unresponsive SMB share, and about 4
+held at once stall all of Wisp's file access: listings, writes and deletes on an SMB
+backup destination (run as jobs, which contains the damage but does not fix it), the
+container mount-usage walk (its 20 s budget answers the page, but a walk stuck in `lstat`
+keeps its thread), the container mount content routes, and the bind-source check of a
+container start. The Host page's size read no longer is one (phase 5, milestone 2): the
+bounded read it uses, `readMountSize` in `lib/storage/mountSize.js` (a worker thread per
+read, a 3 s bound, one read in flight per mount), is the piece to reuse for these.
+**Revisit trigger:** Wisp is seen stalled by an unresponsive SMB share.
 
 **Deleting a workload's last backup leaves its folder.** The empty
 `backups/containers/<name>/` or `backups/vms/<name>/` stays after its last timestamp

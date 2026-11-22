@@ -481,6 +481,15 @@ export default function HostOverview() {
             <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Filesystems</p>
             <div className="space-y-2">
               {hardware.filesystems.map((fs) => {
+                /* Sizes that could not be read in time, or at all: a share that does not answer. */
+                if (fs.totalBytes == null) {
+                  return (
+                    <div key={fs.mount} className="flex justify-between text-sm">
+                      <span className="font-mono text-text-primary">{fs.mount}</span>
+                      <span className="text-status-warning">Not answering</span>
+                    </div>
+                  );
+                }
                 const total = fs.totalBytes || 1;
                 const used = fs.usedBytes ?? 0;
                 const pct = (used / total) * 100;
