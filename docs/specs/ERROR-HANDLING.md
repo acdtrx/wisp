@@ -344,11 +344,10 @@ before the port opens.
 | `OIDC_TOKEN_EXCHANGE_FAILED` | — | The same |
 | `OIDC_TOKEN_INVALID` | — | The same |
 | `SMART_DEVICE_NOT_FOUND` | — | A disk's SMART read, which reports it as `smart.error` in the hardware inventory |
-| `SMART_EMPTY_OUTPUT` | — | The same |
 | `SMART_HELPER_UNAVAILABLE` | — | The same |
 | `SMART_INVALID_DISK_NAME` | — | The same |
 | `SMART_INVALID_JSON` | — | The same |
-| `SMART_NOT_INSTALLED` | — | The same |
+| `SMART_READ_FAILED` | — | The same: the helper failed, and its error line says why (smartctl not installed, no answer, past its limit) |
 | `RUNTIME_ENV_INVALID` | — | The start: `config/runtime.env` fails its strict read |
 | `CONFIG_PATH_NOT_ALLOWED` | — | The start: an installed Wisp is given `WISP_CONFIG_PATH`, which is for development and tests ([CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)) |
 | `DEFAULT_BRIDGE_INVALID` | — | The start: `WISP_DEFAULT_BRIDGE` names no host bridge |

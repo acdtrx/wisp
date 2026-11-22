@@ -1,55 +1,35 @@
 #!/usr/bin/env bash
-# Outputs smartctl JSON for one block device (e.g. sda, nvme0n1).
-# Must be run with sufficient privilege (root or sudo).
-# Usage: wisp-smartctl <block-device-name>
-set -euo pipefail
+# Usage: wisp-smartctl <block-device-name>      (e.g. sda, nvme0n1)
+# The disk's SMART data: smartctl's own JSON on stdout, whatever its exit
+# status (a bitmask of the disk's state, not of the read). A disk in standby is
+# never woken: the answer is then exactly {"standby":true}.
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-if [[ $# -ne 1 ]]; then
-  echo '{"error":"usage: wisp-smartctl <block-device-name>"}'
-  exit 1
-fi
+# smartctl on a disk that hangs, and on a large SCSI log, takes a few seconds.
+readonly SMART_SEC=20
 
-DEV_NAME="$1"
-if [[ ! "$DEV_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-  echo '{"error":"invalid-device-name"}'
-  exit 1
-fi
+(( $# == 1 )) || refuse "usage: wisp-smartctl <block-device-name>"
+match "the disk" "$1" '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$'
+DEV_PATH="/dev/$1"
+[[ -b "$DEV_PATH" ]] || not_found "$DEV_PATH is not a block device"
 
-DEV_PATH="/dev/$DEV_NAME"
-if [[ ! -b "$DEV_PATH" ]]; then
-  echo '{"error":"device-not-found"}'
-  exit 1
-fi
-
-SMARTCTL_BIN="${WISP_SMARTCTL_BIN:-smartctl}"
-if ! command -v "$SMARTCTL_BIN" >/dev/null 2>&1; then
-  echo '{"error":"smartctl-not-found"}'
-  exit 1
-fi
-
-# Never wake a spun-down disk: `-n standby,STATUS` makes smartctl exit before
-# issuing any SMART command when the drive is in STANDBY or SLEEP, with exit
-# status STATUS. smartctl's normal exit status is a bitmask (smartctl(8) EXIT
-# STATUS); 130 = bit 1 (aborted before reading SMART data) + bit 7 (self-test log
-# has errors, which needs SMART data read) — a combination no real run produces.
-# NVMe is excluded: the option is ATA/SCSI-only and NVMe drives do not spin.
-STANDBY_EXIT=130
+# `-n standby,STATUS` makes smartctl exit before any SMART command when the
+# drive is in STANDBY or SLEEP, with exit status STATUS. 130 = bit 1 (aborted
+# before reading SMART data) + bit 7 (self-test log has errors, which needs
+# SMART data read): a combination no real run produces. NVMe is excluded: the
+# option is ATA/SCSI-only and NVMe drives do not spin.
+readonly STANDBY_EXIT=130
 POWER_ARGS=()
-if [[ "$DEV_NAME" != nvme* ]]; then
-  POWER_ARGS=(-n "standby,$STANDBY_EXIT")
-fi
+[[ "$1" == nvme* ]] || POWER_ARGS=(-n "standby,$STANDBY_EXIT")
 
-# smartctl frequently exits non-zero for SMART states/warnings while still printing JSON.
-# We intentionally preserve stdout JSON and do not treat non-zero status as transport failure.
 rc=0
-out="$("$SMARTCTL_BIN" --json ${POWER_ARGS[@]+"${POWER_ARGS[@]}"} -a "$DEV_PATH" 2>/dev/null)" || rc=$?
-if [[ ${#POWER_ARGS[@]} -gt 0 && $rc -eq $STANDBY_EXIT ]]; then
-  echo '{"error":"standby"}'
+capture "$SMART_SEC" smartctl --json ${POWER_ARGS[@]+"${POWER_ARGS[@]}"} -a "$DEV_PATH" || rc=$?
+(( rc == 124 )) && fail "smartctl did not finish within ${SMART_SEC} s"
+(( rc == 127 )) && fail "smartctl is not installed: run setup"
+if (( ${#POWER_ARGS[@]} > 0 && rc == STANDBY_EXIT )); then
+  echo '{"standby":true}'
   exit 0
 fi
-if [[ -z "$out" ]]; then
-  echo '{}'
-  exit 0
-fi
-
-printf '%s\n' "$out"
+[[ -n "$CAPTURED" ]] || fail "smartctl printed nothing (exit $rc)${BOUNDED_ERR:+: $BOUNDED_ERR}"
+printf '%s\n' "$CAPTURED"

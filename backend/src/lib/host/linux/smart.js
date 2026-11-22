@@ -173,6 +173,9 @@ function normalizeSmartSummary(raw) {
   };
 }
 
+/* smartctl's own bound in the helper is 20 s (+2 to end): this ends after it. */
+const SMART_TIMEOUT_MS = 25_000;
+
 async function readDiskSmartRaw(deviceName) {
   if (!/^[a-zA-Z0-9._-]+$/.test(String(deviceName || ''))) {
     throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name');
@@ -180,12 +183,13 @@ async function readDiskSmartRaw(deviceName) {
 
   let stdout;
   try {
-    ({ stdout } = await runPrivileged(helperPath('wisp-smartctl'), [deviceName], { timeoutMs: 10000 }));
+    ({ stdout } = await runPrivileged(helperPath('wisp-smartctl'), [deviceName], { timeoutMs: SMART_TIMEOUT_MS }));
   } catch (err) {
     if (err.reason === 'missing') throw createAppError('SMART_HELPER_UNAVAILABLE', 'smartctl-helper-unavailable', err.message);
-    throw err;
+    if (err.reason === 'not-found') throw createAppError('SMART_DEVICE_NOT_FOUND', 'device-not-found', err.detail);
+    if (err.reason === 'invalid') throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name', err.detail);
+    throw createAppError('SMART_READ_FAILED', err.detail);
   }
-  if (!stdout || !stdout.trim()) throw createAppError('SMART_EMPTY_OUTPUT', 'empty-smartctl-output');
 
   let parsed;
   try {
@@ -193,11 +197,7 @@ async function readDiskSmartRaw(deviceName) {
   } catch {
     throw createAppError('SMART_INVALID_JSON', 'invalid-smartctl-json');
   }
-
-  if (parsed?.error === 'device-not-found') throw createAppError('SMART_DEVICE_NOT_FOUND', 'device-not-found');
-  if (parsed?.error === 'smartctl-not-found') throw createAppError('SMART_NOT_INSTALLED', 'smartctl-not-installed');
-  if (parsed?.error === 'invalid-device-name') throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name');
-  if (parsed?.error === 'standby') return { standby: true };
+  if (parsed?.standby === true) return { standby: true };
   return parsed;
 }
 
