@@ -6,6 +6,9 @@ import { getContainerNetnsPath } from './containerPaths.js';
 import { resolveMountHostPath, TMPFS_DEFAULT_SIZE_MIB } from './containerManagerMounts.js';
 import { defaultSeccompProfile } from './containerManagerSeccomp.js';
 
+/** The type URL containerd stores an OCI runtime spec under. */
+export const OCI_SPEC_TYPE_URL = 'types.containerd.io/opencontainers/runtime-spec/1/Spec';
+
 const DEFAULT_CAPS = [
   'CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FSETID', 'CAP_FOWNER',
   'CAP_MKNOD', 'CAP_NET_RAW', 'CAP_SETGID', 'CAP_SETUID',

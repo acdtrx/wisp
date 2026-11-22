@@ -43,21 +43,17 @@ import { readContainerConfig } from './containerManagerConfigIo.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
+import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { startContainer } from './containerManagerStart.js';
+import {
+  RESTART_POLICIES, intentionalStopPids, pendingRestarts, backoffState, fireScheduledRestartChange, cancelPendingRestart,
+} from './containerManagerRestartState.js';
 
-export const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 const DEFAULT_RESTART_POLICY = 'unless-stopped';
 
 const INITIAL_DELAY_MS = 1000;
 const MAX_DELAY_MS = 5 * 60 * 1000;
 const RESET_AFTER_MS = 60 * 1000;
-
-/** name → Set<pid> of main processes Wisp is stopping on purpose. */
-const intentionalStopPids = new Map();
-/** name → { timer, exitStatus, attempt, at } — at most one scheduled restart per container. */
-const pendingRestarts = new Map();
-/** name → { nextDelayMs, attempt, lastStartAt } — kept while a crash loop is in progress. */
-const backoffState = new Map();
-const scheduledRestartChangeHandlers = new Set();
 
 function log() {
   return containerState.logger;
@@ -67,78 +63,6 @@ function policyRestarts(policy, exitStatus) {
   if (policy === 'unless-stopped' || policy === 'always') return true;
   if (policy === 'on-failure') return exitStatus !== 0;
   return false;
-}
-
-function fireScheduledRestartChange(name) {
-  for (const handler of scheduledRestartChangeHandlers) {
-    try {
-      handler(name);
-    } catch (err) {
-      log()?.warn?.({ err: err?.message || String(err), container: name }, 'Scheduled-restart change handler threw');
-    }
-  }
-}
-
-/**
- * Subscribe to scheduled-restart changes (scheduled, cancelled, fired). The
- * handler gets the container name. Returns an unsubscribe.
- */
-export function subscribeScheduledRestartChange(handler) {
-  scheduledRestartChangeHandlers.add(handler);
-  return () => scheduledRestartChangeHandlers.delete(handler);
-}
-
-/**
- * The restart the policy has scheduled for this container, or null.
- * `at` is the epoch-ms time the timer fires; `attempt` counts restarts in the
- * current crash loop (1 for the first).
- * @returns {{ attempt: number, at: number } | null}
- */
-export function getScheduledRestart(name) {
-  const pending = pendingRestarts.get(name);
-  return pending ? { attempt: pending.attempt, at: pending.at } : null;
-}
-
-function cancelPendingRestart(name) {
-  const pending = pendingRestarts.get(name);
-  if (!pending) return false;
-  clearTimeout(pending.timer);
-  pendingRestarts.delete(name);
-  fireScheduledRestartChange(name);
-  return true;
-}
-
-/**
- * Wisp is stopping this container, or keeping it stopped, on purpose. The exit
- * of `pid` (the current main process, when there is one) will not be treated
- * as a failure, and any pending policy restart is cancelled.
- * @returns {boolean} true when a scheduled restart was cancelled
- */
-export function noteIntentionalStop(name, pid = null) {
-  const cancelled = cancelPendingRestart(name);
-  if (cancelled) {
-    log()?.info?.({ container: name }, 'Pending restart-policy restart cancelled by a Wisp stop');
-  }
-  backoffState.delete(name);
-  const n = Number(pid);
-  if (!Number.isInteger(n) || n <= 0) return cancelled;
-  let pids = intentionalStopPids.get(name);
-  if (!pids) {
-    pids = new Set();
-    intentionalStopPids.set(name, pids);
-  }
-  pids.add(n);
-  return cancelled;
-}
-
-/**
- * A start is beginning (user, autostart, or this module). Supersedes any
- * pending policy restart and stamps the run start used for the backoff reset.
- */
-export function noteContainerStart(name) {
-  cancelPendingRestart(name);
-  const state = backoffState.get(name);
-  if (state) state.lastStartAt = Date.now();
 }
 
 function scheduleRestart(name, exitStatus, policy, reason) {
@@ -203,7 +127,6 @@ async function runRestart(name, exitStatus, attempt) {
     return;
   }
 
-  const { getTaskState, normalizeTaskStatus, startContainer } = await import('./containerManagerLifecycle.js');
   const task = await getTaskState(name);
   const st = task ? normalizeTaskStatus(task.status) : null;
   if (st === 'RUNNING' || st === 'PAUSED' || st === 'PAUSING' || st === 'CREATED') {
@@ -247,7 +170,6 @@ async function runRestart(name, exitStatus, attempt) {
 async function settleUnexpectedExit(name, pid, exitCode) {
   let release = null;
   try {
-    const { getTaskState } = await import('./containerManagerLifecycle.js');
     const task = await getTaskState(name);
     if (task && Number(task.pid) !== pid) {
       log()?.info?.({ container: name, pid, currentPid: Number(task.pid) }, 'Late exit event for an earlier task — run and services left as they are');

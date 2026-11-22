@@ -43,21 +43,20 @@ export { readContainerConfig, writeContainerConfig } from './containerManagerCon
 
 export {
   assertContainerState,
-  startContainer,
   stopContainer,
   killContainer,
-  restartContainer,
   getTaskState,
-  startAutostartContainersAtBackendBoot,
-  resumeStalePausedContainersAtBackendBoot,
 } from './containerManagerLifecycle.js';
 
-export {
-  assertContainerNameAvailable,
-  createContainer,
-  deleteContainer,
-  pullImage,
-} from './containerManagerCreate.js';
+export { startContainer, restartContainer } from './containerManagerStart.js';
+
+export { startAutostartContainersAtBackendBoot, resumeStalePausedContainersAtBackendBoot } from './containerManagerBoot.js';
+
+export { assertContainerNameAvailable, createContainer } from './containerManagerCreate.js';
+
+export { deleteContainer } from './containerManagerDelete.js';
+
+export { pullImage } from './containerManagerPull.js';
 
 export { renameContainer } from './containerManagerRename.js';
 

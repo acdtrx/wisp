@@ -1,18 +1,12 @@
 /**
- * Container lifecycle operations: start, stop, restart, kill.
+ * Container lifecycle operations on a task: its state, stop, kill, pause and
+ * resume. Starting is containerManagerStart.js.
  */
-import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
-
-import {
-  containerError, containerState, getClient, callUnary,
-} from './containerManagerConnection.js';
+import { containerError, containerState, getClient, callUnary } from './containerManagerConnection.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
-import { getContainerDir } from './containerPaths.js';
-import { noteIntentionalStop, noteContainerStart, getScheduledRestart } from './containerManagerRestartPolicy.js';
+import { noteIntentionalStop, getScheduledRestart } from './containerManagerRestartState.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
-import { tryAcquireOperationLock } from './containerOperationGuard.js';
 
 const SIGTERM = 15;
 const SIGKILL = 9;
@@ -108,80 +102,6 @@ export async function assertContainerState(name, what) {
   }
 }
 
-export async function startContainer(name) {
-  noteContainerStart(name);
-  const task = await getTaskState(name);
-  const st = task ? normalizeTaskStatus(task.status) : null;
-
-  if (task && st === 'RUNNING') {
-    throw containerError('CONTAINER_ALREADY_RUNNING', `Container "${name}" is already running`);
-  }
-
-  if (task && st === 'PAUSED') {
-    await resumeContainer(name);
-    containerState.containerStartTimes.set(name, Date.now());
-    return;
-  }
-
-  // STOPPED (and similar) tasks still exist in containerd until Tasks.Delete.
-  // Without deleting first, startExistingContainer → Tasks.Create returns "already exists".
-  // A CREATED task (a start interrupted between Tasks.Create and Tasks.Start)
-  // is dropped too: its spec may be stale, and only a full start settles the
-  // restart-required flag.
-  if (task && (st === 'STOPPED' || st === 'CREATED' || st === 'PAUSING' || st === 'UNKNOWN')) {
-    await cleanupTask(name);
-  }
-
-  // No task (or just removed stale one) — create and start a new task.
-  const { startExistingContainer } = await import('./containerManagerCreate.js');
-  await startExistingContainer(name);
-  containerState.containerStartTimes.set(name, Date.now());
-}
-
-/**
- * Start every container with autostart enabled that is not already running.
- * Best-effort: logs and continues on per-container failure (host boot / backend restart).
- * Each start holds the embedder's operation lock; a busy container is skipped.
- */
-export async function startAutostartContainersAtBackendBoot(log) {
-  if (!containerState.connected) return;
-
-  const { listContainers } = await import('./containerManagerList.js');
-  let list;
-  try {
-    list = await listContainers();
-  } catch (err) {
-    log.warn({ err }, 'Container autostart: listContainers failed');
-    return;
-  }
-
-  for (const c of list) {
-    if (c.state === 'running') continue;
-
-    let autostart = false;
-    try {
-      const raw = await readFile(join(getContainerDir(c.name), 'container.json'), 'utf8');
-      autostart = JSON.parse(raw).autostart === true;
-    } catch {
-      continue;
-    }
-    if (!autostart) continue;
-
-    const release = tryAcquireOperationLock(c.name, 'autostart');
-    if (!release) {
-      log.info({ container: c.name }, 'Container autostart skipped: another operation on the container is in progress');
-      continue;
-    }
-    try {
-      await startContainer(c.name);
-    } catch (err) {
-      log.warn({ err, container: c.name }, 'Container autostart failed');
-    } finally {
-      release();
-    }
-  }
-}
-
 /**
  * Freeze all processes of a running container's task (cgroup freezer).
  * The task keeps its PIDs, memory, and sockets; it stops consuming CPU and
@@ -194,35 +114,6 @@ export async function pauseContainer(name) {
 /** Unfreeze a paused container task. */
 export async function resumeContainer(name) {
   await callUnary(getClient('tasks'), 'resume', { containerId: name });
-}
-
-/**
- * Resume any container whose task is still paused at backend boot.
- * Wisp exposes no user-facing pause — tasks are only ever paused around a
- * backup archive, so a paused task at boot means a backup was interrupted
- * by a crash. Best-effort: logs and continues per container.
- */
-export async function resumeStalePausedContainersAtBackendBoot(log) {
-  if (!containerState.connected) return;
-
-  const { listContainers } = await import('./containerManagerList.js');
-  let list;
-  try {
-    list = await listContainers();
-  } catch (err) {
-    log.warn({ err }, 'Stale-pause recovery: listContainers failed');
-    return;
-  }
-
-  for (const c of list) {
-    if (c.state !== 'paused') continue;
-    try {
-      await resumeContainer(c.name);
-      log.info({ container: c.name }, 'Resumed container left paused by an interrupted backup');
-    } catch (err) {
-      log.warn({ err, container: c.name }, 'Failed to resume stale paused container');
-    }
-  }
 }
 
 /**
@@ -314,14 +205,6 @@ export async function killContainer(name) {
   return { restartCancelled };
 }
 
-export async function restartContainer(name) {
-  const task = await getTaskState(name);
-  if (task && (task.status === 'RUNNING' || task.status === 'PAUSED')) {
-    try { await stopContainer(name); } catch { /* may already be stopped */ }
-  }
-  await startContainer(name);
-}
-
 /** Sleep `ms`, or less when `signal` aborts meanwhile. */
 function sleepUnlessCut(ms, signal) {
   return new Promise((resolve) => {
@@ -352,7 +235,7 @@ async function waitForStop(name, timeoutMs) {
  * Delete the containerd task record and finalize the currently-active log run.
  * Exit status comes from Tasks.Delete (uint32; non-finite values become null).
  * Finalizing is best-effort — missing/already-finalized runs are skipped.
- * Exported so containerManagerCreate can reuse the same flow before re-creating.
+ * Exported so a start (containerManagerStart) runs the same flow before creating a task.
  * @returns {Promise<object|null>} the Tasks.Delete error when a task could not be
  *   deleted (not "no task"), so a start can name it if it then fails once its network is set up
  */

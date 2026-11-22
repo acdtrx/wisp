@@ -14,7 +14,7 @@ import { rename, access } from 'node:fs/promises';
 import { containerError, getClient, callUnary } from './containerManagerConnection.js';
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
-import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
+import { noteIntentionalStop } from './containerManagerRestartState.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from './containerValidation.js';

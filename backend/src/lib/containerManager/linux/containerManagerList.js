@@ -26,11 +26,8 @@ import { getRegisteredHostname } from '../../mdns/index.js';
 import { readLibraryDigestMap } from './containerManagerImageMeta.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { readContainerConfig, subscribeContainerConfigWrite } from './containerManagerConfigIo.js';
-import {
-  handleTaskExitEvent,
-  getScheduledRestart,
-  subscribeScheduledRestartChange,
-} from './containerManagerRestartPolicy.js';
+import { handleTaskExitEvent } from './containerManagerRestartPolicy.js';
+import { getScheduledRestart, subscribeScheduledRestartChange } from './containerManagerRestartState.js';
 
 /**
  * Derived `updateAvailable`: true when the container is running/paused AND

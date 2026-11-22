@@ -170,36 +170,13 @@ const EXCEPTIONS = [
  * Reviewed import-cycle edges: { from, to, reason }, repo-relative. The graph
  * without them is acyclic; each one still closes a cycle.
  */
-const CYCLE_EXCEPTIONS = [
-  {
-    from: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
-    to: `${LIB}/containerManager/linux/containerManagerCreate.js`,
-    reason: 'starting a container with no task builds its spec in Create, which imports Lifecycle',
-  },
-  {
-    from: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
-    to: `${LIB}/containerManager/linux/containerManagerList.js`,
-    reason: 'the boot-time autostart and resume passes list containers; List imports Lifecycle',
-  },
-  {
-    from: `${LIB}/containerManager/linux/containerManagerRestartPolicy.js`,
-    to: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
-    reason: 'a policy restart reads the task and starts the container; Lifecycle imports RestartPolicy',
-  },
-];
+const CYCLE_EXCEPTIONS = [];
 
 /**
  * The files that import each other, directly or not, around the
  * CYCLE_EXCEPTIONS edges (repo-relative). No other file may join them.
  */
-const CYCLE_GROUP = [
-  `${LIB}/containerManager/linux/containerManagerConfig.js`,
-  `${LIB}/containerManager/linux/containerManagerCreate.js`,
-  `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
-  `${LIB}/containerManager/linux/containerManagerList.js`,
-  `${LIB}/containerManager/linux/containerManagerRestartPolicy.js`,
-  `${LIB}/containerManager/linux/containerManagerServices.js`,
-];
+const CYCLE_GROUP = [];
 
 const BUILTINS = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
 

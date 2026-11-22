@@ -44,12 +44,12 @@ import {
 import {
   getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
 } from './containerManagerLifecycle.js';
-import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
+import { noteIntentionalStop } from './containerManagerRestartState.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { writeJsonAtomic } from './atomicJson.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
-import { pullImage } from './containerManagerCreate.js';
+import { pullImage } from './containerManagerPull.js';
 import { buildOCISpec } from './containerManagerSpec.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';

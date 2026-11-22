@@ -13,7 +13,7 @@ import { clearMountBackingFile, renameMountBackingStore, tightenSecretMountFiles
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { resolveContainerImageRef } from './containerManagerImages.js';
-import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
+import { RESTART_POLICIES } from './containerManagerRestartState.js';
 import { markPendingRestart } from './containerManagerPendingRestart.js';
 
 /** Fields a running task only picks up on its next start. */

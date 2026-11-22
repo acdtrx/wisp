@@ -14,7 +14,7 @@ import { containerError, containerState } from './containerManagerConnection.js'
 import {
   listContainerImages, getImageDigest,
 } from './containerManagerImages.js';
-import { pullImage } from './containerManagerCreate.js';
+import { pullImage } from './containerManagerPull.js';
 import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
 import { refreshContainerListCache, findContainersUsingImage } from './containerManagerList.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
