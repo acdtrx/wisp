@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Derive version + assert package.json sync
+      - name: Derive version + assert package.json matches
         id: ver
         run: |
           set -euo pipefail
@@ -40,14 +40,13 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
-          for f in package.json backend/package.json frontend/package.json; do
-            PKG_VER="$(node -p "require('./$f').version")"
-            if [[ "$PKG_VER" != "$VERSION" ]]; then
-              echo "ERROR: $f version ($PKG_VER) does not match tag ($VERSION)."
-              exit 1
-            fi
-          done
-          echo "All package.json versions match $VERSION"
+          # The root package.json holds the version, the one source.
+          PKG_VER="$(node -p "require('./package.json').version")"
+          if [[ "$PKG_VER" != "$VERSION" ]]; then
+            echo "ERROR: package.json version ($PKG_VER) does not match tag ($VERSION)."
+            exit 1
+          fi
+          echo "package.json version matches $VERSION"
 
       # The root's dev tools (ESLint), the frontend's packages (its unit tests and the
       # build) and the backend's (its unit tests build the app). The tarball carries

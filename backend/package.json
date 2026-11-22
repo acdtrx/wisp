@@ -1,6 +1,5 @@
 {
   "name": "wisp-backend",
-  "version": "2.8.0-beta.1",
   "private": true,
   "type": "module",
   "scripts": {

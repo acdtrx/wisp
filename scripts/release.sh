@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Check everything first (the tree, the branch, the tag, the files it writes, the
 # CHANGELOG's top section, and `npm run check`, the release workflow's gate), so a
-# refusal leaves every file as it was; then bump version across
-# root + backend + frontend package.json (and each sibling package-lock.json,
-# where one exists), retitle the topmost CHANGELOG section, commit, and tag
+# refusal leaves every file as it was; then bump the version in the root
+# package.json (and its package-lock.json), the one source, retitle the topmost
+# CHANGELOG section, commit, and tag
 # v<version>. A failing check stops it before anything changes. CHANGELOG.md
 # may be dirty going in — its contents are folded into the same release commit
 # so a release lands as a single commit. Push is left to the operator so the
@@ -67,7 +67,8 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-PACKAGES=("$ROOT/package.json" "$ROOT/backend/package.json" "$ROOT/frontend/package.json")
+# The root package.json holds the version, the one source every reader reads.
+PACKAGES=("$ROOT/package.json")
 for pkg in "${PACKAGES[@]}"; do
   if [[ ! -f "$pkg" ]]; then
     echo "ERROR: $pkg not found."
@@ -148,8 +149,7 @@ bump_pkg_version() {
   BUMPED+=("$pkg")
   echo "  Bumped $pkg → $VERSION"
 
-  # Keep the sibling lockfile in step. Root, backend and frontend each have one; a
-  # package without one is skipped.
+  # Keep the sibling lockfile in step; a package without one is skipped.
   local lock="${pkg%package.json}package-lock.json"
   [[ -f "$lock" ]] || return 0
   write_version "$lock"
