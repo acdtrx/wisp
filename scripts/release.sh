@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Run `npm run check` (the release workflow's gate), then bump version across
+# Check everything first (the tree, the branch, the tag, the files it writes, the
+# CHANGELOG's top section, and `npm run check`, the release workflow's gate), so a
+# refusal leaves every file as it was; then bump version across
 # root + backend + frontend package.json (and each sibling package-lock.json,
 # where one exists), retitle the topmost CHANGELOG section, commit, and tag
 # v<version>. A failing check stops it before anything changes. CHANGELOG.md
@@ -65,6 +67,50 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
+PACKAGES=("$ROOT/package.json" "$ROOT/backend/package.json" "$ROOT/frontend/package.json")
+for pkg in "${PACKAGES[@]}"; do
+  if [[ ! -f "$pkg" ]]; then
+    echo "ERROR: $pkg not found."
+    exit 1
+  fi
+done
+
+CHANGELOG="$ROOT/CHANGELOG.md"
+if [[ ! -f "$CHANGELOG" ]]; then
+  echo "ERROR: CHANGELOG.md missing."
+  exit 1
+fi
+TODAY="$(date +%Y-%m-%d)"
+
+# changelog_retitle check|write: the topmost "## YYYY-MM-DD" heading, which must
+# carry no release suffix yet, becomes "## YYYY-MM-DD (vX.Y.Z)". `check` only
+# parses it and fails as `write` would; `write` changes the file.
+changelog_retitle() {
+  node -e '
+  const fs = require("node:fs");
+  const [mode, path, today, tag] = process.argv.slice(1);
+  const lines = fs.readFileSync(path, "utf8").split("\n");
+  const i = lines.findIndex((line) => /^##\s+\d{4}-\d{2}-\d{2}/.test(line));
+  if (i === -1) {
+    console.error("ERROR: no \"## YYYY-MM-DD\" heading found in CHANGELOG.md to retitle.");
+    process.exit(1);
+  }
+  if (lines[i].replace(/^##\s+\d{4}-\d{2}-\d{2}/, "").trim().length > 0) {
+    console.error(`ERROR: the topmost CHANGELOG entry already has a release suffix: "${lines[i]}". Add a fresh "## ${today}" section before releasing.`);
+    process.exit(1);
+  }
+  if (mode === "write") {
+    lines[i] = `## ${today} (${tag})`;
+    fs.writeFileSync(path, lines.join("\n"));
+  }
+' "$1" "$CHANGELOG" "$TODAY" "$TAG"
+}
+
+# Prereleases leave the CHANGELOG untouched (below), so only a stable cut needs it.
+if [[ "$PRERELEASE" == "0" ]]; then
+  changelog_retitle check || exit 1
+fi
+
 # The release workflow's own gate, run before anything changes: a failure is met
 # here, before a tag exists to push.
 echo "--- Check ---"
@@ -98,10 +144,6 @@ write_version() {
 
 bump_pkg_version() {
   local pkg="$1"
-  if [[ ! -f "$pkg" ]]; then
-    echo "ERROR: $pkg not found."
-    exit 1
-  fi
   write_version "$pkg"
   BUMPED+=("$pkg")
   echo "  Bumped $pkg → $VERSION"
@@ -118,9 +160,9 @@ bump_pkg_version() {
 echo "=== Wisp release: $TAG ==="
 echo ""
 echo "--- Bump versions ---"
-bump_pkg_version "$ROOT/package.json"
-bump_pkg_version "$ROOT/backend/package.json"
-bump_pkg_version "$ROOT/frontend/package.json"
+for pkg in "${PACKAGES[@]}"; do
+  bump_pkg_version "$pkg"
+done
 echo ""
 
 # Retitle the topmost CHANGELOG date heading. Project rule: every push has a
@@ -133,42 +175,11 @@ echo ""
 # section for a prerelease tag and falls back to a one-line "Wisp <tag>" note — the
 # intended behavior for a beta.) A dirty CHANGELOG.md is still folded into the
 # release commit either way, just not retitled.
-CHANGELOG="$ROOT/CHANGELOG.md"
-if [[ ! -f "$CHANGELOG" ]]; then
-  echo "ERROR: CHANGELOG.md missing."
-  exit 1
-fi
-
-TODAY="$(date +%Y-%m-%d)"
-
 echo "--- Update CHANGELOG ---"
 if [[ "$PRERELEASE" == "1" ]]; then
   echo "  Prerelease — CHANGELOG left untouched; its notes land with the stable release."
 else
-  node -e '
-  const fs = require("node:fs");
-  const path = process.argv[1];
-  const today = process.argv[2];
-  const tag = process.argv[3];
-  const src = fs.readFileSync(path, "utf8");
-  const lines = src.split("\n");
-  let touched = false;
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^##\s+(\d{4}-\d{2}-\d{2})(.*)$/);
-    if (!m) continue;
-    if (m[2].trim().length > 0) {
-      // Already has a (vX.Y.Z) suffix — top section is already a release.
-      throw new Error(`Topmost CHANGELOG entry already has a release suffix: "${lines[i]}". Add a fresh "## ${today}" section before releasing.`);
-    }
-    lines[i] = `## ${today} (${tag})`;
-    touched = true;
-    break;
-  }
-  if (!touched) {
-    throw new Error("No \"## YYYY-MM-DD\" heading found in CHANGELOG.md to retitle.");
-  }
-  fs.writeFileSync(path, lines.join("\n"));
-' "$CHANGELOG" "$TODAY" "$TAG"
+  changelog_retitle write
   echo "  Retitled topmost section → ## $TODAY ($TAG)"
 fi
 echo ""
