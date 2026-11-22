@@ -8,11 +8,12 @@
  *   - tracks avahi's own host name (getHostFqdn) so the forwarder can answer
  *     the host's `.local` name without an avahi round-trip
  *
- * Single shared system-bus connection (opened once, watched for avahi restarts
- * via NameOwnerChanged). When avahi-daemon goes away and comes back, every
- * registered entry is re-added and every browser re-created — without this,
- * `systemctl restart avahi-daemon` silently drops every container publication
- * until wisp restarts.
+ * Single shared system-bus connection, watched for avahi restarts via
+ * NameOwnerChanged, and reopened on a backoff when the bus itself fails (dbus
+ * restarted). When avahi-daemon goes away and comes back, or the bus is
+ * reopened, every registered entry is re-added and every browser re-created —
+ * without this, a restart of avahi-daemon or of dbus silently drops every
+ * container publication until wisp restarts.
  *
  * Every committed entry group's state is tracked so groups left probing by an
  * interface removal can be re-published — see commitGroup() for the avahi 0.8
