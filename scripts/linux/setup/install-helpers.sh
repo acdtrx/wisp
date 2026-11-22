@@ -114,6 +114,9 @@ for dir in "$RULES_DIR" "$BIN_DIR"; do
     else
       [[ -z "${IN_SET_BIN[$name]:-}" ]] || continue
     fi
+    # Setup removes no directory it did not make.
+    [[ -L "$entry" || ! -d "$entry" ]] \
+      || fail "$entry is a directory, where setup keeps Wisp's own files: remove it by hand, then run setup again"
     rm -f -- "$entry" || fail "cannot remove $entry"
     changed "removed $entry"
   done
