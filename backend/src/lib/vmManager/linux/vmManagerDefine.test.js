@@ -36,7 +36,6 @@ beforeEach(() => {
     props: {
       Get: async (_iface, prop) => {
         if (prop === 'Persistent') return libvirt.persistent;
-        if (prop === 'Name') return 'mi-q';
         return null;
       },
     },
@@ -58,10 +57,12 @@ test('a change that returns false defines nothing', async () => {
   assert.deepEqual(libvirt.defined, []);
 });
 
-test('a transient domain is refused before anything is read or written', async () => {
+test('a transient domain: a change it would need is refused, or skipped when asked; no change is no error', async () => {
   libvirt.persistent = false;
   await assert.rejects(redefineVM(PATH, (dom) => { dom.vcpu = 2; }), (err) => err.code === 'VM_TRANSIENT' && /mi-q/.test(err.message));
-  assert.deepEqual([libvirt.xmlFlags, libvirt.defined], [[], []]);
+  assert.equal(await redefineVM(PATH, (dom) => { dom.vcpu = 2; }, { skipTransient: true }), false);
+  assert.equal(await redefineVM(PATH, () => false), false);
+  assert.deepEqual(libvirt.defined, []);
 });
 
 test('writes to one domain run in order: each reads what the one before it defined', async () => {

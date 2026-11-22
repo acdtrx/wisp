@@ -26,19 +26,20 @@ function inWriteQueue(domPath, write) {
 
 /**
  * Change the saved definition of the domain at `domPath`. Under the domain's
- * write queue: refuse a transient domain (VM_TRANSIENT — a define would make it
- * persistent), read the definition with the secure flag (so a console password
- * set outside Wisp is written back), call `change(dom, { xml, parsed })` on the
- * parsed `<domain>` (`xml` the definition as read), and define the result —
- * unless `change` returns `false` (nothing to write). `change` may throw
- * before anything is written. A failed define
- * throws `defineError(err)`, LIBVIRT_ERROR by default. Resolves whether it
- * defined.
+ * write queue: read the definition with the secure flag (so a console
+ * password set outside Wisp is written back), call `change(dom, { xml,
+ * parsed })` on the parsed `<domain>` (`xml` the definition as read), and
+ * define the result — unless `change` returns `false` (nothing to write).
+ * `change` may throw before anything is written. A transient domain is never
+ * defined (a define would make it persistent): a change it would need is
+ * refused with VM_TRANSIENT, or, with `skipTransient`, resolves as not
+ * defined. A failed define throws `defineError(err)`, LIBVIRT_ERROR by
+ * default. Resolves whether it defined.
  * @param {string} domPath
  * @param {(dom: object, read: { xml: string, parsed: object }) => (boolean | void | Promise<boolean | void>)} change
- * @param {{ defineError?: (err: Error) => Error }} [opts]
+ * @param {{ defineError?: (err: Error) => Error, skipTransient?: boolean }} [opts]
  */
-export function redefineVM(domPath, change, { defineError } = {}) {
+export function redefineVM(domPath, change, { defineError, skipTransient = false } = {}) {
   return inWriteQueue(domPath, async () => {
     const { props } = await getDomainObjAndIface(domPath);
     let persistent;
@@ -47,16 +48,16 @@ export function redefineVM(domPath, change, { defineError } = {}) {
     } catch (err) {
       throw vmError('LIBVIRT_ERROR', 'Failed to read whether the VM is persistent', err.message);
     }
-    if (!persistent) {
-      const transientName = unwrapVariant(await props.Get('org.libvirt.Domain', 'Name'));
-      throw vmError('VM_TRANSIENT', `VM "${transientName}" is transient (not defined in libvirt): Wisp does not change its definition`);
-    }
     const xml = await getDomainXML(domPath, { inactive: true, secure: true });
     const parsed = parseDomainRaw(xml);
     const dom = parsed?.domain;
     if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
     const name = domainNameFromParsed(dom);
     if ((await change(dom, { xml, parsed })) === false) return false;
+    if (!persistent) {
+      if (skipTransient) return false;
+      throw vmError('VM_TRANSIENT', `VM "${name}" is transient (not defined in libvirt): Wisp does not change its definition`);
+    }
     let outXml;
     try {
       outXml = buildXml(parsed);

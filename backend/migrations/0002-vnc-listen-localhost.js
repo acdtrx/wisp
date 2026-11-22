@@ -24,8 +24,10 @@ export async function run(ctx) {
     const kinds = [...new Set(stale.map((l) => (l.graphics || 'graphics').toUpperCase()))].join('/');
     const from = [...new Set(stale.map((l) => l.address))].join(', ');
     const running = !ctx.vmManager.isShutOff(vm.stateCode);
+    // A transient domain is left as it is (Wisp never defines one): not changed.
+    const { changed } = await ctx.vmManager.setGraphicsListen(vm.name, LOCALHOST);
+    if (!changed) continue;
     ctx.recordChange(`${vm.name}: ${kinds} listen ${from} → ${LOCALHOST}${running ? ' (restart required)' : ''}`);
-    await ctx.vmManager.setGraphicsListen(vm.name, LOCALHOST);
     if (running) await ctx.setVMPendingRestart(vm.name, true);
   }
 }

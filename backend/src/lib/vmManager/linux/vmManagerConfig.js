@@ -235,12 +235,14 @@ function applyConfigChanges(dom, current, patch) {
  * Remove one Wisp pref (`wisp:<key>`) from the VM's saved definition, leaving
  * the rest of the XML as libvirt returned it: for a state migration retiring
  * a pref. Metadata only, so a running VM needs no restart. Defines only when
- * the pref is there. Returns `{ changed }`.
+ * the pref is there, and never a transient domain (it stays as it is, not
+ * changed). Returns `{ changed }`.
  */
 export async function removeVMPref(name, key) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const domPath = await resolveDomain(name);
   const changed = await redefineVM(domPath, (dom) => removeWispPref(dom, key), {
+    skipTransient: true,
     defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to remove the ${key} pref of VM "${name}"`, err.message),
   });
   return { changed };
@@ -252,31 +254,25 @@ export async function removeVMPref(name, key) {
  * with the secure flag, so a graphics password set outside Wisp survives): for a state
  * migration. Metadata only, so a running VM needs no restart. Defines only when the VM
  * has no profile, and never a transient domain, which a define would make persistent:
- * that one stays without a profile. Returns `{ changed, profile }`, `profile` null for
- * a transient domain.
+ * that one stays without a profile, not changed. Returns `{ changed, profile }`, the
+ * profile stored or given, null for a transient domain left without one.
  */
 export async function setMissingVMProfile(name) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const domPath = await resolveDomain(name);
-  let profile = null;
-  try {
-    const changed = await redefineVM(domPath, (dom) => {
-      const stored = getWispProfile(dom);
-      if (stored) {
-        profile = stored;
-        return false;
-      }
-      profile = profileFromDefinition(dom);
-      setWispProfile(dom, profile);
-      return true;
-    }, {
-      defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to set the profile of VM "${name}"`, err.message),
-    });
-    return { changed, profile };
-  } catch (err) {
-    if (err.code === 'VM_TRANSIENT') return { changed: false, profile: null };
-    throw err;
-  }
+  let stored = null;
+  let given = null;
+  const changed = await redefineVM(domPath, (dom) => {
+    stored = getWispProfile(dom);
+    if (stored) return false;
+    given = profileFromDefinition(dom);
+    setWispProfile(dom, given);
+    return true;
+  }, {
+    skipTransient: true,
+    defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to set the profile of VM "${name}"`, err.message),
+  });
+  return { changed, profile: changed ? given : stored };
 }
 
 /**
@@ -319,8 +315,9 @@ export async function getGraphicsListen(name) {
 /**
  * Point every listen address of the VM's saved graphics definition (see
  * getGraphicsListen) at `address`, leaving the rest of the XML as libvirt
- * returned it. Defines only when something differs. A running VM keeps its
- * current listener until its next start — the caller knows whether that needs
+ * returned it. Defines only when something differs, and never a transient
+ * domain (left as it is, not changed). A running VM keeps its current
+ * listener until its next start — the caller knows whether that needs
  * flagging. Returns `{ changed, previous }` (the distinct addresses replaced).
  */
 export async function setGraphicsListen(name, address) {
@@ -335,7 +332,8 @@ export async function setGraphicsListen(name, address) {
     for (const r of stale) r.set(address);
     return true;
   }, {
+    skipTransient: true,
     defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to update the graphics listen address of VM "${name}"`, err.message),
   });
-  return { changed, previous };
+  return { changed, previous: changed ? previous : [] };
 }
