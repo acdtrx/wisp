@@ -1,6 +1,7 @@
 /*
  * Restore planning against a backup on disk and a stand-in libvirt with no domains:
- * a backup made before VM profiles is refused before anything is created.
+ * a backup made by an older Wisp (no profile, or a manifest without the VM's name or
+ * directory) is refused before anything is created.
  */
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,10 +16,10 @@ import { planBackupRestore } from './vmManagerBackup.js';
 let root;
 
 /** A backup directory holding a manifest and the domain XML (no disks). */
-function backup(name, metadata) {
+function backup(name, metadata, manifest = { vmName: name, vmBasePath: `/var/lib/wisp/vms/${name}`, timestamp: '20261101-000000' }) {
   const dir = path.join(root, 'backups', name);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ vmName: name, timestamp: '20261101-000000' }));
+  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
   writeFileSync(path.join(dir, 'domain.xml'), `<domain type="kvm"><name>${name}</name>${metadata}<devices><interface type="bridge"><mac address="52:54:00:00:00:01"/><source bridge="br0"/></interface></devices></domain>`);
   return dir;
 }
@@ -48,4 +49,14 @@ test('a backup with a profile is planned, the profile kept', async () => {
   } finally {
     await plan.payload.close();
   }
+});
+
+test('a backup whose manifest does not name the VM\'s directory is refused, and nothing is created', async () => {
+  const profile = '<metadata><wisp:prefs xmlns:wisp="https://wisp.local/app"><wisp:profile>other</wisp:profile></wisp:prefs></metadata>';
+  const dir = backup('older', profile, { vmName: 'older', timestamp: '20261101-000000' });
+  await assert.rejects(
+    planBackupRestore(dir, 'older-copy'),
+    (err) => err.code === 'BACKUP_INVALID' && /older Wisp/.test(err.message),
+  );
+  assert.equal(existsSync(path.join(root, 'vms', 'older-copy')), false);
 });

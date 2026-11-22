@@ -12,7 +12,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
 import { Transform } from 'node:stream';
-import { join, dirname, basename } from 'node:path';
+import { join, basename } from 'node:path';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
@@ -191,25 +191,12 @@ function applyVmBasePrefixToDomain(dom, oldBase, newBase) {
  * `vmBasePath` (realpath'd at backup time) and the configured path under the
  * backed-up name (what the XML holds when `vmsPath` runs through a symlink —
  * the two differ there, and a path only one of them matches would otherwise
- * keep pointing at the old VM's directory). Older backups without either fall
- * back to the first disk's directory.
- * @param {object | null} manifest
- * @param {object | null} config - parseVMFromXML result
- * @param {Array<{ oldPath: string }>} diskMapping
+ * keep pointing at the old VM's directory).
+ * @param {{ vmName: string, vmBasePath: string }} manifest
  * @returns {string[]}
  */
-function resolveOldVmBasePaths(manifest, config, diskMapping) {
-  const bases = [];
-  if (manifest?.vmBasePath && typeof manifest.vmBasePath === 'string') {
-    bases.push(normalizeBasePath(manifest.vmBasePath));
-  }
-  const name = typeof manifest?.vmName === 'string' && manifest.vmName ? manifest.vmName
-    : typeof config?.name === 'string' && config.name ? config.name : null;
-  if (name) bases.push(normalizeBasePath(getVMBasePath(name)));
-  if (bases.length === 0 && diskMapping.length > 0 && diskMapping[0].oldPath) {
-    bases.push(normalizeBasePath(dirname(diskMapping[0].oldPath)));
-  }
-  return [...new Set(bases)];
+function resolveOldVmBasePaths(manifest) {
+  return [...new Set([normalizeBasePath(manifest.vmBasePath), normalizeBasePath(getVMBasePath(manifest.vmName))])];
 }
 
 /**
@@ -662,7 +649,13 @@ export async function setVMBackupOrigin(backupPath, origin) {
   }
 }
 
-/** Read a backup's manifest.json and domain.xml (both required). */
+/**
+ * Read a backup's manifest.json and domain.xml, the one check that the backup
+ * is one this Wisp restores: both readable, the manifest naming the VM and its
+ * directory, the definition carrying a profile. A backup made by an older Wisp
+ * misses one of them and is BACKUP_INVALID: no code reads an older shape.
+ * @returns {Promise<{ xml: string, manifest: object, config: object }>}
+ */
 async function readBackupDomain(backupPath) {
   let manifest;
   try {
@@ -676,7 +669,17 @@ async function readBackupDomain(backupPath) {
   } catch (err) {
     throw vmError('BACKUP_INVALID', `Backup missing domain.xml: ${backupPath}`, err.message);
   }
-  return { xml, manifest };
+  const config = parseVMFromXML(xml);
+  if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
+  /* Every VM Wisp defines has a profile, and a backup made before profiles holds none:
+   * it is refused, not given one (settled 2026-11-21). */
+  const current = config.profile
+    && typeof manifest.vmName === 'string' && manifest.vmName
+    && typeof manifest.vmBasePath === 'string' && manifest.vmBasePath;
+  if (!current) {
+    throw vmError('BACKUP_INVALID', 'This backup was made by an older Wisp (before VM profiles) and can\'t be restored: back the VM up again');
+  }
+  return { xml, manifest, config };
 }
 
 /** Files restore creates in the new VM directory besides the disks. */
@@ -711,8 +714,8 @@ function planRestoredDisks(config, newBase) {
  * directory (prefix rewrite, see resolveOldVmBasePaths) plus any disk that
  * lived outside it (e.g. image library), which the per-disk mapping covers.
  */
-function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase }) {
-  for (const oldBase of resolveOldVmBasePaths(manifest, config, diskMapping)) {
+function rewriteRestoredDomainPaths(dom, { manifest, diskMapping, newBase }) {
+  for (const oldBase of resolveOldVmBasePaths(manifest)) {
     applyVmBasePrefixToDomain(dom, oldBase, newBase);
   }
 
@@ -733,7 +736,7 @@ function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBas
  * moved to the new VM directory — then checked as untrusted input
  * (assertRestorableDomain) before anything is written.
  */
-async function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed }) {
+async function restoredDomainXml(xml, { newVmName, manifest, diskPlan, newBase, isExternalSourceAllowed }) {
   const parsed = parseDomainRaw(xml);
   const dom = parsed?.domain;
   if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse backup domain XML');
@@ -741,7 +744,7 @@ async function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, n
   dom.name = newVmName;
   dom.uuid = randomUUID();
 
-  rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping: diskPlan, newBase });
+  rewriteRestoredDomainPaths(dom, { manifest, diskMapping: diskPlan, newBase });
 
   const ifaces = dom.devices?.interface;
   if (Array.isArray(ifaces)) {
@@ -786,7 +789,7 @@ async function openPayloadFile(path) {
 }
 
 /**
- * Open every payload file a restore copies — each disk (plain, else `.gz`) and
+ * Open every payload file a restore copies — each disk (`<file>.gz`) and
  * cloud-init.json (optional) — and check VARS.fd (optional; copied by path
  * through the wisp-nvram helper) is a regular file. Runs before the VM
  * directory exists. The caller closes the returned handles.
@@ -799,16 +802,10 @@ async function openBackupPayload(backupPath, diskPlan) {
   try {
     const disks = [];
     for (const plan of diskPlan) {
-      const plainPath = join(backupPath, plan.logicalName);
-      let handle = await openPayloadFile(plainPath);
-      let gzipped = false;
-      if (!handle) {
-        handle = await openPayloadFile(`${plainPath}.gz`);
-        gzipped = true;
-      }
-      if (!handle) throw vmError('BACKUP_INVALID', `Backup missing disk or image file: ${plan.logicalName}`);
+      const handle = await openPayloadFile(join(backupPath, `${plan.logicalName}.gz`));
+      if (!handle) throw vmError('BACKUP_INVALID', `Backup missing disk file: ${plan.logicalName}.gz`);
       handles.push(handle);
-      disks.push({ ...plan, handle, gzipped });
+      disks.push({ ...plan, handle });
     }
     const cloudInitJson = await openPayloadFile(join(backupPath, 'cloud-init.json'));
     if (cloudInitJson) handles.push(cloudInitJson);
@@ -844,9 +841,9 @@ async function copyPayloadFile(handle, destPath, { gunzip = false, mode } = {}) 
 async function copyBackupPayload(backupPath, payload, destBase) {
   for (const disk of payload.disks) {
     try {
-      await copyPayloadFile(disk.handle, disk.newPath, { gunzip: disk.gzipped });
+      await copyPayloadFile(disk.handle, disk.newPath, { gunzip: true });
     } catch (err) {
-      throw vmError('BACKUP_INVALID', `Backup file ${disk.logicalName}${disk.gzipped ? '.gz' : ''} could not be copied`, err.message);
+      throw vmError('BACKUP_INVALID', `Backup file ${disk.logicalName}.gz could not be copied`, err.message);
     }
     try {
       await inspectDiskImage(disk.newPath, { format: disk.format });
@@ -855,15 +852,14 @@ async function copyBackupPayload(backupPath, payload, destBase) {
     }
   }
 
-  // allowMissing skips BIOS-only and older silent-skip backups; permission/IO failures surface.
+  // allowMissing: a BIOS VM has no NVRAM, nor a UEFI one never started; permission/IO failures surface.
   await copyNvram(join(backupPath, 'VARS.fd'), join(destBase, 'VARS.fd'), { allowMissing: true });
 
   // cloud-init.json carries the password hash and lands in the group-readable
   // per-VM dir, so it is created 0600 like the live write path's (whatever mode
   // the backup's copy has). Optional — absent when the VM had no cloud-init —
-  // but once present a failed copy fails the restore. A cloud-init.iso(.gz) in
-  // an older backup is ignored: the seed ISO is rebuilt from this JSON by the
-  // caller's populateVMDir.
+  // but once present a failed copy fails the restore. The seed ISO is rebuilt
+  // from this JSON by the caller's populateVMDir.
   if (payload.cloudInitJson) {
     await copyPayloadFile(payload.cloudInitJson, join(destBase, 'cloud-init.json'), { mode: 0o600 });
   }
@@ -886,18 +882,11 @@ async function copyBackupPayload(backupPath, payload, destBase) {
 export async function planBackupRestore(backupPath, newVmName, { isExternalSourceAllowed } = {}) {
   await assertVMNameAvailable(newVmName);
 
-  const { xml, manifest } = await readBackupDomain(backupPath);
-  const config = parseVMFromXML(xml);
-  if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
-  /* Every VM Wisp defines has a profile, and a backup made before profiles holds none:
-   * it is refused, not given one (settled 2026-11-21). */
-  if (!config.profile) {
-    throw vmError('BACKUP_INVALID', 'This backup was made before VM profiles and can\'t be restored: back the VM up again');
-  }
+  const { xml, manifest, config } = await readBackupDomain(backupPath);
 
   const newBase = normalizeBasePath(getVMBasePath(newVmName));
   const diskPlan = planRestoredDisks(config, newBase);
-  const newXml = await restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed });
+  const newXml = await restoredDomainXml(xml, { newVmName, manifest, diskPlan, newBase, isExternalSourceAllowed });
 
   const payload = await openBackupPayload(backupPath, diskPlan);
   return { backupPath, newVmName, newBase, newXml, payload };
