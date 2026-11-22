@@ -213,7 +213,7 @@ rollback() {
 rollback_left() {
   local state
   state="$(run_child "$STATUS_SEC" 0 systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' ')"
-  echo "rollback: ended; $SERVICE_UNIT is ${state:-unknown}; left in place: the staged tree $STAGING and $TARGET_FILE (the next update replaces both), and the copy $PREV_DIR"
+  echo "rollback: ended; $SERVICE_UNIT is ${state:-unknown}; left in place: the staged tree $STAGING, $TARGET_FILE and the copy $PREV_DIR"
 }
 
 # The EXIT trap first stops TERM and INT from cutting the rollback short: a

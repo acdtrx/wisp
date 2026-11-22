@@ -25,6 +25,13 @@ staged tree's `backend/package.json` and would refuse an update without it. **Re
 trigger:** the first release cut after the one that ships the root-only staging check:
 then the two versions, their writes and their assertion can go.
 
+**A rolled-back release's staged tree stays under `/var/lib/wisp/updates`.** After a
+rollback the updater leaves the staged tree (`staging-<version>`) and the target file in
+place, and only a new download of the same version clears that tree: a release that
+failed and is never retried keeps its tree, a few hundred MB, for good (seen in the
+privileged helpers milestone 3 runs, 2026-11-23). **Revisit trigger:** a host whose
+updates folder holds more than one staged tree.
+
 **There is no complete uninstall.** Nothing removes what an install put on a host:
 `wisp.service` and `wisp-updater.service`, the `wisp-*` helpers and their sudo rules, the
 container DNS stub's netplan file, the CNI plugins and `cni-dhcp.service`; and nothing
