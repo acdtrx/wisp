@@ -433,12 +433,15 @@ export async function deleteVM(name, deleteDisks = false) {
   const { iface } = await getDomainObjAndIface(path);
 
   // A VM that cannot be stopped is not deleted: undefining it would leave it
-  // running, transient, with its disks removed under it.
+  // running, transient, with its disks removed under it. A Destroy that fails
+  // because the guest finished shutting down meanwhile is a stopped VM.
   if (!isOfflineState(state.code)) {
     try {
       await iface.Destroy(0);
     } catch (err) {
-      throw vmError('LIBVIRT_ERROR', `Failed to stop VM "${name}" before deleting it`, err.message);
+      if (!isOfflineState((await getDomainState(path)).code)) {
+        throw vmError('LIBVIRT_ERROR', `Failed to stop VM "${name}" before deleting it`, err.message);
+      }
     }
   }
 
