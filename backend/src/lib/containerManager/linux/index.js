@@ -78,11 +78,11 @@ export { tightenContainerFileModes, tightenContainerBackupFileModes } from './co
 
 export {
   listContainerImages,
-  assertContainerImageDeletable,
-  deleteContainerImage,
   getImageDigest,
   resolveContainerImageRef,
 } from './containerManagerImages.js';
+
+export { assertContainerImageDeletable, deleteContainerImage } from './containerManagerImageDelete.js';
 
 export {
   checkAllImagesForUpdates,

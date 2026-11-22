@@ -334,7 +334,7 @@ export function notifyContainerNetnsRemoved(name) {
 
 /**
  * Remove a network namespace. Notifies netns-removed subscribers when one
- * existed.
+ * existed; a delete that fails throws.
  */
 async function removeNetNS(name) {
   try {
@@ -344,18 +344,13 @@ async function removeNetNS(name) {
   }
   const netnsScript = await resolveNetnsScript();
   if (netnsScript) {
-    try {
-      if (isRoot()) {
-        await execFile(netnsScript, ['delete', name], { timeout: 15000 });
-      } else {
-        await execFile('sudo', ['-n', netnsScript, 'delete', name], { timeout: 15000 });
-      }
-    } catch {
-      /* best effort */
+    if (isRoot()) {
+      await execFile(netnsScript, ['delete', name], { timeout: 15000 });
+    } else {
+      await execFile('sudo', ['-n', netnsScript, 'delete', name], { timeout: 15000 });
     }
   } else {
-    /* Best-effort netns delete without helper; ignore if namespace already gone */
-    await execFile('ip', ['netns', 'delete', name], { timeout: 15000 }).catch(() => {});
+    await execFile('ip', ['netns', 'delete', name], { timeout: 15000 });
   }
   notifyContainerNetnsRemoved(name);
 }
@@ -638,7 +633,8 @@ export async function setupNetwork(name, networkConfig = {}) {
 }
 
 /**
- * Tear down networking for a container.
+ * Tear down networking for a container: CNI DEL, then the netns. A step that
+ * fails throws; a caller that only tidies up after another failure catches it.
  */
 export async function teardownNetwork(name, networkConfig = {}) {
   const nsPath = getContainerNetnsPath(name);
@@ -646,11 +642,6 @@ export async function teardownNetwork(name, networkConfig = {}) {
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
   const pluginName = pluginConfig.type || 'bridge';
 
-  try {
-    await execCNI(pluginName, 'DEL', name, nsPath, pluginConfig);
-  } catch {
-    // Best effort
-  }
-
+  await execCNI(pluginName, 'DEL', name, nsPath, pluginConfig);
   await removeNetNS(name);
 }

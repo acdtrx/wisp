@@ -9,17 +9,15 @@
  * library digests `updateAvailable` is derived from) and the container list cache, so
  * every caller surfaces the result the same way.
  */
-import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
 
 import { containerError, containerState } from './containerManagerConnection.js';
-import { getContainerDir } from './containerPaths.js';
 import {
-  listContainerImages, findContainersUsingImage, getImageDigest,
+  listContainerImages, getImageDigest,
 } from './containerManagerImages.js';
 import { pullImage } from './containerManagerCreate.js';
 import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
-import { refreshContainerListCache } from './containerManagerList.js';
+import { refreshContainerListCache, findContainersUsingImage } from './containerManagerList.js';
+import { readContainerConfig } from './containerManagerConfigIo.js';
 
 export { getImageDigest };
 
@@ -45,22 +43,12 @@ export function getImageUpdateStatus() {
  * differs from the new digest. Read-only — nothing is persisted.
  */
 async function containerFlaggedForDigest(name, newDigest) {
-  const configPath = join(getContainerDir(name), 'container.json');
-  let config;
-  try {
-    config = JSON.parse(await readFile(configPath, 'utf8'));
-  } catch {
-    return false;
-  }
+  const config = await readContainerConfig(name);
   if (!config.imageDigest || config.imageDigest === newDigest) return false;
-  try {
-    const task = await getTaskState(name);
-    if (!task) return false;
-    const st = normalizeTaskStatus(task.status);
-    return st === 'RUNNING' || st === 'PAUSED';
-  } catch {
-    return false;
-  }
+  const task = await getTaskState(name);
+  if (!task) return false;
+  const st = normalizeTaskStatus(task.status);
+  return st === 'RUNNING' || st === 'PAUSED';
 }
 
 const SKIPPED = Symbol('skipped');
@@ -111,13 +99,18 @@ async function checkOneImage(ref, onProgress, position) {
 
   onProgress?.({ step: 'updated', ref, oldDigest: before, newDigest: after });
 
+  // The image changed; which containers it flags is read from the list and
+  // their configs. A read that fails skips the count, with its cause.
   let flaggedCount = 0;
-  const users = await findContainersUsingImage(ref);
-  for (const name of users) {
-    if (await containerFlaggedForDigest(name, after)) {
-      flaggedCount += 1;
-      onProgress?.({ step: 'flagged-container', name });
+  try {
+    for (const name of await findContainersUsingImage(ref)) {
+      if (await containerFlaggedForDigest(name, after)) {
+        flaggedCount += 1;
+        onProgress?.({ step: 'flagged-container', name });
+      }
     }
+  } catch (err) {
+    onProgress?.({ step: 'skipped', ref, cause: err });
   }
   return { changed: true, flaggedCount };
 }

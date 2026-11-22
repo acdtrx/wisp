@@ -31,41 +31,32 @@ export async function getContainerStats(name) {
     };
   }
 
+  // A Metrics call that fails fails the read: the figures are missing, never zeros.
   let cpuPercent = 0;
   let memoryUsageMiB = 0;
-
-  try {
-    const metricsRes = await callUnary(getClient('tasks'), 'metrics', {
-      filters: [`id==${name}`],
-    });
-
-    if (metricsRes.metrics?.length > 0) {
-      const metric = metricsRes.metrics[0];
-      const data = unpackAny(metric.data);
-
-      if (data) {
-        // cgroups v2 metrics format
-        if (data.cpu?.usageUsec != null) {
-          const now = Date.now();
-          const cpuUsec = Number(data.cpu.usageUsec);
-          const prev = prevStats.get(name);
-          if (prev) {
-            const elapsedMs = now - prev.time;
-            const cpuDeltaUsec = cpuUsec - prev.cpuUsec;
-            if (elapsedMs > 0) {
-              cpuPercent = Math.min(100, (cpuDeltaUsec / (elapsedMs * 1000)) * 100);
-            }
-          }
-          prevStats.set(name, { time: now, cpuUsec });
-        }
-
-        if (data.memory?.usage != null) {
-          memoryUsageMiB = Math.round(Number(data.memory.usage) / (1024 * 1024));
+  const metricsRes = await callUnary(getClient('tasks'), 'metrics', {
+    filters: [`id==${name}`],
+  });
+  const data = metricsRes.metrics?.length > 0 ? unpackAny(metricsRes.metrics[0].data) : null;
+  if (data) {
+    // cgroups v2 metrics format
+    if (data.cpu?.usageUsec != null) {
+      const now = Date.now();
+      const cpuUsec = Number(data.cpu.usageUsec);
+      const prev = prevStats.get(name);
+      if (prev) {
+        const elapsedMs = now - prev.time;
+        const cpuDeltaUsec = cpuUsec - prev.cpuUsec;
+        if (elapsedMs > 0) {
+          cpuPercent = Math.min(100, (cpuDeltaUsec / (elapsedMs * 1000)) * 100);
         }
       }
+      prevStats.set(name, { time: now, cpuUsec });
     }
-  } catch {
-    /* Metrics RPC failed or cgroup data missing — keep zeros */
+
+    if (data.memory?.usage != null) {
+      memoryUsageMiB = Math.round(Number(data.memory.usage) / (1024 * 1024));
+    }
   }
 
   const pidNum = Number(task?.pid) || 0;

@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, rm, readFile, readdir, stat } from 'node:fs/promises';
+import { access, mkdir, rm, readFile, readdir, stat } from 'node:fs/promises';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 
 import {
@@ -23,7 +23,7 @@ const PROGRESS_STREAM_OPEN_MS = 30_000;
 /** Removing a large rootfs snapshot can take a while. */
 const SNAPSHOT_REMOVE_DEADLINE_MS = 2 * 60_000;
 import { buildOCISpec } from './containerManagerSpec.js';
-import { getContainersPath, getContainerDir, getContainerFilesDir } from './containerPaths.js';
+import { getContainersPath, getContainerDir, getContainerFilesDir, getContainerNetnsPath } from './containerPaths.js';
 import { createNewRun } from './containerManagerLogs.js';
 import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig,
@@ -122,16 +122,17 @@ function selectLinuxManifestDescriptor(manifests) {
 /**
  * After SIGKILL, wait until the task is STOPPED or gone — exponential backoff (no flat sleep).
  */
+/** Wait for the task to stop or go, up to `maxTotalMs`; still running then throws. */
 async function waitUntilTaskStoppedOrGone(name, maxTotalMs) {
   const deadline = Date.now() + maxTotalMs;
   let sleepMs = 100;
-  while (Date.now() < deadline) {
+  for (;;) {
     const task = await getTaskState(name);
-    if (!task) return;
-    const st = normalizeTaskStatus(task.status);
-    if (st === 'STOPPED') return;
+    if (!task || normalizeTaskStatus(task.status) === 'STOPPED') return;
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return;
+    if (remaining <= 0) {
+      throw containerError('CONTAINERD_ERROR', `Container "${name}" did not stop within ${Math.round(maxTotalMs / 1000)} s of being killed`);
+    }
     await new Promise((r) => setTimeout(r, Math.min(sleepMs, remaining)));
     sleepMs = Math.min(sleepMs * 2, 2000);
   }
@@ -862,61 +863,70 @@ async function removeContainerKeepingFiles(name) {
   if (kept.length === 0) await rm(containerDir, { recursive: true, force: true });
 }
 
+function pathExists(path) {
+  return access(path).then(() => true, () => false);
+}
+
+/** containerd's answer for an object that is not there: for a delete, already done. */
+async function unlessGone(promise) {
+  try {
+    await promise;
+  } catch (err) {
+    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
+  }
+}
+
 /**
- * Delete a container: stop task, remove snapshot, remove containerd definition, delete files
- * (or, with deleteFiles false, everything but files/).
+ * Delete a container: stop its task, withdraw its services, tear down its
+ * network, remove its snapshot and its containerd record, then its files (or,
+ * with deleteFiles false, everything but files/). A step that fails stops the
+ * delete there and names itself; what it would have removed, and everything
+ * after it, stays — the container is still listed, and a second delete carries
+ * on, since each step takes "not there" as done.
  */
 export async function deleteContainer(name, deleteFiles = true) {
-  // Stop task if running
+  const step = async (what, fn) => {
+    try {
+      await fn();
+    } catch (err) {
+      throw wrapContainerError(isWispError(err) ? err.code : 'INTERNAL_ERROR', `Could not delete container "${name}": ${what} failed`, err);
+    }
+  };
+
   noteIntentionalStop(name);
-  try {
-    const task = await callUnary(getClient('tasks'), 'get', { containerId: name });
-    const st = normalizeTaskStatus(task.process?.status);
-    if (st === 'RUNNING' || st === 'PAUSED') {
-      noteIntentionalStop(name, task.process?.pid);
-      await callUnary(getClient('tasks'), 'kill', { containerId: name, signal: 9, all: true });
+  await step('stopping its task', async () => {
+    const task = await getTaskState(name);
+    if (!task) return;
+    if (task.status === 'RUNNING' || task.status === 'PAUSED') {
+      noteIntentionalStop(name, task.pid);
+      await unlessGone(callUnary(getClient('tasks'), 'kill', { containerId: name, signal: 9, all: true }));
       await waitUntilTaskStoppedOrGone(name, 15000);
     }
-    await callUnary(getClient('tasks'), 'delete', { containerId: name });
-  } catch {
-    // No task
-  }
+    await unlessGone(callUnary(getClient('tasks'), 'delete', { containerId: name }));
+  });
   /* Services (SRV/TXT) are deregistered here after the task is gone so we
    * never have a window where a service resolves to a tearing-down container.
    * The A record is Wisp glue's to withdraw. */
   await deregisterServicesForContainer(name);
 
-  // Tear down networking
-  try {
-    const containerDir = getContainerDir(name);
-    const raw = await readFile(join(containerDir, 'container.json'), 'utf8');
-    const config = JSON.parse(raw);
+  await step('tearing down its network', async () => {
+    if (!(await pathExists(getContainerNetnsPath(name)))) return;
+    const config = await readContainerConfig(name);
     await teardownNetwork(name, config.network);
-  } catch { /* best effort */ }
+  });
 
-  // Remove snapshot
-  try {
-    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
-  } catch {
-    // Snapshot may not exist
-  }
+  await step('removing its snapshot', () => unlessGone(callUnary(
+    getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS },
+  )));
 
-  // Remove container from containerd
-  try {
-    await callUnary(getClient('containers'), 'delete', { id: name });
-  } catch {
-    // Container may not exist in containerd
-  }
+  await step('removing it from containerd', () => unlessGone(callUnary(getClient('containers'), 'delete', { id: name })));
 
   containerState.containerStartTimes.delete(name);
 
-  // Remove local files
-  if (deleteFiles) {
-    const containerDir = getContainerDir(name);
-    await rm(containerDir, { recursive: true, force: true });
-  } else {
-    await removeContainerKeepingFiles(name);
-  }
+  await step(`removing its folder ${getContainerDir(name)}`, async () => {
+    if (deleteFiles) await rm(getContainerDir(name), { recursive: true, force: true });
+    else await removeContainerKeepingFiles(name);
+  });
 
   // The earlier containerd /containers/delete event already triggered a cache
   // refresh, but at that moment the container.json file was still on disk so

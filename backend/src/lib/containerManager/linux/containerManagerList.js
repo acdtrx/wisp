@@ -4,16 +4,18 @@
  * restart-policy schedule changes, and image-update completion. Owns the containerd events subscription, which
  * also feeds `/tasks/exit` to the restart policy.
  */
-import { join } from 'node:path';
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 
 import {
   containerError,
+  wrapContainerError,
   containerState,
   getClient,
   callStream,
   subscribeContainerdConnect,
   subscribeContainerdDisconnect,
+  subscribeContainerdConnectFailed,
+  retryConnect,
   NAMESPACE,
 } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
@@ -21,7 +23,7 @@ import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecyc
 import { processUptimeMsFromProc } from './procUptime.js';
 import { pendingRestartInForce } from './containerManagerPendingRestart.js';
 import { getRegisteredHostname } from '../../mdns/index.js';
-import { readLibraryDigestMap } from './containerManagerImages.js';
+import { readLibraryDigestMap } from './containerManagerImageMeta.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { readContainerConfig, subscribeContainerConfigWrite } from './containerManagerConfigIo.js';
 import {
@@ -45,8 +47,10 @@ function deriveUpdateAvailable(config, state, libraryDigests) {
 
 /* ── Container list cache (event-driven) ────────────────────────────── */
 
+/** The last list read whole, or null: not read yet, or the last read failed or
+ *  the events stream broke, so the next listContainers() reads it again. */
 let containerListCache = null;
-let refreshPromise = null;
+let readPromise = null;
 let refreshQueued = false;
 /** Resolvers waiting for a refresh that starts after they asked. */
 let refreshWaiters = [];
@@ -90,15 +94,14 @@ const LIST_AFFECTING_TOPICS = new Set([
 ]);
 
 /**
- * Build the list from the container directories plus each task's state.
- * Lenient (the cached list behind the UI): an unreadable containers root is an
- * empty list, and a failed task lookup keeps the last known state. `complete`
- * (the uncached list — callers that act on every container) returns real state
- * or throws: NO_CONTAINERD when not connected, CONFIG_ERROR for an unreadable
- * root, the task lookup's own error. A missing root is no containers in both.
+ * Build the list from the container directories plus each task's state: the
+ * whole list, or it throws — NO_CONTAINERD when not connected, INTERNAL_ERROR
+ * for an unreadable containers root, a config's or a task lookup's own error.
+ * A missing root is no containers; a directory without a `container.json` is
+ * not a container (mid-create, or the `files/` a delete kept).
  */
-async function fetchContainerListFromDisk({ complete = false } = {}) {
-  if (complete && !containerState.connected) {
+async function fetchContainerListFromDisk() {
+  if (!containerState.connected) {
     throw containerError('NO_CONTAINERD', 'Not connected to containerd');
   }
   const basePath = getContainersPath();
@@ -107,22 +110,8 @@ async function fetchContainerListFromDisk({ complete = false } = {}) {
     dirs = await readdir(basePath, { withFileTypes: true });
   } catch (err) {
     if (err.code === 'ENOENT') return [];
-    if (complete) throw containerError('CONFIG_ERROR', `Cannot read containers directory ${basePath}`, err.message);
-    /* containers root unreadable — the UI shows an empty list rather than failing */
-    return [];
+    throw wrapContainerError('INTERNAL_ERROR', `Cannot read the containers directory ${basePath}`, err);
   }
-
-  // Index the previous snapshot so a transient task-lookup failure can fall
-  // back to the last known state. Under host CPU saturation, individual
-  // tasks.get calls flake (DEADLINE_EXCEEDED, UNAVAILABLE on missed
-  // keepalives) even though the container is still running; without this,
-  // the row used to flip to 'stopped' in the sidebar and stick until the
-  // next event/save refresh corrected it.
-  const prevByName = new Map(
-    Array.isArray(containerListCache)
-      ? containerListCache.map((c) => [c.name, c])
-      : [],
-  );
 
   const results = [];
   const libraryDigests = await readLibraryDigestMap();
@@ -132,32 +121,15 @@ async function fetchContainerListFromDisk({ complete = false } = {}) {
     const name = entry.name;
     let config;
     try {
-      const configPath = join(basePath, name, 'container.json');
-      const raw = await readFile(configPath, 'utf8');
-      config = JSON.parse(raw);
-    } catch {
-      /* missing or malformed container.json (mid-create, mid-delete) — skip */
-      continue;
+      config = await readContainerConfig(name);
+    } catch (err) {
+      if (err.code === 'CONTAINER_NOT_FOUND') continue;
+      throw err;
     }
 
-    let state;
-    let pid = 0;
-    try {
-      const task = await getTaskState(name);
-      state = task ? containerTaskStatusToUi(task) : 'stopped';
-      pid = task ? Number(task.pid) || 0 : 0;
-    } catch (err) {
-      if (complete) throw err;
-      // getTaskState already returns null when the task genuinely doesn't
-      // exist; an exception here means the gRPC call faulted. Keep the last
-      // cached state so a flake doesn't poison the sidebar, and log so we
-      // can confirm the failure mode in journalctl.
-      state = prevByName.get(name)?.state || 'unknown';
-      containerState.logger?.warn?.(
-        { err: err?.message || String(err), container: name, fallback: state },
-        '[containerManager] task lookup failed during list refresh — kept previous state',
-      );
-    }
+    const task = await getTaskState(name);
+    const state = task ? containerTaskStatusToUi(task) : 'stopped';
+    const pid = task ? Number(task.pid) || 0 : 0;
 
     results.push({
       name,
@@ -182,23 +154,47 @@ function fireListChange() {
   }
 }
 
-function runListRefresh() {
-  refreshQueued = false;
-  const waiters = refreshWaiters;
-  refreshWaiters = [];
-  refreshPromise = fetchContainerListFromDisk()
-    .then((list) => { containerListCache = list; fireListChange(); })
-    .catch((err) => { containerState.logger?.warn?.({ err: err.message }, '[containerManager] container list cache refresh failed'); })
-    .finally(() => {
-      refreshPromise = null;
-      for (const resolve of waiters) resolve();
-      if (refreshQueued) runListRefresh();
-    });
+/**
+ * Forget the cached list and tell the subscribers (with null), so their next
+ * read builds it again and sends what it finds — the list, or its error. Only
+ * a cached list is dropped: a read that fails while none is cached changes
+ * nothing, so a failing read never sets off another.
+ */
+function dropContainerListCache() {
+  if (containerListCache === null) return;
+  containerListCache = null;
+  fireListChange();
 }
 
 /**
- * Refresh the list cache. A call while a refresh is in flight queues exactly
- * one follow-up. The returned promise resolves once a refresh that started
+ * Read the list: one read at a time, shared by every caller that asks
+ * meanwhile. A read that succeeds becomes the cache and is announced; one that
+ * fails drops the cache.
+ */
+function readContainerList() {
+  if (!readPromise) {
+    const waiters = refreshWaiters;
+    refreshWaiters = [];
+    refreshQueued = false;
+    readPromise = fetchContainerListFromDisk()
+      .then((list) => { containerListCache = list; fireListChange(); return list; })
+      .catch((err) => { dropContainerListCache(); throw err; })
+      .finally(() => {
+        readPromise = null;
+        for (const resolve of waiters) resolve();
+        if (refreshQueued) readContainerList().catch(logRefreshFailure);
+      });
+  }
+  return readPromise;
+}
+
+function logRefreshFailure(err) {
+  containerState.logger?.warn?.({ err: err.message }, '[containerManager] container list refresh failed');
+}
+
+/**
+ * Refresh the list cache. A call while a read is in flight queues exactly
+ * one follow-up. The returned promise resolves once a read that started
  * after this call has finished (never rejects — failures are logged), so a
  * caller that awaits it reads its own writes through `listContainers()`.
  */
@@ -206,35 +202,39 @@ export function refreshContainerListCache() {
   // No cache without the events stream (listContainers reads disk on every call).
   if (!containerState.watchEvents) return Promise.resolve();
   const done = new Promise((resolve) => { refreshWaiters.push(resolve); });
-  if (refreshPromise) {
+  if (readPromise) {
     refreshQueued = true;
   } else {
-    runListRefresh();
+    readContainerList().catch(logRefreshFailure);
   }
   return done;
-}
-
-function invalidateContainerListCache() {
-  containerListCache = null;
-  fireListChange();
 }
 
 // Stream-level errors (e.g. `UNAVAILABLE: Connection dropped`) don't trigger
 // the gRPC channel-level disconnect handler, so without an explicit reconnect
 // the subscription stays dead until backend restart and the list cache goes
-// deaf to every subsequent lifecycle event.
+// deaf to every subsequent lifecycle event. The same loop retries a connect
+// that failed (containerd down when Wisp started): it is the one reconnect.
 const EVENTS_RECONNECT_INITIAL_MS = 1000;
 const EVENTS_RECONNECT_MAX_MS = 30000;
 let eventsReconnectDelayMs = EVENTS_RECONNECT_INITIAL_MS;
 let eventsReconnectTimer = null;
 
 function scheduleEventsReconnect() {
-  if (eventsReconnectTimer || !containerState.connected) return;
+  if (eventsReconnectTimer || !containerState.clients || !containerState.watchEvents) return;
   const delay = eventsReconnectDelayMs;
   eventsReconnectDelayMs = Math.min(eventsReconnectDelayMs * 2, EVENTS_RECONNECT_MAX_MS);
   eventsReconnectTimer = setTimeout(() => {
     eventsReconnectTimer = null;
-    if (!containerState.connected) return;
+    if (!containerState.connected) {
+      // A connect that succeeds runs the connect subscribers below, which
+      // start the stream and read the list.
+      retryConnect().catch((err) => {
+        containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd connect failed — retrying');
+        scheduleEventsReconnect();
+      });
+      return;
+    }
     startEventsStream();
     // Catch up on anything that happened during the gap: the list, and the image
     // store (no image event reached us meanwhile).
@@ -269,6 +269,8 @@ function startEventsStream() {
     eventsStream.on('error', (err) => {
       containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error — will reconnect');
       stopEventsStream();
+      // containerd may be gone: the list is read again on its next use.
+      dropContainerListCache();
       scheduleEventsReconnect();
     });
     eventsStream.on('end', () => {
@@ -294,10 +296,11 @@ subscribeContainerdConnect(() => {
   refreshContainerListCache();
   announceImagesChange(); // image events missed while containerd was away
 });
+subscribeContainerdConnectFailed(scheduleEventsReconnect);
 subscribeContainerdDisconnect(() => {
   clearEventsReconnect();
   stopEventsStream();
-  invalidateContainerListCache();
+  dropContainerListCache();
 });
 subscribeContainerConfigWrite(refreshContainerListCache);
 subscribeScheduledRestartChange(refreshContainerListCache);
@@ -318,14 +321,9 @@ export function subscribeContainerListChange(handler) {
  * stats SSE — fetching them per-tick here is wasted work.
  */
 export async function listContainers() {
-  // Without the events stream nothing keeps the cache coherent — read disk each
-  // time. That caller (the start's migrations) acts on every container, so it
-  // gets real state or an error, never a guessed one.
-  if (!containerState.watchEvents) return fetchContainerListFromDisk({ complete: true });
-  if (containerListCache === null) {
-    containerListCache = await fetchContainerListFromDisk();
-  }
-  return containerListCache;
+  // Without the events stream nothing keeps the cache coherent — read disk each time.
+  if (!containerState.watchEvents) return fetchContainerListFromDisk();
+  return containerListCache ?? readContainerList();
 }
 
 /**
@@ -337,29 +335,37 @@ export async function getRunningContainerCount() {
 }
 
 /**
- * Find containers whose mounts reference a storage-mount entry by id. Used by
- * settings.removeMount to refuse deletion when any container still has a
- * `mounts[*].sourceId === mountId` (which would leave the container with a
- * dangling source on next start). Returns container names.
+ * Containers whose mounts reference a storage-mount entry by id: a host mount
+ * delete refuses while any container still has `mounts[*].sourceId ===
+ * mountId` (its next start would bind a missing source). Reads the container
+ * list and each config; a read that fails throws, so the delete is refused
+ * rather than reading the failure as "nobody uses it".
  */
 export async function findContainersUsingStorageMount(mountId) {
-  if (!mountId || typeof mountId !== 'string') return [];
   const refs = [];
-  const list = await listContainers();
-  for (const entry of list) {
-    let config;
-    try {
-      config = await readContainerConfig(entry.name);
-    } catch {
-      /* skip containers whose config we can't read — best-effort scan */
-      continue;
-    }
+  for (const entry of await listContainers()) {
+    const config = await readContainerConfig(entry.name);
     const mounts = Array.isArray(config?.mounts) ? config.mounts : [];
-    if (mounts.some((m) => m && m.sourceId === mountId)) {
-      refs.push(entry.name);
-    }
+    if (mounts.some((m) => m && m.sourceId === mountId)) refs.push(entry.name);
   }
   return refs;
+}
+
+/**
+ * Containers whose image is `imageName` — an image name exactly as containerd
+ * lists it. A container.json image matches when it is that name verbatim (how
+ * create stores it, including local-only names like `myapp:v1`) or normalizes
+ * to it (a hand-written short ref). Reads the container list and each config;
+ * a read that fails throws.
+ */
+export async function findContainersUsingImage(imageName) {
+  const users = [];
+  for (const entry of await listContainers()) {
+    const img = (await readContainerConfig(entry.name)).image;
+    if (typeof img !== 'string' || !img) continue;
+    if (img === imageName || normalizeImageRef(img) === imageName) users.push(entry.name);
+  }
+  return users;
 }
 
 /**
@@ -369,17 +375,9 @@ export async function findContainersUsingStorageMount(mountId) {
 export async function getContainerConfig(name) {
   const config = await readContainerConfig(name);
 
-  let state = 'stopped';
-  let pid = 0;
-  try {
-    const task = await getTaskState(name);
-    if (task) {
-      state = containerTaskStatusToUi(task);
-      pid = Number(task.pid) || 0;
-    }
-  } catch {
-    // Stopped
-  }
+  const task = await getTaskState(name);
+  const state = task ? containerTaskStatusToUi(task) : 'stopped';
+  const pid = task ? Number(task.pid) || 0 : 0;
 
   let uptime = 0;
   if (state === 'running') {

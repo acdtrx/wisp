@@ -6,21 +6,30 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
-import { containerError, containerState } from './containerManagerConnection.js';
+import { containerError, containerState, wrapContainerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
 import { writeJsonAtomic } from './atomicJson.js';
 
 const configWriteHandlers = new Set();
 
+/**
+ * A container's `container.json`: CONTAINER_NOT_FOUND when it does not exist,
+ * INTERNAL_ERROR when it cannot be read, PARSE_ERROR when it is not JSON.
+ */
 export async function readContainerConfig(name) {
   const path = join(getContainerDir(name), 'container.json');
   let raw;
   try {
     raw = await readFile(path, 'utf8');
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+  } catch (err) {
+    if (err.code === 'ENOENT') throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+    throw wrapContainerError('INTERNAL_ERROR', `Cannot read the configuration of container "${name}"`, err);
   }
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw wrapContainerError('PARSE_ERROR', `The configuration of container "${name}" is not valid JSON`, err);
+  }
 }
 
 /* Secret env values (and app secrets such as API tokens) sit in plaintext in

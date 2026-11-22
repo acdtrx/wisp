@@ -33,6 +33,7 @@ export const containerState = {
 
 const connectHandlers = new Set();
 const disconnectHandlers = new Set();
+const connectFailedHandlers = new Set();
 
 /** Subscribe to containerd-ready events; handler fires after each successful connect. */
 export function subscribeContainerdConnect(handler) {
@@ -44,6 +45,16 @@ export function subscribeContainerdConnect(handler) {
 export function subscribeContainerdDisconnect(handler) {
   disconnectHandlers.add(handler);
   return () => disconnectHandlers.delete(handler);
+}
+
+/**
+ * Subscribe to a failed connect: handler fires when `connect()` could not reach
+ * containerd, with event watching on. The clients stay; `retryConnect()` tries
+ * again.
+ */
+export function subscribeContainerdConnectFailed(handler) {
+  connectFailedHandlers.add(handler);
+  return () => connectFailedHandlers.delete(handler);
 }
 
 function fireConnect() {
@@ -262,16 +273,8 @@ export function collectStream(stream) {
   });
 }
 
-/**
- * @param {{ logger?: import('fastify').FastifyBaseLogger, watchEvents?: boolean }} [opts]
- *   watchEvents false: connection and calls only — see containerState.watchEvents.
- */
-export async function connect(opts = {}) {
-  if (opts.logger) containerState.logger = opts.logger;
-  if (typeof opts.watchEvents === 'boolean') containerState.watchEvents = opts.watchEvents;
-
-  if (containerState.connected) return;
-
+/** Load the protos and build one client per containerd service (no connection is made). */
+function buildClients() {
   const versionPkg = loadProto('containerd/services/version/v1/version.proto');
   const containersPkg = loadProto('containerd/services/containers/v1/containers.proto');
   const tasksPkg = loadProto('containerd/services/tasks/v1/tasks.proto');
@@ -346,9 +349,40 @@ export async function connect(opts = {}) {
     streaming: createClient(streamingPkg.containerd.services.streaming.v1.Streaming),
     namespaces: createClient(namespacesPkg.containerd.services.namespaces.v1.Namespaces),
   };
+}
 
-  // Version check doubles as connectivity test
-  const ver = await callUnary(containerState.clients.version, 'version');
+/**
+ * @param {{ logger?: import('fastify').FastifyBaseLogger, watchEvents?: boolean }} [opts]
+ *   watchEvents false: connection and calls only — see containerState.watchEvents.
+ */
+export async function connect(opts = {}) {
+  if (opts.logger) containerState.logger = opts.logger;
+  if (typeof opts.watchEvents === 'boolean') containerState.watchEvents = opts.watchEvents;
+
+  if (containerState.connected) return;
+
+  if (!containerState.clients) buildClients();
+
+  try {
+    await retryConnect();
+  } catch (err) {
+    if (containerState.watchEvents) {
+      for (const h of connectFailedHandlers) {
+        try { h(); } catch (hErr) { containerState.logger?.warn?.({ err: hErr?.message || hErr }, '[containerManager] connect-failed handler threw'); }
+      }
+    }
+    throw err;
+  }
+}
+
+/**
+ * Reach containerd with the clients `connect()` built: the version call is the
+ * connectivity test, then the wisp namespace is ensured. On success the
+ * manager is connected and the connect subscribers run.
+ */
+export async function retryConnect() {
+  if (containerState.connected) return;
+  const ver = await callUnary(getClient('version'), 'version');
   containerState.logger?.info(
     { containerdVersion: ver.version, revision: ver.revision },
     'Connected to containerd',
@@ -356,10 +390,10 @@ export async function connect(opts = {}) {
 
   // Ensure the wisp namespace exists
   try {
-    await callUnary(containerState.clients.namespaces, 'get', { name: NAMESPACE });
+    await callUnary(getClient('namespaces'), 'get', { name: NAMESPACE });
   } catch (err) {
     if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
-    await callUnary(containerState.clients.namespaces, 'create', {
+    await callUnary(getClient('namespaces'), 'create', {
       namespace: { name: NAMESPACE, labels: {} },
     });
     containerState.logger?.info({ namespace: NAMESPACE }, 'Created containerd namespace');
