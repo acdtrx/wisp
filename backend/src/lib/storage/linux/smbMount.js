@@ -1,15 +1,23 @@
 /**
  * SMB mount/unmount via the unified wisp-mount helper (subcommand `smb`).
  */
-import { writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
+import { writeFile, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
 import { runPrivileged, helperPath } from '../../base/index.js';
 import { isMountPoint } from '../mountTable.js';
 
-/** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
+/*
+ * Each ends after the helper's own worst case (docs/specs/STORAGE.md,
+ * Timeouts), its commands' kill graces included: a mount's mkdir (10 s) and
+ * mount (20 s); a check's mkdir, mount (15 s), umount (8 s) and rmdir (10 s);
+ * an unmount's 60 s, long enough to flush after a large backup; an rmdir's 10 s.
+ */
+const MOUNT_TIMEOUT_MS = 40_000;
+const CHECK_TIMEOUT_MS = 60_000;
 const UNMOUNT_TIMEOUT_MS = 75_000;
+const RMDIR_TIMEOUT_MS = 15_000;
 
 
 const UNAVAILABLE = 'SMB_MOUNT_UNAVAILABLE';
@@ -45,41 +53,36 @@ function assertNoForbiddenChars(field, value) {
 }
 
 /**
- * Write the kernel-readable credentials file consumed by `mount -o credentials=`.
- * Format is mount.cifs's: one `key=value` per line. Mode 0600 keeps the file
- * unreadable by other users; the caller unlinks it once mount.cifs has loaded
- * it (the mount syscall reads the file synchronously). The password never
- * crosses argv this way.
+ * The helper's credentials argument, and the file behind it: `guest` with no
+ * username and no password; otherwise a file in mount.cifs's format (one
+ * `key=value` per line) with the username and always a `password=` line, empty
+ * when none was given, so mount.cifs never asks for one. Mode 0600, in a 0700
+ * folder of its own; the caller removes the folder once the helper returned
+ * (mount.cifs reads the file at once). The password never crosses argv. The
+ * modes are set at creation: process.umask is process-global, and would race
+ * with other file-create sites.
+ * @returns {Promise<{ credentials: string, dir: string | null }>}
  */
-async function writeCredentialsFile(filePath, { username, password, domain }) {
-  const lines = [];
-  if (username != null && username !== '') lines.push(`username=${username}`);
-  if (password != null && password !== '') lines.push(`password=${password}`);
-  if (domain != null && domain !== '') lines.push(`domain=${domain}`);
-  await writeFile(filePath, `${lines.join('\n')}\n`, { mode: 0o600 });
+async function credentialsArg({ username, password }) {
+  const hasUser = username != null && username !== '';
+  const hasPassword = password != null && password !== '';
+  if (!hasUser && !hasPassword) return { credentials: 'guest', dir: null };
+  const dir = await mkdtemp(join(tmpdir(), 'wisp-smb-'), { mode: 0o700 });
+  const file = join(dir, 'credentials');
+  const lines = [...(hasUser ? [`username=${username}`] : []), `password=${hasPassword ? password : ''}`];
+  await writeFile(file, `${lines.join('\n')}\n`, { mode: 0o600 });
+  return { credentials: file, dir };
 }
 
-function buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid, ownerOnly = false }) {
-  const lines = [
-    `share=${share}`,
-    `mountPath=${mountPath}`,
-    `credentialsPath=${credentialsPath}`,
-  ];
-  if (typeof uid === 'number') lines.push(`uid=${uid}`);
-  if (typeof gid === 'number') lines.push(`gid=${gid}`);
-  if (ownerOnly) lines.push('ownerOnly=1');
-  return `${lines.join('\n')}\n`;
-}
-
-/** A failed helper run as SMB_MOUNT_UNAVAILABLE, mount.cifs's stderr as the cause, credentials masked. */
+/** A failed helper run as SMB_MOUNT_UNAVAILABLE, the helper's error line as the cause, credentials masked. */
 function helperFailure(message, err) {
   if (err?.code === UNAVAILABLE) return err;
-  return createAppError(UNAVAILABLE, message, sanitizeStderr(String(err?.stderr || '').trim() || err?.message));
+  return createAppError(UNAVAILABLE, message, sanitizeStderr(err?.detail ?? err?.message));
 }
 
-async function runHelper(args, { timeout = 30000 } = {}) {
+async function runHelper(args, timeoutMs) {
   try {
-    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs: timeout });
+    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs });
   } catch (err) {
     if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
     throw err;
@@ -117,30 +120,14 @@ async function _mountSMB(share, mountPath, { username, password, ownerOnly } = {
   assertNoForbiddenChars('username', username);
   assertNoForbiddenChars('password', password);
 
-  /* mkdtemp's `mode: 0o700` plus per-file `mode: 0o600` writes are enough; we
-   * deliberately do NOT touch process.umask, which is process-global and would
-   * race with concurrent file-create sites elsewhere. */
-  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-smb-'), { mode: 0o700 });
-  const configPath = join(tmpDir, 'smb.conf');
-  const credentialsPath = join(tmpDir, 'credentials');
-  const uid = process.getuid && process.getuid();
-  const gid = process.getgid && process.getgid();
-
-  await writeCredentialsFile(credentialsPath, { username, password });
-  await writeFile(
-    configPath,
-    buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid, ownerOnly }),
-    { mode: 0o600 },
-  );
-
+  const { credentials, dir } = await credentialsArg({ username, password });
   try {
-    await runHelper(['smb', 'mount', configPath]);
+    await runHelper(['smb-mount', share, mountPath, credentials, ownerOnly ? 'owner-only' : 'shared'], MOUNT_TIMEOUT_MS);
   } catch (err) {
     throw helperFailure(`Failed to mount ${share}`, err);
   } finally {
-    await unlink(configPath).catch(() => {});
-    await unlink(credentialsPath).catch(() => {});
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    /* Best-effort: the folder may be gone already */
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -158,36 +145,15 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   assertNoForbiddenChars('username', username);
   assertNoForbiddenChars('password', password);
 
-  /* mkdtemp's `mode: 0o700` plus per-file `mode: 0o600` writes are enough; we
-   * deliberately do NOT touch process.umask, which is process-global and would
-   * race with concurrent file-create sites elsewhere. */
-  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-smb-'), { mode: 0o700 });
   const tempMountPath = `/mnt/wisp/smb-check-${Date.now()}`;
-  const configPath = join(tmpDir, 'smb.conf');
-  const credentialsPath = join(tmpDir, 'credentials');
-  const uid = process.getuid && process.getuid();
-  const gid = process.getgid && process.getgid();
-
-  await writeCredentialsFile(credentialsPath, { username, password });
-  await writeFile(
-    configPath,
-    buildSmbConfigContents({
-      share: trimmedShare,
-      mountPath: tempMountPath,
-      credentialsPath,
-      uid,
-      gid,
-    }),
-    { mode: 0o600 },
-  );
+  const { credentials, dir } = await credentialsArg({ username, password });
   try {
-    await runHelper(['smb', 'check', configPath]);
+    await runHelper(['smb-check', trimmedShare, tempMountPath, credentials], CHECK_TIMEOUT_MS);
   } catch (err) {
     throw helperFailure(`Could not connect to ${trimmedShare}`, err);
   } finally {
-    await unlink(configPath).catch(() => {});
-    await unlink(credentialsPath).catch(() => {});
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    /* Best-effort: the folder may be gone already */
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -201,26 +167,27 @@ export async function unmountSMB(mountPath, { lazy = false, ignoreNotMounted = f
     throw createAppError('SMB_INVALID', 'Invalid mountPath', 'mountPath must be absolute');
   }
   try {
-    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], { timeout: UNMOUNT_TIMEOUT_MS });
+    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], UNMOUNT_TIMEOUT_MS);
   } catch (err) {
-    const rawMsg = String(err.stderr || err.message || '');
-    if (ignoreNotMounted && /not mounted|no such file|not found/i.test(rawMsg)) return;
-    const safeMsg = sanitizeStderr(rawMsg);
-    throw createAppError(UNAVAILABLE, `Unmount failed: ${safeMsg}`, safeMsg);
+    if (ignoreNotMounted && err.reason === 'not-found') return;
+    if (err.code === UNAVAILABLE) throw err;
+    throw createAppError(UNAVAILABLE, `Unmount of ${mountPath} failed (${err.reason ?? 'error'})`, sanitizeStderr(err.detail ?? err.message));
   }
 }
 
 /**
  * Remove an empty mount point directory under /mnt/wisp/. Used only by the delete flow;
- * regular unmount leaves the directory in place. Silently ignores missing or non-empty dirs.
+ * regular unmount leaves the directory in place. A folder that is not there is
+ * nothing to do; one not empty or still mounted throws.
  */
 export async function rmdirMountpoint(mountPath) {
   if (!mountPath || !mountPath.startsWith('/mnt/wisp/')) return;
   try {
-    await runHelper(['rmdir', mountPath], { timeout: 5000 });
+    await runHelper(['rmdir', mountPath], RMDIR_TIMEOUT_MS);
   } catch (err) {
-    /* rmdir is best-effort — log via thrown error only if caller wants it, otherwise swallow */
-    throw createAppError(UNAVAILABLE, `Failed to remove mount point ${mountPath}`, sanitizeStderr(err.stderr || err.message));
+    if (err.reason === 'not-found') return;
+    if (err.code === UNAVAILABLE) throw err;
+    throw createAppError(UNAVAILABLE, `Failed to remove mount point ${mountPath}`, sanitizeStderr(err.detail ?? err.message));
   }
 }
 

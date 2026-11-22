@@ -1,13 +1,15 @@
 /**
  * Removable/fixed disk mount via `wisp-mount disk` helper. Same invocation pattern as smbMount.
  */
-import { writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
 import { runPrivileged, helperPath } from '../../base/index.js';
 
-/** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
+/*
+ * Each ends after the helper's own worst case (docs/specs/STORAGE.md,
+ * Timeouts), its commands' kill graces included: a mount's mkdir (10 s) and
+ * mount (20 s); an unmount's 60 s, long enough to flush after a large backup.
+ */
+const MOUNT_TIMEOUT_MS = 40_000;
 const UNMOUNT_TIMEOUT_MS = 75_000;
 
 const UNAVAILABLE = 'DISK_MOUNT_UNAVAILABLE';
@@ -37,9 +39,9 @@ function assertNoForbiddenChars(field, value) {
   }
 }
 
-async function runHelper(args, { timeout = 30000 } = {}) {
+async function runHelper(args, timeoutMs) {
   try {
-    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs: timeout });
+    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs });
   } catch (err) {
     if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
     throw err;
@@ -77,32 +79,13 @@ async function _mountDisk(uuid, mountPath, { fsType, readOnly }) {
   assertNoForbiddenChars('mountPath', mountPath);
   assertNoForbiddenChars('fsType', fsType);
 
-  /* mkdtemp's `mode: 0o700` plus per-file `mode: 0o600` writes are enough; we
-   * deliberately do NOT touch process.umask, which is process-global and would
-   * race with concurrent file-create sites elsewhere. */
-  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-disk-'), { mode: 0o700 });
-  const configPath = join(tmpDir, 'disk.conf');
-  const uid = process.getuid && process.getuid();
-  const gid = process.getgid && process.getgid();
-  const effectiveReadOnly = readOnly || fsType === 'ntfs3';
-  const lines = [
-    `uuid=${uuid}`,
-    `mountPath=${mountPath}`,
-    `fsType=${fsType}`,
-    `readOnly=${effectiveReadOnly ? '1' : '0'}`,
-    ...(typeof uid === 'number' ? [`uid=${uid}`] : []),
-    ...(typeof gid === 'number' ? [`gid=${gid}`] : []),
-  ];
-  await writeFile(configPath, `${lines.join('\n')}\n`, { mode: 0o600 });
-
+  const access = readOnly || fsType === 'ntfs3' ? 'ro' : 'rw';
   try {
-    await runHelper(['disk', 'mount', configPath]);
+    await runHelper(['disk-mount', uuid, mountPath, fsType, access], MOUNT_TIMEOUT_MS);
   } catch (err) {
-    const safeMsg = sanitizeStderr(err.stderr || err.message);
+    if (err.code === UNAVAILABLE) throw err;
+    const safeMsg = sanitizeStderr(err.detail ?? err.message);
     throw createAppError(UNAVAILABLE, `Disk mount failed: ${safeMsg}`, safeMsg);
-  } finally {
-    await unlink(configPath).catch(() => {});
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -116,11 +99,11 @@ export async function unmountDisk(mountPath, { lazy = false, ignoreNotMounted = 
     throw createAppError('DISK_MOUNT_INVALID', 'Invalid mountPath', 'mountPath must be absolute');
   }
   try {
-    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], { timeout: UNMOUNT_TIMEOUT_MS });
+    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], UNMOUNT_TIMEOUT_MS);
   } catch (err) {
-    const rawMsg = String(err.stderr || err.message || '');
-    if (ignoreNotMounted && /not mounted|no such file|not found/i.test(rawMsg)) return;
-    const safeMsg = sanitizeStderr(rawMsg);
+    if (ignoreNotMounted && err.reason === 'not-found') return;
+    if (err.code === UNAVAILABLE) throw err;
+    const safeMsg = sanitizeStderr(err.detail ?? err.message);
     throw createAppError(UNAVAILABLE, `Unmount failed: ${safeMsg}`, safeMsg);
   }
 }

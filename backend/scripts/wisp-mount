@@ -1,159 +1,83 @@
 #!/usr/bin/env bash
 # Usage:
-#   wisp-mount smb mount    <configPath>
-#   wisp-mount smb check    <configPath>
-#   wisp-mount disk mount   <configPath>
-#   wisp-mount unmount      <mountPath under /mnt/wisp/>   # refused unless it is a mount point
-#   wisp-mount unmount-lazy <mountPath under /mnt/wisp/>
-#   wisp-mount rmdir        <mountPath under /mnt/wisp/>   # delete-only cleanup; no-op if non-empty or missing
+#   wisp-mount smb-mount  <share> <mount-path> <credentials-file|guest> <owner-only|shared>
+#   wisp-mount smb-check  <share> <mount-path> <credentials-file|guest>
+#   wisp-mount disk-mount <uuid> <mount-path> <fstype> <ro|rw>
+#   wisp-mount unmount      <mount-path>   # exit 2 unless it is a mount point
+#   wisp-mount unmount-lazy <mount-path>
+#   wisp-mount rmdir        <mount-path>   # the delete flow's: an empty, unmounted folder
 #
-# Config file format (one key=value per line; '#' comments and blank lines ignored):
-#   SMB:  share, mountPath, credentialsPath, uid, gid
-#   Disk: uuid, mountPath, fsType, readOnly (0|1), uid, gid
+# SMB shares and adopted removable disks under /mnt/wisp (docs/specs/STORAGE.md,
+# Privileged helper). Every mount is nosuid,nodev: a disk or a share carries
+# data Wisp does not control, never a setuid program or a device file for the
+# host. uid and gid are the invoking user's (SUDO_UID, SUDO_GID).
 #
-# The SMB `credentialsPath` points at a separate mode-0600 file in the standard
-# mount.cifs format (`username=...` / `password=...` / `domain=...`), passed to
-# the kernel via `mount -o credentials=<path>` so secrets never appear on argv
-# (`/proc/<pid>/cmdline`) or in this script's environment. The JS caller
-# (smbMount.js) writes both files in a temp dir and unlinks them after the
-# helper returns.
+# SMB credentials never appear on argv: the backend writes them in a 0600 file
+# of its own, in mount.cifs's format, and passes its path; `guest` mounts with
+# no credentials at all.
 #
-# Parsing the config file uses a strict allow-listed key=value parser — never
-# `source`. Any unknown key, multi-line value, or value containing a literal
-# newline is rejected. This stops a JS-side regression from turning the helper
-# into a `bash -e` primitive.
-#
-# Install: sudoers NOPASSWD for this script (installed by scripts/linux/setup/install-helpers.sh).
-set -euo pipefail
+# A mount path is canonical, strictly under /mnt/wisp, and no part of it below
+# /mnt/wisp is a symbolic link: the deploy user owns /mnt/wisp, so a link
+# planted there is the way to point a root mkdir or mount somewhere else. A
+# mount checks it before mkdir and again right before mount(8).
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-CMD="${1:-}"
-SUB="${2:-}"
-ARG="${3:-}"
+readonly MOUNT_ROOT=/mnt/wisp
+FSTYPES=(ext4 btrfs vfat exfat ntfs3)
 
-SUPPORTED_DISK_FSTYPES=(ext4 btrfs vfat exfat ntfs3)
-WISP_MOUNT_ROOT="/mnt/wisp"
-# Set by prepare_mount_point, and only to a path it has checked is under the root.
-MOUNT_TARGET=""
+# Each ends, with its kill grace, inside the backend's own bound
+# (docs/specs/STORAGE.md, Timeouts): mount 20 s; unmount 60 s, long enough to
+# flush after a large backup; an smb check's mount 15 s and its umount 8 s (it
+# writes nothing to flush).
+readonly MOUNT_SEC=20
+readonly UMOUNT_SEC=60
+readonly CHECK_MOUNT_SEC=15
+readonly CHECK_UMOUNT_SEC=8
 
-# CODING-RULES §6: mount and umount are bounded here, not only by the caller.
-# The backend's timeout signals sudo, which ends this script but not a child it
-# is waiting on — a hung `mount -t cifs` would outlive the request, holding the
-# mount point. Each bound, its kill grace included, ends inside the backend's
-# own (docs/specs/STORAGE.md): mount 20+3 s of 30 s; unmount 60+5 s of 75 s,
-# long enough to flush after a large backup; an smb check's mount and umount
-# 15+3 and 8+2 s of 30 s (it writes nothing to flush).
-MOUNT_TIMEOUT=20
-UMOUNT_TIMEOUT=60
-CHECK_MOUNT_TIMEOUT=15
-CHECK_UMOUNT_TIMEOUT=8
-bounded() {
-  local secs="$1"; shift
-  local rc=0 grace=3
-  (( secs >= 60 )) && grace=5
-  (( secs < 10 )) && grace=2
-  timeout --kill-after="$grace" "$secs" "$@" || rc=$?
-  if (( rc == 124 || rc == 137 )); then
-    echo "wisp-mount: $1 timed out after ${secs}s" >&2
+usage="usage: wisp-mount smb-mount <share> <mount-path> <credentials-file|guest> <owner-only|shared> | smb-check <share> <mount-path> <credentials-file|guest> | disk-mount <uuid> <mount-path> <fstype> <ro|rw> | unmount|unmount-lazy|rmdir <mount-path>"
+(( $# >= 2 )) || refuse "$usage"
+match_one_of "the action" "$1" smb-mount smb-check disk-mount unmount unmount-lazy rmdir
+ACTION="$1"
+shift
+case "$ACTION" in
+  smb-mount) (( $# == 4 )) || refuse "$usage" ;;
+  smb-check) (( $# == 3 )) || refuse "$usage" ;;
+  disk-mount) (( $# == 4 )) || refuse "$usage" ;;
+  *) (( $# == 1 )) || refuse "$usage" ;;
+esac
+
+# mount_path_arg <path>: canonical and strictly under /mnt/wisp.
+mount_path_arg() {
+  canonical_path "the mount path" "$1"
+  [[ "$1" == "$MOUNT_ROOT"/?* ]] || refuse "the mount path must be under $MOUNT_ROOT/: '$1'"
+}
+
+# share_arg <share>: //host/share[/path]: no leading `-`, no comma, no control
+# character.
+share_arg() {
+  match "the share" "$1" '^//[A-Za-z0-9._-]+(/[^/,[:cntrl:]]+)+$'
+}
+
+# credentials_arg <file|guest>: CREDENTIALS, the mount option for it.
+credentials_arg() {
+  if [[ "$1" == guest ]]; then
+    CREDENTIALS=guest
+    return 0
   fi
-  return "$rc"
+  match "the credentials file" "$1" '^/[A-Za-z0-9._/-]+$'
+  canonical_path "the credentials file" "$1"
+  [[ -f "$1" && ! -L "$1" ]] || refuse "the credentials file must be a regular file: '$1'"
+  capture "$QUICK_SEC" stat -c %u -- "$1" || fail "cannot read the owner of $1${BOUNDED_ERR:+: $BOUNDED_ERR}"
+  [[ "$CAPTURED" == "$INVOKER_UID" ]] || refuse "the credentials file must be the invoking user's (uid $INVOKER_UID): '$1'"
+  CREDENTIALS="credentials=$1"
 }
 
-is_supported_fstype() {
-  local t="$1"
-  for x in "${SUPPORTED_DISK_FSTYPES[@]}"; do
-    [[ "$x" == "$t" ]] && return 0
-  done
-  return 1
-}
-
-# Defense in depth: refuse to mount over anything outside /mnt/wisp/. The JS
-# caller already validates this; if it ever regresses, this block stops the
-# helper from shadowing /etc, /usr, /home, etc.
-assert_mount_path_under_wisp() {
-  local p="$1"
-  if [[ -z "$p" || "${p:0:1}" != "/" ]]; then
-    echo "mountPath must be an absolute path" >&2
-    exit 64
-  fi
-  local resolved
-  resolved="$(realpath -m -- "$p")"
-  case "$resolved" in
-    "${WISP_MOUNT_ROOT}/"*) : ;;
-    *)
-      echo "mountPath must be under ${WISP_MOUNT_ROOT}/ (got ${resolved})" >&2
-      exit 64
-      ;;
-  esac
-}
-
-# Refuse a path any existing component of which is a symlink. The deploy user
-# owns /mnt/wisp, so a symlink planted inside it is the way to point a root
-# mkdir/mount somewhere else.
-assert_no_symlink_components() {
-  local p="$1" rest comp prefix=""
-  rest="${p#/}"
-  while [[ -n "$rest" ]]; do
-    comp="${rest%%/*}"
-    if [[ "$rest" == */* ]]; then rest="${rest#*/}"; else rest=""; fi
-    [[ -z "$comp" ]] && continue
-    prefix="${prefix}/${comp}"
-    if [[ -L "$prefix" ]]; then
-      echo "mountPath must not contain symlinks (${prefix})" >&2
-      exit 64
-    fi
-  done
-}
-
-# Validate, create, then re-validate the mount point and set MOUNT_TARGET to
-# its canonical path. The second check sits right before mount(8) so a
-# component swapped for a symlink after the first check (but before mkdir -p
-# or mount follow it) is caught.
+# prepare_mount_point <path>: checked, made, checked again.
 prepare_mount_point() {
-  local p="$1"
-  assert_mount_path_under_wisp "$p"
-  assert_no_symlink_components "$p"
-  mkdir -p -- "$p"
-  assert_no_symlink_components "$p"
-  local target
-  target="$(realpath -e -- "$p")"
-  case "$target" in
-    "${WISP_MOUNT_ROOT}/"*) : ;;
-    *)
-      echo "mountPath must be under ${WISP_MOUNT_ROOT}/ (got ${target})" >&2
-      exit 64
-      ;;
-  esac
-  MOUNT_TARGET="$target"
-}
-
-# Resolve an unmount/rmdir target without stat-ing its last component: on a
-# dead CIFS share that stat blocks until the server times out, which is the
-# case `unmount-lazy` exists for (umount -l itself avoids the stat). The parent
-# goes through realpath, so a symlinked ancestor is resolved before the
-# /mnt/wisp check; the last component is a plain name. Sets TARGET_PATH;
-# returns 1 when the parent does not exist (nothing there to act on).
-resolve_wisp_child() {
-  local p="$1" parent base parent_resolved
-  if [[ -z "$p" || "${p:0:1}" != "/" ]]; then
-    echo "mountPath must be an absolute path" >&2
-    exit 64
-  fi
-  while [[ "$p" == */ && "$p" != "/" ]]; do p="${p%/}"; done
-  base="${p##*/}"
-  parent="${p%/*}"
-  if [[ -z "$base" || "$base" == "." || "$base" == ".." ]]; then
-    echo "mountPath must name a directory under ${WISP_MOUNT_ROOT}/" >&2
-    exit 64
-  fi
-  parent_resolved="$(realpath -e -- "${parent:-/}" 2>/dev/null)" || return 1
-  case "$parent_resolved" in
-    "$WISP_MOUNT_ROOT"|"${WISP_MOUNT_ROOT}/"*) : ;;
-    *)
-      echo "mountPath must be under ${WISP_MOUNT_ROOT}/ (got ${parent_resolved%/}/${base})" >&2
-      exit 64
-      ;;
-  esac
-  TARGET_PATH="${parent_resolved%/}/${base}"
+  path_under "the mount path" "$1" "$MOUNT_ROOT"
+  must "$QUICK_SEC" mkdir -p -- "$1"
+  path_under "the mount path" "$1" "$MOUNT_ROOT"
 }
 
 # True when $1 is a mount target in /proc/self/mounts. The kernel lists
@@ -177,211 +101,76 @@ is_mount_target() {
   return 1
 }
 
-# Unmount TARGET_PATH only if it is a mount point; message matches umount's
-# own so the backend's "not mounted" handling still applies.
-unmount_wisp_child() {
-  if ! resolve_wisp_child "$1" || ! is_mount_target "$TARGET_PATH"; then
-    echo "wisp-mount: $1: not mounted" >&2
-    exit 32
-  fi
-  shift
-  bounded "$UMOUNT_TIMEOUT" umount "$@" -- "$TARGET_PATH"
+# The last part of an unmount's or rmdir's path is never looked at: on a dead
+# share that blocks until the server times out, the case unmount-lazy is for.
+# The parts above it are checked like a mount's.
+check_parent() {
+  local parent="${1%/*}"
+  [[ "$parent" == "$MOUNT_ROOT" ]] || path_under "the mount path" "$parent" "$MOUNT_ROOT"
 }
 
-# Strict key=value parser. Reads a config file line by line, splits on the
-# first '=', and only assigns to known keys. Rejects unknown keys with exit 64.
-# Variables are written via `printf -v` so values stay literal (no $-expansion,
-# no command substitution, no glob expansion).
-read_smb_config() {
-  share=""
-  mountPath=""
-  credentialsPath=""
-  uid=""
-  gid=""
-  ownerOnly=""
-  local line k v
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    case "$line" in
-      \#*|'') continue ;;
-      *=*)
-        k="${line%%=*}"
-        v="${line#*=}"
-        case "$k" in
-          share|mountPath|credentialsPath|uid|gid|ownerOnly)
-            printf -v "$k" '%s' "$v"
-            ;;
-          *)
-            echo "wisp-mount: unknown config key: $k" >&2
-            exit 64
-            ;;
-        esac
-        ;;
-      *)
-        echo "wisp-mount: malformed config line" >&2
-        exit 64
-        ;;
-    esac
-  done < "$1"
+smb_mount() { # <share> <path> <credentials> <secs> [owner-only]
+  local opts="nosuid,nodev,uid=$INVOKER_UID,gid=$INVOKER_GID,$3"
+  # owner-only (the backup destination): CIFS without Unix extensions shows one
+  # mode for the whole mount and ignores chmod, so it is set here.
+  [[ "${5:-}" != owner-only ]] || opts+=",file_mode=0600,dir_mode=0700"
+  prepare_mount_point "$2"
+  must "$4" mount -t cifs -o "$opts" -- "$1" "$2"
 }
 
-read_disk_config() {
-  uuid=""
-  mountPath=""
-  fsType=""
-  readOnly=""
-  uid=""
-  gid=""
-  local line k v
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    case "$line" in
-      \#*|'') continue ;;
-      *=*)
-        k="${line%%=*}"
-        v="${line#*=}"
-        case "$k" in
-          uuid|mountPath|fsType|readOnly|uid|gid)
-            printf -v "$k" '%s' "$v"
-            ;;
-          *)
-            echo "wisp-mount: unknown config key: $k" >&2
-            exit 64
-            ;;
-        esac
-        ;;
-      *)
-        echo "wisp-mount: malformed config line" >&2
-        exit 64
-        ;;
-    esac
-  done < "$1"
-}
-
-# do_smb_mount CONFIG [SECS]: SECS bounds the mount (default MOUNT_TIMEOUT).
-do_smb_mount() {
-  local secs="${2:-$MOUNT_TIMEOUT}"
-  read_smb_config "$1"
-  if [[ -z "${mountPath:-}" || -z "${share:-}" ]]; then
-    echo "Config must set mountPath and share" >&2
-    exit 1
-  fi
-  if [[ -z "${credentialsPath:-}" || ! -f "$credentialsPath" ]]; then
-    echo "Config must set credentialsPath pointing to a readable file" >&2
-    exit 1
-  fi
-  local opts="rw,credentials=${credentialsPath}"
-  [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
-  [[ -n "${gid:-}" ]] && opts="${opts},gid=${gid}"
-  # ownerOnly=1 (the backup destination): CIFS without Unix extensions shows one
-  # mode for the whole mount and ignores chmod, so set it to owner-only here.
-  case "${ownerOnly:-}" in
-    '') ;;
-    1) opts="${opts},file_mode=0600,dir_mode=0700" ;;
-    *) echo "wisp-mount: ownerOnly must be 1" >&2; exit 64 ;;
-  esac
-  prepare_mount_point "$mountPath"
-  bounded "$secs" mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
-}
-
-do_smb_check() {
-  # A failed mount exits (set -e) before the rmdir below: the trap removes the
-  # check's mount point then too. rmdir refuses a directory still mounted on.
-  trap 'case "$MOUNT_TARGET" in "${WISP_MOUNT_ROOT}/"?*) rmdir -- "$MOUNT_TARGET" 2>/dev/null || true ;; esac' EXIT
-  do_smb_mount "$1" "$CHECK_MOUNT_TIMEOUT"
-  bounded "$CHECK_UMOUNT_TIMEOUT" umount -- "$MOUNT_TARGET"
-  rmdir -- "$MOUNT_TARGET"
-}
-
-do_disk_mount() {
-  read_disk_config "$1"
-  if [[ -z "${mountPath:-}" || -z "${uuid:-}" || -z "${fsType:-}" ]]; then
-    echo "Config must set mountPath, uuid, and fsType" >&2
-    exit 1
-  fi
-  assert_mount_path_under_wisp "$mountPath"
-  if ! is_supported_fstype "$fsType"; then
-    echo "Unsupported fsType: $fsType" >&2
-    exit 1
-  fi
-  local devPath="/dev/disk/by-uuid/$uuid"
-  if [[ ! -e "$devPath" ]]; then
-    echo "Device not present: $devPath" >&2
-    exit 1
-  fi
-  local opts=""
-  local ro=""
-  [[ "${readOnly:-0}" == "1" ]] && ro="ro"
-  # ntfs3 forced to ro by the backend; enforce here too.
-  [[ "$fsType" == "ntfs3" ]] && ro="ro"
-
-  case "$fsType" in
-    vfat|exfat|ntfs3)
-      opts=""
-      [[ -n "$ro" ]] && opts="${opts},${ro}"
-      [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
-      [[ -n "${gid:-}" ]] && opts="${opts},gid=${gid}"
-      opts="${opts},umask=0007"
-      ;;
-    ext4|btrfs)
-      opts="defaults"
-      [[ -n "$ro" ]] && opts="${opts},${ro}"
-      ;;
-  esac
-  opts="${opts#,}"
-  prepare_mount_point "$mountPath"
-  bounded "$MOUNT_TIMEOUT" mount -t "$fsType" "$devPath" "$MOUNT_TARGET" -o "$opts"
-}
-
-case "$CMD" in
-  smb)
-    if [[ -z "$ARG" || ! -f "$ARG" ]]; then
-      echo "Usage: $0 smb mount|check <configPath>" >&2
-      exit 1
-    fi
-    case "$SUB" in
-      mount) do_smb_mount "$ARG"; rm -f "$ARG" ;;
-      check) do_smb_check "$ARG"; rm -f "$ARG" ;;
-      *) echo "Usage: $0 smb mount|check <configPath>" >&2; exit 1 ;;
-    esac
+case "$ACTION" in
+  smb-mount)
+    share_arg "$1"
+    mount_path_arg "$2"
+    invoking_user
+    credentials_arg "$3"
+    match_one_of "the mode" "$4" owner-only shared
+    smb_mount "$1" "$2" "$CREDENTIALS" "$MOUNT_SEC" "$4"
     ;;
-  disk)
-    if [[ "$SUB" != "mount" ]]; then
-      echo "Usage: $0 disk mount <configPath>" >&2
-      exit 1
-    fi
-    if [[ -z "$ARG" || ! -f "$ARG" ]]; then
-      echo "Usage: $0 disk mount <configPath>" >&2
-      exit 1
-    fi
-    do_disk_mount "$ARG"
-    rm -f "$ARG"
+  smb-check)
+    share_arg "$1"
+    mount_path_arg "$2"
+    invoking_user
+    credentials_arg "$3"
+    CHECK_POINT="$2"
+    # The check's mount point goes, whether the mount worked or not; rmdir
+    # refuses a folder still mounted on.
+    trap 'bounded "$QUICK_SEC" rmdir -- "$CHECK_POINT" || true' EXIT
+    smb_mount "$1" "$2" "$CREDENTIALS" "$CHECK_MOUNT_SEC"
+    must "$CHECK_UMOUNT_SEC" umount -- "$2"
     ;;
-  unmount)
-    if [[ -z "$SUB" ]]; then
-      echo "Usage: $0 unmount <mountPath under ${WISP_MOUNT_ROOT}/>" >&2
-      exit 1
-    fi
-    unmount_wisp_child "$SUB"
+  disk-mount)
+    match "the UUID" "$1" '^[0-9A-Fa-f][0-9A-Fa-f-]{0,63}$'
+    mount_path_arg "$2"
+    match_one_of "the file system" "$3" "${FSTYPES[@]}"
+    match_one_of "the access" "$4" ro rw
+    invoking_user
+    DEVICE="/dev/disk/by-uuid/$1"
+    [[ -b "$DEVICE" ]] || not_found "no disk with UUID $1"
+    opts="nosuid,nodev"
+    case "$3" in
+      vfat | exfat | ntfs3) opts+=",uid=$INVOKER_UID,gid=$INVOKER_GID,umask=0007" ;;
+    esac
+    # ntfs3 is mounted read-only whatever was asked.
+    [[ "$4" == rw && "$3" != ntfs3 ]] || opts+=",ro"
+    prepare_mount_point "$2"
+    must "$MOUNT_SEC" mount -t "$3" -o "$opts" -- "$DEVICE" "$2"
     ;;
-  unmount-lazy)
-    if [[ -z "$SUB" ]]; then
-      echo "Usage: $0 unmount-lazy <mountPath under ${WISP_MOUNT_ROOT}/>" >&2
-      exit 1
+  unmount | unmount-lazy)
+    mount_path_arg "$1"
+    check_parent "$1"
+    is_mount_target "$1" || not_found "$1 is not mounted"
+    if [[ "$ACTION" == unmount-lazy ]]; then
+      must "$UMOUNT_SEC" umount -l -- "$1"
+    else
+      must "$UMOUNT_SEC" umount -- "$1"
     fi
-    unmount_wisp_child "$SUB" -l
     ;;
   rmdir)
-    # Delete-flow cleanup only: removes an empty directory under /mnt/wisp/.
-    # rmdir(2) does not follow a symlink in the last component, and a mounted
-    # or non-empty directory just fails (ignored).
-    if [[ -z "$SUB" ]]; then
-      echo "Usage: $0 rmdir <mountPath under ${WISP_MOUNT_ROOT}/>" >&2
-      exit 1
-    fi
-    resolve_wisp_child "$SUB" || exit 0
-    rmdir -- "$TARGET_PATH" 2>/dev/null || true
-    ;;
-  *)
-    echo "Usage: $0 smb mount|check <configPath> | disk mount <configPath> | unmount <mountPath> | unmount-lazy <mountPath> | rmdir <mountPath>" >&2
-    exit 1
+    mount_path_arg "$1"
+    check_parent "$1"
+    ! is_mount_target "$1" || fail "$1 is still mounted"
+    [[ -d "$1" && ! -L "$1" ]] || not_found "no folder $1"
+    must "$QUICK_SEC" rmdir -- "$1"
     ;;
 esac
