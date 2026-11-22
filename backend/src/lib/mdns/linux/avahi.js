@@ -113,28 +113,100 @@ const state = {
   hostFqdnSeq: 0,
   /** Pino-compatible logger plumbed via connect(); falls back to console for boot-time paths. */
   logger: null,
+  /** Between connect() and disconnect(): a failed bus is reopened only while open. */
+  open: false,
 };
+
+/*
+ * The system bus is reopened when it fails (dbus restarted): bounded
+ * exponential backoff, one pending retry at a time — the same shape as
+ * vmManager's libvirt reconnect. A reopen that installs the avahi watch ends
+ * the loop; a new bus that fails sets it off again.
+ */
+const REOPEN_INITIAL_MS = 2000;
+const REOPEN_MAX_MS = 30000;
+let reopenDelayMs = REOPEN_INITIAL_MS;
+let reopenTimer = null;
 
 async function ensureBus() {
   if (state.bus) return state.bus;
-  state.bus = dbus.systemBus();
-  state.bus.on('error', (err) => {
-    state.logger?.warn?.({ err: err?.message || err }, '[mdns] system bus error');
-    state.server = null;
-  });
+  const bus = dbus.systemBus();
+  state.bus = bus;
+  /* Attached at creation: an 'error' with no listener would crash the process. */
+  bus.on('error', (err) => onBusError(bus, err));
   // EntryGroup.StateChanged is addressed to the group's owner (avahi sets the
   // destination), so the bus delivers it without a match rule — routed here
   // by path rather than through a per-group proxy listener, whose match rule
   // would have to be removed on every Free.
-  state.bus.on('message', (msg) => {
+  bus.on('message', (msg) => {
     if (msg.interface !== AVAHI_GROUP_IFACE || msg.member !== 'StateChanged') return;
     onGroupStateChanged(msg.path, Number(msg.body?.[0]), msg.body?.[1]);
   });
-  return state.bus;
+  return bus;
 }
 
+/**
+ * Forget what avahi held for us: its groups, browsers and resolvers went with
+ * it (or with the bus). The wanted entries, services and browses stay, so
+ * reregisterAll() adds them back.
+ */
+function forgetAvahiState() {
+  state.server = null;
+  state.groups.clear();
+  for (const entry of state.entries.values()) entry.group = null;
+  for (const svc of state.services.values()) svc.group = null;
+  for (const record of state.browses.values()) resetBrowseRecord(record);
+  state.pendingBrowseSignals.clear();
+}
+
+/**
+ * The current bus failed (dbus-next reports a dropped connection as an
+ * 'error', at the latest on the next write): treat it as avahi gone, drop the
+ * bus and reopen. Only the current bus drives a reopen: a bus already replaced
+ * or closed by disconnect() is ignored.
+ */
+function onBusError(bus, err) {
+  if (bus !== state.bus) return;
+  state.logger?.warn?.({ err: err?.message || err }, '[mdns] system bus error; reopening it');
+  state.bus = null;
+  state.watchInstalled = false;
+  state.browseDispatchInstalled = false;
+  forgetAvahiState();
+  try { bus.disconnect(); } catch { /* already closed */ }
+  scheduleReopen();
+}
+
+function scheduleReopen() {
+  if (reopenTimer || !state.open) return;
+  const delay = reopenDelayMs;
+  reopenDelayMs = Math.min(reopenDelayMs * 2, REOPEN_MAX_MS);
+  reopenTimer = setTimeout(() => {
+    reopenTimer = null;
+    reopenBus();
+  }, delay);
+}
+
+function clearReopen() {
+  if (reopenTimer) clearTimeout(reopenTimer);
+  reopenTimer = null;
+  reopenDelayMs = REOPEN_INITIAL_MS;
+}
+
+/** Open a new bus and watch avahi on it, then publish and browse everything again. */
+async function reopenBus() {
+  if (!(await installAvahiWatch())) {
+    scheduleReopen();
+    return;
+  }
+  clearReopen();
+  state.logger?.info?.('[mdns] system bus reopened; re-registering entries');
+  refreshHostFqdn();
+  await reregisterAll().catch((err) => state.logger?.warn?.({ err: err?.message || err }, '[mdns] re-register failed'));
+}
+
+/** Watch avahi on the bus (opening it if needed). Resolves whether the watch is in place. */
 async function installAvahiWatch() {
-  if (state.watchInstalled) return;
+  if (state.watchInstalled) return true;
   try {
     const bus = await ensureBus();
     const dbusObj = await bounded(bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus'), 'bus introspection');
@@ -147,12 +219,7 @@ async function installAvahiWatch() {
       if (name !== AVAHI_BUS_NAME) return;
       if (oldOwner && !newOwner) {
         state.logger?.warn?.('[mdns] avahi-daemon went away; entries will be re-registered when it returns');
-        state.server = null;
-        state.groups.clear(); // avahi's groups went with it
-        for (const entry of state.entries.values()) entry.group = null;
-        for (const svc of state.services.values()) svc.group = null;
-        for (const record of state.browses.values()) resetBrowseRecord(record);
-        state.pendingBrowseSignals.clear();
+        forgetAvahiState();
       } else if (!oldOwner && newOwner) {
         state.logger?.info?.('[mdns] avahi-daemon appeared; re-registering entries');
         refreshHostFqdn();
@@ -180,9 +247,13 @@ async function installAvahiWatch() {
       if (msg.interface !== AVAHI_SERVER_IFACE || msg.member !== 'StateChanged') return;
       refreshHostFqdn();
     });
+    // The bus failed meanwhile: its watch is gone with it (onBusError reopens).
+    if (bus !== state.bus) return false;
     state.watchInstalled = true;
+    return true;
   } catch (err) {
     state.logger?.warn?.({ err: err?.message || err }, '[mdns] failed to install avahi watch');
+    return false;
   }
 }
 
@@ -405,6 +476,7 @@ async function reregisterAll() {
  */
 export async function connect(logger = null, { hostInterface = null } = {}) {
   state.logger = logger;
+  state.open = true;
   await ensureBus();
   await installAvahiWatch();
   await ensureServer();
@@ -418,6 +490,8 @@ export async function connect(logger = null, { hostInterface = null } = {}) {
 }
 
 export async function disconnect() {
+  state.open = false;
+  clearReopen();
   await stopForwarder();
   for (const entry of state.entries.values()) await freeGroup(entry.group);
   state.entries.clear();
@@ -436,10 +510,12 @@ export async function disconnect() {
   state.browsePaths.clear();
   state.resolverPaths.clear();
   state.pendingBrowseSignals.clear();
-  if (state.bus) {
-    try { state.bus.disconnect(); } catch { /* best effort */ }
-  }
+  const bus = state.bus;
+  /* Cleared first so onBusError ignores anything this bus emits while closing. */
   state.bus = null;
+  if (bus) {
+    try { bus.disconnect(); } catch { /* best effort */ }
+  }
   state.server = null;
   state.hostFqdn = null;
   state.watchInstalled = false;
