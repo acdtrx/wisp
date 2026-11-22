@@ -841,9 +841,14 @@ export async function startExistingContainer(name) {
  * container with the same name (createContainer refuses an existing directory)
  * until the user moves or removes it.
  */
-async function removeContainerKeepingFiles(name) {
+/**
+ * Remove a container's folder: everything, or with `deleteFiles` false
+ * everything but `files/` (the folder goes too when `files/` is empty).
+ * `container.json` goes last, so a removal that fails leaves the container
+ * listed and its delete can be run again.
+ */
+async function removeContainerFolder(name, deleteFiles) {
   const containerDir = getContainerDir(name);
-  await rm(join(containerDir, 'container.json'), { force: true });
   let entries;
   try {
     entries = await readdir(containerDir);
@@ -852,13 +857,17 @@ async function removeContainerKeepingFiles(name) {
     throw err;
   }
   for (const entry of entries) {
-    if (entry !== 'files') await rm(join(containerDir, entry), { recursive: true, force: true });
+    if (entry === 'container.json' || (!deleteFiles && entry === 'files')) continue;
+    await rm(join(containerDir, entry), { recursive: true, force: true });
   }
+  await rm(join(containerDir, 'container.json'), { force: true });
   let kept = [];
-  try {
-    kept = await readdir(getContainerFilesDir(name));
-  } catch (err) {
-    if (err?.code !== 'ENOENT') throw err;
+  if (!deleteFiles) {
+    try {
+      kept = await readdir(getContainerFilesDir(name));
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
   }
   if (kept.length === 0) await rm(containerDir, { recursive: true, force: true });
 }
@@ -923,13 +932,12 @@ export async function deleteContainer(name, deleteFiles = true) {
 
   containerState.containerStartTimes.delete(name);
 
-  await step(`removing its folder ${getContainerDir(name)}`, async () => {
-    if (deleteFiles) await rm(getContainerDir(name), { recursive: true, force: true });
-    else await removeContainerKeepingFiles(name);
-  });
-
-  // The earlier containerd /containers/delete event already triggered a cache
-  // refresh, but at that moment the container.json file was still on disk so
-  // the cache picked it up. Refresh again now that rm has actually run.
-  notifyContainerConfigWrite(name);
+  try {
+    await step(`removing its folder ${getContainerDir(name)}`, () => removeContainerFolder(name, deleteFiles));
+  } finally {
+    // The earlier containerd /containers/delete event already triggered a cache
+    // refresh while container.json was still on disk: read the list again now
+    // that the folder is gone, or partly gone.
+    notifyContainerConfigWrite(name);
+  }
 }
