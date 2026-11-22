@@ -36,8 +36,12 @@
 - **One command checks the code** — `npm run check` runs every check, and the release workflow runs it, the shell syntax check and the frontend build before anything is published.
 - **A VM's firmware, machine type and a disk's bus are set when it is made, and shown afterwards** — Expert settings and the disk editor show them as text. API: `PATCH /api/vms/:name` with `firmware` or `machineType` answers 400, and `POST /api/vms/:name/disks/:slot/bus` is gone (it failed for any bus but VirtIO).
 - **A backup in an older layout can't be restored** — one with uncompressed disks, or whose manifest does not name the VM's directory, is refused with `BACKUP_INVALID` and asks for a new backup.
+- **API: the container stats stream loses `netRxBytes` and `netTxBytes`**, which were always 0.
 
 ### Bug Fixes
+- **A running container's IPv4 address is followed again** — a DHCP renewal that hands it another address reaches its record and its `.local` name within a minute; the probe never read it before.
+- **"Restart to apply" only after a change that needs it** — re-sending a container's current command, limits, root setting or network no longer sets it, and neither does a secret mount's flag sent in a mount list.
+- **A container whose network files are missing fails its start and names the file** — the netns or CNI helper, the bridge network file or the containers' resolver file — instead of starting with a built-in network or without `.local` names; running setup again puts them back.
 - **A console password set outside Wisp survives an edit**, and a VM started with `virsh create` is no longer made permanent by one: Wisp refuses to change its definition (409 `VM_TRANSIENT`).
 - **An edit made as a VM starts is no longer lost**: every change to a VM's definition is written one at a time.
 - **A CD change on a paused VM applies at once**, as on a running one; a VM that is on but not running (paused, crashed) counts in the top bar, an edit to it sets "Stop and start to apply", and the server refuses its rename too.

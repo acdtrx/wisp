@@ -263,6 +263,21 @@ keeps the stored one (settled 2026-11-12), so the only way to drop a password is
 the VM's cloud-init config. **Revisit trigger:** a password needs removing without
 wiping cloud-init.
 
+**containerManager's smaller duplicates (the rest of audit C-7).** Left by phase 5's
+milestone 4, which took only the wait for a stop, "is on" and the name check: the
+manifest walk written twice (`containerManagerPull.js` `resolveManifest` and
+`containerManagerOciSize.js`); two shapes of progress callback; files off the
+`containerManager*` naming scheme; `containerError` defined twice; the darwin stub
+importing from `../linux/` (docs/reviews/2026-11-17/AUDIT.md, C-7; 2026-11-22).
+**Revisit trigger:** the next change to one of them.
+
+**containerApps' duplicates (audit C-8).** Four modules alias `createAppError` as
+`containerError`; `jellyfin.js` copies two validators; the backend and frontend app
+registries both hold each app's label, description and default image; `applyAppConfig`
+(`containerApps/index.js`) is the layer's most fragile function
+(docs/reviews/2026-11-17/AUDIT.md, C-8; 2026-11-22). **Revisit trigger:** the next app,
+or the next change to `applyAppConfig`.
+
 **An unchanged app save sets "restart required" when the app has no reload command.**
 `applyAppConfig` (`backend/src/lib/containerApps/index.js`) flags a running app container
 whenever it has no reload command (or the env changed), even when the save changed
