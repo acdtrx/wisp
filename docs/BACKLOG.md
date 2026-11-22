@@ -111,14 +111,6 @@ would let every view show it: a wire change (found in the frontend data flow
 milestone 3 run, 2026-11-21). **Revisit trigger:** a user missing the flagged count
 after a reload or a scheduled check.
 
-**After a libvirtd restart, Wisp hears no VM events until it calls libvirt.** libvirt-dbus
-subscribes to libvirt's events again only when a call reopens its connection, so a VM
-started or stopped outside Wisp right after `systemctl restart libvirtd` is not seen until
-Wisp next calls libvirt (a page, a stats tick, a Retry, a command). Seen in a nested VM
-on 2026-11-22, phase 5 milestone 1; the only fix seen is a periodic call, which the
-milestone did not add. **Revisit trigger:** a VM's state seen stale in the sidebar after a
-libvirt upgrade or restart.
-
 **Container autostart does not run when containerd connects after Wisp started.** The
 autostart pass runs once at the start; with containerd down then, it fails, and the
 connect that comes later (the events stream's reconnect, phase 5 milestone 1) does not
