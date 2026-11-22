@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { isAbsent, logHostFailure } from '../hostLog.js';
+import { isAbsent, logHostFailureOnce } from '../hostLog.js';
 
 const SECTOR_BYTES = 512;
 
@@ -15,18 +15,16 @@ let prevPowerUj = null;
 let prevPowerTime = 0;
 
 /**
- * Errors that mean a sensor or counter has no value for Wisp: absent (ENOENT),
- * readable only by root (EACCES: RAPL's energy counter), or nothing to report
- * now (ENODATA, EINVAL: a sensor whose device is down).
+ * A /proc or /sys file read every stats tick, or null when it has no value.
+ * Sensor drivers fail reads in ordinary use (EIO, EAGAIN, ENODEV, ENXIO, EPERM;
+ * EACCES for RAPL's root-only counter), so any failure is no value; one other
+ * than absence (ENOENT) is logged the first time for its path.
  */
-const NO_VALUE_CODES = new Set(['ENOENT', 'EACCES', 'ENODATA', 'EINVAL']);
-
-/** A /proc or /sys file, or null when it has no value; any other failure is logged. */
 function readFile(path) {
   try {
     return readFileSync(path, 'utf-8');
   } catch (err) {
-    if (!NO_VALUE_CODES.has(err.code)) logHostFailure(err, 'Host stats read failed', { path });
+    if (!isAbsent(err)) logHostFailureOnce(path, err, 'Host stats read failed', { path });
     return null;
   }
 }
@@ -204,7 +202,7 @@ function getThermalZoneThresholds(base) {
       }
     }
   } catch (err) {
-    logHostFailure(err, 'Listing thermal trip points failed', { path: base });
+    logHostFailureOnce(base, err, 'Listing thermal trip points failed', { path: base });
   }
   return { maxC, critC };
 }
@@ -239,7 +237,7 @@ function getHwmonPciAddress(hwmonBase) {
     return pciAddressFromSysfsPath(resolved);
   } catch (err) {
     // No `device` link: a sensor with no device behind it.
-    if (!isAbsent(err)) logHostFailure(err, 'hwmon device link read failed', { path: hwmonBase });
+    if (!isAbsent(err)) logHostFailureOnce(`${hwmonBase}/device`, err, 'hwmon device link read failed', { path: hwmonBase });
     return null;
   }
 }
@@ -294,7 +292,7 @@ function getThermalZones() {
       thermalTypeKeys.add(normalizeSensorType(type || name));
     }
   } catch (err) {
-    if (!isAbsent(err)) logHostFailure(err, 'Listing thermal zones failed');
+    if (!isAbsent(err)) logHostFailureOnce('/sys/class/thermal', err, 'Listing thermal zones failed');
   }
 
   try {
@@ -325,7 +323,7 @@ function getThermalZones() {
       }
     }
   } catch (err) {
-    if (!isAbsent(err)) logHostFailure(err, 'Listing hwmon sensors failed');
+    if (!isAbsent(err)) logHostFailureOnce('/sys/class/hwmon', err, 'Listing hwmon sensors failed');
   }
 
   return zones;

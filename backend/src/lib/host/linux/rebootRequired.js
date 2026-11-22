@@ -6,7 +6,7 @@
  */
 import { readFile, access } from 'node:fs/promises';
 
-import { isAbsent, logHostFailure } from '../hostLog.js';
+import { isAbsent, logHostFailureOnce } from '../hostLog.js';
 
 const REBOOT_MARKER = '/var/run/reboot-required';
 const REBOOT_PKGS = '/var/run/reboot-required.pkgs';
@@ -19,7 +19,7 @@ export async function getRebootSignal() {
     await access(REBOOT_MARKER);
   } catch (err) {
     // No marker: no reboot is required.
-    if (!isAbsent(err)) logHostFailure(err, 'Reboot marker check failed');
+    if (!isAbsent(err)) logHostFailureOnce(REBOOT_MARKER, err, 'Reboot marker check failed');
     return { required: false, reasons: [] };
   }
   let reasons = [];
@@ -28,7 +28,7 @@ export async function getRebootSignal() {
     reasons = pkgs.split('\n').map((l) => l.trim()).filter(Boolean);
   } catch (err) {
     // The marker is there, so a reboot is required, with or without the package list.
-    if (!isAbsent(err)) logHostFailure(err, 'Reboot package list read failed');
+    if (!isAbsent(err)) logHostFailureOnce(REBOOT_PKGS, err, 'Reboot package list read failed');
   }
   return { required: true, reasons };
 }
