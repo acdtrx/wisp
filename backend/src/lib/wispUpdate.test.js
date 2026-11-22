@@ -7,6 +7,9 @@
  */
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { createAppError } from './appErrors.js';
 
@@ -25,7 +28,7 @@ mock.module(new URL('./storage/index.js', import.meta.url).href, {
   namedExports: { createStallWatchdog() {}, stallMinutes() {}, killProcessGroup() {} },
 });
 
-const { checkForUpdate, getCachedStatus } = await import('./wispUpdate.js');
+const { checkForUpdate, getCachedStatus, checkStagedVersion } = await import('./wispUpdate.js');
 
 const tooLarge = (maxBodyBytes) => createAppError('DOWNLOAD_FAILED', `The answer is larger than ${maxBodyBytes} bytes`);
 
@@ -56,4 +59,16 @@ test('an answer that is not JSON is still malformed', async () => {
   answer = () => new Response('<html>');
   await assert.rejects(checkForUpdate(), { code: 'UPDATE_CHECK_UNAVAILABLE', message: 'Malformed GitHub API response' });
   assert.equal(getCachedStatus().lastError, 'Malformed GitHub API response');
+});
+
+test("a staged tree is checked by its root package.json's version", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'wisp-staged-'));
+  try {
+    assert.throws(() => checkStagedVersion(dir, '2.9.0'), { code: 'UPDATE_CHECK_UNAVAILABLE', message: 'Staged tree is missing its package.json' });
+    writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'wisp', version: '2.9.0' }));
+    checkStagedVersion(dir, '2.9.0');
+    assert.throws(() => checkStagedVersion(dir, '2.9.1'), { code: 'UPDATE_CHECK_UNAVAILABLE', message: 'Staged tree version mismatch' });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

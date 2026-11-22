@@ -439,17 +439,7 @@ export async function downloadAndStage(onProgress, signal) {
   /* Tarball top-level dir is `wisp/`; --strip-components=1 puts contents at stagingDir root. */
   await extractTarball(tarballPath, stagingDir);
 
-  /* Sanity-check: the staged tree's root package.json holds the expected version. */
-  let stagingVersion = null;
-  try {
-    const stagingPkg = JSON.parse(readFileSync(join(stagingDir, 'package.json'), 'utf8'));
-    stagingVersion = stagingPkg.version;
-  } catch (err) {
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree is missing its package.json', err.message);
-  }
-  if (stagingVersion !== version) {
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree version mismatch', `expected ${version}, got ${stagingVersion}`);
-  }
+  checkStagedVersion(stagingDir, version);
 
   /* Tarball + sha file aren't needed past verification. Helper consumes the dir. */
   await rm(tarballPath, { force: true });
@@ -484,6 +474,22 @@ export function claimUpdateInstall() {
   return () => {
     if (installClaimedAt === claimedAt) installClaimedAt = null;
   };
+}
+
+/**
+ * The staged tree is the release asked for: its root package.json, the version's
+ * one source, holds `version`. Throws UPDATE_CHECK_UNAVAILABLE otherwise.
+ */
+export function checkStagedVersion(stagingDir, version) {
+  let stagingVersion = null;
+  try {
+    stagingVersion = JSON.parse(readFileSync(join(stagingDir, 'package.json'), 'utf8')).version;
+  } catch (err) {
+    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree is missing its package.json', err.message);
+  }
+  if (stagingVersion !== version) {
+    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree version mismatch', `expected ${version}, got ${stagingVersion}`);
+  }
 }
 
 /**
