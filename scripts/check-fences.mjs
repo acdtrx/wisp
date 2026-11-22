@@ -9,11 +9,13 @@
  *   2. Facades — a file outside a module that has an `index.js` facade imports
  *      that module only through its `index.js`.
  *   3. Strict managers — vmManager and containerManager import only Node
- *      builtins, npm packages, their own files and the mdns, networking and
- *      storage facades (never lib/host).
+ *      builtins, npm packages, their own files, the mdns, networking and
+ *      storage facades (never lib/host) and the base facade.
  *   4. Carved modules — host, networking, mdns and storage import their own
- *      files, each other's facades and `createAppError` from lib/appErrors.js,
- *      and nothing else of Wisp's glue.
+ *      files, each other's facades, the base facade and `createAppError` from
+ *      lib/appErrors.js, and nothing else of Wisp's glue.
+ *      The base (lib/base/: the change emitter, the helper runner) imports only
+ *      Node builtins and its own files, so every module may import its facade.
  *   5. No import cycles (docs/ARCHITECTURE.md, Repo layout) — over static
  *      imports and the literal values of `import()` / `require()` calls, a
  *      ternary's both sides included: a cycle closed by a dynamic import still
@@ -148,6 +150,8 @@ const OPERATOR_FETCH = /(?<![\w$])fetchOperatorEndpoint(?![\w$])/g;
 const OPERATOR_FETCH_USERS = new Set([`${LIB}/oidc.js`]);
 /** The carved modules a strict manager may import (CODING-RULES §7). */
 const MANAGER_CARVED = ['mdns', 'networking', 'storage'];
+/** The module every other one may import (its facade); it imports only Node builtins. */
+const BASE = 'base';
 
 /**
  * Reviewed allowances: { file, specifier, reason }, both paths repo-relative.
@@ -526,6 +530,10 @@ async function main() {
           continue;
         }
         if (BUILTINS.has(specifier)) continue;
+        if (fileModule === BASE) {
+          report('lib/base/ imports only Node builtins and its own files: every module imports it');
+          continue;
+        }
         const pkg = packageName(specifier);
         const allowed = PACKAGE_FENCES[pkg];
         if (allowed && !allowed.some((dir) => fileRel.startsWith(dir))) {
@@ -550,8 +558,12 @@ async function main() {
         continue;
       }
 
+      if (fileModule === BASE) {
+        if (targetModule !== BASE) report('lib/base/ imports only Node builtins and its own files: every module imports it');
+        continue;
+      }
       if (fileModule && (STRICT_MANAGERS.includes(fileModule) || CARVED.includes(fileModule))) {
-        if (targetModule === fileModule) continue;
+        if (targetModule === fileModule || targetModule === BASE) continue;
         const isCarved = CARVED.includes(fileModule);
         if (targetModule && (isCarved ? CARVED : MANAGER_CARVED).includes(targetModule)) continue;
         if (isCarved && targetRel === `${LIB}/appErrors.js`) {
