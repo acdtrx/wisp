@@ -37,8 +37,10 @@
 - **A VM's firmware, machine type and a disk's bus are set when it is made, and shown afterwards** — Expert settings and the disk editor show them as text. API: `PATCH /api/vms/:name` with `firmware` or `machineType` answers 400, and `POST /api/vms/:name/disks/:slot/bus` is gone (it failed for any bus but VirtIO).
 - **A backup in an older layout can't be restored** — one with uncompressed disks, or whose manifest does not name the VM's directory, is refused with `BACKUP_INVALID` and asks for a new backup.
 - **API: the container stats stream loses `netRxBytes` and `netTxBytes`**, which were always 0.
+- **A privileged helper is only ever the one setup installs** in `/usr/local/bin`: the `WISP_POWER_SCRIPT`, `WISP_DMIDECODE_SCRIPT`, `WISP_SMARTCTL_SCRIPT`, `WISP_NETNS_SCRIPT` and `WISP_CNI_SCRIPT` overrides are retired (the update removes their lines from `runtime.env`), and the copies under `backend/scripts/` are never run. A missing helper, a refused sudo and a helper's own failure are told apart in the answer.
 
 ### Bug Fixes
+- **A failing listener no longer fails a sections or homepage save**: it is logged, as for every other change.
 - **A running container's IPv4 address is followed again** — a DHCP renewal that hands it another address reaches its record and its `.local` name within a minute; the probe never read it before.
 - **"Restart to apply" only after a change that needs it** — re-sending a container's current command, limits, root setting or network no longer sets it.
 - **A container whose network files are missing fails its start and names the file** — the netns or CNI helper, the bridge network file or the containers' resolver file — instead of starting with a built-in network or without `.local` names; running setup again puts them back.
