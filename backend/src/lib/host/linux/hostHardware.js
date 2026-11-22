@@ -4,43 +4,13 @@
  */
 import { readFileSync, readdirSync, readlinkSync, statfsSync } from 'node:fs';
 import { basename } from 'node:path';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { access } from 'node:fs/promises';
 
 import { lookupClassName, lookupDeviceName, lookupVendorName, normalizePciClassHex } from './pciIds.js';
 import { readAllDiskSmartSummaries } from './smart.js';
 import { readMountTable } from '../../storage/index.js';
 import { isAbsent, logHostFailure, logHostFailureOnce } from '../hostLog.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-/** Prefer installed helper + sudoers path (installed by setup's helpers step); bundled path for dev. */
-const DMIDECODE_INSTALLED = '/usr/local/bin/wisp-dmidecode';
-const DMIDECODE_BUNDLED = resolve(__dirname, '../../../../scripts/wisp-dmidecode');
-
-async function resolveDmidecodeScriptPath() {
-  const fromEnv = process.env.WISP_DMIDECODE_SCRIPT;
-  if (fromEnv) {
-    try {
-      await access(fromEnv);
-      return fromEnv;
-    } catch {
-      /* the configured helper is not there: no helper */
-      return null;
-    }
-  }
-  for (const p of [DMIDECODE_INSTALLED, DMIDECODE_BUNDLED]) {
-    try {
-      await access(p);
-      return p;
-    } catch {
-      /* try next */
-    }
-  }
-  return null;
-}
 
 /**
  * An optional sysfs/proc file, or null when it has no value: absent, or (EINVAL)
@@ -431,13 +401,8 @@ function resolveJedecManufacturer(raw) {
 }
 
 async function runDmidecodeScript() {
-  const scriptPath = await resolveDmidecodeScriptPath();
-  if (!scriptPath) {
-    return [];
-  }
-
   try {
-    const { stdout } = await runPrivileged(scriptPath, [], { timeoutMs: 10000 });
+    const { stdout } = await runPrivileged(helperPath('wisp-dmidecode'), [], { timeoutMs: 10000 });
     const data = JSON.parse(stdout);
     if (!Array.isArray(data)) return [];
     for (let i = 0; i < data.length; i++) {

@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
 import { createAppError } from './appErrors.js';
@@ -13,11 +13,6 @@ const WISP_KEYS = {
   WISP_PORT: checkPort,
   WISP_CONFIG_PATH: checkAbsolute,
   WISP_DEFAULT_BRIDGE: checkInterfaceName, // existence: networking, at startup
-  WISP_POWER_SCRIPT: checkExecutable,
-  WISP_DMIDECODE_SCRIPT: checkExecutable,
-  WISP_SMARTCTL_SCRIPT: checkExecutable,
-  WISP_NETNS_SCRIPT: checkExecutable,
-  WISP_CNI_SCRIPT: checkExecutable,
   WISP_CNI_BIN_DIR: checkAbsolute,
   WISP_CNI_CONF_DIR: checkAbsolute,
   WISP_CONTAINERD_SOCK: checkAbsolute,
@@ -32,7 +27,14 @@ const WISP_KEYS = {
  * exactly these (bootRuntimeEnv.js), and checks it strictly once the
  * migrations have run (checkRuntimeEnvFile).
  */
-export const RETIRED_ENV_KEYS = Object.freeze(['WISP_BACKEND_PORT', 'WISP_FRONTEND_PORT']);
+/** The ports of the frontend/backend split (removed by migration 0007). */
+export const RETIRED_PORT_KEYS = Object.freeze(['WISP_BACKEND_PORT', 'WISP_FRONTEND_PORT']);
+/** The helper-path overrides: a helper is only ever /usr/local/bin's (removed by migration 0014). */
+export const RETIRED_HELPER_PATH_KEYS = Object.freeze([
+  'WISP_POWER_SCRIPT', 'WISP_DMIDECODE_SCRIPT', 'WISP_SMARTCTL_SCRIPT', 'WISP_NETNS_SCRIPT', 'WISP_CNI_SCRIPT',
+]);
+/** Every retired key: tolerated at the start, until its migration has removed it. */
+export const RETIRED_ENV_KEYS = Object.freeze([...RETIRED_PORT_KEYS, ...RETIRED_HELPER_PATH_KEYS]);
 
 /** A line assigning one of `keys` (optionally `export`-prefixed), or null. */
 export function retiredKeyOfLine(line, keys = RETIRED_ENV_KEYS) {
@@ -51,16 +53,6 @@ function checkAbsolute(v) {
 
 function checkInterfaceName(v) {
   return /^[A-Za-z0-9_.:-]{1,15}$/.test(v) ? null : 'must be a network interface name';
-}
-
-function checkExecutable(v) {
-  if (!isAbsolute(v)) return 'must be an absolute path';
-  try {
-    accessSync(v, constants.X_OK);
-    return null;
-  } catch {
-    return `${v} is not an executable file`;
-  }
 }
 
 function checkOriginList(v) {

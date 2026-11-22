@@ -1,9 +1,8 @@
-import { access } from 'node:fs/promises';
 import { createAppError } from '../../appErrors.js';
 import { stallMinutes } from '../../storage/index.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 
-const SCRIPT_PATH = '/usr/local/bin/wisp-os-update';
+const SCRIPT_PATH = helperPath('wisp-os-update');
 
 const UNAVAILABLE = 'UPDATE_CHECK_UNAVAILABLE';
 const BUSY = 'UPDATE_BUSY';
@@ -63,15 +62,6 @@ export function isUpgradeInProgress() {
   return inflightUpgrade != null;
 }
 
-async function getScriptPath() {
-  try {
-    await access(SCRIPT_PATH);
-  } catch (err) {
-    throw createAppError(UNAVAILABLE, 'wisp-os-update script not found or not readable', err.message);
-  }
-  return SCRIPT_PATH;
-}
-
 /*
  * Bounds (CODING-RULES §6; contracts in docs/specs/HOST-MONITORING.md § OS
  * Updates): the helper passes apt's output through on stderr, and the
@@ -94,6 +84,7 @@ async function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = 
     return await runPrivileged(scriptPath, [action], { stallMs: idleMs, graceMs: 15_000, signal, onStderrLine: onLine });
   } catch (err) {
     const tail = (lines) => String(err.stderr || '').trim().split('\n').slice(-lines).join('\n');
+    if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-os-update script not found or not readable', err.message);
     if (err.reason === 'aborted') {
       const aborted = createAppError('ABORT_ERR', `OS update ${action} was stopped`);
       aborted.name = 'AbortError';
@@ -115,8 +106,7 @@ async function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = 
  * Called only through `runListShared` (which adds caching + dedup).
  */
 async function runListOp(signal) {
-  const scriptPath = await getScriptPath();
-  const { stdout } = await runUpdateScript(scriptPath, 'list', { idleMs: LIST_IDLE_MS, signal });
+  const { stdout } = await runUpdateScript(SCRIPT_PATH, 'list', { idleMs: LIST_IDLE_MS, signal });
   const packages = [];
   let downloadBytes = 0;
   for (const line of String(stdout).split('\n')) {
@@ -193,8 +183,7 @@ export function performUpgrade(signal, { onLine } = {}) {
   }
   // inflightUpgrade is set before anything awaits, so a second upgrade or a
   // check started meanwhile sees it.
-  const promise = getScriptPath()
-    .then((scriptPath) => runUpdateScript(scriptPath, 'upgrade', { idleMs: UPGRADE_IDLE_MS, signal, onLine }))
+  const promise = runUpdateScript(SCRIPT_PATH, 'upgrade', { idleMs: UPGRADE_IDLE_MS, signal, onLine })
     .then(() => {
       const now = new Date().toISOString();
       cachedUpdateCount = 0;

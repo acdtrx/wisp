@@ -1,37 +1,7 @@
-import { access } from 'node:fs/promises';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createAppError } from '../../appErrors.js';
 import { logHostFailure } from '../hostLog.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const SMARTCTL_INSTALLED = '/usr/local/bin/wisp-smartctl';
-const SMARTCTL_BUNDLED = resolve(__dirname, '../../../../scripts/wisp-smartctl');
-
-async function resolveSmartctlScriptPath() {
-  const fromEnv = process.env.WISP_SMARTCTL_SCRIPT;
-  if (fromEnv) {
-    try {
-      await access(fromEnv);
-      return fromEnv;
-    } catch {
-      /* the configured helper is not there: no helper */
-      return null;
-    }
-  }
-
-  for (const p of [SMARTCTL_INSTALLED, SMARTCTL_BUNDLED]) {
-    try {
-      await access(p);
-      return p;
-    } catch {
-      /* try next */
-    }
-  }
-  return null;
-}
 
 function parseNumber(value) {
   const num = Number(value);
@@ -208,10 +178,13 @@ async function readDiskSmartRaw(deviceName) {
     throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name');
   }
 
-  const scriptPath = await resolveSmartctlScriptPath();
-  if (!scriptPath) throw createAppError('SMART_HELPER_UNAVAILABLE', 'smartctl-helper-unavailable');
-
-  const { stdout } = await runPrivileged(scriptPath, [deviceName], { timeoutMs: 10000 });
+  let stdout;
+  try {
+    ({ stdout } = await runPrivileged(helperPath('wisp-smartctl'), [deviceName], { timeoutMs: 10000 }));
+  } catch (err) {
+    if (err.reason === 'missing') throw createAppError('SMART_HELPER_UNAVAILABLE', 'smartctl-helper-unavailable', err.message);
+    throw err;
+  }
   if (!stdout || !stdout.trim()) throw createAppError('SMART_EMPTY_OUTPUT', 'empty-smartctl-output');
 
   let parsed;

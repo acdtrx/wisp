@@ -1,17 +1,16 @@
 /**
  * SMB mount/unmount via the unified wisp-mount helper (subcommand `smb`).
  */
-import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
+import { writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 import { isMountPoint } from '../mountTable.js';
 
 /** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
 const UNMOUNT_TIMEOUT_MS = 75_000;
 
-const SCRIPT_PATH = '/usr/local/bin/wisp-mount';
 
 const UNAVAILABLE = 'SMB_MOUNT_UNAVAILABLE';
 
@@ -72,19 +71,6 @@ function buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid, o
   return `${lines.join('\n')}\n`;
 }
 
-async function getScriptPath() {
-  try {
-    await access(SCRIPT_PATH);
-    return SCRIPT_PATH;
-  } catch (err) {
-    throw createAppError(
-      UNAVAILABLE,
-      'wisp-mount script not found or not readable',
-      err.message
-    );
-  }
-}
-
 /** A failed helper run as SMB_MOUNT_UNAVAILABLE, mount.cifs's stderr as the cause, credentials masked. */
 function helperFailure(message, err) {
   if (err?.code === UNAVAILABLE) return err;
@@ -92,7 +78,12 @@ function helperFailure(message, err) {
 }
 
 async function runHelper(args, { timeout = 30000 } = {}) {
-  return runPrivileged(await getScriptPath(), args, { timeoutMs: timeout });
+  try {
+    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs: timeout });
+  } catch (err) {
+    if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
+    throw err;
+  }
 }
 
 /**

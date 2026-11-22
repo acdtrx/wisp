@@ -1,16 +1,15 @@
 /**
  * Removable/fixed disk mount via `wisp-mount disk` helper. Same invocation pattern as smbMount.
  */
-import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
+import { writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 
 /** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
 const UNMOUNT_TIMEOUT_MS = 75_000;
 
-const SCRIPT_PATH = '/usr/local/bin/wisp-mount';
 const UNAVAILABLE = 'DISK_MOUNT_UNAVAILABLE';
 
 const SUPPORTED_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
@@ -38,17 +37,13 @@ function assertNoForbiddenChars(field, value) {
   }
 }
 
-async function getScriptPath() {
-  try {
-    await access(SCRIPT_PATH);
-    return SCRIPT_PATH;
-  } catch (err) {
-    throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
-  }
-}
-
 async function runHelper(args, { timeout = 30000 } = {}) {
-  return runPrivileged(await getScriptPath(), args, { timeoutMs: timeout });
+  try {
+    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs: timeout });
+  } catch (err) {
+    if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
+    throw err;
+  }
 }
 
 /**

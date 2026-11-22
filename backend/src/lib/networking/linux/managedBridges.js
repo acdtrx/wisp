@@ -7,14 +7,13 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { isVlanLikeBridgeName } from '../bridgeNaming.js';
 import { networkingError } from '../networkingError.js';
 import { listHostBridges } from './hostBridges.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 
 
 const NETPLAN_DIR = '/etc/netplan';
 const FILE_PREFIX = '91-wisp-vlan__';
 const FILE_SUFFIX = '.yaml';
 const HELPER_NAME = 'wisp-bridge';
-const HELPER_INSTALLED_PATH = `/usr/local/bin/${HELPER_NAME}`;
 const LINUX_IFACE_MAX = 15;
 
 function isLinux() {
@@ -101,20 +100,11 @@ async function bridgeHasNonVlanMember(bridgeName) {
   }
 }
 
-async function getHelperPath() {
-  try {
-    await access(HELPER_INSTALLED_PATH);
-    return HELPER_INSTALLED_PATH;
-  } catch (err) {
-    throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
-  }
-}
-
 async function runHelper(args) {
-  const helperPath = await getHelperPath();
   try {
-    await runPrivileged(helperPath, args, { timeoutMs: 120000 });
+    await runPrivileged(helperPath(HELPER_NAME), args, { timeoutMs: 120000 });
   } catch (err) {
+    if (err.reason === 'missing') throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
     throw networkingError('NETWORK_BRIDGE_APPLY_FAILED', `Failed to apply netplan bridge change (${err.reason ?? 'error'})`, err.detail ?? err.message);
   }
 }

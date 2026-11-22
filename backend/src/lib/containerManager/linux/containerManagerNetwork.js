@@ -18,7 +18,7 @@ import { getContainerNetnsPath } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { isVlanLikeBridgeName } from '../../networking/index.js';
 import { createEmitter } from '../../base/index.js';
-import { runPrivileged } from '../../base/index.js';
+import { runPrivileged, helperPath } from '../../base/index.js';
 
 
 /** Unicast locally administered MAC (same idea as VM NICs). */
@@ -42,30 +42,8 @@ export function normalizeContainerMac(input) {
 const CNI_BIN_DIR = process.env.WISP_CNI_BIN_DIR || '/opt/cni/bin';
 const CNI_CONF_DIR = process.env.WISP_CNI_CONF_DIR || '/etc/cni/net.d';
 const CNI_CONF_NAME = '10-wisp-bridge.conflist';
-const NETNS_INSTALLED = '/usr/local/bin/wisp-netns';
-const CNI_INSTALLED = '/usr/local/bin/wisp-cni';
 
 const RUN_SETUP = 'run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)';
-
-/** An explicit override, else the installed helper; none installed fails the step with "run setup". */
-async function resolveHelper(overrideEnv, installedPath) {
-  const override = process.env[overrideEnv];
-  if (override) return override;
-  try {
-    await access(installedPath);
-    return installedPath;
-  } catch {
-    throw containerError('CONTAINERD_ERROR', `Wisp's helper ${installedPath} is not installed: ${RUN_SETUP}`);
-  }
-}
-
-function resolveNetnsScript() {
-  return resolveHelper('WISP_NETNS_SCRIPT', NETNS_INSTALLED);
-}
-
-function resolveCniScript() {
-  return resolveHelper('WISP_CNI_SCRIPT', CNI_INSTALLED);
-}
 
 /**
  * Reject anything that isn't an existing Linux bridge.
@@ -160,7 +138,7 @@ function parseCniStdout(stdout, command, containerID) {
  * Execute a CNI plugin through wisp-cni.
  */
 async function execCNI(plugin, command, containerID, netns, config) {
-  const cniScript = await resolveCniScript();
+  const cniScript = helperPath('wisp-cni');
   const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-cni-'));
   const confPath = join(tmpDir, 'plugin.json');
   await writeFile(confPath, JSON.stringify(config), { encoding: 'utf8', mode: 0o600 });
@@ -194,7 +172,7 @@ async function ensureNetNS(name) {
   } catch {
     /* need to create */
   }
-  const netnsScript = await resolveNetnsScript();
+  const netnsScript = helperPath('wisp-netns');
   try {
     await runPrivileged(netnsScript, ['add', name], { timeoutMs: 15000 });
   } catch (err) {
@@ -239,7 +217,7 @@ async function removeNetNS(name) {
   } catch {
     return; // no netns, nothing to remove
   }
-  await runPrivileged(await resolveNetnsScript(), ['delete', name], { timeoutMs: 15000 });
+  await runPrivileged(helperPath('wisp-netns'), ['delete', name], { timeoutMs: 15000 });
   notifyContainerNetnsRemoved(name);
 }
 
@@ -328,7 +306,7 @@ function bridgeHasMdnsForwarder(bridgeInterface) {
  * Best-effort: a failure here logs a warning but does not block the container start.
  */
 async function installMdnsStubRoute(name) {
-  const netnsScript = await resolveNetnsScript();
+  const netnsScript = helperPath('wisp-netns');
   try {
     await runPrivileged(netnsScript, ['route-add', name, 'eth0', WISP_MDNS_STUB_IP], { timeoutMs: 8000 });
   } catch (err) {

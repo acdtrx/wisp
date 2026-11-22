@@ -47,7 +47,7 @@ import { readFile, stat } from 'node:fs/promises';
 
 import { writeFileAtomic, writeJsonAtomic } from '../src/lib/atomicJson.js';
 import { checkMountPath } from '../src/lib/configSchema.js';
-import { retiredKeyOfLine } from '../src/lib/loadRuntimeEnv.js';
+import { retiredKeyOfLine, RETIRED_PORT_KEYS } from '../src/lib/loadRuntimeEnv.js';
 import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
 
 export const id = '0007-repair-config-and-records';
@@ -75,7 +75,7 @@ async function repairRuntimeEnv(ctx) {
   if (text === null) return;
   const lines = text.split('\n');
   const kept = lines.filter((line, i) => {
-    const key = retiredKeyOfLine(line);
+    const key = retiredKeyOfLine(line, RETIRED_PORT_KEYS);
     if (!key) return true;
     ctx.recordChange(`runtime.env line ${i + 1}: removed retired ${key}`);
     return false;
