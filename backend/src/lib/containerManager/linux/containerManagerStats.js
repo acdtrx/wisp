@@ -1,5 +1,5 @@
 /**
- * Container stats: CPU usage, memory, network, uptime.
+ * Container stats: CPU usage, memory, uptime.
  * Uses containerd Tasks.Metrics gRPC call.
  */
 import {
@@ -23,9 +23,6 @@ export async function getContainerStats(name) {
       state,
       cpuPercent: 0,
       memoryUsageMiB: 0,
-      memoryLimitMiB: 0,
-      netRxBytes: 0,
-      netTxBytes: 0,
       uptime: 0,
       pid: Number(task?.pid) || 0,
     };
@@ -75,9 +72,6 @@ export async function getContainerStats(name) {
     state,
     cpuPercent: Math.round(cpuPercent * 10) / 10,
     memoryUsageMiB,
-    memoryLimitMiB: 0, // populated by route from config
-    netRxBytes: 0,
-    netTxBytes: 0,
     uptime,
     pid: pidNum,
   };

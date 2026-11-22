@@ -11,7 +11,6 @@ export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
 export const containerError = impl.containerError;
-export const IS_DARWIN = impl.IS_DARWIN;
 
 export const getContainerDir = impl.getContainerDir;
 

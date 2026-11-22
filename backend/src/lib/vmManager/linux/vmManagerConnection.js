@@ -15,7 +15,6 @@ import { watchQemuBinaries } from './vmManagerProc.js';
 
 let qemuBinaryWatcherCleanup = null;
 
-export const IS_DARWIN = false;
 
 export const connectionState = {
   bus: null,

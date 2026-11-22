@@ -23,7 +23,6 @@ export {
   connect,
   disconnect,
   containerError,
-  IS_DARWIN,
 } from './containerManagerConnection.js';
 
 export {

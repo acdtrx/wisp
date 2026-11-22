@@ -28,7 +28,6 @@ export function configure(cfg) {
 export {
   connect,
   disconnect,
-  IS_DARWIN,
 } from './vmManagerConnection.js';
 
 export { parseVMFromXML } from './vmManagerXml.js';

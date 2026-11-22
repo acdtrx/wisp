@@ -10,7 +10,6 @@ const impl = await import(
 export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
-export const IS_DARWIN = impl.IS_DARWIN;
 
 export const getHostInfo = impl.getHostInfo;
 export const getHostHardware = impl.getHostHardware;

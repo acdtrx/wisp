@@ -16,7 +16,6 @@ const PROTOS_DIR = resolve(__dirname, '../../../protos');
 const SOCKET_PATH = process.env.WISP_CONTAINERD_SOCK || '/run/containerd/containerd.sock';
 export const NAMESPACE = 'wisp';
 
-export const IS_DARWIN = false;
 
 export const containerState = {
   clients: null,
@@ -282,7 +281,6 @@ function buildClients() {
   const contentPkg = loadProto('containerd/services/content/v1/content.proto');
   const snapshotsPkg = loadProto('containerd/services/snapshots/v1/snapshots.proto');
   const eventsPkg = loadProto('containerd/services/events/v1/events.proto');
-  const leasesPkg = loadProto('containerd/services/leases/v1/leases.proto');
   const transferPkg = loadProto('containerd/services/transfer/v1/transfer.proto');
   const namespacesPkg = loadProto('containerd/services/namespaces/v1/namespaces.proto');
   const streamingPkg = loadProto('containerd/services/streaming/v1/streaming.proto');
@@ -344,7 +342,6 @@ function buildClients() {
     content: createClient(contentPkg.containerd.services.content.v1.Content),
     snapshots: createClient(snapshotsPkg.containerd.services.snapshots.v1.Snapshots),
     events: createClient(eventsPkg.containerd.services.events.v1.Events),
-    leases: createClient(leasesPkg.containerd.services.leases.v1.Leases),
     transfer: createClient(transferPkg.containerd.services.transfer.v1.Transfer),
     streaming: createClient(streamingPkg.containerd.services.streaming.v1.Streaming),
     namespaces: createClient(namespacesPkg.containerd.services.namespaces.v1.Namespaces),

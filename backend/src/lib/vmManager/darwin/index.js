@@ -1,5 +1,5 @@
 /**
- * macOS dev stub: no libvirt. Preserves previous IS_DARWIN behavior.
+ * macOS dev stub: no libvirt.
  */
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
 
@@ -8,7 +8,6 @@ import { vmError } from '../vmManagerShared.js';
 
 export { parseVMFromXML };
 export { isShutOff } from '../linux/libvirtConstants.js';
-export const IS_DARWIN = true;
 
 export function configure() {
   /* macOS dev stub: no on-disk VM directories. configure() kept symmetric with

@@ -17,7 +17,6 @@ export {
 /* Pure filesystem work over the configured containers path — real on macOS too. */
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from '../linux/containerManagerFileModes.js';
 
-export const IS_DARWIN = true;
 
 export { containerError };
 
