@@ -42,6 +42,7 @@
 - **An edit made as a VM starts is no longer lost**: every change to a VM's definition is written one at a time.
 - **A CD change on a paused VM applies at once**, as on a running one; a VM that is on but not running (paused, crashed) counts in the top bar, an edit to it sets "Stop and start to apply", and the server refuses its rename too.
 - **A VM made with the memory balloon off has none**; libvirt added one before.
+- **First boot setup turned on for a running VM adds its CD** at the next start, and the VM shows "Stop and start to apply"; it said saved and never added it. A seed CD that can't be attached fails the save.
 - **A VM or container that is gone says so** — deleted elsewhere or never there, its page shows "No VM named …" with a way back, instead of spinning or closing.
 - **After a rename saved from its page, the page goes to the new name** on the tab it then shows, only while it still shows the workload. A rename made in another tab is followed too: the page, finding the old name gone, goes to the name the list gives the workload's uuid.
 - **The open VM page no longer closes on an empty VM list**, which is what an unreachable libvirt answers; the container page already stayed open.
