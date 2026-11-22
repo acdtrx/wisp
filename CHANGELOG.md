@@ -38,8 +38,16 @@
 - **A backup in an older layout can't be restored** — one with uncompressed disks, or whose manifest does not name the VM's directory, is refused with `BACKUP_INVALID` and asks for a new backup.
 - **API: the container stats stream loses `netRxBytes` and `netTxBytes`**, which were always 0.
 - **A privileged helper is only ever the one setup installs** in `/usr/local/bin`: the `WISP_POWER_SCRIPT`, `WISP_DMIDECODE_SCRIPT`, `WISP_SMARTCTL_SCRIPT`, `WISP_NETNS_SCRIPT` and `WISP_CNI_SCRIPT` overrides are retired (the update removes their lines from `runtime.env`), and the copies under `backend/scripts/` are never run. A missing helper, a refused sudo and a helper's own failure are told apart in the answer.
+- **The privileged helpers check every argument before they run anything** and bound what they run, so a hung mount or disk read ends at its limit with no root process left behind.
+- **`wisp-cni` writes the container network itself**: setup removes `/etc/cni/net.d/10-wisp-bridge.conflist`, and `WISP_CNI_BIN_DIR` and `WISP_CNI_CONF_DIR` are retired (the update removes their lines from `runtime.env`).
+- **Removable disks and SMB shares are mounted `nosuid,nodev`**: a setuid program or a device file on them is not honoured.
+- **An SMB share with no username and no password mounts as a guest**, and one with a username and no password mounts too.
+- **API: a container's `network.interface` must be a network interface name** — a `PATCH` with another answers 400 `VALIDATION_FAILED`.
+- **`npm run check` runs shellcheck** over every shell file, and fails without it.
 
 ### Bug Fixes
+- **A failed RAM read says so on Host Overview** (`memory: null` with `memoryError` in the hardware inventory), where it showed no modules.
+- **A sudo refusal on Ubuntu 26.04 (sudo-rs) reads as a refusal** naming setup, not as the helper's failure.
 - **A failing listener no longer fails a sections or homepage save**: it is logged, as for every other change.
 - **A running container's IPv4 address is followed again** — a DHCP renewal that hands it another address reaches its record and its `.local` name within a minute; the probe never read it before.
 - **"Restart to apply" only after a change that needs it** — re-sending a container's current command, limits, root setting or network no longer sets it.
