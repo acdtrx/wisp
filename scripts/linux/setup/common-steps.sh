@@ -156,7 +156,7 @@ run_step groups groups.sh "$DEPLOY_USER"
 run_step dirs dirs.sh "$DEPLOY_USER"
 run_step libvirt libvirt.sh
 run_step containerd containerd.sh "$DEPLOY_USER"
-run_step cni cni.sh "$BRIDGE"
+run_step cni cni.sh
 run_step container-dns container-dns.sh "$BRIDGE"
 run_step avahi avahi.sh
 run_step helpers install-helpers.sh "$PROJECT_ROOT" "$DEPLOY_USER"

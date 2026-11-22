@@ -9,9 +9,7 @@
  * installed by `install-helpers.sh` (same pattern as `wisp-mount`).
  */
 import { randomBytes } from 'node:crypto';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { access } from 'node:fs/promises';
 
 import { containerError, containerState } from './containerManagerConnection.js';
 import { getContainerNetnsPath } from './containerPaths.js';
@@ -38,10 +36,6 @@ export function normalizeContainerMac(input) {
   if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(s)) return null;
   return s;
 }
-
-const CNI_BIN_DIR = process.env.WISP_CNI_BIN_DIR || '/opt/cni/bin';
-const CNI_CONF_DIR = process.env.WISP_CNI_CONF_DIR || '/etc/cni/net.d';
-const CNI_CONF_NAME = '10-wisp-bridge.conflist';
 
 const RUN_SETUP = 'run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)';
 
@@ -79,56 +73,6 @@ async function assertIsLinuxBridge(iface) {
   }
 }
 
-/**
- * Build stdin JSON for a single CNI plugin invocation.
- * A .conflist stores `cniVersion` and `name` at the top level only; each `plugins[]`
- * entry is missing those fields. The bridge (and DHCP IPAM) plugins require a full
- * netconf — without `name`, ADD fails immediately with an opaque exit code.
- */
-function executablePluginNetconf(cniDoc) {
-  return { ...cniDoc.plugins[0], cniVersion: cniDoc.cniVersion, name: cniDoc.name };
-}
-
-function buildPluginConfig(cniConfig, networkConfig = {}) {
-  const pluginConfig = executablePluginNetconf(cniConfig);
-
-  if (networkConfig.interface) {
-    pluginConfig.bridge = String(networkConfig.interface).trim();
-  }
-
-  // The CNI bridge plugin does NOT read a top-level `mac` field (unlike macvlan).
-  // It reads from `args.cni.mac` or `runtimeConfig.mac`. Without this, every
-  // container start gets a fresh kernel-generated random MAC on eth0, so DHCP
-  // leases never stabilize and the router accumulates orphaned lease rows.
-  const macNorm = normalizeContainerMac(networkConfig.mac);
-  if (macNorm) {
-    pluginConfig.args = {
-      ...(pluginConfig.args || {}),
-      cni: { ...(pluginConfig.args?.cni || {}), mac: macNorm },
-    };
-  }
-
-  return pluginConfig;
-}
-
-/**
- * The Wisp bridge conflist setup writes (`cni.sh`): missing, unparsable or
- * without its bridge plugin fails the network step, naming the file.
- */
-async function getCNIConfig() {
-  const confPath = join(CNI_CONF_DIR, CNI_CONF_NAME);
-  let doc;
-  try {
-    doc = JSON.parse(await readFile(confPath, 'utf8'));
-  } catch (err) {
-    throw containerError('CONTAINER_NETWORK_SETUP_FAILED', `The CNI network file ${confPath} is missing or not valid JSON: ${RUN_SETUP}`, err.message);
-  }
-  if (!doc?.cniVersion || !doc.name || doc.plugins?.[0]?.type !== 'bridge') {
-    throw containerError('CONTAINER_NETWORK_SETUP_FAILED', `The CNI network file ${confPath} is not Wisp's bridge network: ${RUN_SETUP}`);
-  }
-  return doc;
-}
-
 /** A plugin's answer: empty is `{}` (a DEL), anything else must be JSON. */
 function parseCniStdout(stdout, command, containerID) {
   if (!stdout || !stdout.trim()) return {};
@@ -139,31 +83,23 @@ function parseCniStdout(stdout, command, containerID) {
   }
 }
 
-/**
- * Execute a CNI plugin through wisp-cni.
- */
-async function execCNI(plugin, command, containerID, netns, config) {
-  const cniScript = helperPath('wisp-cni');
-  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-cni-'));
-  const confPath = join(tmpDir, 'plugin.json');
-  await writeFile(confPath, JSON.stringify(config), { encoding: 'utf8', mode: 0o600 });
+/* wisp-cni bounds the plugin at 25 s (+2 to end): an ADD waits for the DHCP lease. */
+const CNI_TIMEOUT_MS = 30_000;
 
+/**
+ * The container's port on `bridge`, through wisp-cni: `ADD` (with its MAC
+ * address; answers the CNI result) or `DEL`. The helper writes Wisp's network
+ * configuration itself; its netns is the container's own.
+ */
+async function execCNI(command, name, bridge, mac) {
+  const args = command === 'ADD' ? ['add', name, bridge ?? '', mac ?? ''] : ['del', name, bridge ?? ''];
   let stdout;
   try {
-    const tail = [command, plugin, containerID, netns, confPath, CNI_BIN_DIR];
-    // wisp-cni pins CNI_PATH itself (sudo resets the environment).
-    ({ stdout } = await runPrivileged(cniScript, tail, { timeoutMs: 30000 }));
+    ({ stdout } = await runPrivileged(helperPath('wisp-cni'), args, { timeoutMs: CNI_TIMEOUT_MS }));
   } catch (err) {
-    throw containerError(
-      'CONTAINERD_ERROR',
-      `CNI ${command} failed for "${containerID}" (${err.reason ?? 'error'})`,
-      `${err.stderr || ''} ${err.stdout || ''} ${err.message || ''}`.trim(),
-    );
-  } finally {
-    /* Best-effort cleanup of temp CNI config dir; ignore if already removed */
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('CONTAINERD_ERROR', `CNI ${command} failed for "${name}" (${err.reason ?? 'error'})`, err.detail ?? err.message);
   }
-  return parseCniStdout(stdout, command, containerID);
+  return parseCniStdout(stdout, command, name);
 }
 
 /**
@@ -360,11 +296,10 @@ export async function resolveContainerResolvConf(bridgeInterface = null) {
  */
 export async function setupNetwork(name, networkConfig = {}) {
   await assertIsLinuxBridge(networkConfig.interface);
+  const bridge = networkConfig.interface;
+  const mac = normalizeContainerMac(networkConfig.mac);
+  if (!mac) throw containerError('CONTAINERD_ERROR', `Container "${name}" has no valid MAC address`);
 
-  const cniConfig = await getCNIConfig();
-  const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
-
-  const pluginName = pluginConfig.type;
   const nsPath = getContainerNetnsPath(name);
 
   // Reusing a netns that still has CNI's eth0 (e.g. after a failed stop) can make ADD fail.
@@ -378,7 +313,7 @@ export async function setupNetwork(name, networkConfig = {}) {
 
   if (hadNetns) {
     try {
-      await execCNI(pluginName, 'DEL', name, nsPath, pluginConfig);
+      await execCNI('DEL', name, bridge);
     } catch (err) {
       // The netns goes next either way; a DEL that failed is said, not hidden.
       containerState.logger?.warn?.({ err: err.message, container: name }, '[containerManager] CNI DEL of a stale netns failed — removing the netns');
@@ -402,13 +337,7 @@ export async function setupNetwork(name, networkConfig = {}) {
 
   const freshPath = await ensureNetNS(name);
 
-  const result = await execCNI(
-    pluginName,
-    'ADD',
-    name,
-    freshPath,
-    pluginConfig,
-  );
+  const result = await execCNI('ADD', name, bridge, mac);
 
   if (bridgeHasMdnsForwarder(networkConfig.interface)) {
     await installMdnsStubRoute(name);
@@ -429,9 +358,7 @@ export async function setupNetwork(name, networkConfig = {}) {
  * held under its id, and the veth. Throws when the plugin fails.
  */
 export async function releaseNetworkLease(name, networkConfig = {}) {
-  const cniConfig = await getCNIConfig();
-  const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
-  await execCNI(pluginConfig.type, 'DEL', name, getContainerNetnsPath(name), pluginConfig);
+  await execCNI('DEL', name, networkConfig.interface);
 }
 
 /** Remove a container's netns (its veth goes with it); throws when the delete fails. */

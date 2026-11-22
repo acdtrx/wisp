@@ -1,19 +1,12 @@
 #!/usr/bin/env bash
-# Setup step: container networking — the CNI plugins in /opt/cni/bin, the bridge
-# config every container joins, written for the bridge setup chose (it may be
-# applied only later, as setup's last step; nothing here waits for it), and the
-# CNI DHCP daemon its IPAM needs. Run as root.
-# Usage: cni.sh <bridge>
+# Setup step: container networking — the CNI plugins in /opt/cni/bin and the CNI
+# DHCP daemon their IPAM needs. The network a container joins is written by
+# wisp-cni for each call, so no network file is kept. Run as root.
+# Usage: cni.sh
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERROR: This script must be run as root (use sudo)."
-  exit 1
-fi
-
-BRIDGE="${1:-}"
-if [[ -z "$BRIDGE" ]]; then
-  echo "Usage: $0 <bridge>"
   exit 1
 fi
 
@@ -24,7 +17,7 @@ source "$SETUP_DIR/distro.sh"
 source "$SETUP_DIR/step.sh"
 step_begin
 
-echo "--- Container networking (CNI, bridge $BRIDGE) ---"
+echo "--- Container networking (CNI) ---"
 
 CNI_BIN_DIR="/opt/cni/bin"
 CNI_CONF_DIR="/etc/cni/net.d"
@@ -70,38 +63,14 @@ if [[ "$installed" != "$CNI_VERSION" ]]; then
   changed "CNI plugins ${CNI_VERSION} in $CNI_BIN_DIR (checksum verified)"
 fi
 
-# A macvlan conflist, as a host may hold: Wisp's containers join the bridge.
-if [[ -e "$CNI_CONF_DIR/10-wisp-macvlan.conflist" ]]; then
-  rm -f "$CNI_CONF_DIR/10-wisp-macvlan.conflist"
-  changed "removed $CNI_CONF_DIR/10-wisp-macvlan.conflist"
-fi
-
-mkdir -p "$CNI_CONF_DIR"
-CONFLIST="$(staged_file)"
-cat > "$CONFLIST" <<CNIEOF
-{
-  "cniVersion": "1.0.0",
-  "name": "wisp-bridge",
-  "plugins": [
-    {
-      "type": "bridge",
-      "bridge": "$BRIDGE",
-      "isGateway": false,
-      "isDefaultGateway": false,
-      "ipMasq": false,
-      "hairpinMode": false,
-      "promiscMode": false,
-      "forceAddress": false,
-      "ipam": {
-        "type": "dhcp"
-      }
-    }
-  ]
-}
-CNIEOF
-if write_if_changed "$CNI_CONF_DIR/10-wisp-bridge.conflist" 0644 "$CONFLIST"; then
-  changed "$CNI_CONF_DIR/10-wisp-bridge.conflist (bridge $BRIDGE)"
-fi
+# The network files earlier releases wrote, as a host may hold: wisp-cni
+# writes the network for each call.
+for conflist in 10-wisp-macvlan.conflist 10-wisp-bridge.conflist; do
+  if [[ -e "$CNI_CONF_DIR/$conflist" ]]; then
+    rm -f "$CNI_CONF_DIR/$conflist"
+    changed "removed $CNI_CONF_DIR/$conflist"
+  fi
+done
 
 # The CNI DHCP daemon, which the bridge plugin's DHCP IPAM talks to.
 DHCP_UNIT="$(staged_file)"
