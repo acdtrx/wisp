@@ -48,9 +48,13 @@ export class PrivilegedError extends Error {
   }
 }
 
-/** sudo's refusal: it exits 1 and says so on stderr, in its own words (LC_ALL=C). */
+/**
+ * sudo's refusal: it exits 1 and says so on stderr in its own words (LC_ALL=C) —
+ * `sudo: a password is required` (no NOPASSWD rule for the command), or
+ * `Sorry, user … is not allowed to execute …` (a rule that denies it).
+ */
 function isSudoRefusal(code, stderr) {
-  return code === 1 && /^sudo: /m.test(stderr);
+  return code === 1 && /^(?:sudo: |Sorry, user )/m.test(stderr);
 }
 
 /**

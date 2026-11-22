@@ -25,6 +25,7 @@ before(() => {
     '[ "$1" = "-n" ] || { echo "sudo: expected -n" >&2; exit 2; }',
     'shift',
     'case "$1" in *refuse-me) echo "sudo: a password is required" >&2; exit 1;; esac',
+    'case "$1" in *denied) echo "Sorry, user wisp is not allowed to execute $1 as root on host." >&2; exit 1;; esac',
     'exec "$@"',
   ].join('\n'));
   savedPath = process.env.PATH;
@@ -49,6 +50,7 @@ test('the command runs through sudo -n with LC_ALL=C, its output answered', asyn
 test('missing, refused, failed and timed out are told apart', async () => {
   assert.equal(await reason(runPrivileged(path.join(dir, 'nope'), [], { timeoutMs: 5000 })), 'missing');
   assert.equal(await reason(runPrivileged(script('refuse-me', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
+  assert.equal(await reason(runPrivileged(script('denied', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
   const failing = script('fails', 'echo "src not found" >&2; exit 2');
   const err = await runPrivileged(failing, [], { timeoutMs: 5000 }).catch((e) => e);
   assert.deepEqual([err.reason, err.exitCode, err.detail], ['failed', 2, 'src not found']);
