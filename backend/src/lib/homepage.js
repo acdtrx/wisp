@@ -12,17 +12,16 @@ import { randomUUID } from 'node:crypto';
 import { createAppError } from './appErrors.js';
 import { MAX_NAME, validName, validTileId, validTileUrl as validUrl } from './configSchema.js';
 import { withSettingsWriteLock, getRawHomepage, UNGROUPED_GROUP_ID } from './settings.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 export { UNGROUPED_GROUP_ID };
 
 /** Notified after every successful homepage write. No libvirt or containerd event
  *  can carry this — the `home` topic on /api/events is its only live signal. */
-const homepageChangeHandlers = new Set();
+const homepageChange = createEmitter('homepage: change', log);
 
-export function subscribeHomepageChange(handler) {
-  homepageChangeHandlers.add(handler);
-  return () => homepageChangeHandlers.delete(handler);
-}
+export const subscribeHomepageChange = homepageChange.subscribe;
 
 /**
  * Persist a homepage change, then announce it. Every mutation below goes
@@ -35,7 +34,7 @@ async function commitHomepage(mutate) {
     const homepage = fromFile.homepage || { groups: [], overrides: {}, manualTiles: [] };
     return { ...fromFile, homepage: mutate(homepage) };
   });
-  for (const handler of homepageChangeHandlers) handler();
+  homepageChange.emit();
 }
 
 /** The persisted overlay: `{ groups, overrides, manualTiles }`. */

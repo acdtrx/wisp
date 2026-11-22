@@ -2,18 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { createAppError } from './appErrors.js';
 import { validName } from './configSchema.js';
 import { withSettingsWriteLock, MAIN_SECTION_ID, getSettings } from './settings.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 const VALID_TYPES = new Set(['vm', 'container']);
 
 /** Notified after every successful sections/assignments write. Sections are the one
  *  piece of sidebar state no libvirt or containerd event can carry, so this emitter is
  *  their only live signal — the `sections` topic on `/api/events` is its sole consumer today. */
-const sectionsChangeHandlers = new Set();
+const sectionsChange = createEmitter('sections: change', log);
 
-export function subscribeSectionsChange(handler) {
-  sectionsChangeHandlers.add(handler);
-  return () => sectionsChangeHandlers.delete(handler);
-}
+export const subscribeSectionsChange = sectionsChange.subscribe;
 
 /**
  * Persist a sections/assignments change, then announce it. Every mutation in this
@@ -23,7 +22,7 @@ export function subscribeSectionsChange(handler) {
  */
 async function commitSections(mutate) {
   const settings = await withSettingsWriteLock(mutate);
-  for (const handler of sectionsChangeHandlers) handler();
+  sectionsChange.emit();
   return settings;
 }
 
