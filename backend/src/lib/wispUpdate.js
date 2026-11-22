@@ -22,7 +22,7 @@ import { createAppError } from './appErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
 import { createStallWatchdog, stallMinutes, killProcessGroup } from './storage/index.js';
-import { createEmitter } from './base/index.js';
+import { createEmitter, runPrivileged } from './base/index.js';
 import { log } from './log.js';
 
 const execFileAsync = promisify(execFileCb);
@@ -524,13 +524,8 @@ export async function applyUpdate(stagingPath) {
   await writeFile(tmp, `${stagingPath}\n`, { mode: 0o644 });
   await rename(tmp, TARGET_FILE);
 
-  const isRoot = process.getuid && process.getuid() === 0;
-  const argv = isRoot
-    ? ['/usr/bin/systemctl', 'start', '--no-block', UPDATER_UNIT]
-    : ['sudo', '-n', '/usr/bin/systemctl', 'start', '--no-block', UPDATER_UNIT];
-
   // --no-block returns at once; 15 s means sudo or systemd hung (CODING-RULES §6).
-  await execFileAsync(argv[0], argv.slice(1), { timeout: 15_000 });
+  await runPrivileged('/usr/bin/systemctl', ['start', '--no-block', UPDATER_UNIT], { timeoutMs: 15_000 });
   return { started: true };
 }
 

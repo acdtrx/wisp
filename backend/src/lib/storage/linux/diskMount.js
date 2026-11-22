@@ -5,7 +5,7 @@ import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
-import { execHelper } from './helperExec.js';
+import { runPrivileged } from '../../base/index.js';
 
 /** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
 const UNMOUNT_TIMEOUT_MS = 75_000;
@@ -48,7 +48,7 @@ async function getScriptPath() {
 }
 
 async function runHelper(args, { timeout = 30000 } = {}) {
-  return execHelper(await getScriptPath(), args, { timeout });
+  return runPrivileged(await getScriptPath(), args, { timeoutMs: timeout });
 }
 
 /**

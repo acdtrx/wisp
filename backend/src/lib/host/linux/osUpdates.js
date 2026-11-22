@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { createAppError } from '../../appErrors.js';
-import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
+import { stallMinutes } from '../../storage/index.js';
+import { runPrivileged } from '../../base/index.js';
 
 const SCRIPT_PATH = '/usr/local/bin/wisp-os-update';
 
@@ -81,69 +81,33 @@ async function getScriptPath() {
  */
 const LIST_IDLE_MS = 90_000;
 const UPGRADE_IDLE_MS = 15 * 60_000;
-const STDERR_KEEP = 64 * 1024;
 
 /**
- * Run wisp-os-update `action` (through sudo unless root), stopped after
- * `idleMs` without output. `onLine(text)` gets each non-empty output line
+ * Run wisp-os-update `action` through the privileged runner, stopped after
+ * `idleMs` without output. `onLine(text)` gets each non-empty stderr line
  * (progress). Resolves `{ stdout, stderr }`.
- * @param {AbortSignal} [signal] - When aborted (e.g. process shutdown), the child process is killed.
+ * @param {AbortSignal} [signal] - When aborted (e.g. process shutdown), the helper is stopped.
  */
-function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
-  return new Promise((resolve, reject) => {
-    const isRoot = process.getuid && process.getuid() === 0;
-    /* stdin is /dev/null: anything in the apt/dpkg chain that reads a
-     * prompt answer gets EOF instead of waiting forever. */
-    const child = isRoot
-      ? spawn(scriptPath, [action], { stdio: ['ignore', 'pipe', 'pipe'] })
-      : spawn('sudo', ['-n', scriptPath, action], { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    let partial = '';
-    let killTimer = null;
-    const stop = () => {
-      child.kill('SIGTERM'); // sudo relays it; the helper stops its step's child
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 15_000);
-    };
-    const watchdog = createStallWatchdog({ stallMs: idleMs, onStall: stop });
-    const onAbort = () => stop();
-    signal?.addEventListener('abort', onAbort, { once: true });
-
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (d) => { watchdog.poke(); stdout += d; });
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (d) => {
-      watchdog.poke();
-      stderr = (stderr + d).slice(-STDERR_KEEP);
-      if (!onLine) return;
-      const lines = (partial + d).split(/\r?\n/);
-      partial = lines.pop();
-      for (const line of lines) if (line.trim()) onLine(line.trim());
-    });
-    child.on('error', (err) => {
-      watchdog.stop();
-      reject(createAppError(UNAVAILABLE, `OS update ${action} failed to start`, err.message));
-    });
-    child.on('close', (code) => {
-      watchdog.stop();
-      clearTimeout(killTimer);
-      signal?.removeEventListener('abort', onAbort);
-      if (signal?.aborted) {
-        const aborted = createAppError('ABORT_ERR', `OS update ${action} was stopped`);
-        aborted.name = 'AbortError';
-        reject(aborted);
-      } else if (watchdog.fired) {
-        reject(createAppError(UNAVAILABLE, `OS update ${action} printed nothing for ${stallMinutes(idleMs)} and was stopped`, stderr.trim().split('\n').slice(-5).join('\n')));
-      } else if (code === 0) {
-        resolve({ stdout, stderr });
-      } else if (code === 75) {
-        /* EX_TEMPFAIL: another apt/dpkg process holds the package-manager lock. */
-        reject(createAppError(BUSY, 'Another package manager operation is running on the host', stderr.trim().split('\n').slice(-5).join('\n') || 'package manager lock held by another process'));
-      } else {
-        reject(createAppError(UNAVAILABLE, `OS update ${action} failed (privilege or package manager error)`, stderr.trim().split('\n').slice(-20).join('\n') || `exit ${code}`));
-      }
-    });
-  });
+async function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
+  try {
+    /* The helper relays SIGTERM to its step's child; 15 s later it is killed. */
+    return await runPrivileged(scriptPath, [action], { stallMs: idleMs, graceMs: 15_000, signal, onStderrLine: onLine });
+  } catch (err) {
+    const tail = (lines) => String(err.stderr || '').trim().split('\n').slice(-lines).join('\n');
+    if (err.reason === 'aborted') {
+      const aborted = createAppError('ABORT_ERR', `OS update ${action} was stopped`);
+      aborted.name = 'AbortError';
+      throw aborted;
+    }
+    if (err.reason === 'timed-out') {
+      throw createAppError(UNAVAILABLE, `OS update ${action} printed nothing for ${stallMinutes(idleMs)} and was stopped`, tail(5));
+    }
+    if (err.reason === 'failed' && err.exitCode === 75) {
+      /* EX_TEMPFAIL: another apt/dpkg process holds the package-manager lock. */
+      throw createAppError(BUSY, 'Another package manager operation is running on the host', tail(5) || 'package manager lock held by another process');
+    }
+    throw createAppError(UNAVAILABLE, `OS update ${action} failed (${err.reason ?? 'error'})`, tail(20) || err.message);
+  }
 }
 
 /**

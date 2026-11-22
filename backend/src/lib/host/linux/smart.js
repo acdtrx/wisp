@@ -1,13 +1,11 @@
-import { execFile } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createAppError } from '../../appErrors.js';
 import { logHostFailure } from '../hostLog.js';
+import { runPrivileged } from '../../base/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const execFileAsync = promisify(execFile);
 
 const SMARTCTL_INSTALLED = '/usr/local/bin/wisp-smartctl';
 const SMARTCTL_BUNDLED = resolve(__dirname, '../../../../scripts/wisp-smartctl');
@@ -213,11 +211,7 @@ async function readDiskSmartRaw(deviceName) {
   const scriptPath = await resolveSmartctlScriptPath();
   if (!scriptPath) throw createAppError('SMART_HELPER_UNAVAILABLE', 'smartctl-helper-unavailable');
 
-  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-  const args = isRoot
-    ? [scriptPath, [deviceName]]
-    : ['sudo', ['-n', scriptPath, deviceName]];
-  const { stdout } = await execFileAsync(args[0], args[1], { timeout: 10000 });
+  const { stdout } = await runPrivileged(scriptPath, [deviceName], { timeoutMs: 10000 });
   if (!stdout || !stdout.trim()) throw createAppError('SMART_EMPTY_OUTPUT', 'empty-smartctl-output');
 
   let parsed;

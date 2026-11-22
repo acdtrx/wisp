@@ -8,12 +8,8 @@
  * `User=`), the backend uses **`sudo -n`** with **`wisp-netns`** and **`wisp-cni`**
  * installed by `install-helpers.sh` (same pattern as `wisp-mount`).
  */
-import { execFile as execFileCb } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { promisify } from 'node:util';
-import {
-  access, mkdtemp, readFile, rm, writeFile,
-} from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,8 +18,8 @@ import { getContainerNetnsPath } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { isVlanLikeBridgeName } from '../../networking/index.js';
 import { createEmitter } from '../../base/index.js';
+import { runPrivileged } from '../../base/index.js';
 
-const execFile = promisify(execFileCb);
 
 /** Unicast locally administered MAC (same idea as VM NICs). */
 export function generateContainerMac() {
@@ -69,10 +65,6 @@ function resolveNetnsScript() {
 
 function resolveCniScript() {
   return resolveHelper('WISP_CNI_SCRIPT', CNI_INSTALLED);
-}
-
-function isRoot() {
-  return typeof process.getuid === 'function' && process.getuid() === 0;
 }
 
 /**
@@ -165,7 +157,7 @@ function parseCniStdout(stdout, command, containerID) {
 }
 
 /**
- * Execute a CNI plugin through wisp-cni (sudo when not root).
+ * Execute a CNI plugin through wisp-cni.
  */
 async function execCNI(plugin, command, containerID, netns, config) {
   const cniScript = await resolveCniScript();
@@ -176,23 +168,13 @@ async function execCNI(plugin, command, containerID, netns, config) {
   let stdout;
   try {
     const tail = [command, plugin, containerID, netns, confPath, CNI_BIN_DIR];
-    const execOpts = {
-      env: { ...process.env, CNI_PATH: CNI_BIN_DIR },
-      timeout: 30000,
-      maxBuffer: 8 * 1024 * 1024,
-      encoding: 'utf8',
-    };
-    ({ stdout } = isRoot()
-      ? await execFile(cniScript, tail, execOpts)
-      : await execFile('sudo', ['-n', cniScript, ...tail], execOpts));
+    // wisp-cni pins CNI_PATH itself (sudo resets the environment).
+    ({ stdout } = await runPrivileged(cniScript, tail, { timeoutMs: 30000 }));
   } catch (err) {
-    const se = typeof err.stderr === 'string' ? err.stderr : (err.stderr?.toString() || '');
-    const sx = typeof err.stdout === 'string' ? err.stdout : (err.stdout?.toString() || '');
-    const detail = `${se} ${sx} ${err.message || ''}`.trim();
     throw containerError(
       'CONTAINERD_ERROR',
-      `CNI ${command} failed for "${containerID}"`,
-      detail || err.message,
+      `CNI ${command} failed for "${containerID}" (${err.reason ?? 'error'})`,
+      `${err.stderr || ''} ${err.stdout || ''} ${err.message || ''}`.trim(),
     );
   } finally {
     /* Best-effort cleanup of temp CNI config dir; ignore if already removed */
@@ -202,7 +184,7 @@ async function execCNI(plugin, command, containerID, netns, config) {
 }
 
 /**
- * Create a network namespace for a container through wisp-netns (sudo when not root).
+ * Create a network namespace for a container through wisp-netns.
  */
 async function ensureNetNS(name) {
   const nsPath = getContainerNetnsPath(name);
@@ -214,16 +196,12 @@ async function ensureNetNS(name) {
   }
   const netnsScript = await resolveNetnsScript();
   try {
-    if (isRoot()) {
-      await execFile(netnsScript, ['add', name], { timeout: 15000 });
-    } else {
-      await execFile('sudo', ['-n', netnsScript, 'add', name], { timeout: 15000 });
-    }
+    await runPrivileged(netnsScript, ['add', name], { timeoutMs: 15000 });
   } catch (err) {
     throw containerError(
       'CONTAINERD_ERROR',
-      `Failed to create netns for "${name}". Install the helpers: ${RUN_SETUP}`,
-      err.stderr?.toString() || err.message,
+      `Failed to create netns for "${name}" (${err.reason ?? 'error'}). Install the helpers: ${RUN_SETUP}`,
+      err.detail ?? err.message,
     );
   }
   try {
@@ -261,12 +239,7 @@ async function removeNetNS(name) {
   } catch {
     return; // no netns, nothing to remove
   }
-  const netnsScript = await resolveNetnsScript();
-  if (isRoot()) {
-    await execFile(netnsScript, ['delete', name], { timeout: 15000 });
-  } else {
-    await execFile('sudo', ['-n', netnsScript, 'delete', name], { timeout: 15000 });
-  }
+  await runPrivileged(await resolveNetnsScript(), ['delete', name], { timeoutMs: 15000 });
   notifyContainerNetnsRemoved(name);
 }
 
@@ -356,14 +329,8 @@ function bridgeHasMdnsForwarder(bridgeInterface) {
  */
 async function installMdnsStubRoute(name) {
   const netnsScript = await resolveNetnsScript();
-  const tail = ['route-add', name, 'eth0', WISP_MDNS_STUB_IP];
-  const opts = { timeout: 8000, maxBuffer: 65536, encoding: 'utf8' };
   try {
-    if (isRoot()) {
-      await execFile(netnsScript, tail, opts);
-    } else {
-      await execFile('sudo', ['-n', netnsScript, ...tail], opts);
-    }
+    await runPrivileged(netnsScript, ['route-add', name, 'eth0', WISP_MDNS_STUB_IP], { timeoutMs: 8000 });
   } catch (err) {
     const detail = `${err.stderr || ''} ${err.message || ''}`.trim();
     containerState.logger?.warn(

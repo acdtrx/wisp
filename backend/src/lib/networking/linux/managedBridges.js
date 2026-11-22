@@ -2,15 +2,13 @@
  * Netplan-managed VLAN bridges. Creates and deletes `<base>-vlanN` sub-bridges via
  * `wisp-bridge` (sudo helper) writing 91-wisp-vlan__*.yaml to /etc/netplan/.
  */
-import { execFile as execFileCb } from 'node:child_process';
 import { access, readdir, readFile } from 'node:fs/promises';
-import { promisify } from 'node:util';
 
 import { isVlanLikeBridgeName } from '../bridgeNaming.js';
 import { networkingError } from '../networkingError.js';
 import { listHostBridges } from './hostBridges.js';
+import { runPrivileged } from '../../base/index.js';
 
-const execFileAsync = promisify(execFileCb);
 
 const NETPLAN_DIR = '/etc/netplan';
 const FILE_PREFIX = '91-wisp-vlan__';
@@ -114,16 +112,10 @@ async function getHelperPath() {
 
 async function runHelper(args) {
   const helperPath = await getHelperPath();
-  const isRoot = process.getuid && process.getuid() === 0;
   try {
-    if (isRoot) {
-      await execFileAsync(helperPath, args, { timeout: 120000 });
-    } else {
-      await execFileAsync('sudo', ['-n', helperPath, ...args], { timeout: 120000 });
-    }
+    await runPrivileged(helperPath, args, { timeoutMs: 120000 });
   } catch (err) {
-    const detail = (err.stderr || err.stdout || err.message || '').trim() || 'helper failed';
-    throw networkingError('NETWORK_BRIDGE_APPLY_FAILED', 'Failed to apply netplan bridge change', detail);
+    throw networkingError('NETWORK_BRIDGE_APPLY_FAILED', `Failed to apply netplan bridge change (${err.reason ?? 'error'})`, err.detail ?? err.message);
   }
 }
 

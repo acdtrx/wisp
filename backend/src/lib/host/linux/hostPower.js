@@ -2,15 +2,13 @@
  * Host power actions (shutdown, reboot) via wisp-power script.
  * Same sudo pattern as wisp-os-update.
  */
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { access } from 'node:fs/promises';
 import { createAppError } from '../../appErrors.js';
+import { runPrivileged } from '../../base/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const execFileAsync = promisify(execFile);
 
 /** Prefer installed helper + sudoers path (installed by setup's helpers step); bundled path for dev. */
 const POWER_INSTALLED = '/usr/local/bin/wisp-power';
@@ -44,34 +42,20 @@ async function getScriptPath() {
 
 export async function hostShutdown() {
   const scriptPath = await getScriptPath();
-  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-
   try {
-    if (isRoot) {
-      await execFileAsync(scriptPath, ['shutdown'], { timeout: 5000 });
-    } else {
-      await execFileAsync('sudo', ['-n', scriptPath, 'shutdown'], { timeout: 5000 });
-    }
+    await runPrivileged(scriptPath, ['shutdown'], { timeoutMs: 5000 });
     return { ok: true };
   } catch (err) {
-    const detail = err.stderr || err.stdout || err.message;
-    throw createAppError(POWER_UNAVAILABLE, 'Shutdown failed (privilege or script error)', detail?.trim() || err.message);
+    throw createAppError(POWER_UNAVAILABLE, `Shutdown failed (${err.reason ?? 'error'})`, err.detail ?? err.message);
   }
 }
 
 export async function hostReboot() {
   const scriptPath = await getScriptPath();
-  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-
   try {
-    if (isRoot) {
-      await execFileAsync(scriptPath, ['reboot'], { timeout: 5000 });
-    } else {
-      await execFileAsync('sudo', ['-n', scriptPath, 'reboot'], { timeout: 5000 });
-    }
+    await runPrivileged(scriptPath, ['reboot'], { timeoutMs: 5000 });
     return { ok: true };
   } catch (err) {
-    const detail = err.stderr || err.stdout || err.message;
-    throw createAppError(POWER_UNAVAILABLE, 'Reboot failed (privilege or script error)', detail?.trim() || err.message);
+    throw createAppError(POWER_UNAVAILABLE, `Reboot failed (${err.reason ?? 'error'})`, err.detail ?? err.message);
   }
 }

@@ -4,24 +4,17 @@
  */
 import { readFileSync, readdirSync, readlinkSync, statfsSync } from 'node:fs';
 import { basename } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { access } from 'node:fs/promises';
 
-import {
-  lookupClassName,
-  lookupDeviceName,
-  lookupVendorName,
-  normalizePciClassHex,
-} from './pciIds.js';
+import { lookupClassName, lookupDeviceName, lookupVendorName, normalizePciClassHex } from './pciIds.js';
 import { readAllDiskSmartSummaries } from './smart.js';
 import { readMountTable } from '../../storage/index.js';
 import { isAbsent, logHostFailure, logHostFailureOnce } from '../hostLog.js';
+import { runPrivileged } from '../../base/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const execFileAsync = promisify(execFile);
 
 /** Prefer installed helper + sudoers path (installed by setup's helpers step); bundled path for dev. */
 const DMIDECODE_INSTALLED = '/usr/local/bin/wisp-dmidecode';
@@ -443,10 +436,8 @@ async function runDmidecodeScript() {
     return [];
   }
 
-  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
   try {
-    const args = isRoot ? [scriptPath, []] : ['sudo', ['-n', scriptPath]];
-    const { stdout } = await execFileAsync(args[0], args[1], { timeout: 10000 });
+    const { stdout } = await runPrivileged(scriptPath, [], { timeoutMs: 10000 });
     const data = JSON.parse(stdout);
     if (!Array.isArray(data)) return [];
     for (let i = 0; i < data.length; i++) {
