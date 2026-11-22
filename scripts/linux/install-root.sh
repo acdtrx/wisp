@@ -5,12 +5,13 @@
 # the release, the host refused or accepted (distro, network plan — the bridge
 # worked out and checked), then the questions. Then the work runs to the end in
 # a process of its own, in a session of its own, ignoring the hangup and
-# writing only to a log, in the updater's order: the plan made again and
-# compared with what the operator confirmed, before any change; then Wisp
-# stopped (an install over a running one), the tree replaced, setup run (whose
-# last change applies the bridge, after the backend's dependencies and the
-# answers), and Wisp started, waiting until it is ready. The install has no
-# rollback: a failed setup says what state it left. This process follows the log until the work
+# writing only to a log: the plan made again and compared with what the
+# operator confirmed, before any change; then the tree installed by
+# install-tree.sh, the sequence the updater runs too: Wisp stopped (an install
+# over a running one), the tree copied, setup run (whose last change applies
+# the bridge, after the backend's dependencies and the answers), and Wisp
+# started, waiting until it is ready. The install has no rollback: a failure
+# says what state it left. This process follows the log until the work
 # ends; a dropped connection or Ctrl-C stops only the following. The log is
 # removed once the install has succeeded, and kept, and named, when it fails.
 # A directory push.sh made for the tree is removed when the install ends,
@@ -54,34 +55,22 @@ if [[ "${1:-}" == --work ]]; then
 
   # shellcheck source=setup/service.sh
   source "$SETUP_SRC/service.sh"
-  RUNNING_BEFORE=no
-  if wisp_service_installed; then
-    RUNNING_BEFORE=yes
-    echo "--- Stopping Wisp ---"
-    if ! wisp_service_stop; then
-      echo "ERROR: wisp.service did not stop (it is $(systemctl show -p ActiveState --value wisp 2>/dev/null || echo unknown)); the install changed nothing else. Run the install again." >&2
-      exit 1
-    fi
-  fi
-  # From here on, a failure leaves the host as this says.
-  if [[ "$RUNNING_BEFORE" == yes ]]; then STOPPED="Wisp is stopped"; else STOPPED="Wisp is not running"; fi
+  if wisp_service_installed; then STOPPED="Wisp is stopped"; else STOPPED="Wisp is not running"; fi
+  # The sequence (install-tree.sh), under the lock (fd 8). Setup plans again and
+  # stops before any change if it would bridge otherwise than the operator
+  # confirmed (WISP_CONFIRMED_BRIDGE); it writes the answers
+  # (WISP_INSTALL_ANSWERS); its last change is the bridge.
+  rc=0
+  "$SCRIPT_DIR/install-tree.sh" "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" || rc=$?
   INSTALLED_STATE="$STOPPED, and the new tree is in place in $INSTALL_DIR. Run the install again"
-  echo "--- Installing the tree ---"
-  "$SETUP_SRC/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR" \
-    || { echo "ERROR: the tree was not copied whole into $INSTALL_DIR; $STOPPED. Run the install again." >&2; exit 1; }
-  chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$INSTALL_DIR" || { echo "ERROR: cannot give $INSTALL_DIR to $DEPLOY_USER. $INSTALLED_STATE." >&2; exit 1; }
-  SETUP_DIR="$INSTALL_DIR/scripts/linux/setup"
-
-  echo ""
-  # Setup plans again, under the lock, and stops before any change if it would
-  # bridge otherwise than the operator confirmed (WISP_CONFIRMED_BRIDGE); it
-  # writes the answers (WISP_INSTALL_ANSWERS); its last change is the bridge.
-  "$SETUP_DIR/common-steps.sh" "$INSTALL_DIR" "$DEPLOY_USER" \
-    || { echo "" >&2; echo "ERROR: setup failed (above). $INSTALLED_STATE." >&2; exit 1; }
-
-  echo ""
-  echo "--- Starting Wisp ---"
-  wisp_service start || { echo "ERROR: Wisp did not start (above). The new tree is in place in $INSTALL_DIR and set up. Fix what its log says, then start it: sudo systemctl start wisp" >&2; exit 1; }
+  case "$rc" in
+    0) ;;
+    1) echo "ERROR: wisp.service did not stop (it is $(systemctl show -p ActiveState --value wisp 2>/dev/null || echo unknown)); the install changed nothing else. Run the install again." >&2; exit 1 ;;
+    2) echo "ERROR: the tree was not copied whole into $INSTALL_DIR; $STOPPED. Run the install again." >&2; exit 1 ;;
+    3) echo "" >&2; echo "ERROR: setup failed (above). $INSTALLED_STATE." >&2; exit 1 ;;
+    4) echo "ERROR: Wisp did not start (above). The new tree is in place in $INSTALL_DIR and set up. Fix what its log says, then start it: sudo systemctl start wisp" >&2; exit 1 ;;
+    *) echo "ERROR: the install stopped (exit $rc). $INSTALLED_STATE." >&2; exit 1 ;;
+  esac
 
   # shellcheck source=../../backend/scripts/wisp-port.sh
   source "$INSTALL_DIR/backend/scripts/wisp-port.sh"

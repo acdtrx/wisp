@@ -49,6 +49,7 @@ const EXCEPTIONS = [
   { file: 'scripts/linux/setup/network-plan.sh', code: 'SC2034', why: 'HOST_KVM is written to the plan record by name (plan-record.sh)' },
   { file: 'scripts/linux/setup/bridge-plan.sh', code: 'SC2153', why: 'NET_PLAN_DIR is set by the scripts that source it' },
   { file: 'scripts/linux/setup/bridge.sh', code: 'SC2329', why: 'read_now, read_uplink and undo_stopped run by name (step_run, STEP_ON_STOP)' },
+  { file: 'scripts/linux/install-tree.sh', code: 'SC2329', why: 'on_stop runs from the TERM trap; stop_wisp and copy_tree run by name, as phases' },
   { file: 'scripts/linux/install-root.sh', code: 'SC2094', why: 'the log is the worker\'s argument and its output both, never read here' },
   { file: 'scripts/linux/setup/config.sh', code: 'SC2016', why: 'a node -e program, which the shell must not expand' },
   { file: 'scripts/linux/setup/password.sh', code: 'SC2016', why: 'a node -e program, which the shell must not expand' },
