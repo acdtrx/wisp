@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Ensure the install dir exists and put the release-shaped tree's entries in place of the installed ones.
+# The release-shaped tree into the install folder, by the one rule of what an
+# install keeps (docs/specs/DEPLOYMENT.md), for an install and an update alike:
+# config/ holds the host's own files, which an install never deletes or
+# overwrites, and the tree's *.example files; everything else in the install
+# folder is the tree's, replaced, and removed when the tree no longer has it.
 # Usage: copy.sh <source-dir> <install-dir>
-# Does not remove config/ (live config and optional runtime.env stay).
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
@@ -39,8 +42,8 @@ if [[ ! -f "$SOURCE_DIR/package.json" ]]; then
 fi
 
 # What the release-shaped tree holds is what is installed: scripts/stage-release.sh
-# decides it, and this copies each of its top-level entries in place of the one
-# installed, naming none. config/ is the exception, below: the live config stays.
+# decides it, and this puts each of its top-level entries in place of the one
+# installed, naming none, then removes the entries it no longer has.
 shopt -s dotglob nullglob
 for entry in "$SOURCE_DIR"/*; do
   name="$(basename "$entry")"
@@ -48,16 +51,24 @@ for entry in "$SOURCE_DIR"/*; do
   rm -rf "${INSTALL_DIR:?}/$name"
   cp -a "$entry" "$INSTALL_DIR/"
 done
-shopt -u dotglob nullglob
+for entry in "$INSTALL_DIR"/*; do
+  name="$(basename "$entry")"
+  [[ "$name" == config || -e "$SOURCE_DIR/$name" || -L "$SOURCE_DIR/$name" ]] && continue
+  rm -rf "${INSTALL_DIR:?}/$name"
+  echo "  Removed $INSTALL_DIR/$name: the tree no longer has it"
+done
 
-if [[ -d "$SOURCE_DIR/config" ]]; then
-  mkdir -p "$INSTALL_DIR/config"
-  shopt -s nullglob
-  for f in "$SOURCE_DIR/config"/*.example; do
-    cp -a "$f" "$INSTALL_DIR/config/"
-  done
-  shopt -u nullglob
-  echo "  Updated config examples under $INSTALL_DIR/config/"
-fi
+# config/: the tree's examples replaced, and one the tree dropped removed; every
+# other file there is the host's and stays.
+mkdir -p "$INSTALL_DIR/config"
+for f in "$INSTALL_DIR/config"/*.example; do
+  [[ -e "$SOURCE_DIR/config/${f##*/}" ]] && continue
+  rm -f "$f"
+  echo "  Removed $f: the tree no longer has it"
+done
+for f in "$SOURCE_DIR/config"/*.example; do
+  cp -a "$f" "$INSTALL_DIR/config/"
+done
+shopt -u dotglob nullglob
 
 echo "  Installed the tree under $INSTALL_DIR"
