@@ -111,6 +111,25 @@ would let every view show it: a wire change (found in the frontend data flow
 milestone 3 run, 2026-11-21). **Revisit trigger:** a user missing the flagged count
 after a reload or a scheduled check.
 
+**After a libvirtd restart, Wisp hears no VM events until it calls libvirt.** libvirt-dbus
+subscribes to libvirt's events again only when a call reopens its connection, so a VM
+started or stopped outside Wisp right after `systemctl restart libvirtd` is not seen until
+Wisp next calls libvirt (a page, a stats tick, a Retry, a command). Seen in a nested VM
+on 2026-11-22, phase 5 milestone 1; the only fix seen is a periodic call, which the
+milestone did not add. **Revisit trigger:** a VM's state seen stale in the sidebar after a
+libvirt upgrade or restart.
+
+**Container autostart does not run when containerd connects after Wisp started.** The
+autostart pass runs once at the start; with containerd down then, it fails, and the
+connect that comes later (the events stream's reconnect, phase 5 milestone 1) does not
+run it. **Revisit trigger:** a host whose containerd starts after Wisp, its autostart
+containers seen stopped.
+
+**The first stats tick of a VM or container shows zero rates.** With no previous sample
+the CPU, disk and network rates are 0 rather than missing (`getVMStats`,
+`getContainerStats`). **Revisit trigger:** a zero seen and taken for a real figure, or the
+stats shapes' next change.
+
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
