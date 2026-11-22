@@ -10,6 +10,8 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
+import { isAbsent, logHostFailure } from '../hostLog.js';
+
 const SYSFS_USB_DEVICES = '/sys/bus/usb/devices';
 const DEV_BUS_USB = '/dev/bus/usb';
 const USB_IDS_PATHS = ['/usr/share/hwdata/usb.ids', '/usr/share/misc/usb.ids'];
@@ -47,7 +49,8 @@ function readSysfsFile(base, name) {
     const p = join(base, name);
     if (!existsSync(p)) return '';
     return readFileSync(p, 'utf8').trim();
-  } catch {
+  } catch (err) {
+    logHostFailure(err, 'USB sysfs attribute read failed', { path: join(base, name) });
     return '';
   }
 }
@@ -87,8 +90,8 @@ function loadHwdataMaps() {
         hwdataProducts.set(`${currentVendor}:${pid}`, productMatch[2].trim());
       }
     }
-  } catch {
-    /* parse failed — leave maps empty-ish */
+  } catch (err) {
+    logHostFailure(err, 'usb.ids read failed', { path });
   }
 }
 
@@ -121,7 +124,9 @@ function enumerateFromSysfs() {
   let entries;
   try {
     entries = readdirSync(SYSFS_USB_DEVICES);
-  } catch {
+  } catch (err) {
+    // No USB sysfs (no USB controller) is no devices.
+    if (!isAbsent(err)) logHostFailure(err, 'Listing USB devices failed');
     return [];
   }
 
@@ -178,8 +183,8 @@ function notifyIfChanged() {
   for (const fn of changeListeners) {
     try {
       fn();
-    } catch {
-      /* listener threw — ignore */
+    } catch (err) {
+      logHostFailure(err, 'USB change listener threw');
     }
   }
 }
@@ -219,8 +224,8 @@ function watchDir(dir, alsoRescanBuses = false) {
       scheduleRefresh();
     });
     watchers.push(w);
-  } catch {
-    /* watch failed — hotplug updates may be missed */
+  } catch (err) {
+    logHostFailure(err, 'Watching a USB bus directory failed; its hotplug events are missed', { dir });
   }
 }
 
@@ -238,8 +243,8 @@ function watchNewBusSubdirsOnly() {
       watchedBusDirs.add(full);
       watchDir(full, false);
     }
-  } catch {
-    /* cannot list bus usb */
+  } catch (err) {
+    logHostFailure(err, 'Listing /dev/bus/usb failed');
   }
 }
 
@@ -262,8 +267,8 @@ function attachBusWatchers() {
         watchDir(full, false);
       }
     }
-  } catch {
-    /* cannot list bus usb */
+  } catch (err) {
+    logHostFailure(err, 'Listing /dev/bus/usb failed');
   }
 }
 

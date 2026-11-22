@@ -24,7 +24,7 @@ import {
 } from './lib/containerBackupScheduler.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
-import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
+import { configure as configureHost, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
 import { cancelInterruptibleJobs, refuseNewJobs } from './lib/jobs/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
@@ -166,6 +166,7 @@ async function main() {
 
   const built = await buildApp(log);
   app = built.app;
+  configureHost({ logger: app.log });
   // Development refuses to boot on a route without an access declaration;
   // production enforces it as admin.
   checkRouteAccess(built.routeAccess.list(), { strict: isDev, log: app.log });

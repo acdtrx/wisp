@@ -8,6 +8,8 @@
  */
 import { platform } from 'node:os';
 
+import { setHostLogger } from './hostLog.js';
+
 const isLinux = platform() === 'linux';
 
 const hardwareImpl = await import(
@@ -35,6 +37,11 @@ const smartImpl = await import(
   isLinux ? './linux/smart.js' : './darwin/smart.js',
 );
 const softwareImpl = isLinux ? null : await import('./darwin/systemProfilerSoftware.js');
+
+/** Boot wiring: the logger the host code logs the failures it carries on from to. */
+export function configure({ logger }) {
+  setHostLogger(logger);
+}
 
 // Hardware inventory
 export const getHostHardwareInfo = hardwareImpl.getHostHardwareInfo;

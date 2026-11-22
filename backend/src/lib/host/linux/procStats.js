@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { isAbsent, logHostFailure } from '../hostLog.js';
+
 const SECTOR_BYTES = 512;
 
 let prevCpu = null;
@@ -12,11 +14,19 @@ let prevNetTime = 0;
 let prevPowerUj = null;
 let prevPowerTime = 0;
 
+/**
+ * Errors that mean a sensor or counter has no value for Wisp: absent (ENOENT),
+ * readable only by root (EACCES: RAPL's energy counter), or nothing to report
+ * now (ENODATA, EINVAL: a sensor whose device is down).
+ */
+const NO_VALUE_CODES = new Set(['ENOENT', 'EACCES', 'ENODATA', 'EINVAL']);
+
+/** A /proc or /sys file, or null when it has no value; any other failure is logged. */
 function readFile(path) {
   try {
     return readFileSync(path, 'utf-8');
-  } catch {
-    /* /proc path missing or unreadable */
+  } catch (err) {
+    if (!NO_VALUE_CODES.has(err.code)) logHostFailure(err, 'Host stats read failed', { path });
     return null;
   }
 }
@@ -193,8 +203,8 @@ function getThermalZoneThresholds(base) {
         maxC = maxC == null ? tripC : Math.min(maxC, tripC);
       }
     }
-  } catch {
-    /* trip point files may be missing */
+  } catch (err) {
+    logHostFailure(err, 'Listing thermal trip points failed', { path: base });
   }
   return { maxC, critC };
 }
@@ -227,8 +237,9 @@ function getHwmonPciAddress(hwmonBase) {
   try {
     const resolved = realpathSync(join(hwmonBase, 'device'));
     return pciAddressFromSysfsPath(resolved);
-  } catch {
-    /* missing symlink or not PCI */
+  } catch (err) {
+    // No `device` link: a sensor with no device behind it.
+    if (!isAbsent(err)) logHostFailure(err, 'hwmon device link read failed', { path: hwmonBase });
     return null;
   }
 }
@@ -282,8 +293,8 @@ function getThermalZones() {
       });
       thermalTypeKeys.add(normalizeSensorType(type || name));
     }
-  } catch {
-    /* thermal sysfs may be missing or unreadable */
+  } catch (err) {
+    if (!isAbsent(err)) logHostFailure(err, 'Listing thermal zones failed');
   }
 
   try {
@@ -313,8 +324,8 @@ function getThermalZones() {
         });
       }
     }
-  } catch {
-    /* hwmon sysfs may be missing or unreadable */
+  } catch (err) {
+    if (!isAbsent(err)) logHostFailure(err, 'Listing hwmon sensors failed');
   }
 
   return zones;
@@ -343,13 +354,7 @@ const RAPL_ENERGY_PATH = '/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj'
  * Requires readable energy_uj (often root or udev/ACL). Not available in VMs or on non-Intel.
  */
 function getCpuPowerWatts() {
-  let content;
-  try {
-    content = readFile(RAPL_ENERGY_PATH);
-  } catch {
-    /* RAPL not available or not readable */
-    return null;
-  }
+  const content = readFile(RAPL_ENERGY_PATH);
   if (!content) return null;
 
   const energyUj = parseInt(content.trim(), 10);

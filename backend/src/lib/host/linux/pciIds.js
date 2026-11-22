@@ -5,6 +5,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 
+import { logHostFailure } from '../hostLog.js';
+
 const PCI_IDS_CANDIDATES = [
   '/usr/share/misc/pci.ids',
   '/usr/share/hwdata/pci.ids',
@@ -50,8 +52,8 @@ function loadPciIdsContent() {
         return gunzipSync(buf).toString('utf-8');
       }
       return buf.toString('utf-8');
-    } catch {
-      /* try next path */
+    } catch (err) {
+      logHostFailure(err, 'pci.ids read failed', { path: p });
     }
   }
   return null;

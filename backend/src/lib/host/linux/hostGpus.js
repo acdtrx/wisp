@@ -10,6 +10,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
+import { isAbsent, logHostFailure } from '../hostLog.js';
 import { lookupDeviceName } from './pciIds.js';
 
 const VENDOR_INTEL = '0x8086';
@@ -22,11 +23,13 @@ const VENDOR_NAMES = {
   [VENDOR_NVIDIA]: 'NVIDIA',
 };
 
+/** An optional sysfs attribute, trimmed; null when absent (a failed read is logged). */
 async function readTrim(path) {
   try {
     const buf = await readFile(path, 'utf8');
     return buf.trim();
-  } catch {
+  } catch (err) {
+    if (!isAbsent(err)) logHostFailure(err, 'GPU attribute read failed', { path });
     return null;
   }
 }
@@ -51,7 +54,8 @@ async function listRenderNodes() {
   let entries;
   try {
     entries = await readdir('/dev/dri');
-  } catch {
+  } catch (err) {
+    if (!isAbsent(err)) logHostFailure(err, 'Listing /dev/dri failed');
     return [];
   }
   return entries
@@ -78,7 +82,10 @@ async function describeRenderNode(devicePath) {
     readTrim(`${sysBase}/vendor`),
     readTrim(`${sysBase}/device`),
     readTrim(`${sysBase}/uevent`),
-    stat(devicePath).catch(() => null),
+    stat(devicePath).catch((err) => {
+      if (!isAbsent(err)) logHostFailure(err, 'GPU render node stat failed', { path: devicePath });
+      return null;
+    }),
   ]);
 
   if (!st || !st.isCharacterDevice()) return null;

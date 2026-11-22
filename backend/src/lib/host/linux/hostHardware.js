@@ -18,6 +18,7 @@ import {
 } from './pciIds.js';
 import { readAllDiskSmartSummaries } from './smart.js';
 import { readMountTable } from '../../storage/index.js';
+import { isAbsent, logHostFailure } from '../hostLog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -33,6 +34,7 @@ async function resolveDmidecodeScriptPath() {
       await access(fromEnv);
       return fromEnv;
     } catch {
+      /* the configured helper is not there: no helper */
       return null;
     }
   }
@@ -47,11 +49,16 @@ async function resolveDmidecodeScriptPath() {
   return null;
 }
 
+/**
+ * An optional sysfs/proc file, or null when it has no value: absent, or (EINVAL)
+ * a value the kernel has none of now — a link's speed while it is down. Any
+ * other failure is logged, and read as no value.
+ */
 function readFile(path) {
   try {
     return readFileSync(path, 'utf-8');
-  } catch {
-    /* path missing or unreadable — caller treats as absent */
+  } catch (err) {
+    if (!isAbsent(err) && err.code !== 'EINVAL') logHostFailure(err, 'Hardware file read failed', { path });
     return null;
   }
 }
@@ -147,7 +154,8 @@ function getBlockDevicePciAddress(blockName) {
   try {
     const resolved = readlinkSync(`/sys/block/${blockName}`);
     return extractPciAddressFromSysfsPath(resolved);
-  } catch {
+  } catch (err) {
+    logHostFailure(err, 'Block device link read failed', { blockName });
     return null;
   }
 }
@@ -194,8 +202,8 @@ export function getDiskInfo() {
 
       result.push({ name, model, sizeBytes, rotational, pciAddress });
     }
-  } catch {
-    /* /sys/block unreadable — return empty disk list */
+  } catch (err) {
+    logHostFailure(err, 'Listing /sys/block failed');
     return [];
   }
   return result;
@@ -244,8 +252,8 @@ export function getFilesystemUsage() {
         usedBytes: Math.max(0, usedBytes),
         availBytes,
       });
-    } catch {
-      /* skip mounts we cannot stat (permissions, stale entries) */
+    } catch (err) {
+      logHostFailure(err, 'Filesystem usage read failed', { mount });
     }
   }
   return result;
@@ -282,8 +290,8 @@ export function getNetworkAdapters() {
 
       result.push({ name, mac, speedMbps, state });
     }
-  } catch {
-    /* /sys/class/net unreadable */
+  } catch (err) {
+    logHostFailure(err, 'Listing /sys/class/net failed');
     return [];
   }
   return result;
@@ -308,8 +316,9 @@ function readDmiField(name) {
 export function getSystemInfo() {
   try {
     readdirSync(DMI_ID_BASE);
-  } catch {
-    /* DMI sysfs missing (some VMs/containers) */
+  } catch (err) {
+    // No DMI sysfs (some VMs) is no identity to show.
+    if (!isAbsent(err)) logHostFailure(err, 'Listing DMI sysfs failed');
     return null;
   }
 
@@ -329,8 +338,9 @@ export function getSystemInfo() {
 function getPciDriver(devicePath) {
   try {
     return basename(readlinkSync(`${devicePath}/driver`));
-  } catch {
-    /* no driver bound */
+  } catch (err) {
+    // No `driver` link: no driver is bound.
+    if (!isAbsent(err)) logHostFailure(err, 'PCI driver link read failed', { devicePath });
     return null;
   }
 }
@@ -373,8 +383,8 @@ export function getPciDevices() {
         driver: getPciDriver(base),
       });
     }
-  } catch {
-    /* /sys/bus/pci/devices unreadable */
+  } catch (err) {
+    logHostFailure(err, 'Listing PCI devices failed');
     return [];
   }
 
@@ -427,8 +437,8 @@ async function runDmidecodeScript() {
       dimm.slot = String(i + 1);
     }
     return data;
-  } catch {
-    /* sudo denied, parse error, or script failed — omit RAM details */
+  } catch (err) {
+    logHostFailure(err, 'RAM module read (wisp-dmidecode) failed');
     return [];
   }
 }

@@ -4,6 +4,7 @@ import { resolve, dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createAppError } from '../../appErrors.js';
+import { logHostFailure } from '../hostLog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -18,6 +19,7 @@ async function resolveSmartctlScriptPath() {
       await access(fromEnv);
       return fromEnv;
     } catch {
+      /* the configured helper is not there: no helper */
       return null;
     }
   }
@@ -239,6 +241,7 @@ export async function readDiskSmartSummary(deviceName) {
     if (!hasSmartPayload(raw)) return unsupportedSummary('SMART data unavailable for disk');
     return normalizeSmartSummary(raw);
   } catch (err) {
+    logHostFailure(err, 'SMART read failed', { disk: deviceName });
     return unsupportedSummary(err?.message || 'SMART read failed');
   }
 }
