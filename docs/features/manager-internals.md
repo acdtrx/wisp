@@ -46,8 +46,10 @@ This feature gives each of those one home, and makes the managers say when they 
 
 ### The server never waits on a mount
 
-- Reading a mount's size happens off the request path, with a bound. A share that does
-  not answer shows as not answering, and nothing else waits for it.
+- The Host page lists local storage only: a network share's size is not read (changed
+  by the user on 2026-11-22, after the first build showed that a size read stuck on a
+  dead share cannot be ended and holds Wisp's exit). So no request waits on a share
+  that stopped answering.
 - The mDNS connection reopens its bus when the bus goes away, and registers the
   containers' names again.
 
@@ -114,8 +116,8 @@ This feature gives each of those one home, and makes the managers say when they 
 
 ### 2. The server never waits on a mount; mDNS comes back
 
-- With a dead CIFS share in the nested VM, the Host page shows the share as not
-  answering and every other page answers within its usual time.
+- With a dead CIFS share in the nested VM, the Host page and every other page answer
+  within their usual time, and Wisp stops at once when asked.
 - After the system bus restarts in the nested VM, a running container's `.local` name
   resolves again within a minute, without restarting Wisp.
 

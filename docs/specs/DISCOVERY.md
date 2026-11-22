@@ -27,7 +27,7 @@ Re-announcing frees the old Avahi entry group and commits a new one — on the w
 - Signals are dispatched at the raw bus level (dbus-next `bus.on('message')`) and routed by object path. Avahi emits signals immediately after the `*New` method returns — signals for a not-yet-registered path are buffered while a creation is in flight so none are lost to the proxy-introspection race.
 - The same service is reported once per interface and protocol; sightings are refcounted per `(interface, protocol)` pair — `onUp` fires on the first sighting, `onDown` only when the last one is removed.
 - Resolution uses a **persistent `ServiceResolver` per instance name** (freed when the service leaves or the browser resets). Avahi re-emits `Found` whenever the service's records change, so a peer changing its advertised URL / name / version propagates live as a fresh `onUp` — a one-shot resolve would freeze the first TXT forever, because a same-name re-registration updates records in place without any `ItemRemove`/`ItemNew` on remote browsers.
-- Avahi restart (`NameOwnerChanged`): announcements are re-registered, browsers re-created (resolvers follow via fresh `ItemNew`s), and subscribers get `onReset` (drop everything) followed by fresh `onUp` events as peers are re-learned.
+- Avahi restart (`NameOwnerChanged`), or a system bus that failed and was reopened ([CONTAINERS.md](CONTAINERS.md), Avahi restart recovery): announcements are re-registered, browsers re-created (resolvers follow via fresh `ItemNew`s), and subscribers get `onReset` (drop everything) followed by fresh `onUp` events as peers are re-learned.
 
 ## Self-filtering and peer-URL safety
 
