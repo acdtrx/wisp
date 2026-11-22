@@ -135,6 +135,11 @@ async function ensureBus() {
   state.bus = bus;
   /* Attached at creation: an 'error' with no listener would crash the process. */
   bus.on('error', (err) => onBusError(bus, err));
+  /* dbus-next's bus forwards its connection's 'error' but not its 'end' (the
+   * socket closed), so a bus whose daemon died would otherwise be noticed only
+   * at our next write. `_connection` is private: without it, the 'error' path
+   * remains. */
+  bus._connection?.on?.('end', () => onBusError(bus, new Error('system bus connection closed')));
   // EntryGroup.StateChanged is addressed to the group's owner (avahi sets the
   // destination), so the bus delivers it without a match rule — routed here
   // by path rather than through a per-group proxy listener, whose match rule
@@ -534,17 +539,18 @@ export async function registerAddress(key, preferredName, ip4OrCidr, ip6OrCidr) 
       && current.ip4 === ip4 && current.ip6 === ip6) {
     return current.fqdn;
   }
-  if (current) await freeGroup(current.group);
-  state.entries.delete(key);
-
+  // The wanted entry is in the map from the start, without a group until its
+  // commit lands: a bus that fails meanwhile leaves it there for the reopen's
+  // reregisterAll, which replaces it. A register whose entry was replaced or
+  // removed before it landed frees its own group.
   const fqdn = `${host}.local`;
+  const record = { group: null, host, ip4, ip6, fqdn };
+  state.entries.set(key, record);
+  if (current) await freeGroup(current.group);
+
   try {
     const group = await createGroup();
-    if (!group) {
-      // avahi unavailable — keep the entry so NameOwnerChanged re-registers it
-      state.entries.set(key, { group: null, host, ip4, ip6, fqdn });
-      return null;
-    }
+    if (!group) return null; // avahi unavailable: the entry waits for NameOwnerChanged
     // One entry group carries both families: dual-stack resolvers query A and
     // AAAA together, and an unanswered family stalls them for its full local
     // timeout (~5s on macOS). Avahi has no negative-response support, so the
@@ -561,11 +567,14 @@ export async function registerAddress(key, preferredName, ip4OrCidr, ip6OrCidr) 
         ), 'AddAddress');
       }
     }, { key, fqdn });
-    state.entries.set(key, { group, host, ip4, ip6, fqdn });
+    if (state.entries.get(key) !== record) {
+      await freeGroup(group);
+      return null;
+    }
+    record.group = group;
     return fqdn;
   } catch (err) {
     state.logger?.warn?.({ err: err?.message || err, host, ip4, ip6 }, '[mdns] registerAddress failed');
-    state.entries.set(key, { group: null, host, ip4, ip6, fqdn });
     return null;
   }
 }
@@ -608,16 +617,15 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
 
   const txtPairs = txtMapToAvahi(txt);
   const current = state.services.get(serviceKey);
+  // In the map from the start, as registerAddress's entry: a failed bus leaves
+  // it for the reopen's reregisterAll.
+  const record = { group: null, instanceName, type, port, txt, host };
+  state.services.set(serviceKey, record);
   if (current) await freeGroup(current.group);
-  state.services.delete(serviceKey);
 
   try {
     const group = await createGroup();
-    if (!group) {
-      // avahi unavailable — keep entry so NameOwnerChanged re-registers it
-      state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
-      return false;
-    }
+    if (!group) return false; // avahi unavailable: the service waits for NameOwnerChanged
     await commitGroup(group, (iface) => bounded(iface.AddService(
       AVAHI_IF_UNSPEC,
       AVAHI_PROTO_UNSPEC,
@@ -629,11 +637,14 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
       port,
       txtPairs,
     ), 'AddService'), { serviceKey, instanceName, type });
-    state.services.set(serviceKey, { group, instanceName, type, port, txt, host });
+    if (state.services.get(serviceKey) !== record) {
+      await freeGroup(group);
+      return false;
+    }
+    record.group = group;
     return true;
   } catch (err) {
     state.logger?.warn?.({ err: err?.message || err, instanceName, type, port }, '[mdns] registerService failed');
-    state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
     return false;
   }
 }
