@@ -15,12 +15,17 @@ import {
   connect as connectContainerd,
   disconnect as disconnectContainerd,
 } from './containerManager/index.js';
+import { configure as configureHost } from './host/index.js';
+import { configure as configureStorage } from './storage/index.js';
+import { configure as configureNetworking } from './networking/index.js';
+import { configure as configureMdns } from './mdns/index.js';
 import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
 
 /**
- * Push Wisp paths, the storage-mount resolver and the per-container operation
- * lock (taken by the manager's own restart-policy and autostart starts) into
- * the managers. Call before any
+ * Push the start's logger into every fenced module (the managers, host,
+ * storage, networking, mdns), and Wisp paths, the storage-mount resolver and
+ * the per-container operation lock (taken by the manager's own restart-policy
+ * and autostart starts) into the managers. Call before any
  * manager-internal code runs; after it, vmManager and containerManager have no
  * Wisp-glue dependencies — they read everything from the configure() slots. The
  * resolver is sync: wisp-config.json is small and the OS caches the read.
@@ -28,10 +33,15 @@ import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
  * migrations pass the tolerant reader (migrations/lib/tolerantConfig.js), since
  * they run before migration 0007 has repaired what older releases wrote.
  */
-export function configureManagers({ getConfig = getConfigSync } = {}) {
+export function configureManagers({ getConfig = getConfigSync, logger } = {}) {
   const cfg = getConfig();
-  configureVmManager({ vmsPath: cfg.vmsPath });
+  configureHost({ logger });
+  configureStorage({ logger });
+  configureNetworking({ logger });
+  configureMdns({ logger });
+  configureVmManager({ vmsPath: cfg.vmsPath, logger });
   configureContainerManager({
+    logger,
     containersPath: cfg.containersPath,
     resolveMount: (id) => {
       if (typeof id !== 'string' || !id) return null;
@@ -59,7 +69,7 @@ export function configureManagers({ getConfig = getConfigSync } = {}) {
  */
 export async function connectManagers(log, { watchEvents = true } = {}) {
   try {
-    await connectLibvirt(log, { watchEvents });
+    await connectLibvirt({ watchEvents });
   } catch (err) {
     log.warn({ err }, watchEvents
       ? 'libvirt connection failed — retrying; VM operations unavailable until it connects'
@@ -67,7 +77,7 @@ export async function connectManagers(log, { watchEvents = true } = {}) {
   }
 
   try {
-    await connectContainerd({ logger: log, watchEvents });
+    await connectContainerd({ watchEvents });
   } catch (err) {
     log.warn({ err }, 'containerd connection failed — container operations will be unavailable');
   }

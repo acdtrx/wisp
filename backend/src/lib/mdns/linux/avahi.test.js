@@ -59,7 +59,7 @@ mock.module(new URL('./forwarder.js', import.meta.url).href, {
 });
 mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 
-const { connect, disconnect, registerAddress } = await import('./avahi.js');
+const { configure, connect, disconnect, registerAddress } = await import('./avahi.js');
 const log = { debug() {}, info() {}, warn() {}, error() {} };
 
 /** Let promises settle between fake clock steps. */
@@ -78,7 +78,8 @@ async function advance(seconds) {
 test('a bus that fails is reopened, and a reopen that succeeds ends the retries', async () => {
   fake.healthy = true;
   fake.buses.length = 0;
-  await connect(log);
+  configure({ logger: log });
+  await connect();
   assert.equal(fake.buses.length, 1);
   fake.buses[0].bus.emit('error', new Error('write EPIPE'));
   await settle();
@@ -92,7 +93,8 @@ test('a bus that fails is reopened, and a reopen that succeeds ends the retries'
 test('a bus that keeps failing is retried on a backoff capped at 30 s, never faster', async () => {
   fake.healthy = true;
   fake.buses.length = 0;
-  await connect(log);
+  configure({ logger: log });
+  await connect();
   fake.healthy = false;
   const failedAt = Date.now();
   fake.buses[0].bus.emit('error', new Error('write EPIPE'));
@@ -114,7 +116,8 @@ test('a bus that keeps failing is retried on a backoff capped at 30 s, never fas
 test('a bus that fails after disconnect is not reopened', async () => {
   fake.healthy = true;
   fake.buses.length = 0;
-  await connect(log);
+  configure({ logger: log });
+  await connect();
   const { bus } = fake.buses[0];
   await disconnect();
   bus.emit('error', new Error('write EPIPE'));
@@ -125,7 +128,8 @@ test('a bus that fails after disconnect is not reopened', async () => {
 test("the bus connection's 'end' (its socket closed) sets off the same reopen", async () => {
   fake.healthy = true;
   fake.buses.length = 0;
-  await connect(log);
+  configure({ logger: log });
+  await connect();
   fake.buses[0].bus._connection.emit('end');
   await settle();
   await advance(2);
@@ -139,7 +143,8 @@ test('a register in flight when the bus fails is published by the reopen, and no
   fake.healthy = true;
   fake.answersGroups = false;
   fake.buses.length = 0;
-  await connect(log);
+  configure({ logger: log });
+  await connect();
   const inFlight = registerAddress('mi-c', 'mi-c', '10.0.0.5/24', null);
   await settle();
   fake.answersGroups = true;

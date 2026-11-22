@@ -21,6 +21,19 @@ const smbImpl = await import(
   isLinux ? './linux/smbMount.js' : './darwin/smbMount.js',
 );
 
+/** The start's logger, set by configure(): what this module carries on from is logged to it. */
+let logger = null;
+
+/** Boot wiring (lib/managerBootstrap.js): the logger. */
+export function configure(cfg = {}) {
+  logger = cfg.logger ?? null;
+}
+
+/** The configured logger, for this module's own files. */
+export function moduleLogger() {
+  return logger;
+}
+
 export {
   getDiskInfo, inspectDiskImage, imageFormatForFile, getBackingChain, copyAndConvert, resizeDisk,
 } from './diskOps.js';

@@ -13,6 +13,7 @@ const impl = await import(
 export { stripCidr, sanitizeHostname } from './hostname.js';
 export { KNOWN_SERVICE_TYPES, isValidServiceType, isValidServicePort } from './serviceTypes.js';
 
+export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
 export const registerAddress = impl.registerAddress;

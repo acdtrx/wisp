@@ -14,6 +14,19 @@ const managedImpl = await import(
   isLinux ? './linux/managedBridges.js' : './darwin/managedBridges.js',
 );
 
+/** The start's logger, set by configure(): what this module carries on from is logged to it. */
+let logger = null;
+
+/** Boot wiring (lib/managerBootstrap.js): the logger. */
+export function configure(cfg = {}) {
+  logger = cfg.logger ?? null;
+}
+
+/** The configured logger, for this module's own files. */
+export function moduleLogger() {
+  return logger;
+}
+
 export { isVlanLikeBridgeName } from './bridgeNaming.js';
 
 export const listHostBridges = hostImpl.listHostBridges;

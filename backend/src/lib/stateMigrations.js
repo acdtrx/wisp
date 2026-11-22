@@ -106,7 +106,7 @@ function buildContext(migration, { log, changes }) {
 
 /** Run `pending` in order, writing the ledger after each; the first failure stops the run. */
 async function runPending(pending, ledger, log) {
-  configureManagers({ getConfig: getTolerantConfig });
+  configureManagers({ getConfig: getTolerantConfig, logger: log });
   await connectManagers(log, { watchEvents: false });
   let current = ledger;
   try {

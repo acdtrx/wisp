@@ -10,6 +10,7 @@ import { checkRouteAccess, AUTH_LEVELS, checkPasswordFile } from './lib/auth.js'
 import { createAppError } from './lib/appErrors.js';
 import { configPathOverrideProblem, getConfigSync, isInstalledTree } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
+import { setLog } from './lib/log.js';
 import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
 import { migrateState } from './lib/stateMigrations.js';
 import { notifySystemdReady, takeNotifySocket } from './lib/systemdReady.js';
@@ -24,7 +25,7 @@ import {
 } from './lib/containerBackupScheduler.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
-import { configure as configureHost, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
+import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
 import { cancelInterruptibleJobs, refuseNewJobs } from './lib/jobs/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
@@ -148,11 +149,12 @@ let app = null;
 async function main() {
   takeNotifySocket();
   const log = createStartLogger();
+  setLog(log);
 
   // `npm run route-access`: every route with the level the auth hook enforces
   // for it, then exit without migrating, connecting or listening.
   if (process.env.WISP_ROUTE_ACCESS_REPORT === '1') {
-    configureManagers();
+    configureManagers({ logger: log });
     const { routeAccess } = await buildApp(log);
     process.exit(printRouteAccessReport(routeAccess.list()));
   }
@@ -162,11 +164,10 @@ async function main() {
   await checkStoredConfig();
   // Before any route registers or any manager-internal code runs
   // (lib/managerBootstrap.js), now with the strict config.
-  configureManagers();
+  configureManagers({ logger: log });
 
   const built = await buildApp(log);
   app = built.app;
-  configureHost({ logger: app.log });
   // Development refuses to boot on a route without an access declaration;
   // production enforces it as admin.
   checkRouteAccess(built.routeAccess.list(), { strict: isDev, log: app.log });
@@ -176,7 +177,7 @@ async function main() {
   await connectManagers(app.log);
   // The forwarder answers the host's own .local name from the bridge new
   // containers attach to — the segment containers reach the host on.
-  await connectMdns(app.log, { hostInterface: await getDefaultContainerParentBridge() });
+  await connectMdns({ hostInterface: await getDefaultContainerParentBridge() });
 
   // Disk monitor must populate its snapshot before ensureMounts can reconcile disk entries.
   startDiskMonitor();

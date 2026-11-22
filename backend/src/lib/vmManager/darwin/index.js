@@ -9,9 +9,11 @@ import { vmError } from '../vmManagerShared.js';
 export { parseVMFromXML };
 export { isShutOff } from '../linux/libvirtConstants.js';
 
-export function configure() {
-  /* macOS dev stub: no on-disk VM directories. configure() kept symmetric with
-     Linux so backend/src/index.js can call it unconditionally. */
+let logger = null;
+
+export function configure(cfg = {}) {
+  /* macOS dev stub: no on-disk VM directories; only the logger is kept. */
+  logger = cfg.logger ?? null;
 }
 
 function noConn() {
@@ -19,10 +21,7 @@ function noConn() {
 }
 
 export async function connect() {
-  // Boot-time message before any Pino logger is available; console is
-  // intentional here so the dev server's stderr clearly shows that libvirt
-  // is offline (vmManager has no logger plumbed yet).
-  console.warn('[vmManager] macOS detected — running without libvirt (dev mode)');
+  logger?.warn('[vmManager] macOS detected — running without libvirt (dev mode)');
 }
 
 export function disconnect() {}

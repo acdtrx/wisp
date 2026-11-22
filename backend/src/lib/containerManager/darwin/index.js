@@ -8,6 +8,7 @@ import { setOperationLockAcquirer } from '../linux/containerOperationGuard.js';
 export function configure(cfg) {
   setContainerManagerConfig(cfg);
   setOperationLockAcquirer(cfg.tryAcquireOperationLock);
+  if (cfg.logger) containerState.logger = cfg.logger;
 }
 
 export {
@@ -27,8 +28,7 @@ const containerState = {
   logger: null,
 };
 
-export async function connect(opts = {}) {
-  if (opts.logger) containerState.logger = opts.logger;
+export async function connect() {
   containerState.logger?.warn('macOS detected — running without containerd (dev mode)');
 }
 
@@ -36,7 +36,6 @@ export function disconnect() {
   containerState.clients = null;
   containerState.connected = false;
   containerState.containerStartTimes.clear();
-  containerState.logger = null;
 }
 
 function noContainerd() {

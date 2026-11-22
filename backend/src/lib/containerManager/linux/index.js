@@ -13,10 +13,12 @@ import {
   setMountFileMode as setMountFileModeImpl,
 } from './containerManagerMountsContent.js';
 import { setOperationLockAcquirer } from './containerOperationGuard.js';
+import { containerState } from './containerManagerConnection.js';
 
 export function configure(cfg) {
   setContainerManagerConfig(cfg);
   setOperationLockAcquirer(cfg.tryAcquireOperationLock);
+  if (cfg.logger) containerState.logger = cfg.logger;
 }
 
 export {

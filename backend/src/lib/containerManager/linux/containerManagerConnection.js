@@ -349,11 +349,10 @@ function buildClients() {
 }
 
 /**
- * @param {{ logger?: import('fastify').FastifyBaseLogger, watchEvents?: boolean }} [opts]
+ * @param {{ watchEvents?: boolean }} [opts]
  *   watchEvents false: connection and calls only — see containerState.watchEvents.
  */
 export async function connect(opts = {}) {
-  if (opts.logger) containerState.logger = opts.logger;
   if (typeof opts.watchEvents === 'boolean') containerState.watchEvents = opts.watchEvents;
 
   if (containerState.connected) return;

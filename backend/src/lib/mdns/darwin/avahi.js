@@ -2,6 +2,8 @@
  * mDNS stub (macOS dev): no Avahi; registration is a no-op.
  */
 
+export function configure() {}
+
 export async function connect() {}
 
 export async function disconnect() {}

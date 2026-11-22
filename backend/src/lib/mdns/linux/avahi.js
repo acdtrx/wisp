@@ -112,7 +112,7 @@ const state = {
   hostFqdn: null,
   /** Bumped per refreshHostFqdn call — only the newest call may store its result. */
   hostFqdnSeq: 0,
-  /** Pino-compatible logger plumbed via connect(); falls back to console for boot-time paths. */
+  /** The start's logger, set by configure(). */
   logger: null,
   /** Between connect() and disconnect(): a failed bus is reopened only while open. */
   open: false,
@@ -474,14 +474,17 @@ async function reregisterAll() {
   }
 }
 
+/** Hand the module the start's logger (lib/managerBootstrap.js style: before connect). */
+export function configure({ logger = null } = {}) {
+  state.logger = logger;
+}
+
 /**
- * @param {object|null} logger Pino-compatible logger.
  * @param {{ hostInterface?: string|null }} [opts] `hostInterface` — the
  *   interface (the containers' bridge) whose addresses the forwarder answers
  *   the host's own `.local` name with. See forwarder.js.
  */
-export async function connect(logger = null, { hostInterface = null } = {}) {
-  state.logger = logger;
+export async function connect({ hostInterface = null } = {}) {
   state.open = true;
   await ensureBus();
   await installAvahiWatch();
@@ -489,7 +492,7 @@ export async function connect(logger = null, { hostInterface = null } = {}) {
   // Not awaited: a stalled avahi must not hold up boot. Until the first read
   // lands the host name takes the forwarder's avahi slow path.
   refreshHostFqdn();
-  await startForwarder(logger, {
+  await startForwarder(state.logger, {
     lookups: { lookupLocalEntry, getHostFqdn, resolveLocalName, resolveLocalAddress },
     hostInterface,
   });

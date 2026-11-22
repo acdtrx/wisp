@@ -46,7 +46,7 @@ export const connectionState = {
   domainProxyCache: new Map(),
   /** libvirt's and QEMU's versions, read at each connect: `{ libvirt, qemu }`, or null. */
   versions: null,
-  /** Pino-compatible logger plumbed via connect(); null until connected. */
+  /** The start's logger, set by configure(); null until configured. */
   logger: null,
   /** false (connect option): no DomainEvent listener, no QEMU-binary watcher,
    *  no restart-flag clearing, no guest-agent listeners, uncached VM list — for
@@ -291,8 +291,7 @@ function handleBusError(bus, err) {
  *   watchEvents false: connection and calls only — see connectionState.watchEvents.
  *   Omitted (as on a reconnect) keeps the current setting.
  */
-export async function connect(logger = null, opts = {}) {
-  if (logger) connectionState.logger = logger;
+export async function connect(opts = {}) {
   if (typeof opts.watchEvents === 'boolean') connectionState.watchEvents = opts.watchEvents;
   const bus = dbus.systemBus();
   /* Attached at creation: an 'error' with no listener would crash the process. */

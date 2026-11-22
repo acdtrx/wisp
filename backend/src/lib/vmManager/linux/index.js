@@ -2,6 +2,7 @@
  * Linux vmManager implementation (libvirt over DBus).
  */
 import { setVmManagerPaths } from './vmManagerPaths.js';
+import { connectionState } from './vmManagerConnection.js';
 import { announcingVMChange, announcingVMBackupDeleted } from './vmManagerChange.js';
 import { deleteBackup as deleteBackupImpl } from './vmManagerBackup.js';
 import {
@@ -23,6 +24,7 @@ import { attachISO as attachISOImpl, ejectISO as ejectISOImpl } from './vmManage
 
 export function configure(cfg) {
   setVmManagerPaths(cfg);
+  if (cfg.logger) connectionState.logger = cfg.logger;
 }
 
 export {
