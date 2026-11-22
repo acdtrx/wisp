@@ -20,8 +20,9 @@
  *   wait (scripts/linux/setup/step.sh, step_stop).
  *
  * The unit's stop budget must cover the worst case after its start times out:
- * the stopped setup ending (a setup can be stopped there, and in the rollback),
- * then the whole rollback, each part at its bound and its kill. The frontend
+ * the stopped install ending (scripts/linux/install-tree.sh, which ends within
+ * setup's stop bound; one can be stopped there, and in the rollback), then the
+ * whole rollback, each part at its bound and its kill. The frontend
  * waits the unit's start timeout and its stop budget. The updater's bound on
  * stopping wisp.service covers systemd's own stop of it — TimeoutStopSec for
  * the TERM, the same again after the KILL — and WISP_STOP_MARGIN_SEC more, so
@@ -67,7 +68,7 @@ const SETUP_STOP_SEC = setupBound('SETUP_STOP_SEC');
 const NET_CMD_SEC = setupBound('NET_CMD_SEC');
 const UDEV_CALL_SEC = setupBound('UDEV_CALL_SEC');
 const u = assignments('backend/scripts/wisp-updater', ['KILL_GRACE_SEC', 'STOP_WISP_SEC', 'ROLLBACK_RESTORE_SEC',
-  'ROLLBACK_SETUP_SEC', 'DAEMON_RELOAD_SEC', 'ROLLBACK_START_WAIT_SEC', 'STATUS_SEC']);
+  'ROLLBACK_INSTALL_SEC', 'STATUS_SEC']);
 const unit = assignments('systemd/linux/wisp-updater.service', ['TimeoutStartSec', 'TimeoutStopSec']);
 const wisp = assignments('systemd/linux/wisp.service', ['TimeoutStopSec']);
 const updaterLock = assignments('backend/scripts/wisp-updater', ['WISP_LOCK'], '\\S+');
@@ -81,14 +82,16 @@ if (!limit) problems.push(`${FRONTEND}: no "const UPDATER_LIMIT_MS = (<start> + 
 
 if (problems.length === 0) {
   const g = u.KILL_GRACE_SEC;
-  // The step running when the start times out, stopped: setup is the longest.
+  // The install running when the start times out, stopped: it ends within
+  // setup's stop bound (scripts/linux/install-tree.sh passes the TERM on).
   const stopped = SETUP_STOP_SEC;
+  // Then the rollback: stop wisp, restore the tree, the restored tree's install
+  // (past its limit, a TERM, and setup's stop bound again), wisp's state.
   const rollback = (u.STOP_WISP_SEC + g) + (u.ROLLBACK_RESTORE_SEC + g)
-    + (u.ROLLBACK_SETUP_SEC + SETUP_STOP_SEC) + (u.DAEMON_RELOAD_SEC + g)
-    + (u.ROLLBACK_START_WAIT_SEC + g) + (u.STATUS_SEC + g);
+    + (u.ROLLBACK_INSTALL_SEC + SETUP_STOP_SEC) + (u.STATUS_SEC + g);
   const need = stopped + rollback;
   if (unit.TimeoutStopSec < need) {
-    problems.push(`systemd/linux/wisp-updater.service: TimeoutStopSec=${unit.TimeoutStopSec} is below the worst case of a stopped update, ${need} s (setup stopped, ${stopped} s; then the rollback, ${rollback} s)`);
+    problems.push(`systemd/linux/wisp-updater.service: TimeoutStopSec=${unit.TimeoutStopSec} is below the worst case of a stopped update, ${need} s (the install stopped, ${stopped} s; then the rollback, ${rollback} s)`);
   }
   if (u.STOP_WISP_SEC < 2 * wisp.TimeoutStopSec + WISP_STOP_MARGIN_SEC) {
     problems.push(`backend/scripts/wisp-updater: STOP_WISP_SEC=${u.STOP_WISP_SEC} is below systemd's own stop of wisp.service, 2 × its TimeoutStopSec=${wisp.TimeoutStopSec}, and a margin of ${WISP_STOP_MARGIN_SEC} s`);

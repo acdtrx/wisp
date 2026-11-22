@@ -7,25 +7,22 @@
 #     sudo -n systemctl start --no-block wisp-updater.service
 #
 # Steps (echoed to journald):
-#   stop-service → snapshot → swap → setup → start-service → done
-# setup is the install's setup (scripts/linux/setup/common-steps.sh from the
-# swapped tree): it carries the backend's dependencies and wisp.service too.
-# start-service is the health gate: wisp.service is Type=notify, so
+#   stop-service → snapshot → install → done
+# install is the new tree's own install (scripts/linux/install-tree.sh from the
+# staged tree): the copy by the one rule of what an install keeps, setup, and
+# the start, which is the health gate: wisp.service is Type=notify, so
 # `systemctl start` returns once the new backend is ready (state migrations run,
 # listening) and fails as soon as it exits first, a failed migration included.
+# What this script keeps for itself: the lock, the stop before the copy it
+# keeps, the copy (<install>.prev) and the way back.
 #
-# On any failure after `snapshot` — an unhealthy new backend included — rolls
-# back from <install>.prev and exits non-zero.
-# Rollback restores the tree; when setup had already run, it also runs the
-# restored (old) tree's setup again, so helpers, sudoers, units and the backend's
-# dependencies match the code that runs.
-# User config (config/wisp-config.json, wisp-password, runtime.env), the backup
-# status cache (config/backup-status.json), the state-migration ledger
-# (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
-# A rollback restores all of config/ from the snapshot, the ledger included: a
-# migration the new backend ran may have changed config/, and the ledger must
-# revert with it, so every such migration runs again on the next update — safe
-# because migrations are idempotent.
+# On any failure — an unhealthy new backend included — rolls back and exits
+# non-zero: the install folder restored from <install>.prev, all of config/ and
+# the migration ledger with it (a migration the new backend ran may have changed
+# config/, and the ledger reverts with it, so every such migration runs again on
+# the next update — safe because migrations are idempotent), then the restored
+# tree's own install, which sets up the old release's helpers, sudo rules and
+# units, and starts it.
 
 set -uo pipefail
 
@@ -57,34 +54,34 @@ STAGING_PREFIX="$UPDATES_REAL/staging-"
 [[ "$STAGING" != "$INSTALL_DIR" ]] || fail "staging and install dir must differ"
 [[ -f "$STAGING/backend/package.json" ]] || fail "staging dir does not look like a wisp tree"
 
-# Detect deploy user and group from the owner of the install dir (copy.sh sets
-# it to the installing user and their primary group, which need not share the
-# user's name).
+INSTALL_TREE=scripts/linux/install-tree.sh
+[[ -x "$STAGING/$INSTALL_TREE" ]] || fail "the staged tree has no $INSTALL_TREE: this updater installs only a release that ships it"
+
+# The deploy user and group: the install folder's owner, which every install
+# sets (install-tree.sh gives the folder to them).
 DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
+DEPLOY_GROUP="$(stat -c %G "$INSTALL_DIR")"
 [[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != "root" ]] || fail "could not detect non-root deploy user from $INSTALL_DIR"
-DEPLOY_OWNER="$(stat -c %U:%G "$INSTALL_DIR")"
 
 PREV_DIR="${INSTALL_DIR}.prev"
 SERVICE_UNIT=wisp
 
 # The bounds. Each layer owns its own: the updater bounds what it runs itself;
-# setup bounds its own steps and ends within its own stop bound once sent a TERM
-# (scripts/linux/setup/bounds.sh), so the updater sends setup a TERM and waits,
-# and never kills it. When the unit's start times out, systemd sends this script
+# the install (install-tree.sh) ends within setup's own stop bound once sent a
+# TERM (scripts/linux/setup/bounds.sh), so the updater sends it a TERM and
+# waits, and never kills it. When the unit's start times out, systemd sends this script
 # TERM (KillMode=mixed: this process only) and gives it TimeoutStopSec before
 # SIGKILL: the stopped setup ending, then the rollback, each of its parts
-# bounded here — stop wisp, restore the tree, the restored tree's setup (past
-# its limit, a TERM, and setup's own stop bound again), daemon-reload, the
-# start, the read of its state; a part that runs past its bound gets
+# bounded here — stop wisp, restore the tree, the restored tree's install (its
+# setup and its start; past its limit, a TERM, and setup's own stop bound
+# again), the read of wisp's state; a part that runs past its bound gets
 # KILL_GRACE_SEC more to die. scripts/check-bounds.mjs (npm run check) sums the
 # worst case from these numbers and setup's, and fails when the unit's
 # TimeoutStopSec (systemd/linux/wisp-updater.service) is below it.
 KILL_GRACE_SEC=10
 STOP_WISP_SEC=40
 ROLLBACK_RESTORE_SEC=120
-ROLLBACK_SETUP_SEC=300
-DAEMON_RELOAD_SEC=30
-ROLLBACK_START_WAIT_SEC=120
+ROLLBACK_INSTALL_SEC=420
 STATUS_SEC=10
 # The install lock another install, update or setup holds is waited for this
 # long. Its path is setup's too (scripts/linux/setup/lib.sh, WISP_LOCK), kept
@@ -92,22 +89,11 @@ STATUS_SEC=10
 LOCK_WAIT_SEC=600
 WISP_LOCK=/run/wisp.lock
 
-# User-data and runtime scratch must survive the swap rsync.
-RSYNC_EXCLUDES=(
-  --exclude '/config/wisp-config.json'
-  --exclude '/config/wisp-password'
-  --exclude '/config/runtime.env'
-  --exclude '/config/backup-status.json'
-  --exclude '/config/migrations.json'
-  --exclude '/.pids'
-  --exclude '/.logs'
-)
-
 snapshot_taken=0
-host_setup_touched=0
+install_started=0
 
-# One lock for anything that changes the installation, taken before the swap
-# and handed to setup (fd 8).
+# One lock for anything that changes the installation, taken before the stop
+# and handed to the install (fd 8).
 exec 8> "$WISP_LOCK"
 flock -w "$LOCK_WAIT_SEC" 8 || fail "another install, update or setup holds $WISP_LOCK; gave up after ${LOCK_WAIT_SEC} s"
 
@@ -187,50 +173,47 @@ run_child() {
 }
 
 # Runs from the EXIT trap, so it never calls fail/exit. Every step logs its own
-# failure and the rollback carries on to the start — but for the restore of the
-# tree: a tree not restored is neither set up nor started, part old and part
-# new; the rollback ends there and names the manual finish. A rollback that
-# cannot complete leaves `rollback-warning:` lines in the journal
-# (docs/specs/UPDATES.md).
+# failure and the rollback carries on — but for the restore of the tree: a tree
+# not restored is neither set up nor started, part old and part new; the
+# rollback ends there and names the manual finish. A rollback that cannot
+# complete leaves `rollback-warning:` lines in the journal
+# (docs/specs/UPDATES.md). Its last line says what it left in place.
 rollback() {
   echo "step:rollback"
   # After a failed start the new backend may be cycling through
   # Restart=on-failure: stop it before the tree is restored under it.
   run_child "$STOP_WISP_SEC" 0 systemctl stop "$SERVICE_UNIT" 2>/dev/null \
     || echo "rollback-warning: stopping $SERVICE_UNIT failed"
-  if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
+  if [[ "$install_started" -eq 1 && "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     # config/ and its ledger revert together: the migrations the new backend's
     # start ran run again at the next start of a release that ships them (they
     # are idempotent).
     if ! run_child "$ROLLBACK_RESTORE_SEC" 0 sh -c 'rsync -a --delete "$1/" "$2/" && chown -R "$3" "$2"' \
-      restore "$PREV_DIR" "$INSTALL_DIR" "$DEPLOY_OWNER"; then
-      echo "rollback-warning: the tree was not restored from $PREV_DIR, so it is neither set up nor started. Finish by hand, as root: rsync -a --delete $PREV_DIR/ $INSTALL_DIR/; chown -R $DEPLOY_OWNER $INSTALL_DIR; $INSTALL_DIR/scripts/linux/setup/common-steps.sh $INSTALL_DIR $DEPLOY_USER; systemctl start $SERVICE_UNIT"
+      restore "$PREV_DIR" "$INSTALL_DIR" "$DEPLOY_USER:$DEPLOY_GROUP"; then
+      echo "rollback-warning: the tree was not restored from $PREV_DIR, so it is neither set up nor started. Finish by hand, as root: rsync -a --delete $PREV_DIR/ $INSTALL_DIR/; $INSTALL_DIR/$INSTALL_TREE $INSTALL_DIR $INSTALL_DIR $DEPLOY_USER $DEPLOY_GROUP"
+      rollback_left
       return
     fi
-    if [[ "$host_setup_touched" -eq 1 ]]; then
-      # The new release's helpers, sudoers and units may already be installed;
-      # put back the restored tree's own. That tree is the release that
-      # installed this updater, so its setup renders wisp.service too.
-      echo "step:rollback-setup"
-      local old_steps="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
-      if [[ -x "$old_steps" ]]; then
-        run_child "$ROLLBACK_SETUP_SEC" own-bound "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
-          || echo "rollback-warning: the restored tree's setup failed or ran past ${ROLLBACK_SETUP_SEC}s: wisp.service and the helpers may still be the new release's"
-      else
-        echo "rollback-warning: $old_steps missing: wisp.service and the helpers may still be the new release's"
-      fi
-    fi
   fi
-  run_child "$DAEMON_RELOAD_SEC" 0 systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
-  # The restored release is what ran before, there is nothing further to fall
-  # back to, and the rollback must end: its start gets a short wait, and a start
-  # not done by then is reported, not retried. A wait cut short leaves the start
-  # job to systemd.
-  if ! run_child "$ROLLBACK_START_WAIT_SEC" 0 systemctl start "$SERVICE_UNIT"; then
-    local state
-    state="$(run_child "$STATUS_SEC" 0 systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' ')"
-    echo "rollback-warning: the restored release did not start within ${ROLLBACK_START_WAIT_SEC}s (wisp.service: ${state:-unknown})"
+  # The release that ran before, by its own install: the copy is skipped (the
+  # tree is its own source), its setup puts back its helpers, sudo rules and
+  # units, removing what the newer release added, and it is started.
+  echo "step:rollback-install"
+  if [[ -x "$INSTALL_DIR/$INSTALL_TREE" ]]; then
+    run_child "$ROLLBACK_INSTALL_SEC" own-bound "$INSTALL_DIR/$INSTALL_TREE" "$INSTALL_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" \
+      || echo "rollback-warning: the restored release's install failed or ran past ${ROLLBACK_INSTALL_SEC}s (above): its setup or its start did not complete"
+  else
+    echo "rollback-warning: $INSTALL_DIR/$INSTALL_TREE missing: the restored release is neither set up nor started"
   fi
+  rollback_left
+}
+
+# rollback_left: the rollback's last line: wisp.service's state, and what stays
+# behind for the operator.
+rollback_left() {
+  local state
+  state="$(run_child "$STATUS_SEC" 0 systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' ')"
+  echo "rollback: ended; $SERVICE_UNIT is ${state:-unknown}; left in place: the staged tree $STAGING and $TARGET_FILE (the next update replaces both), and the copy $PREV_DIR"
 }
 
 # The EXIT trap first stops TERM and INT from cutting the rollback short: a
@@ -249,35 +232,17 @@ run_child 0 "$KILL_GRACE_SEC" rm -rf "$PREV_DIR" || fail "cannot remove the prev
 run_child 0 "$KILL_GRACE_SEC" rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
 snapshot_taken=1
 
-echo "step:swap"
-run_child 0 "$KILL_GRACE_SEC" rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
-run_child 0 "$KILL_GRACE_SEC" chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
-
-echo "step:setup"
-# The install's setup, by path from the freshly swapped tree, so the step list
-# is whatever THIS release ships: a step added to setup takes effect on the very
-# next update, with no change here. Editing THIS file, by contrast, only takes
-# effect one release later — see docs/specs/UPDATES.md. Setup installs the
-# backend's dependencies (the tree ships without node_modules), renders
-# wisp.service, and refreshes the privileged wisp-* helpers — this script and
-# wisp-updater.service among them, by atomic rename, so the running inode
-# finishes this update. It runs under the lock taken above (fd 8).
-SETUP="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
-[[ -x "$SETUP" ]] || fail "missing $SETUP — releases older than v2.0.2 cannot be installed by this updater"
-host_setup_touched=1
-run_child 0 own-bound "$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
-run_child "$DAEMON_RELOAD_SEC" "$KILL_GRACE_SEC" systemctl daemon-reload || fail "daemon-reload failed"
-
-echo "step:start-service"
-# Blocks until the new backend is ready or has failed (Type=notify; bounded by
-# the unit's TimeoutStartSec, inside this unit's own).
-START_TS="$(date +%s)"
-if ! run_child 0 "$KILL_GRACE_SEC" systemctl start "$SERVICE_UNIT"; then
-  run_child "$STATUS_SEC" "$KILL_GRACE_SEC" journalctl --sync 2>/dev/null || true
-  run_child "$STATUS_SEC" "$KILL_GRACE_SEC" journalctl -u "$SERVICE_UNIT" --since "@$START_TS" -n 20 --no-pager -o cat 2>/dev/null \
-    | sed 's/^/  wisp: /' || true
-  fail "new release did not start"
-fi
+echo "step:install"
+# The new tree's own install, by path from the staged tree: whatever THIS
+# release's install does is what the update does, with no change here. Editing
+# THIS file, by contrast, only takes effect one release later — see
+# docs/specs/UPDATES.md. The install's setup refreshes the privileged wisp-*
+# helpers — this script and wisp-updater.service among them, by atomic rename,
+# so the running inode finishes this update. It runs under the lock taken above
+# (fd 8); its start is the health gate.
+install_started=1
+run_child 0 own-bound "$STAGING/$INSTALL_TREE" "$STAGING" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" \
+  || fail "the new release's install failed (above)"
 
 # Drop staging + target marker after a successful swap. <install>.prev is kept
 # until the next successful update for one-deep manual rollback.
