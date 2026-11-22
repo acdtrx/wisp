@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 # Usage: wisp-power shutdown | reboot
-# Must be run with sufficient privilege (root or sudo).
-set -euo pipefail
+# The host's power actions, for Host → Power. Run through sudo by the backend.
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-CMD="${1:-}"
-case "$CMD" in
-  shutdown)
-    shutdown -h now
-    ;;
-  reboot)
-    shutdown -r now
-    ;;
-  *)
-    echo "Usage: $0 shutdown|reboot" >&2
-    exit 1
-    ;;
+(( $# == 1 )) || refuse "usage: wisp-power shutdown|reboot"
+match_one_of "the action" "$1" shutdown reboot
+
+case "$1" in
+  shutdown) must "$QUICK_SEC" shutdown -h now >/dev/null ;;
+  reboot) must "$QUICK_SEC" shutdown -r now >/dev/null ;;
 esac

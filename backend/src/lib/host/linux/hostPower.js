@@ -6,10 +6,12 @@ import { createAppError } from '../../appErrors.js';
 import { runPrivileged, helperPath } from '../../base/index.js';
 
 const POWER_UNAVAILABLE = 'POWER_UNAVAILABLE';
+/** The helper bounds shutdown at 10 s (+2 to end): this ends after it. */
+const POWER_TIMEOUT_MS = 15_000;
 
 export async function hostShutdown() {
   try {
-    await runPrivileged(helperPath('wisp-power'), ['shutdown'], { timeoutMs: 5000 });
+    await runPrivileged(helperPath('wisp-power'), ['shutdown'], { timeoutMs: POWER_TIMEOUT_MS });
     return { ok: true };
   } catch (err) {
     throw createAppError(POWER_UNAVAILABLE, `Shutdown failed (${err.reason ?? 'error'})`, err.detail ?? err.message);
@@ -18,7 +20,7 @@ export async function hostShutdown() {
 
 export async function hostReboot() {
   try {
-    await runPrivileged(helperPath('wisp-power'), ['reboot'], { timeoutMs: 5000 });
+    await runPrivileged(helperPath('wisp-power'), ['reboot'], { timeoutMs: POWER_TIMEOUT_MS });
     return { ok: true };
   } catch (err) {
     throw createAppError(POWER_UNAVAILABLE, `Reboot failed (${err.reason ?? 'error'})`, err.detail ?? err.message);
