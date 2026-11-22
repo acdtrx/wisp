@@ -72,18 +72,14 @@ const cache = {
   lastError: null,
 };
 
+/** The running release's version: the root package.json's, the one source (every tree ships it). */
 export function getCurrentVersion() {
   try {
     const pkg = JSON.parse(readFileSync(resolve(INSTALL_DIR, 'package.json'), 'utf8'));
     return pkg.version || '0.0.0';
   } catch {
-    /* root package.json missing during dev — fall back to backend's, which always exists */
-    try {
-      const pkg = JSON.parse(readFileSync(resolve(INSTALL_DIR, 'backend/package.json'), 'utf8'));
-      return pkg.version || '0.0.0';
-    } catch {
-      return '0.0.0';
-    }
+    /* No readable package.json: no version to compare with, so every release is newer. */
+    return '0.0.0';
   }
 }
 
@@ -443,13 +439,13 @@ export async function downloadAndStage(onProgress, signal) {
   /* Tarball top-level dir is `wisp/`; --strip-components=1 puts contents at stagingDir root. */
   await extractTarball(tarballPath, stagingDir);
 
-  /* Sanity-check: backend/package.json must exist with the expected version. */
+  /* Sanity-check: the staged tree's root package.json holds the expected version. */
   let stagingVersion = null;
   try {
-    const stagingPkg = JSON.parse(readFileSync(join(stagingDir, 'backend/package.json'), 'utf8'));
+    const stagingPkg = JSON.parse(readFileSync(join(stagingDir, 'package.json'), 'utf8'));
     stagingVersion = stagingPkg.version;
   } catch (err) {
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree is missing backend/package.json', err.message);
+    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree is missing its package.json', err.message);
   }
   if (stagingVersion !== version) {
     throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Staged tree version mismatch', `expected ${version}, got ${stagingVersion}`);

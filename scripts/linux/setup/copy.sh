@@ -30,10 +30,9 @@ if [[ "$SOURCE_REAL" == "$INSTALL_REAL" ]]; then
   exit 0
 fi
 
-# Root package.json is the canonical version source — wispUpdate.js reads it
-# first; absence triggers a silent fallback to backend/package.json. Refuse to
-# install a tree that's missing it instead of leaving the install in a state
-# that lies about its version.
+# The root package.json is the version's one source (wispUpdate.js reads the
+# running release's, and a staged tree's, there only): refuse a tree without it
+# rather than install one that has no version.
 if [[ ! -f "$SOURCE_DIR/package.json" ]]; then
   echo "ERROR: Missing root package.json in source tree: $SOURCE_DIR"
   exit 1

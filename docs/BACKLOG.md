@@ -7,6 +7,15 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**The version is still written in three package.json files.** The root's is the one
+source since privileged helpers milestone 2 (2026-11-22): the running release's version and
+a staged tree's are read there only. `backend/package.json` and `frontend/package.json`
+still carry it, `scripts/release.sh` writes all three (and their lockfiles), and the
+release workflow asserts the three agree, because a release before that one checks a
+staged tree's `backend/package.json` and would refuse an update without it. **Revisit
+trigger:** the first release cut after the one that ships the root-only staging check:
+then the two versions, their writes and their assertion can go.
+
 **There is no complete uninstall.** Nothing removes what an install put on a host:
 `wisp.service` and `wisp-updater.service`, the `wisp-*` helpers and their sudo rules, the
 container DNS stub's netplan file, the CNI plugins and `cni-dhcp.service`; and nothing
