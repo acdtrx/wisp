@@ -13,8 +13,6 @@ const WISP_KEYS = {
   WISP_PORT: checkPort,
   WISP_CONFIG_PATH: checkAbsolute,
   WISP_DEFAULT_BRIDGE: checkInterfaceName, // existence: networking, at startup
-  WISP_CNI_BIN_DIR: checkAbsolute,
-  WISP_CNI_CONF_DIR: checkAbsolute,
   WISP_CONTAINERD_SOCK: checkAbsolute,
   WISP_ALLOWED_WS_ORIGINS: checkOriginList,
   WISP_UPDATE_REPO: checkRepo,
@@ -33,8 +31,10 @@ export const RETIRED_PORT_KEYS = Object.freeze(['WISP_BACKEND_PORT', 'WISP_FRONT
 export const RETIRED_HELPER_PATH_KEYS = Object.freeze([
   'WISP_POWER_SCRIPT', 'WISP_DMIDECODE_SCRIPT', 'WISP_SMARTCTL_SCRIPT', 'WISP_NETNS_SCRIPT', 'WISP_CNI_SCRIPT',
 ]);
+/** The CNI folders: wisp-cni names the plugins' and writes the network itself (removed by migration 0015). */
+export const RETIRED_CNI_DIR_KEYS = Object.freeze(['WISP_CNI_BIN_DIR', 'WISP_CNI_CONF_DIR']);
 /** Every retired key: tolerated at the start, until its migration has removed it. */
-export const RETIRED_ENV_KEYS = Object.freeze([...RETIRED_PORT_KEYS, ...RETIRED_HELPER_PATH_KEYS]);
+export const RETIRED_ENV_KEYS = Object.freeze([...RETIRED_PORT_KEYS, ...RETIRED_HELPER_PATH_KEYS, ...RETIRED_CNI_DIR_KEYS]);
 
 /** A line assigning one of `keys` (optionally `export`-prefixed), or null. */
 export function retiredKeyOfLine(line, keys = RETIRED_ENV_KEYS) {
