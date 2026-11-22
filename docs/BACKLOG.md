@@ -111,16 +111,6 @@ would let every view show it: a wire change (found in the frontend data flow
 milestone 3 run, 2026-11-21). **Revisit trigger:** a user missing the flagged count
 after a reload or a scheduled check.
 
-**A workload list answers an empty list when its manager is down.** Outside the start's
-migrations, `listVMs` answers `[]` while libvirt is not connected
-(`fetchVMListFromLibvirt`), and `listContainers` answers `[]` when the containers
-directory cannot be read, so the `vms` and `containers` topics send a good, empty frame
-for "unknown" and the sidebar shows no workloads rather than an error. The client no
-longer reads an empty frame as "everything was deleted" (found 2026-11-20, phase 4).
-It belongs with phase 5's "strict manager" ruling (C-5, V-8): a list that cannot be read
-fails. **Revisit trigger:** phase 5, or a user seeing an empty sidebar while libvirt or
-containerd is down.
-
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
