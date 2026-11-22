@@ -29,10 +29,9 @@ import {
 } from './containerManagerConnection.js';
 import { subscribeContainerListChange, listContainers } from './containerManagerList.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-import { discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
-import { ipv6GlobalCidrFromProcIfInet6 } from '../../networking/index.js';
+import { ipv4CidrFromProcFibTrie, ipv6GlobalCidrFromProcIfInet6 } from '../../networking/index.js';
 
 const PERIODIC_INTERVAL_MS = 60_000;
 
@@ -77,9 +76,9 @@ async function probeAndEmit(name, state) {
 
   let liveIp = null;
   try {
-    liveIp = await discoverIpv4InNetnsOnce(name, 'eth0', pid || null);
+    if (pid > 0) liveIp = await ipv4CidrFromProcFibTrie(pid);
   } catch {
-    /* netns missing or helper failed — treat as "no IP this tick" */
+    /* task gone mid-tick — treat as "no IP this tick" */
   }
 
   let liveIp6 = null;

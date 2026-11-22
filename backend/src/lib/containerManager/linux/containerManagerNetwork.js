@@ -18,9 +18,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { containerError, containerState } from './containerManagerConnection.js';
-import { CONTAINER_NETNS_DIR, getContainerNetnsPath } from './containerPaths.js';
+import { getContainerNetnsPath } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-import { ipv4CidrFromProcFibTrie, isVlanLikeBridgeName } from '../../networking/index.js';
+import { isVlanLikeBridgeName } from '../../networking/index.js';
 
 const execFile = promisify(execFileCb);
 
@@ -48,7 +48,9 @@ const CNI_CONF_NAME = '10-wisp-bridge.conflist';
 const NETNS_INSTALLED = '/usr/local/bin/wisp-netns';
 const CNI_INSTALLED = '/usr/local/bin/wisp-cni';
 
-/** The installed helper, an explicit override, or null (no helper → unprivileged fallbacks). */
+const RUN_SETUP = 'run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)';
+
+/** An explicit override, else the installed helper; none installed fails the step with "run setup". */
 async function resolveHelper(overrideEnv, installedPath) {
   const override = process.env[overrideEnv];
   if (override) return override;
@@ -56,7 +58,7 @@ async function resolveHelper(overrideEnv, installedPath) {
     await access(installedPath);
     return installedPath;
   } catch {
-    return null; // not installed: callers take their no-helper path
+    throw containerError('CONTAINERD_ERROR', `Wisp's helper ${installedPath} is not installed: ${RUN_SETUP}`);
   }
 }
 
@@ -107,25 +109,12 @@ async function assertIsLinuxBridge(iface) {
  * entry is missing those fields. The bridge (and DHCP IPAM) plugins require a full
  * netconf — without `name`, ADD fails immediately with an opaque exit code.
  */
-function executablePluginNetconf(cniDoc, pluginIndex = 0) {
-  if (cniDoc.plugins?.length) {
-    const p = { ...cniDoc.plugins[pluginIndex] };
-    return {
-      ...p,
-      cniVersion: cniDoc.cniVersion || p.cniVersion || '1.0.0',
-      name: cniDoc.name || p.name || 'wisp-bridge',
-      type: p.type || 'bridge',
-    };
-  }
-  const copy = { ...cniDoc };
-  if (!copy.cniVersion) copy.cniVersion = '1.0.0';
-  if (!copy.name) copy.name = 'wisp-bridge';
-  if (!copy.type) copy.type = 'bridge';
-  return copy;
+function executablePluginNetconf(cniDoc) {
+  return { ...cniDoc.plugins[0], cniVersion: cniDoc.cniVersion, name: cniDoc.name };
 }
 
 function buildPluginConfig(cniConfig, networkConfig = {}) {
-  const pluginConfig = executablePluginNetconf(cniConfig, 0);
+  const pluginConfig = executablePluginNetconf(cniConfig);
 
   if (networkConfig.interface) {
     pluginConfig.bridge = String(networkConfig.interface).trim();
@@ -147,36 +136,35 @@ function buildPluginConfig(cniConfig, networkConfig = {}) {
 }
 
 /**
- * Read the Wisp bridge CNI config. Creates a default one if it doesn't exist.
+ * The Wisp bridge conflist setup writes (`cni.sh`): missing, unparsable or
+ * without its bridge plugin fails the network step, naming the file.
  */
 async function getCNIConfig() {
   const confPath = join(CNI_CONF_DIR, CNI_CONF_NAME);
+  let doc;
   try {
-    const raw = await readFile(confPath, 'utf8');
-    return JSON.parse(raw);
+    doc = JSON.parse(await readFile(confPath, 'utf8'));
+  } catch (err) {
+    throw containerError('CONTAINER_NETWORK_SETUP_FAILED', `The CNI network file ${confPath} is missing or not valid JSON: ${RUN_SETUP}`, err.message);
+  }
+  if (!doc?.cniVersion || !doc.name || doc.plugins?.[0]?.type !== 'bridge') {
+    throw containerError('CONTAINER_NETWORK_SETUP_FAILED', `The CNI network file ${confPath} is not Wisp's bridge network: ${RUN_SETUP}`);
+  }
+  return doc;
+}
+
+/** A plugin's answer: empty is `{}` (a DEL), anything else must be JSON. */
+function parseCniStdout(stdout, command, containerID) {
+  if (!stdout || !stdout.trim()) return {};
+  try {
+    return JSON.parse(stdout);
   } catch {
-    return {
-      cniVersion: '1.0.0',
-      name: 'wisp-bridge',
-      plugins: [
-        {
-          type: 'bridge',
-          bridge: 'br0',
-          isGateway: false,
-          isDefaultGateway: false,
-          ipMasq: false,
-          hairpinMode: false,
-          promiscMode: false,
-          forceAddress: false,
-          ipam: { type: 'dhcp' },
-        },
-      ],
-    };
+    throw containerError('CONTAINERD_ERROR', `CNI ${command} for "${containerID}" answered something that is not JSON`, stdout.slice(0, 500));
   }
 }
 
 /**
- * Execute a CNI plugin (via wisp-cni + sudo when not root).
+ * Execute a CNI plugin through wisp-cni (sudo when not root).
  */
 async function execCNI(plugin, command, containerID, netns, config) {
   const cniScript = await resolveCniScript();
@@ -184,53 +172,18 @@ async function execCNI(plugin, command, containerID, netns, config) {
   const confPath = join(tmpDir, 'plugin.json');
   await writeFile(confPath, JSON.stringify(config), { encoding: 'utf8', mode: 0o600 });
 
-  const env = {
-    ...process.env,
-    CNI_PATH: CNI_BIN_DIR,
-  };
-
+  let stdout;
   try {
-    if (cniScript) {
-      const tail = [command, plugin, containerID, netns, confPath, CNI_BIN_DIR];
-      const execOpts = {
-        env,
-        timeout: 30000,
-        maxBuffer: 8 * 1024 * 1024,
-        encoding: 'utf8',
-      };
-      const { stdout } = isRoot()
-        ? await execFile(cniScript, tail, execOpts)
-        : await execFile('sudo', ['-n', cniScript, ...tail], execOpts);
-      try {
-        return stdout ? JSON.parse(stdout) : {};
-      } catch {
-        /* CNI stdout not JSON — treat as empty result */
-        return {};
-      }
-    }
-
-    // Fallback: direct plugin (dev as root only; usually fails for deploy user)
-    const binPath = join(CNI_BIN_DIR, plugin);
-    const { stdout } = await execFile(binPath, [], {
-      env: {
-        ...env,
-        CNI_COMMAND: command,
-        CNI_CONTAINERID: containerID,
-        CNI_NETNS: netns,
-        CNI_IFNAME: 'eth0',
-        CNI_PATH: CNI_BIN_DIR,
-      },
-      input: JSON.stringify(config),
+    const tail = [command, plugin, containerID, netns, confPath, CNI_BIN_DIR];
+    const execOpts = {
+      env: { ...process.env, CNI_PATH: CNI_BIN_DIR },
       timeout: 30000,
       maxBuffer: 8 * 1024 * 1024,
       encoding: 'utf8',
-    });
-    try {
-      return stdout ? JSON.parse(stdout) : {};
-    } catch {
-      /* CNI stdout not JSON — treat as empty result */
-      return {};
-    }
+    };
+    ({ stdout } = isRoot()
+      ? await execFile(cniScript, tail, execOpts)
+      : await execFile('sudo', ['-n', cniScript, ...tail], execOpts));
   } catch (err) {
     const se = typeof err.stderr === 'string' ? err.stderr : (err.stderr?.toString() || '');
     const sx = typeof err.stdout === 'string' ? err.stdout : (err.stdout?.toString() || '');
@@ -244,68 +197,39 @@ async function execCNI(plugin, command, containerID, netns, config) {
     /* Best-effort cleanup of temp CNI config dir; ignore if already removed */
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
+  return parseCniStdout(stdout, command, containerID);
 }
 
 /**
- * Create a network namespace for a container (privileged via wisp-netns when needed).
+ * Create a network namespace for a container through wisp-netns (sudo when not root).
  */
 async function ensureNetNS(name) {
   const nsPath = getContainerNetnsPath(name);
-  const netnsScript = await resolveNetnsScript();
-
   try {
     await access(nsPath);
     return nsPath;
   } catch {
     /* need to create */
   }
-
-  if (netnsScript) {
-    try {
-      if (isRoot()) {
-        await execFile(netnsScript, ['add', name], { timeout: 15000 });
-      } else {
-        await execFile('sudo', ['-n', netnsScript, 'add', name], { timeout: 15000 });
-      }
-    } catch (err) {
-      throw containerError(
-        'CONTAINERD_ERROR',
-        `Failed to create netns for "${name}". Install the helpers: run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)`,
-        err.stderr?.toString() || err.message,
-      );
-    }
-    try {
-      await access(nsPath);
-      return nsPath;
-    } catch {
-      throw containerError('CONTAINERD_ERROR', `Netns path missing after create: ${nsPath}`);
-    }
-  }
-
-  // No helper: try unprivileged mkdir + ip (fails for typical deploy user)
+  const netnsScript = await resolveNetnsScript();
   try {
-    await access(CONTAINER_NETNS_DIR);
-  } catch {
-    throw containerError(
-      'CONTAINERD_ERROR',
-      `Cannot use ${CONTAINER_NETNS_DIR} without wisp-netns. Run setup as root: <install-dir>/scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>.`,
-      'EACCES or missing helper',
-    );
-  }
-
-  try {
-    await execFile('ip', ['netns', 'add', name], { timeout: 15000 });
-    return nsPath;
+    if (isRoot()) {
+      await execFile(netnsScript, ['add', name], { timeout: 15000 });
+    } else {
+      await execFile('sudo', ['-n', netnsScript, 'add', name], { timeout: 15000 });
+    }
   } catch (err) {
-    const msg = `${err.message || ''} ${err.stderr?.toString() || ''}`;
-    if (/file exists|already exists/i.test(msg)) {
-      return nsPath;
-    }
     throw containerError(
       'CONTAINERD_ERROR',
-      `Failed to create netns for "${name}". Install wisp-netns (see DEPLOYMENT.md).`,
-      msg.trim(),
+      `Failed to create netns for "${name}". Install the helpers: ${RUN_SETUP}`,
+      err.stderr?.toString() || err.message,
     );
+  }
+  try {
+    await access(nsPath);
+    return nsPath;
+  } catch {
+    throw containerError('CONTAINERD_ERROR', `Netns path missing after create: ${nsPath}`);
   }
 }
 
@@ -343,16 +267,22 @@ async function removeNetNS(name) {
     return; // no netns, nothing to remove
   }
   const netnsScript = await resolveNetnsScript();
-  if (netnsScript) {
-    if (isRoot()) {
-      await execFile(netnsScript, ['delete', name], { timeout: 15000 });
-    } else {
-      await execFile('sudo', ['-n', netnsScript, 'delete', name], { timeout: 15000 });
-    }
+  if (isRoot()) {
+    await execFile(netnsScript, ['delete', name], { timeout: 15000 });
   } else {
-    await execFile('ip', ['netns', 'delete', name], { timeout: 15000 });
+    await execFile('sudo', ['-n', netnsScript, 'delete', name], { timeout: 15000 });
   }
   notifyContainerNetnsRemoved(name);
+}
+
+const IPV4_CIDR_RE = /^\d{1,3}(?:\.\d{1,3}){3}\/\d{1,2}$/;
+
+/**
+ * An IPv4 entry of a CNI result's `ips`: by its address (CNI 1.0 results carry
+ * no `version`; 0.4 ones say "4").
+ */
+function isIpv4Entry(e) {
+  return !!e && typeof e.address === 'string' && IPV4_CIDR_RE.test(e.address);
 }
 
 /**
@@ -360,102 +290,18 @@ async function removeNetNS(name) {
  */
 export function primaryIPv4FromCni(ips) {
   if (!Array.isArray(ips)) return null;
-  for (const e of ips) {
-    if (e && String(e.version) === '4' && typeof e.address === 'string' && e.address.length) {
-      return e.address;
-    }
-  }
-  return null;
+  return ips.find(isIpv4Entry)?.address ?? null;
 }
 
 function pickMacFromCniResult(result) {
   const ifs = result?.interfaces;
   if (!Array.isArray(ifs) || !ifs.length) return null;
-  const v4 = result.ips?.find((x) => String(x.version) === '4');
+  const v4 = result.ips?.find(isIpv4Entry);
   if (v4 && typeof v4.interface === 'number' && ifs[v4.interface]?.mac) {
     return ifs[v4.interface].mac;
   }
   const withSandbox = ifs.find((i) => i.sandbox && i.mac);
   return withSandbox?.mac || ifs.find((i) => i.mac)?.mac || null;
-}
-
-/**
- * Parse first `inet a.b.c.d/len` from `ip -4 addr show` output.
- */
-export function parseIpv4FromIpAddrText(text) {
-  if (!text || typeof text !== 'string') return null;
-  const m = text.match(/inet\s+([\d.]+\/\d+)/);
-  return m ? m[1] : null;
-}
-
-const DEFAULT_IPV4_POLL = { maxAttempts: 80, sleepMs: 250 };
-
-/**
- * Read IPv4 on `eth0` inside the netns. Used after CNI ADD (DHCP often lags the CNI result)
- * and by the periodic network probe.
- *
- * @param {object} [pollOpts] — `{ maxAttempts, sleepMs }` (default ~20s total at start)
- * @param {number|null} [taskPid] — when set, try `/proc/<pid>/net/fib_trie` first (no sudo)
- */
-async function discoverIpv4InNetns(name, ifname = 'eth0', pollOpts = DEFAULT_IPV4_POLL, taskPid = null) {
-  const netnsScript = await resolveNetnsScript();
-  if (!netnsScript && !taskPid) return null;
-
-  const maxAttempts = pollOpts.maxAttempts ?? DEFAULT_IPV4_POLL.maxAttempts;
-  const sleepMs = pollOpts.sleepMs ?? DEFAULT_IPV4_POLL.sleepMs;
-
-  const runOnce = async () => {
-    if (taskPid) {
-      const fromProc = await ipv4CidrFromProcFibTrie(taskPid);
-      if (fromProc) return { ip: fromProc, fatal: false };
-    }
-    if (!netnsScript) return { ip: null, fatal: false };
-    try {
-      const opts = { timeout: 8000, maxBuffer: 65536, encoding: 'utf8' };
-      const { stdout } = isRoot()
-        ? await execFile(netnsScript, ['ipv4', name, ifname], opts)
-        : await execFile('sudo', ['-n', netnsScript, 'ipv4', name, ifname], opts);
-      const ip = parseIpv4FromIpAddrText(stdout);
-      return { ip, fatal: false };
-    } catch (err) {
-      const se = `${err.stderr || ''} ${err.message || ''}`;
-      // Old wisp-netns without `ipv4` — do not poll for seconds; setup installs the current one.
-      if (/Usage/i.test(se)) {
-        containerState.logger?.warn(
-          'wisp-netns has no "ipv4" command — run setup again to persist container IPs (DHCP).',
-        );
-        return { ip: null, fatal: true };
-      }
-      return { ip: null, fatal: false };
-    }
-  };
-
-  // Exponential backoff (matches waitForStop / waitUntilTaskStoppedOrGone in
-  // this module). Total budget is preserved at maxAttempts * sleepMs so
-  // existing callers see roughly the same upper bound. Initial 250 ms catches
-  // fast LAN/dnsmasq leases; doubling capped at 1 s avoids busy-polling when
-  // a slow DHCP exchange is genuinely going to take seconds.
-  const deadline = Date.now() + maxAttempts * sleepMs;
-  let nextSleep = sleepMs;
-  while (Date.now() < deadline) {
-    const { ip, fatal } = await runOnce();
-    if (fatal) return null;
-    if (ip) return ip;
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await new Promise((r) => setTimeout(r, Math.min(nextSleep, remaining)));
-    nextSleep = Math.min(nextSleep * 2, 1000);
-  }
-  return null;
-}
-
-/**
- * Single-shot wrapper around `discoverIpv4InNetns`. Used by the periodic
- * network probe — a 60s tick can't afford to sit on the default 20s poll
- * budget, but one quick lookup per container is fine.
- */
-export async function discoverIpv4InNetnsOnce(name, ifname = 'eth0', taskPid = null) {
-  return discoverIpv4InNetns(name, ifname, { maxAttempts: 1, sleepMs: 0 }, taskPid);
 }
 
 /**
@@ -467,7 +313,7 @@ export async function discoverIpv4InNetnsOnce(name, ifname = 'eth0', taskPid = n
  */
 export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
   if (!lease) return config;
-  const ip = primaryIPv4FromCni(lease.ips) || lease.discoveredIp || null;
+  const ip = primaryIPv4FromCni(lease.ips);
   const latest = await readContainerConfig(name);
   const next = {
     ...latest,
@@ -515,7 +361,6 @@ function bridgeHasMdnsForwarder(bridgeInterface) {
  */
 async function installMdnsStubRoute(name) {
   const netnsScript = await resolveNetnsScript();
-  if (!netnsScript) return;
   const tail = ['route-add', name, 'eth0', WISP_MDNS_STUB_IP];
   const opts = { timeout: 8000, maxBuffer: 65536, encoding: 'utf8' };
   try {
@@ -537,8 +382,8 @@ async function installMdnsStubRoute(name) {
  * Determine the resolv.conf to bind-mount into a container.
  * On the primary bridge — where wisp's DNS forwarder is reachable — use the
  * shared `/var/lib/wisp/container-resolv.conf` (single `nameserver 169.254.53.53`
- * line) so `.local` names resolve through the forwarder. On VLAN sub-bridges,
- * or when the shared file is missing (setup never ran), fall back to
+ * line) so `.local` names resolve through the forwarder; that file missing
+ * (setup never ran) fails the step. On VLAN sub-bridges, use
  * the host's upstream resolvers — on systemd-resolved hosts, `/etc/resolv.conf`
  * points at the stub (`127.0.0.53`) which is unreachable from a container
  * netns, so prefer `/run/systemd/resolve/resolv.conf` when present.
@@ -548,8 +393,8 @@ export async function resolveContainerResolvConf(bridgeInterface = null) {
     try {
       await access(WISP_CONTAINER_RESOLV_CONF);
       return WISP_CONTAINER_RESOLV_CONF;
-    } catch {
-      /* Shared file missing (container-dns.sh never ran) — fall through. */
+    } catch (err) {
+      throw containerError('CONTAINER_NETWORK_SETUP_FAILED', `The containers' resolver file ${WISP_CONTAINER_RESOLV_CONF} is missing: ${RUN_SETUP}`, err.message);
     }
   }
   const upstream = '/run/systemd/resolve/resolv.conf';
@@ -572,7 +417,7 @@ export async function setupNetwork(name, networkConfig = {}) {
   const cniConfig = await getCNIConfig();
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
 
-  const pluginName = pluginConfig.type || 'bridge';
+  const pluginName = pluginConfig.type;
   const nsPath = getContainerNetnsPath(name);
 
   // Reusing a netns that still has CNI's eth0 (e.g. after a failed stop) can make ADD fail.
@@ -587,8 +432,9 @@ export async function setupNetwork(name, networkConfig = {}) {
   if (hadNetns) {
     try {
       await execCNI(pluginName, 'DEL', name, nsPath, pluginConfig);
-    } catch {
-      /* nothing to tear down or DEL failed — still try to drop netns */
+    } catch (err) {
+      // The netns goes next either way; a DEL that failed is said, not hidden.
+      containerState.logger?.warn?.({ err: err.message, container: name }, '[containerManager] CNI DEL of a stale netns failed — removing the netns');
     }
     await removeNetNS(name);
     let stillThere = false;
@@ -621,14 +467,13 @@ export async function setupNetwork(name, networkConfig = {}) {
     await installMdnsStubRoute(name);
   }
 
-  const fromCni = primaryIPv4FromCni(result.ips || []);
-  const discoveredIp = fromCni ? null : await discoverIpv4InNetns(name, 'eth0', DEFAULT_IPV4_POLL);
-
+  // The ADD's result carries the address: the dhcp IPAM plugin answers only
+  // once its daemon holds a lease (else the ADD fails). The 60 s probe
+  // (containerManagerNetworkEvents.js) follows a later change.
   return {
     netns: freshPath,
     ips: result.ips || [],
     mac: pickMacFromCniResult(result),
-    discoveredIp,
   };
 }
 
@@ -639,7 +484,7 @@ export async function setupNetwork(name, networkConfig = {}) {
 export async function releaseNetworkLease(name, networkConfig = {}) {
   const cniConfig = await getCNIConfig();
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
-  await execCNI(pluginConfig.type || 'bridge', 'DEL', name, getContainerNetnsPath(name), pluginConfig);
+  await execCNI(pluginConfig.type, 'DEL', name, getContainerNetnsPath(name), pluginConfig);
 }
 
 /** Remove a container's netns (its veth goes with it); throws when the delete fails. */

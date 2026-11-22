@@ -87,7 +87,7 @@ export const CONTAINERS_BACKUP_DIRNAME = 'containers';
 export const RUN_ID_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
 /** Directory for `ip netns` bind mounts (must match system `/var/run/netns`). */
-export const CONTAINER_NETNS_DIR = '/var/run/netns';
+const CONTAINER_NETNS_DIR = '/var/run/netns';
 
 /** Path to the bind mount `ip netns` creates (`ip netns add <name>`). Used by CNI and OCI `linux.namespaces`. */
 export function getContainerNetnsPath(name) {

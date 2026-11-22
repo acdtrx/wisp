@@ -73,41 +73,62 @@ export async function getDefaultBridge() {
   return (await getDefaultContainerParentBridge()) ?? null;
 }
 
+/** a.b.c.d as a 32-bit number. */
+function ipv4ToNumber(ip) {
+  return ip.split('.').reduce((n, part) => n * 256 + Number(part), 0);
+}
+
 /**
- * First non-loopback IPv4 CIDR from /proc/<pid>/net/fib_trie (host LOCAL routes).
+ * The first non-loopback, non-link-local local IPv4 address in `/proc/<pid>/net/fib_trie`
+ * text, with the prefix length of the on-link route that holds it (`a.b.c.d/len`), or
+ * null. In that text an address is a `|-- a.b.c.d` leaf followed by its route lines:
+ * `/32 host LOCAL` for an address the namespace holds, `/24 link UNICAST` for the
+ * on-link network it sits in (the leaf there is the network's address).
+ */
+export function ipv4CidrFromFibTrieText(text) {
+  if (typeof text !== 'string') return null;
+  const locals = [];
+  const links = [];
+  let leaf = null;
+  for (const line of text.split('\n')) {
+    const at = /\|--\s+(\d{1,3}(?:\.\d{1,3}){3})\s*$/.exec(line);
+    if (at) {
+      leaf = at[1];
+      continue;
+    }
+    const route = /^\s*\/(\d{1,2})\s+(\w+)\s+(\w+)/.exec(line);
+    if (!route || !leaf) continue;
+    const [, len, scope, type] = route;
+    if (len === '32' && scope === 'host' && type === 'LOCAL') locals.push(leaf);
+    else if (scope === 'link' && type === 'UNICAST') links.push({ net: ipv4ToNumber(leaf), len: Number(len) });
+  }
+  for (const ip of locals) {
+    if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
+    const n = ipv4ToNumber(ip);
+    const holder = links
+      .filter(({ net, len }) => len > 0 && len < 32 && Math.floor(n / 2 ** (32 - len)) === Math.floor(net / 2 ** (32 - len)))
+      .sort((a, b) => b.len - a.len)[0];
+    return `${ip}/${holder ? holder.len : 32}`;
+  }
+  return null;
+}
+
+/**
+ * The container's IPv4 CIDR from `/proc/<pid>/net/fib_trie` (ipv4CidrFromFibTrieText).
  * @param {number} pid - Host PID (container init from containerd Tasks.Get)
- * @returns {Promise<string|null>} e.g. `192.168.1.50/24` or null
+ * @returns {Promise<string|null>} e.g. `192.168.1.50/24`, or null when the process is
+ *   gone or holds no such address
  */
 export async function ipv4CidrFromProcFibTrie(pid) {
   if (pid == null || pid <= 0 || !Number.isFinite(pid)) return null;
+  let text;
   try {
-    const text = await readFile(`/proc/${pid}/net/fib_trie`, 'utf8');
-    // Typical line: `|           |-- 192.168.1.50/24 ... host LOCAL`
-    const inline = /\b(\d{1,3}(?:\.\d{1,3}){3})\/(\d+)\b[^\n]*\bhost\s+LOCAL\b/gi;
-    let m;
-    while ((m = inline.exec(text)) !== null) {
-      const ip = m[1];
-      const len = m[2];
-      if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
-      return `${ip}/${len}`;
-    }
-    // Some kernels split tokens across lines
-    const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i += 1) {
-      const mm = lines[i].match(/\b(\d{1,3}(?:\.\d{1,3}){3})\/(\d+)/);
-      if (!mm) continue;
-      const chunk = `${lines[i]} ${lines[i + 1] || ''}`;
-      if (!/\bhost\s+LOCAL\b/i.test(chunk)) continue;
-      const ip = mm[1];
-      const len = mm[2];
-      if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('169.254.')) continue;
-      return `${ip}/${len}`;
-    }
-    return null;
-  } catch {
-    /* /proc unavailable, wrong pid, or fib_trie format changed */
-    return null;
+    text = await readFile(`/proc/${pid}/net/fib_trie`, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ESRCH') return null; // the process is gone
+    throw err;
   }
+  return ipv4CidrFromFibTrieText(text);
 }
 
 // IFA_F_* bits from the if_inet6 flags column that mark an address unusable
