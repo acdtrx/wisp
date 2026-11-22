@@ -8,7 +8,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { runPrivileged, helperPath, PrivilegedError } from './privileged.js';
+import { runPrivileged, helperPath, PrivilegedError, exitReason } from './privileged.js';
 
 let dir;
 let savedPath;
@@ -51,7 +51,8 @@ test('missing, refused, failed and timed out are told apart', async () => {
   assert.equal(await reason(runPrivileged(path.join(dir, 'nope'), [], { timeoutMs: 5000 })), 'missing');
   assert.equal(await reason(runPrivileged(script('refuse-me', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
   assert.equal(await reason(runPrivileged(script('denied', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
-  const failing = script('fails', 'echo "src not found" >&2; exit 2');
+  // Not a helper (not under /usr/local/bin): its exit 2 is its own, a failure.
+  const failing = script('fails', 'echo "progress" >&2; echo "src not found" >&2; exit 2');
   const err = await runPrivileged(failing, [], { timeoutMs: 5000 }).catch((e) => e);
   assert.deepEqual([err.reason, err.exitCode, err.detail], ['failed', 2, 'src not found']);
   // A command that exits 1 with stderr of its own is its own failure, not a refusal.
@@ -73,4 +74,10 @@ test('a stall bound, an abort and the output lines', async () => {
 
 test('a time bound is required', async () => {
   await assert.rejects(runPrivileged('/bin/true', []), TypeError);
+});
+
+test("a helper's exit is the dialect's reason; any other command's is a failure", () => {
+  const helper = helperPath('wisp-mount');
+  assert.deepEqual([64, 2, 75, 1, 32].map((code) => exitReason(helper, code)), ['invalid', 'not-found', 'busy', 'failed', 'failed']);
+  assert.deepEqual([64, 2, 75].map((code) => exitReason('/usr/bin/systemctl', code)), ['failed', 'failed', 'failed']);
 });

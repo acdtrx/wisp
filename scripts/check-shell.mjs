@@ -29,6 +29,7 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 
 /** Reviewed allowances: shellcheck's `code` is not run on `file`, for `why`. */
 const EXCEPTIONS = [
+  { file: 'backend/scripts/wisp-helper-lib.sh', code: 'SC2034', why: 'its limits, patterns and answers are read by the helpers that source it' },
   { file: 'scripts/linux/setup/bounds.sh', code: 'SC2034', why: 'it only holds the bounds the scripts that source it read' },
   { file: 'scripts/linux/setup/lib.sh', code: 'SC2034', why: 'WISP_LOCK and SETUP_PYTHON are read by the scripts that source it' },
   { file: 'scripts/linux/setup/install-state.sh', code: 'SC2034', why: 'PASSWORD_RULE is read by the scripts that source it' },

@@ -46,6 +46,13 @@ install_sudoers() {
 
 # Written by atomic rename (write_if_changed): wisp-updater runs this step
 # mid-update, and the running updater must keep its inode to finish.
+# The helpers' shared file first, which each sources from its own folder: not
+# a command (0644), no sudoers rule.
+HELPER_LIB=wisp-helper-lib.sh
+[[ -f "$PROJECT_ROOT/backend/scripts/$HELPER_LIB" ]] || fail "backend/scripts/$HELPER_LIB missing from the install tree"
+if write_if_changed "/usr/local/bin/$HELPER_LIB" 0644 "$PROJECT_ROOT/backend/scripts/$HELPER_LIB"; then
+  changed "/usr/local/bin/$HELPER_LIB"
+fi
 for name in "${HELPERS[@]}"; do
   src="$PROJECT_ROOT/backend/scripts/$name"
   dest="/usr/local/bin/$name"

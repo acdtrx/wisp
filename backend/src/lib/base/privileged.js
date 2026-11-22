@@ -12,9 +12,14 @@
  *   settles then at the latest.
  * - A failure is a PrivilegedError whose `reason` says which it was:
  *   `missing` (the command is not there: setup has not installed it),
- *   `refused` (sudo refused: no rule for it), `timed-out`, `aborted`, or
- *   `failed` (the command's own non-zero exit; `exitCode`, `stderr`).
- *   Callers answer with their own codes.
+ *   `refused` (sudo refused: no rule for it), `timed-out`, `aborted`, or the
+ *   command's own non-zero exit (`exitCode`, `stderr`). For a helper that exit
+ *   is the dialect's (CODING-RULES §12): `invalid` (64, an argument is wrong),
+ *   `not-found` (2, the thing named is not there), `busy` (75, try again), and
+ *   `failed` for anything else. Any other command's exit (the updater's
+ *   `systemctl start`) keeps that command's meaning: `failed`.
+ *   Callers answer with their own codes, read from `reason`, never from the
+ *   command's words.
  */
 import { spawn } from 'node:child_process';
 import { access, constants } from 'node:fs/promises';
@@ -42,10 +47,20 @@ export class PrivilegedError extends Error {
     this.stderr = stderr;
   }
 
-  /** The command's own words (stderr, else stdout), else the message: a caller's error detail. */
+  /** The command's last line on stderr (a helper's error line), else the message: a caller's error detail. */
   get detail() {
-    return (this.stderr || this.stdout || '').trim() || this.message;
+    const lines = this.stderr.split('\n').map((l) => l.trim()).filter(Boolean);
+    return lines.at(-1) ?? this.message;
   }
+}
+
+/** A helper's exit code (other than 0) as the failure's reason: the dialect's table. */
+const HELPER_EXIT_REASONS = new Map([[64, 'invalid'], [2, 'not-found'], [75, 'busy']]);
+
+/** The reason of a non-zero exit of `command`: the dialect's for a helper, `failed` for any other command. */
+export function exitReason(command, code) {
+  if (!command.startsWith(`${HELPER_DIR}/`)) return 'failed';
+  return HELPER_EXIT_REASONS.get(code) ?? 'failed';
 }
 
 /**
@@ -143,7 +158,7 @@ export async function runPrivileged(command, args, opts = {}) {
       if (isSudoRefusal(code, stderr)) {
         return fail('refused', `sudo refused ${command}: no sudoers rule lets the service run it; ${RUN_SETUP}`, code);
       }
-      return fail('failed', `${what} failed (exit ${code})`, code);
+      return fail(exitReason(command, code), `${what} failed (exit ${code})`, code);
     });
 
     if (Number.isFinite(timeoutMs)) {
