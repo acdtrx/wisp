@@ -15,30 +15,12 @@ by the position of the first `import` in the statement, so a destructured name s
 (found building workload pages milestone 4, 2026-11-21). **Revisit trigger:** the next
 test or module that needs such a name destructured.
 
-**VM edits define back XML read without the secure flag.** Every change the manager
-saves by reading the inactive definition and defining it again (`updateVMConfig`, the
-Wisp prefs, disks, CDs, USB and the restart flag in `backend/src/lib/vmManager/linux/`)
-reads it without `VIR_DOMAIN_XML_SECURE`, so a graphics password set outside Wisp is
-dropped at the first edit. Migration 0012 reads it with the flag
-(`getDomainXML(…, { secure: true })`, found in the workload pages milestone 3 review,
-2026-11-21). **Revisit trigger:** a VM with a console password set outside Wisp, or
-Wisp setting one itself.
-
 **No check refuses a duplicate JSX prop.** A component given the same prop twice keeps
 the last one silently: that is how a doubled `saveDisabledReason` on the VM General card
 let its Save on while its CPU or RAM had a problem (found in the frontend data flow
 milestone 4 run, 2026-11-21). ESLint's core rules have none for JSX, and no React plugin
 is installed (`eslint-plugin-react`'s `jsx-no-duplicate-props` would be one, a new dev
 dependency). **Revisit trigger:** another duplicate prop found in review or as a bug.
-
-**The backend's VM rename check is narrower than its spec.** `updateVMConfig`
-(`backend/src/lib/vmManager/linux/vmManagerConfig.js`, `isRunning`) refuses a rename
-only while the domain runs, is blocked or is paused (state codes 1 to 3), where
-VM-MANAGEMENT.md (Renaming; "Stopped means `shutoff`") says a VM is renamed only stopped,
-and stopped is `shutoff` alone: a VM shutting down, crashed or suspended is renamed. The
-UI locks the name unless the VM is shut off. It should use the offline test,
-`isOfflineState` (phase 5; found in the frontend data flow review, 2026-11-21).
-**Revisit trigger:** phase 5, or a rename seen on a VM that is not shut off.
 
 **A VM rename does not rebuild its cloud-init seed.** The seed ISO keeps the hostname it
 was built with, so a VM renamed after its cloud-init was set keeps the old name until
@@ -122,17 +104,17 @@ the CPU, disk and network rates are 0 rather than missing (`getVMStats`,
 `getContainerStats`). **Revisit trigger:** a zero seen and taken for a real figure, or the
 stats shapes' next change.
 
+**Choosing "A model like the host's" CPU always fails.** `updateVMConfig` writes
+`<cpu mode='host-model' migratable='on'>`, and libvirt refuses it with LIBVIRT_ERROR
+"Attribute migratable is only allowed for 'host-passthrough' / 'maximum' CPU mode". Seen
+on tini, before and after phase 5's milestone 3 (2026-11-22). Fix shape: write
+`migratable` for host-passthrough only. **Revisit trigger:** the next CPU work, or a user
+choosing that model.
+
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
 USB device seen still listed until a reload.
-
-**A disk bus change off VirtIO always fails.** `updateDiskBus` rewrites `<target bus>` but
-keeps the disk's `<address type='pci'>`, so libvirt refuses SATA, SCSI or IDE with
-"Invalid address type 'pci' for the disk … with the bus type 'sata'" (500). Seen on tini
-in the command-acks milestone 3 check (2026-11-16). The other direction likely fails the
-same way with a `drive` address. **Revisit trigger:** fix with the next disk work, or as
-soon as a user needs a non-VirtIO bus.
 
 **Two tabs can exhaust HTTP/1.1's six connections.** Chrome's cap is per origin and
 shared by every tab: each tab holds `/api/events`, and a detail page or Host Mgmt adds
@@ -251,17 +233,6 @@ create/restore refuse that name (409 `VM_DIR_EXISTS`, settled 2026-10-16); reusi
 disk means moving it into the image library by hand and picking it as an existing disk.
 Shape: the create form offers the kept `disk*.qcow2` of a blocked name.
 **Revisit trigger:** reusing kept disks through the shell becomes a recurring chore.
-
-**ISO attach/eject on a paused VM is config-only.** It lands in the inactive definition
-without touching the paused QEMU. **Revisit trigger:** a CD-ROM change on a paused VM is
-reported as "didn't apply".
-
-**VM restart-flag clear can revert a concurrent define.** `writePendingRestart`
-(`vmManagerPendingRestart.js`) reads the inactive XML and calls `DomainDefineXML` with no
-per-VM lock, so a config, disk or ISO define landing in between is reverted. It now runs
-only on libvirt connect and the STARTED event (review of repairs-to-migrations,
-2026-11-12). Fix shape: vmManager takes a lock acquirer, as containerManager does.
-**Revisit trigger:** a VM edit made right as the VM starts is seen lost.
 
 **App containers: devices bypass appConfig.** `PATCH {devices}` and the Devices section
 work on app containers, but Jellyfin's next `appConfig` save replaces them with its derived

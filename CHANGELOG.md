@@ -34,8 +34,14 @@
 - **MCP** — tool arguments are checked against each tool's schema (`VALIDATION_FAILED`; `lines` is refused, not clamped); `get_job` reads every job and returns `{ jobId, kind, title, subject, status, createdAt }` with `progress`, `result`, or `error` and `detail` (`startedAt` is gone); `check_image_updates` returns `{ checked, updated, flaggedContainers, lastCheckedAt }`; a scope refusal is `SCOPE_INSUFFICIENT`.
 - **Login and outbound requests** — a refused SSO login redirects to the login page; the discovery document must name the configured issuer, an `https` issuer's endpoints must be `https`, and an ID token needs `exp`. Requests for a URL typed by the user refuse more forms of private address and bound the answer's size. `WISP_CONFIG_PATH` is for development and tests: an installed Wisp started with it set refuses to start.
 - **One command checks the code** — `npm run check` runs every check, and the release workflow runs it, the shell syntax check and the frontend build before anything is published.
+- **A VM's firmware, machine type and a disk's bus are set when it is made, and shown afterwards** — Expert settings and the disk editor show them as text. API: `PATCH /api/vms/:name` with `firmware` or `machineType` answers 400, and `POST /api/vms/:name/disks/:slot/bus` is gone (it failed for any bus but VirtIO).
+- **A backup in an older layout can't be restored** — one with uncompressed disks, or whose manifest does not name the VM's directory, is refused with `BACKUP_INVALID` and asks for a new backup.
 
 ### Bug Fixes
+- **A console password set outside Wisp survives an edit**, and a VM started with `virsh create` is no longer made permanent by one: Wisp refuses to change its definition (409 `VM_TRANSIENT`).
+- **An edit made as a VM starts is no longer lost**: every change to a VM's definition is written one at a time.
+- **A CD change on a paused VM applies at once**, as on a running one; a VM that is on but not running (paused, crashed) counts in the top bar, an edit to it sets "Stop and start to apply", and the server refuses its rename too.
+- **A VM made with the memory balloon off has none**; libvirt added one before.
 - **A VM or container that is gone says so** — deleted elsewhere or never there, its page shows "No VM named …" with a way back, instead of spinning or closing.
 - **After a rename saved from its page, the page goes to the new name** on the tab it then shows, only while it still shows the workload. A rename made in another tab is followed too: the page, finding the old name gone, goes to the name the list gives the workload's uuid.
 - **The open VM page no longer closes on an empty VM list**, which is what an unreachable libvirt answers; the container page already stayed open.
