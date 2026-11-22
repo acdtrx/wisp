@@ -43,9 +43,9 @@ What a project facing real users or a network adds to the rules.
   ([`specs/UPDATES.md`](specs/UPDATES.md)).
 - **A change that touches the install layout, persisted state, privileged helpers or the
   systemd templates keeps the updater's contract.** The recurring traps: a persisted file
-  inside the install tree needs the updater's preserve list; a new privileged `wisp-*`
-  helper must be registered in `scripts/linux/setup/install-helpers.sh` or it vanishes on
-  the next self-update; the `wisp.service` template is re-applied from the repo on every
+  inside the install tree lives in `config/`, which an install and an update never delete or overwrite; a new privileged `wisp-*`
+  helper is a file in `backend/scripts/`, which setup installs with its sudo rule, and
+  one a release stops shipping is removed at the update; the `wisp.service` template is re-applied from the repo on every
   update; only committed files ship in the release tarball.
 - Run **dev deploys** through `scripts/push.sh`: it stages the release-shaped tarball,
   uploads it and runs its installer over SSH ([`specs/DEPLOYMENT.md`](specs/DEPLOYMENT.md)).

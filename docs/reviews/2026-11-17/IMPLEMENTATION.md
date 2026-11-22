@@ -379,7 +379,32 @@ ifupdown host; a learned IPv6 address from a real DHCPv6 server or router advert
   run afterwards. Backlog: "Setup strategy: one update-safe path", "A push to a fresh
   host needs `unzip` first".
 - `DEPLOYMENT.md` as a contract for the result (P-8), and the README's install section.
-- A later feature of this phase, which may wait until after phase 6: the nine helpers on
+- **The helpers feature, done 2026-11-23**, merged to `main` from
+  `anchor/privileged-helpers`, in three milestones, each with its open points settled
+  first and one review:
+  1. One dialect for the nine helpers (CODING-RULES §12, Shell), every argument checked
+     before anything runs, one shared file, a test of each helper's refusals, and
+     shellcheck required by `npm run check`. `wisp-cni` builds its network config itself
+     (the CNI network file is gone); `wisp-mount` takes arguments; every mount is
+     `nosuid,nodev`; a share without a password mounts.
+  2. Setup installs exactly the set of helpers and removes any other `wisp-*`;
+     `wispctl` keeps its documented commands; `release.sh` checks before it changes a
+     file; a script's mode follows its use.
+  3. An update is the new tree's own install (`scripts/linux/install-tree.sh`) with a way
+     back, and one rule for what an install keeps.
+  Chosen by the user: the helpers defend against data, not the service user; the OS
+  upgrade in a unit of its own stays in the backlog; nothing is kept in a tree for an
+  older updater, so the root `package.json` holds the one version, and a host on
+  v2.8.0-beta.1 or older is updated once by hand (to tell the owner of the one other
+  install, and to do on `wisp.local`, at the next release).
+  Not run: the release workflow on GitHub (it now installs shellcheck by a pinned
+  checksum); an update downloaded from a release, so the staged tree's version check
+  and the guard that refuses an update while a job runs were exercised by unit test
+  and by reading only; a disk in standby. Found and left in the backlog: two hosts'
+  containers of one name get the same DHCP address; a deleted container's lease is
+  never released on the LAN's DHCP server; the OS update's download size is always 0;
+  a complete uninstall; a rolled-back release's staged tree stays.
+  What it was, from the audit: the nine helpers on
   one dialect, with shell rules added to CODING-RULES §12 (P-6); `sanity.sh` can fail;
   exec bits; one source for the version and the file list; one `idle_run`; legacy
   cleanups expire; stale `wispctl` commands (P-7). Backlog: "SMB shares without a

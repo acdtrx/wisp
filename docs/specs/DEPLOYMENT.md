@@ -204,7 +204,7 @@ The next run of setup then makes the bridge again.
 
 ## Manual upgrade
 
-Run the new release's installer over the install: from its tarball (`./scripts/install.sh <install-dir>`) or with `scripts/push.sh`. It asks nothing that the install already has, runs setup and restarts Wisp. There is no "git checkout on the server" path (settled 2026-11-18).
+Run the new release's installer over the install: from its tarball (`tar -xzf wisp-<version>.tar.gz`, `cd wisp`, `./scripts/install.sh <install-dir>`, as the user Wisp runs as) or with `scripts/push.sh`. It asks nothing that the install already has (sudo's password, and the bridge question only on a host that has none), keeps everything in `config/`, runs setup and restarts Wisp; workloads keep running through it. This is also how a host on v2.8.0-beta.1 or older comes to a later release, once ([UPDATES.md](UPDATES.md#an-update-is-an-install-with-a-way-back)). Observed 2026-11-23 on two such hosts: 19 s with nothing asked on one that had a bridge, a running container kept its address; on one without a bridge whose network cloud-init manages, the install refused before any change (`CLOUD_INIT_NETWORK`) with the fix in its message (`echo "network: {config: disabled}" | sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`), then asked the bridge question and took 41 s. There is no "git checkout on the server" path (settled 2026-11-18).
 
 ## Operating Wisp
 
@@ -292,7 +292,7 @@ The `v1.0.6` tag triggers `.github/workflows/release.yml`, which runs `npm run c
 When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`sudo -n`**:
 
 0. **Write it in the helpers' dialect** ([CODING-RULES §12](../CODING-RULES.md), Shell), with a test of its refusals in `backend/scripts/test/`.
-1. **Put it in `backend/scripts/`**, executable, with a shebang: the helpers are that folder (every `wisp-*` script there but the updater; the shell check holds the folder to helpers, the updater, the shared file and one listed exception, `wisp-port.sh`), and setup installs each with its sudoers rule. A package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
+1. **Put it in `backend/scripts/`**, executable, with a shebang: the helpers are that folder (every `wisp-*` script there but the updater; the shell check holds the folder to helpers, the updater and the shared file), and setup installs each with its sudoers rule. A package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
 2. **Backend** — call it through the one runner, `runPrivileged(helperPath('wisp-<name>'), args, { timeoutMs })` from `lib/base/` (settled 2026-11-22). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path. The runner tells a failure apart as `missing` (not installed: run setup), `refused` (sudo did not let the service run it), `timed-out`, or by the helper's own exit code `invalid`, `not-found`, `busy` or `failed`; the caller keeps its own error code on the wire. The fence check refuses a `'sudo'` anywhere else.
 3. **Docs** — `docs/specs/DEPLOYMENT.md` (this section), `docs/specs/API-<AREA>.md` / `CONFIGURATION.md` as appropriate; the CLI tools inventory in `docs/TECH-STACK.md`; the **shell-exec allowlist in `docs/CODING-RULES.md` §7**.
 4. **Install / upgrade** — Covered automatically if step 1 is done: setup's `helpers` step runs `install-helpers.sh` on every install and update.
@@ -318,7 +318,7 @@ sweep). The removal comes last, a rule before its file, so a step that fails hal
 has removed nothing. A file of your own with that prefix in those folders is removed
 too. Before, nothing was ever removed but two old helpers on a list that never ended.
 
-**A release is installed by the release before it** (settled 2026-11-22). The updater that applies an update is the one already on the host, and it reads the new tree: `backend/package.json`, `scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>`, `systemd/linux/wisp.service`, and `backend/scripts/wisp-port.sh` for the port its health check asks. A file or an argument one of them needs can only go a release after the updater stopped needing it; a removal made earlier fails every update from then on (removing `wisp-port.sh` would have, on a host with another port than 8080).
+**A release is installed by the release before it** (settled 2026-11-22). The updater that applies an update is the one already on the host. From this release on it reads one thing from the new tree: `scripts/linux/install-tree.sh`, with its four arguments and its exit `0` ([UPDATES.md → An update is an install with a way back](UPDATES.md#an-update-is-an-install-with-a-way-back)). That contract stays stable; everything else in a tree may change. Releases up to v2.8.0-beta.1 had an updater that read a list of files from the new tree (the backend's version, a port reader, setup's entry point, the unit template); none of that is kept for them (the user's choice, 2026-11-23), so such a host is updated once by hand ([Manual upgrade](#manual-upgrade)).
 
 | Helper | Calls | What it does |
 |--------|-------|--------------|
@@ -342,11 +342,11 @@ active, and that the container's bridge is a bridge on the host.
 
 ### `wisp-updater` (installed to `/usr/local/bin/`, run via `wisp-updater.service`)
 
-Atomic-swap applier for the Wisp self-update pipeline. Not invoked directly — the backend triggers `wisp-updater.service` (a `Type=oneshot` systemd unit) via `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The unit's `WISP_INSTALL_DIR` env var is templated at install time; the staging path is read from `/var/lib/wisp/updates/target` (single line, must start with `/var/lib/wisp/updates/staging-`). See [UPDATES.md](UPDATES.md) for the full pipeline.
+Applier for the Wisp self-update pipeline. Not invoked directly — the backend triggers `wisp-updater.service` (a `Type=oneshot` systemd unit) via `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The unit's `WISP_INSTALL_DIR` env var is templated at install time; the staging path is read from `/var/lib/wisp/updates/target` (single line, must start with `/var/lib/wisp/updates/staging-`). See [UPDATES.md](UPDATES.md) for the full pipeline.
 
 | Operation | Description |
 |---------|-------------|
-| `systemctl start --no-block wisp-updater.service` | Stop service → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `backup-status.json`, `migrations.json`, `.pids`, `.logs`) → run the new tree's setup (the backend's dependencies, the `wisp-*` helpers, their sudoers rules, `wisp.service`) → start service. Auto-rolls back from `<install>.prev/` on any failure ([UPDATES.md → Rollback](UPDATES.md#rollback)). |
+| `systemctl start --no-block wisp-updater.service` | Stop service → keep a copy of the install at `<install>.prev/` → run the staged tree's own install (`scripts/linux/install-tree.sh`: the copy by the keep rule, setup, the start). Auto-rolls back from `<install>.prev/` on any failure ([UPDATES.md → Rollback](UPDATES.md#rollback)). |
 
 Steps are echoed to journald (`journalctl -u wisp-updater.service`) — Wisp does not capture them since it dies during `step:stop-service`.
 

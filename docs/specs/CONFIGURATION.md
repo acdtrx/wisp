@@ -41,7 +41,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `serverName` | `string \| null` | `null` | Display name in the top bar. Falls back to `My Server` when null. |
-| `vmsPath` | `string` | `/var/lib/wisp/vms` | VM storage root (absolute). |
+| `vmsPath` | `string` | `/var/lib/wisp/vms` | VM storage root (absolute). Like the images, backups and containers paths, it cannot be saved as the install folder or a path inside it (422 `INVALID_SETTINGS`): an install replaces what that folder holds (settled 2026-11-22). |
 | `imagePath` | `string` | `/var/lib/wisp/images` | Image library path. |
 | `backupLocalPath` | `string` | `/var/lib/wisp/backups` | Local backup directory. |
 | `containersPath` | `string` | `/var/lib/wisp/containers` | Container storage root (absolute). |

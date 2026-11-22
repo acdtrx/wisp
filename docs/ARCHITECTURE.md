@@ -76,7 +76,7 @@ page. The service worker keeps the app shell so a launch always boots React.
     token hashes), `wisp-password` (the scrypt hash the session secret derives from),
     `migrations.json` (the migration ledger) and the optional `runtime.env`;
     `WISP_CONFIG_PATH` moves the first three in development and tests only (an installed
-    Wisp refuses it). The updater preserves them across a swap ([`specs/UPDATES.md`](specs/UPDATES.md)).
+    Wisp refuses it). An install and an update keep everything in `config/` ([`specs/UPDATES.md`](specs/UPDATES.md), the keep rule).
   - **libvirt's domain definitions**: a VM's configuration *is* its domain XML, with
     Wisp's own settings in its `wisp:prefs` metadata.
   - **`/var/lib/wisp/`**: the image library, per-VM directories, local backups and
