@@ -44,12 +44,37 @@ fi
 # What the release-shaped tree holds is what is installed: scripts/stage-release.sh
 # decides it, and this puts each of its top-level entries in place of the one
 # installed, naming none, then removes the entries it no longer has.
+#
+# Each entry is copied beside its place (.wisp-new.<name>) and swapped in, the
+# installed one moved aside (.wisp-old.<name>) for the moment between two
+# renames: a copy that fails (a full disk) removes its part and leaves the
+# entry as it was, so a failed copy never leaves a hole. The parts a killed run
+# left are taken back first: an entry moved aside whose place is empty goes
+# back, then every part goes.
 shopt -s dotglob nullglob
+for part in "$INSTALL_DIR"/.wisp-old.*; do
+  name="${part##*/.wisp-old.}"
+  if [[ -e "$INSTALL_DIR/$name" || -L "$INSTALL_DIR/$name" ]]; then
+    rm -rf -- "$part"
+  else
+    mv -T -- "$part" "$INSTALL_DIR/$name"
+  fi
+done
+for part in "$INSTALL_DIR"/.wisp-new.*; do
+  rm -rf -- "$part"
+done
 for entry in "$SOURCE_DIR"/*; do
   name="$(basename "$entry")"
   [[ "$name" == config ]] && continue
-  rm -rf "${INSTALL_DIR:?}/$name"
-  cp -a "$entry" "$INSTALL_DIR/"
+  dest="$INSTALL_DIR/$name" new="$INSTALL_DIR/.wisp-new.$name" old="$INSTALL_DIR/.wisp-old.$name"
+  if ! cp -a -- "$entry" "$new"; then
+    rm -rf -- "$new"
+    echo "ERROR: cannot copy $name into $INSTALL_DIR; the installed one is as it was." >&2
+    exit 1
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then mv -T -- "$dest" "$old"; fi
+  mv -T -- "$new" "$dest"
+  rm -rf -- "$old"
 done
 for entry in "$INSTALL_DIR"/*; do
   name="$(basename "$entry")"

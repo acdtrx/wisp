@@ -155,8 +155,10 @@ fi
 if [[ -e "$INSTALL_DIR" ]]; then
   if [[ ! -d "$INSTALL_DIR" ]]; then
     echo "ERROR: $INSTALL_DIR exists and is not a directory." >&2; exit 1
+  # backend/ may be set aside for a moment by an install's copy (.wisp-old.backend,
+  # scripts/linux/setup/copy.sh), which the next copy puts back.
   elif [[ -n "$(ls -A "$INSTALL_DIR")" ]] \
-    && ! grep -qs '"name": *"wisp-backend"' "$INSTALL_DIR/backend/package.json"; then
+    && ! grep -qs '"name": *"wisp-backend"' "$INSTALL_DIR/backend/package.json" "$INSTALL_DIR/.wisp-old.backend/package.json"; then
     echo "ERROR: $INSTALL_DIR holds something that is not a Wisp install; install into an empty or new directory." >&2; exit 1
   fi
 fi
