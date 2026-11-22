@@ -228,10 +228,12 @@ function isContainerdTaskMount(mount) {
 
 /**
  * A network share, by `df -l`'s rule on the mount's source: `host:path` (NFS,
- * sshfs, ceph, gluster) or `//host/share` (SMB/CIFS).
+ * sshfs, ceph, gluster) or `//host/share` (SMB/CIFS). A device node is local
+ * whatever its name (`/dev/disk/by-path/pci-0000:00:1f.2-…` has colons).
  */
 function isNetworkShare(source) {
-  return typeof source === 'string' && (source.includes(':') || source.startsWith('//'));
+  if (typeof source !== 'string' || source.startsWith('/dev/')) return false;
+  return source.includes(':') || source.startsWith('//');
 }
 
 /**
