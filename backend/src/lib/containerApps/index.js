@@ -18,6 +18,7 @@ import {
   deleteContainer,
   getContainerConfig,
   getTaskState,
+  isTaskOn,
   getMountFileTextContent,
   putMountFileTextContent,
   getMountFileSize,
@@ -33,24 +34,6 @@ import {
 } from './appRegistry.js';
 
 export { APP_REGISTRY, getAppModule, getAppEntry, isKnownApp };
-
-/**
- * Stable signature of a mount list's structural fields. Used to detect when
- * a reload-only update is no longer enough (binds can't be added/removed/
- * retargeted on a running task; only file content reloads in place).
- */
-function mountLayoutSig(list) {
-  if (!Array.isArray(list)) return '[]';
-  return JSON.stringify(list.map((m) => ({
-    type: m.type,
-    name: m.name,
-    containerPath: m.containerPath,
-    readonly: m.readonly === true,
-    sourceId: m.sourceId || null,
-    subPath: m.subPath || '',
-    sizeMiB: Number.isInteger(m.sizeMiB) ? m.sizeMiB : null,
-  })));
-}
 
 const RELOAD_DETAIL_MAX = 1000;
 
@@ -333,7 +316,8 @@ function envReplacementPatch(current, next) {
  * persists the new metadata + container fields (env/mounts/devices), writes
  * any updated mount file contents, and — if the container is running —
  * issues the app's reload command. Falls back to `pendingRestart` when the
- * change can't be applied live (no reload command, mount layout changed,
+ * change can't be applied live (no reload command, a saved field the task
+ * only reads at start changed (the manager's rule),
  * app reports `requiresRestartForChange`, or reload exec fails).
  *
  * When the reload itself rejects the new state (`APP_RELOAD_FAILED`), the
@@ -370,7 +354,6 @@ export async function applyAppConfig(name, newAppConfig) {
 
   const oldMounts = Array.isArray(config.mounts) ? config.mounts : [];
   const nextMounts = Array.isArray(derived.mounts) ? derived.mounts : [];
-  const mountLayoutChanged = mountLayoutSig(oldMounts) !== mountLayoutSig(nextMounts);
   const envChanged = envSig(config.env) !== envSig(derived.env);
   const mountRenames = appModule.getMountRenames?.(newAppConfig, oldAppConfig) ?? {};
   const hasMountRenames = Object.keys(mountRenames).length > 0;
@@ -386,7 +369,7 @@ export async function applyAppConfig(name, newAppConfig) {
   }
 
   const task = await getTaskState(name);
-  const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
+  const isRunning = isTaskOn(task);
   const reloadCmd = appModule.getReloadCommand?.();
   const willReload = isRunning && !!reloadCmd && !envChanged;
 
@@ -443,9 +426,9 @@ export async function applyAppConfig(name, newAppConfig) {
   }
 
   const appWantsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
-  // The persist above flagged a running container whose normalized mounts or
-  // devices changed; the response says so too.
-  const stillNeedsRestart = appWantsRestart || mountLayoutChanged || persistFlagged;
+  // The persist above flagged a running container whose saved fields changed
+  // what its task was started with (mounts, devices…); the response says so too.
+  const stillNeedsRestart = appWantsRestart || persistFlagged;
 
   try {
     const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });

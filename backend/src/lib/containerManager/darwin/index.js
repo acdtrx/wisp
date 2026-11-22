@@ -128,6 +128,11 @@ export async function getTaskState() {
   throw noContainerd();
 }
 
+/** No task is ever read here (getTaskState throws), so none is on. */
+export function isTaskOn() {
+  return false;
+}
+
 export async function assertContainerNameAvailable() {
   throw noContainerd();
 }

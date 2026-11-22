@@ -21,9 +21,18 @@ import {
 } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-import { markPendingRestart } from './containerManagerPendingRestart.js';
+import { markPendingRestart, restartSignature } from './containerManagerPendingRestart.js';
 
-const RESTART_WHEN_RUNNING = true;
+/**
+ * Write a changed mount list: a container that is on gets the restart-required
+ * flag when the change alters what its task was started with (restartSignature).
+ */
+async function saveMountsChange(containerName, config, signatureBefore) {
+  const requiresRestart = isTaskOn(await getTaskState(containerName)) && restartSignature(config) !== signatureBefore;
+  if (requiresRestart) markPendingRestart(config);
+  await writeContainerConfig(containerName, config);
+  return { requiresRestart };
+}
 
 /**
  * Append one mount, create backing artifact. Returns { requiresRestart }.
@@ -33,6 +42,7 @@ const RESTART_WHEN_RUNNING = true;
 export async function addContainerMount(containerName, mountDef) {
   const [normalized] = validateAndNormalizeMounts([mountDef], resolveMount);
   const config = await loadContainerConfig(containerName);
+  const signatureBefore = restartSignature(config);
   const list = Array.isArray(config.mounts) ? [...config.mounts] : [];
   const names = new Set(list.map((m) => m.name));
   const paths = new Set(list.map((m) => m.containerPath));
@@ -47,11 +57,7 @@ export async function addContainerMount(containerName, mountDef) {
   }
   list.push(normalized);
   config.mounts = list;
-  const task = await getTaskState(containerName);
-  const isRunning = isTaskOn(task);
-  const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
-  if (requiresRestart) markPendingRestart(config);
-  await writeContainerConfig(containerName, config);
+  const { requiresRestart } = await saveMountsChange(containerName, config, signatureBefore);
   await ensureMissingMountArtifacts(containerName, [normalized]);
   await tightenSecretMountFiles(containerName, [normalized]);
   return { requiresRestart };
@@ -74,6 +80,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
     throw containerError('INVALID_CONTAINER_MOUNTS', 'changes must be an object');
   }
   const config = await loadContainerConfig(containerName);
+  const signatureBefore = restartSignature(config);
   const list = Array.isArray(config.mounts) ? [...config.mounts] : [];
   const idx = list.findIndex((m) => m.name === mountName);
   if (idx < 0) {
@@ -137,11 +144,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
 
     list[idx] = updated;
     config.mounts = list;
-    const task = await getTaskState(containerName);
-    const isRunning = isTaskOn(task);
-    const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
-    if (requiresRestart) markPendingRestart(config);
-    await writeContainerConfig(containerName, config);
+    const { requiresRestart } = await saveMountsChange(containerName, config, signatureBefore);
     return { requiresRestart };
   }
 
@@ -273,11 +276,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
 
   list[idx] = updated;
   config.mounts = list;
-  const task = await getTaskState(containerName);
-  const isRunning = isTaskOn(task);
-  const requiresRestart = isRunning && RESTART_WHEN_RUNNING && !layoutUnchanged;
-  if (requiresRestart) markPendingRestart(config);
-  await writeContainerConfig(containerName, config);
+  const { requiresRestart } = await saveMountsChange(containerName, config, signatureBefore);
   if (!updated.sourceId && nextName === current.name) {
     await ensureMissingMountArtifacts(containerName, [updated]);
   }
@@ -292,6 +291,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
  */
 export async function removeContainerMount(containerName, mountName) {
   const config = await loadContainerConfig(containerName);
+  const signatureBefore = restartSignature(config);
   const list = Array.isArray(config.mounts) ? [...config.mounts] : [];
   const idx = list.findIndex((m) => m.name === mountName);
   if (idx < 0) {
@@ -305,10 +305,6 @@ export async function removeContainerMount(containerName, mountName) {
   }
   list.splice(idx, 1);
   config.mounts = list;
-  const task = await getTaskState(containerName);
-  const isRunning = isTaskOn(task);
-  const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
-  if (requiresRestart) markPendingRestart(config);
-  await writeContainerConfig(containerName, config);
+  const { requiresRestart } = await saveMountsChange(containerName, config, signatureBefore);
   return { requiresRestart };
 }

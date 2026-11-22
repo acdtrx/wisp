@@ -46,6 +46,7 @@ export {
   stopContainer,
   killContainer,
   getTaskState,
+  isTaskOn,
 } from './containerManagerLifecycle.js';
 
 export { startContainer, restartContainer } from './containerManagerStart.js';

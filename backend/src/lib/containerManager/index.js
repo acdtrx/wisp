@@ -33,6 +33,7 @@ export const stopContainer = impl.stopContainer;
 export const killContainer = impl.killContainer;
 export const restartContainer = impl.restartContainer;
 export const getTaskState = impl.getTaskState;
+export const isTaskOn = impl.isTaskOn;
 
 export const assertContainerNameAvailable = impl.assertContainerNameAvailable;
 export const createContainer = impl.createContainer;

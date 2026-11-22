@@ -6,6 +6,55 @@
  */
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { processStartTimeMsFromProc } from './procUptime.js';
+import { validateAndNormalizeMounts } from './containerManagerMounts.js';
+import { validateAndNormalizeDevices } from './containerManagerDevices.js';
+import { resolveMount } from './containerPaths.js';
+
+/** Fields a running task only picks up on its next start. */
+export const RESTART_FIELDS = new Set([
+  'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'devices', 'network', 'runAsRoot',
+]);
+
+/** `list` normalised as a save writes it; a stored list today's checks refuse is compared as it is. */
+function normalisedList(list, normalize) {
+  const raw = Array.isArray(list) ? list : [];
+  try {
+    return normalize(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/** JSON with object keys in order, so a re-ordered env compares equal. */
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * The one test of "this change needs a restart": the RESTART_FIELDS of a
+ * config as the running task would see them — mounts and devices normalised,
+ * a mount's `secret` left out (a file mode, applied live), the network without
+ * the addresses a start writes. A container that is on needs a restart when
+ * its signature before a save differs from its signature after.
+ */
+export function restartSignature(config) {
+  const { ip: _ip, ip6: _ip6, ...network } = config.network || {};
+  return stableJson({
+    image: config.image ?? null,
+    command: config.command ?? null,
+    cpuLimit: config.cpuLimit ?? null,
+    memoryLimitMiB: config.memoryLimitMiB ?? null,
+    env: config.env ?? {},
+    mounts: normalisedList(config.mounts, (l) => validateAndNormalizeMounts(l, resolveMount)).map(({ secret: _s, ...m }) => m),
+    devices: normalisedList(config.devices, validateAndNormalizeDevices),
+    network,
+    runAsRoot: config.runAsRoot === true,
+  });
+}
 
 /** Flag a config (mutates it) as needing a restart for a change saved now. */
 export function markPendingRestart(config) {

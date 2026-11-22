@@ -263,11 +263,12 @@ keeps the stored one (settled 2026-11-12), so the only way to drop a password is
 the VM's cloud-init config. **Revisit trigger:** a password needs removing without
 wiping cloud-init.
 
-**One rule for a container's "restart required".** Three places decide it differently:
-`updateContainerConfig` flags a mounts/devices change, the row mount `PATCH` has its own
-`layoutUnchanged` test, and the app save path ORs its mount signature with the app
-module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
-seen disagreeing again, or the next change to any of the three.
+**An unchanged app save sets "restart required" when the app has no reload command.**
+`applyAppConfig` (`backend/src/lib/containerApps/index.js`) flags a running app container
+whenever it has no reload command (or the env changed), even when the save changed
+nothing: its mount contents are written each time and not compared with what they were
+(found in phase 5, milestone 4, 2026-11-22). **Revisit trigger:** the badge seen after
+re-saving an unchanged app.
 
 **Found on tini in milestone 3's run (2026-11-20), outside this feature.** A VM created
 through the API with its firmware left at the default (`bios`) from the Ubuntu 26.04 cloud

@@ -14,12 +14,7 @@ import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { resolveContainerImageRef } from './containerManagerImages.js';
 import { RESTART_POLICIES } from './containerManagerRestartState.js';
-import { markPendingRestart } from './containerManagerPendingRestart.js';
-
-/** Fields a running task only picks up on its next start. */
-export const RESTART_FIELDS = new Set([
-  'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'devices', 'network', 'runAsRoot',
-]);
+import { markPendingRestart, restartSignature } from './containerManagerPendingRestart.js';
 
 /**
  * Apply an envPatch delta to config.env (structured shape: { KEY: { value, secret? } }).
@@ -201,23 +196,6 @@ async function moveRenamedMountsAndWrite(name, renamePairs, config) {
 }
 
 /**
- * Whether a mount or device list changes what a task is created with. Both
- * sides go through the same normalizer, so a stored entry written before a
- * field existed compares equal to its re-sent self; an unreadable stored list
- * counts as changed.
- */
-function differsWhenNormalized(prev, next, normalize) {
-  let prevNormalized;
-  try {
-    prevNormalized = normalize(prev);
-  } catch {
-    /* the stored list fails today's checks — treat it as changed */
-    return true;
-  }
-  return JSON.stringify(prevNormalized) !== JSON.stringify(next);
-}
-
-/**
  * Partially update a container's config. Returns { requiresRestart, removedMounts }.
  *
  * `mounts` replaces the mount list. It never deletes mount data: a Local mount
@@ -237,8 +215,8 @@ export async function updateContainerConfig(name, changes) {
     throw containerError('CONFIG_ERROR', 'mountRenames is only valid together with mounts');
   }
   let config = await readContainerConfig(name);
+  const signatureBefore = restartSignature(config);
 
-  let requiresRestart = false;
   /** @type {{ type: string, name: string, containerPath: string, readonly: boolean }[] | null} */
   let mountsPersisted = null;
   let renamePairs = [];
@@ -250,8 +228,7 @@ export async function updateContainerConfig(name, changes) {
   const isRunning = isTaskOn(task);
 
   if ('envPatch' in changes) {
-    const mutated = applyEnvPatch(config, changes.envPatch);
-    if (mutated && isRunning) requiresRestart = true;
+    applyEnvPatch(config, changes.envPatch);
   }
 
   for (const [key, value] of Object.entries(changes)) {
@@ -307,7 +284,6 @@ export async function updateContainerConfig(name, changes) {
       }
 
       config.network = merged;
-      if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
       continue;
     }
     if (key === 'localDns') {
@@ -346,9 +322,6 @@ export async function updateContainerConfig(name, changes) {
       unflaggedSecretMounts = secretMountsLosingFlag(prevMounts, normalized, renamePairs);
       config.mounts = normalized;
       mountsPersisted = normalized;
-      if (isRunning && differsWhenNormalized(prevMounts, normalized, (l) => validateAndNormalizeMounts(l, resolveMount))) {
-        requiresRestart = true;
-      }
       continue;
     }
     if (key === 'image') {
@@ -357,22 +330,14 @@ export async function updateContainerConfig(name, changes) {
       }
       // Stored exactly as create stores it, so start finds the image under it.
       const { ref } = await resolveContainerImageRef(value.trim());
-      if (ref !== config.image) {
-        config.image = ref;
-        if (isRunning) requiresRestart = true;
-      }
+      config.image = ref;
       continue;
     }
     if (key === 'devices') {
-      const prevDevices = Array.isArray(config.devices) ? config.devices : [];
       config.devices = validateAndNormalizeDevices(value);
-      if (isRunning && differsWhenNormalized(prevDevices, config.devices, validateAndNormalizeDevices)) {
-        requiresRestart = true;
-      }
       continue;
     }
     config[key] = value;
-    if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
   }
 
   // The A record is Wisp glue's (lib/containerOperations.js), after this
@@ -384,6 +349,7 @@ export async function updateContainerConfig(name, changes) {
     await registerAllContainerServices(name, config);
   }
 
+  const requiresRestart = isRunning && restartSignature(config) !== signatureBefore;
   if (requiresRestart) markPendingRestart(config);
   for (const mountName of unflaggedSecretMounts) {
     await clearMountBackingFile(name, mountName);

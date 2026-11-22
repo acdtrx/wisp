@@ -22,8 +22,7 @@ import { assertBindSourcesReady, resolveBindSources } from './containerManagerMo
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { getImageDigest } from './containerManagerImages.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-import { RESTART_FIELDS } from './containerManagerConfig.js';
-import { markPendingRestart, pendingRestartInForce } from './containerManagerPendingRestart.js';
+import { markPendingRestart, pendingRestartInForce, restartSignature } from './containerManagerPendingRestart.js';
 import { pullImage, getImageConfig } from './containerManagerPull.js';
 import { SNAPSHOTTER, SNAPSHOT_REMOVE_DEADLINE_MS, prepareSnapshot } from './containerManagerSnapshot.js';
 import { noteContainerStart } from './containerManagerRestartState.js';
@@ -31,20 +30,6 @@ import { noteContainerStart } from './containerManagerRestartState.js';
 /** containerd-shim-runc-v2 `file://` stdio URI — appends stdout/stderr (see process/io.go). */
 function taskLogStdioUri(logPath) {
   return pathToFileURL(logPath).href;
-}
-
-/** Restart-relevant fields, compared without the addresses a start itself writes. */
-function restartFieldsSignature(config) {
-  const sig = {};
-  for (const key of RESTART_FIELDS) {
-    if (key === 'network') {
-      const { ip, ip6, ...net } = config.network || {};
-      sig.network = net;
-    } else {
-      sig[key] = config[key] ?? null;
-    }
-  }
-  return JSON.stringify(sig);
 }
 
 /**
@@ -76,7 +61,7 @@ async function settleRestartFlagAfterStart(name, specConfig, pid) {
   const latest = await readContainerConfig(name);
   const since = latest.pendingRestart?.since;
   let result;
-  if (restartFieldsSignature(latest) !== restartFieldsSignature(specConfig)) {
+  if (restartSignature(latest) !== restartSignature(specConfig)) {
     markPendingRestart(latest);
     await writeContainerConfig(name, latest);
     result = 'flagged: edit saved during the start';
