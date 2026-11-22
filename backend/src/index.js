@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 
 // First project import: runtime.env must be in process.env before config.js loads.
-import './lib/bootRuntimeEnv.js';
+import { runtimeEnvWarnings } from './lib/bootRuntimeEnv.js';
 import { buildApp } from './app.js';
 import { routeSchemaProblems, routeSchemaSummary } from './routes/schemas.js';
 import { checkRouteAccess, AUTH_LEVELS, checkPasswordFile } from './lib/auth.js';
@@ -101,16 +101,16 @@ function printRouteAccessReport(routes) {
       continue;
     }
     const level = row.declared ? row.auth : `${row.auth} (UNDECLARED)`;
-    console.log(`${level.padEnd(18)} ${methods.padEnd(14)} ${routeSchemaSummary(row).padEnd(40)} ${row.url}`);
+    process.stdout.write(`${level.padEnd(18)} ${methods.padEnd(14)} ${routeSchemaSummary(row).padEnd(40)} ${row.url}\n`);
     const problems = routeSchemaProblems(row);
-    for (const problem of problems) console.log(`${''.padEnd(18)} SCHEMA: ${problem}`);
+    for (const problem of problems) process.stdout.write(`${''.padEnd(18)} SCHEMA: ${problem}\n`);
     if (row.declared) counts[row.auth] += endpoints;
     else undeclared += endpoints;
     if (problems.length > 0) lackingSchemas += endpoints;
   }
   const summary = AUTH_LEVELS.map((level) => `${level} ${counts[level]}`).join(', ');
-  console.log(`\n${pluginRoutes} plugin routes (static files, CORS preflight) not listed: public, no schema check.`);
-  console.log(`Endpoints (HEAD mirrors of GET not counted): ${summary}, undeclared ${undeclared}; lacking a schema ${lackingSchemas}`);
+  process.stdout.write(`\n${pluginRoutes} plugin routes (static files, CORS preflight) not listed: public, no schema check.\n`);
+  process.stdout.write(`Endpoints (HEAD mirrors of GET not counted): ${summary}, undeclared ${undeclared}; lacking a schema ${lackingSchemas}\n`);
   return undeclared > 0 || lackingSchemas > 0 ? 1 : 0;
 }
 
@@ -150,6 +150,7 @@ async function main() {
   takeNotifySocket();
   const log = createStartLogger();
   setLog(log);
+  for (const warning of runtimeEnvWarnings) log.warn(warning);
 
   // `npm run route-access`: every route with the level the auth hook enforces
   // for it, then exit without migrating, connecting or listening.
@@ -200,12 +201,12 @@ async function main() {
   // containerManager.subscribeContainerNetworkChange, which replays current
   // snapshots to a new subscriber, so boot-time registration happens once it
   // starts — no separate warm-up loop needed.
-  startContainerMdnsReconciler(app.log);
+  startContainerMdnsReconciler();
   startMdnsProbeRecovery();
 
   // Announce this instance and browse for peers (settings-gated, best-effort,
   // never rejects). Not awaited: a hung avahi/DBus must not delay app.listen.
-  startWispDiscovery(app.log, { port: PORT });
+  startWispDiscovery({ port: PORT });
 
   // Production serves the LAN; the dev backend is reached only through the
   // local Vite proxy, so it listens on loopback alone.
@@ -234,12 +235,12 @@ async function shutdown(signal) {
     // Still migrating or checking: the process exits, and the migrations'
     // libvirt and containerd connections close with it. A migration cut short
     // runs again on the next start, whole: its ledger entry is written when it ends.
-    console.error(`Received ${signal} before the server was up, exiting`);
+    process.stderr.write(`Received ${signal} before the server was up, exiting\n`);
     process.exit(0);
   }
   app.log.info(`Received ${signal}, shutting down`);
   setTimeout(() => {
-    console.error(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting`);
+    process.stderr.write(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting\n`);
     process.exit(1);
   }, SHUTDOWN_DEADLINE_MS).unref();
   // No job starts from here on: the listener and `/mcp` take requests until
@@ -281,7 +282,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 /* stderr rather than app.log: the dev log transport runs on a worker thread
    that may not flush before the exit. systemd restarts the unit on failure. */
 function exitOnFatal(kind, err) {
-  console.error(`${kind}:`, err);
+  process.stderr.write(`${kind}: ${err?.stack ?? err}\n`);
   process.exit(1);
 }
 process.on('unhandledRejection', (err) => exitOnFatal('Unhandled rejection', err));
@@ -297,7 +298,7 @@ const START_FAILURE_CODES = new Set([
 main().catch((err) => {
   // Fastify's logger may not have flushed by the time we exit, so use stderr
   // directly to ensure the message reaches journald.
-  if (START_FAILURE_CODES.has(err?.code)) console.error(`Failed to start: ${err.message}${err.raw ? `: ${err.raw}` : ''}`);
-  else console.error('Failed to start:', err);
+  if (START_FAILURE_CODES.has(err?.code)) process.stderr.write(`Failed to start: ${err.message}${err.raw ? `: ${err.raw}` : ''}\n`);
+  else process.stderr.write(`Failed to start: ${err?.stack ?? err}\n`);
   process.exit(1);
 });

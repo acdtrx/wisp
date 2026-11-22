@@ -125,22 +125,22 @@ export function parseRuntimeEnvText(content, { tolerateKeys = [] } = {}) {
  * EnvironmentFile= has set them already). File is optional; no-op if missing.
  * Strict, but for `tolerateKeys` (see parseRuntimeEnvText).
  *
- * Warns to stderr when the file's permission bits exceed 0o600 — runtime.env
- * holds secrets like GITHUB_TOKEN. We intentionally only warn (not refuse):
- * install/setup scripts also chmod the file at write time.
+ * Returns its warnings (none, or the file's permission bits exceeding 0o600 —
+ * runtime.env holds secrets like GITHUB_TOKEN), which the start logs once its
+ * logger exists. It only warns, not refuses: install/setup scripts also chmod
+ * the file at write time.
+ * @returns {string[]}
  */
 export function loadRuntimeEnv(projectRoot, { tolerateKeys = [] } = {}) {
   const envPath = resolve(projectRoot, 'config/runtime.env');
-  if (!existsSync(envPath)) return;
+  const warnings = [];
+  if (!existsSync(envPath)) return warnings;
   try {
     const st = statSync(envPath);
     /* mask out file-type bits and check group/other bits */
     if ((st.mode & 0o077) !== 0) {
       const octal = (st.mode & 0o777).toString(8);
-      // Bootstrap log: Pino isn't initialized yet during loadRuntimeEnv.
-      console.warn(
-        `[runtime.env] permissions are 0o${octal} — should be 0600 (chmod 600 ${envPath})`,
-      );
+      warnings.push(`[runtime.env] permissions are 0o${octal} — should be 0600 (chmod 600 ${envPath})`);
     }
   } catch {
     /* stat may fail in unusual mounts; the readFileSync below will surface a real failure */
@@ -148,6 +148,7 @@ export function loadRuntimeEnv(projectRoot, { tolerateKeys = [] } = {}) {
   for (const { key, value } of parseRuntimeEnvText(readFileSync(envPath, 'utf8'), { tolerateKeys })) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
+  return warnings;
 }
 
 /**

@@ -20,13 +20,13 @@ import {
 import { getSettings } from './settings.js';
 import { getCurrentVersion } from './wispUpdate.js';
 import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 const WISP_SERVICE_TYPE = '_wisp._tcp';
 // Never put '#' in this key: deregisterServicesForContainer() prefix-matches
 // `${containerName}#` and "wisp" is a legal container name.
 const SERVICE_KEY = 'wisp:discovery';
 
-let logger = null;
 let started = false;
 let port = 8080;
 let selfInstanceName = null;
@@ -34,11 +34,8 @@ let stopBrowse = null;
 
 /** instanceName -> { name, url, version, host } */
 const peers = new Map();
-const peersChange = createEmitter('[discovery] peers change', () => log());
+const peersChange = createEmitter('[discovery] peers change', log);
 
-function log() {
-  return logger || console;
-}
 
 function emitChange() {
   peersChange.emit();
@@ -132,10 +129,9 @@ async function reconcileAnnouncement() {
   }
 }
 
-export async function startWispDiscovery(log_, opts = {}) {
+export async function startWispDiscovery(opts = {}) {
   if (started) return;
   started = true;
-  logger = log_ || null;
   if (Number.isInteger(opts.port)) port = opts.port;
   // Short hostname — os.hostname() may return an FQDN, and the mDNS name the
   // avahi daemon publishes for this box is `<shortname>.local`.
@@ -143,7 +139,7 @@ export async function startWispDiscovery(log_, opts = {}) {
   try {
     await applyAnnouncementState();
   } catch (err) {
-    log().warn?.({ err: err?.message || err }, '[discovery] start failed');
+    log().warn({ err: err?.message || err }, '[discovery] start failed');
   }
 }
 
@@ -157,7 +153,7 @@ export async function stopWispDiscovery() {
   try {
     await deregisterService(SERVICE_KEY);
   } catch (err) {
-    log().warn?.({ err: err?.message || err }, '[discovery] deregister on stop failed');
+    log().warn({ err: err?.message || err }, '[discovery] deregister on stop failed');
   }
   peers.clear();
 }
@@ -171,7 +167,7 @@ export async function refreshWispAnnouncement() {
   try {
     await applyAnnouncementState();
   } catch (err) {
-    log().warn?.({ err: err?.message || err }, '[discovery] refresh failed');
+    log().warn({ err: err?.message || err }, '[discovery] refresh failed');
   }
 }
 

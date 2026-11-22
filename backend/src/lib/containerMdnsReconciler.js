@@ -23,17 +23,14 @@
  */
 import { subscribeContainerNetworkChange, getContainerConfig } from './containerManager/index.js';
 import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
+import { log } from './log.js';
 
 const registered = new Set();
 /** name → tail of that container's operation chain */
 const chains = new Map();
 
-let logger = null;
 let unsubscribe = null;
 
-function log() {
-  return logger || console;
-}
 
 /**
  * Run `op` after every earlier operation for `name` has settled. Resolves or
@@ -63,7 +60,7 @@ async function onNetworkChange(name, snapshot) {
   if (snapshot === null) {
     if (registered.has(name)) {
       try { await deregisterAddress(name); }
-      catch (err) { log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] deregister on stop failed'); }
+      catch (err) { log().warn({ err: err?.message || err, container: name }, '[containerMdns] deregister on stop failed'); }
       registered.delete(name);
     }
     return;
@@ -73,7 +70,7 @@ async function onNetworkChange(name, snapshot) {
   if (!localDns) {
     if (registered.has(name)) {
       try { await deregisterAddress(name); }
-      catch (err) { log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] deregister on toggle-off failed'); }
+      catch (err) { log().warn({ err: err?.message || err, container: name }, '[containerMdns] deregister on toggle-off failed'); }
       registered.delete(name);
     }
     return;
@@ -84,16 +81,15 @@ async function onNetworkChange(name, snapshot) {
     await registerAddress(name, sanitizeHostname(name), snapshot.ip, snapshot.ip6);
     registered.add(name);
   } catch (err) {
-    log().warn?.({ err: err?.message || err, container: name, ip: snapshot.ip, ip6: snapshot.ip6 }, '[containerMdns] register failed');
+    log().warn({ err: err?.message || err, container: name, ip: snapshot.ip, ip6: snapshot.ip6 }, '[containerMdns] register failed');
   }
 }
 
-export function startContainerMdnsReconciler(log_) {
+export function startContainerMdnsReconciler() {
   if (unsubscribe) return; // already started
-  logger = log_ || null;
   unsubscribe = subscribeContainerNetworkChange((name, snapshot) => {
     enqueue(name, () => onNetworkChange(name, snapshot)).catch((err) => {
-      log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] handler threw');
+      log().warn({ err: err?.message || err, container: name }, '[containerMdns] handler threw');
     });
   });
 }

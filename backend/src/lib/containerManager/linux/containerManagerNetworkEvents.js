@@ -43,7 +43,7 @@ let reconcileQueued = false;
 let periodicTimer = null;
 
 function log() {
-  return containerState.logger || console;
+  return containerState.logger;
 }
 
 const networkChange = createEmitter('[containerManager] container-network-change', log);
@@ -79,7 +79,7 @@ async function probeRead(name, what, read, fallback) {
     }
     if (!failed.has(what)) {
       failed.add(what);
-      log().warn?.({ err: err?.message || err, code: err?.code, container: name }, `[containerManager] network probe: reading its ${what} failed (logged once until it works again)`);
+      log()?.warn?.({ err: err?.message || err, code: err?.code, container: name }, `[containerManager] network probe: reading its ${what} failed (logged once until it works again)`);
     }
     return fallback;
   }
@@ -116,7 +116,7 @@ async function probeAndEmit(name, state) {
         if (ip6Diverged) latest.network.ip6 = liveIp6;
         await writeContainerConfig(name, latest);
       } catch (err) {
-        log().warn?.({ err: err?.message || err, container: name, ip: liveIp, ip6: liveIp6 }, '[containerManager] persist new IP failed');
+        log()?.warn?.({ err: err?.message || err, container: name, ip: liveIp, ip6: liveIp6 }, '[containerManager] persist new IP failed');
       } finally {
         release();
       }
@@ -172,7 +172,7 @@ function scheduleReconcile(list) {
       const target = list ?? await listContainers();
       await reconcile(target);
     } catch (err) {
-      log().warn?.({ err: err?.message || err }, '[containerManager] container-network-change reconcile failed');
+      log()?.warn?.({ err: err?.message || err }, '[containerManager] container-network-change reconcile failed');
     } finally {
       reconcileInFlight = false;
       if (reconcileQueued) {
@@ -196,7 +196,7 @@ export function subscribeContainerNetworkChange(handler) {
   const unsubscribe = networkChange.subscribe(handler);
   for (const [name, snapshot] of emittedSnapshots) {
     try { handler(name, snapshot); }
-    catch (err) { log().warn?.({ err: err?.message || err }, '[containerManager] container-network-change replay handler threw'); }
+    catch (err) { log()?.warn?.({ err: err?.message || err }, '[containerManager] container-network-change replay handler threw'); }
   }
   return unsubscribe;
 }

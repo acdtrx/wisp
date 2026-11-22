@@ -18,10 +18,14 @@ import { fileURLToPath } from 'node:url';
 
 import { checkRuntimeEnv, loadRuntimeEnv, RETIRED_ENV_KEYS } from './loadRuntimeEnv.js';
 
+/** What the load warned of, for main() to log once the start's logger exists. */
+export const runtimeEnvWarnings = [];
+
 try {
-  loadRuntimeEnv(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'), { tolerateKeys: RETIRED_ENV_KEYS });
+  runtimeEnvWarnings.push(...loadRuntimeEnv(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'), { tolerateKeys: RETIRED_ENV_KEYS }));
   checkRuntimeEnv();
 } catch (err) {
-  console.error(`Failed to start: ${err.message}`);
+  // Before any logger exists: stderr, which the journal keeps.
+  process.stderr.write(`Failed to start: ${err.message}\n`);
   process.exit(1);
 }

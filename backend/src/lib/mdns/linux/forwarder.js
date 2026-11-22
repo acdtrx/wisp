@@ -69,13 +69,11 @@ const state = {
 };
 
 function logWarn(msg) {
-  if (state.logger?.warn) state.logger.warn(`[mdnsForwarder] ${msg}`);
-  else console.warn(`[mdnsForwarder] ${msg}`);
+  state.logger?.warn(`[mdnsForwarder] ${msg}`);
 }
 
 function logInfo(msg) {
-  if (state.logger?.info) state.logger.info(`[mdnsForwarder] ${msg}`);
-  else console.info(`[mdnsForwarder] ${msg}`);
+  state.logger?.info(`[mdnsForwarder] ${msg}`);
 }
 
 // ---------------------------------------------------------------------------
