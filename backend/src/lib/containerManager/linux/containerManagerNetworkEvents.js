@@ -58,35 +58,44 @@ function snapshotEqual(a, b) {
   return a.state === b.state && a.ip === b.ip && a.ip6 === b.ip6;
 }
 
+/** name → the probe reads that failed and were logged: each is logged once while it lasts. */
+const probeFailures = new Map();
+
+/**
+ * Run one of the probe's reads: its value, or `fallback` when it failed. A
+ * failure that is not "the container is gone" is logged the first time, and
+ * logged no more until the read has worked again.
+ */
+async function probeRead(name, what, read, fallback) {
+  try {
+    const value = await read();
+    probeFailures.get(name)?.delete(what);
+    return value;
+  } catch (err) {
+    if (err?.code === 'CONTAINER_NOT_FOUND') return fallback;
+    let failed = probeFailures.get(name);
+    if (!failed) {
+      failed = new Set();
+      probeFailures.set(name, failed);
+    }
+    if (!failed.has(what)) {
+      failed.add(what);
+      log().warn?.({ err: err?.message || err, code: err?.code, container: name }, `[containerManager] network probe: reading its ${what} failed (logged once until it works again)`);
+    }
+    return fallback;
+  }
+}
+
 async function probeAndEmit(name, state) {
-  let config;
-  try {
-    config = await readContainerConfig(name);
-  } catch {
-    /* container.json missing (mid-create / mid-delete) — skip this tick */
-    return;
-  }
+  // container.json missing (mid-create / mid-delete): skip this tick.
+  const config = await probeRead(name, 'configuration', () => readContainerConfig(name), null);
+  if (!config) return;
 
-  let pid = 0;
-  try {
-    pid = Number((await getTaskState(name))?.pid) || 0;
-  } catch {
-    /* task lookup failed — probe without the pid this tick */
-  }
+  // A failed task lookup probes without the pid this tick.
+  const pid = await probeRead(name, 'task', async () => Number((await getTaskState(name))?.pid) || 0, 0);
 
-  let liveIp = null;
-  try {
-    if (pid > 0) liveIp = await ipv4CidrFromProcFibTrie(pid);
-  } catch {
-    /* task gone mid-tick — treat as "no IP this tick" */
-  }
-
-  let liveIp6 = null;
-  try {
-    if (pid > 0) liveIp6 = await ipv6GlobalCidrFromProcIfInet6(pid, 'eth0');
-  } catch {
-    /* task gone mid-tick — treat as "no IPv6 this tick" */
-  }
+  const liveIp = pid > 0 ? await probeRead(name, 'IPv4 address', () => ipv4CidrFromProcFibTrie(pid), null) : null;
+  const liveIp6 = pid > 0 ? await probeRead(name, 'IPv6 address', () => ipv6GlobalCidrFromProcIfInet6(pid, 'eth0'), null) : null;
 
   // Persist live addresses to container.json if they diverge. This keeps other
   // consumers of getContainerConfig consistent after a DHCP renewal or SLAAC
@@ -139,6 +148,10 @@ async function reconcile(list) {
       emittedSnapshots.delete(name);
       fireNetworkChange(name, null);
     }
+  }
+  // A container that is not running is not probed: its failures are forgotten.
+  for (const name of [...probeFailures.keys()]) {
+    if (!runningByName.has(name)) probeFailures.delete(name);
   }
 
   // Probe + emit for every running container. probeAndEmit is no-op when the
