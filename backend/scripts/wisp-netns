@@ -1,71 +1,47 @@
 #!/usr/bin/env bash
-# Create or remove a network namespace under /var/run/netns (for Wisp container + CNI).
-# Invoked via sudo -n as the deploy user. See install-helpers.sh / docs/specs/DEPLOYMENT.md.
-set -euo pipefail
+# Usage:
+#   wisp-netns add <container>                       # ensure /var/run/netns/<container>
+#   wisp-netns delete <container>                    # exit 2 when there is none
+#   wisp-netns route-add <container> <ifname> <ipv4> # an on-link /32 in its netns
+#
+# A container's network namespace, named after the container, so it is always
+# one of Wisp's own under /var/run/netns. route-add puts the container DNS
+# stub's address on the container's veth (docs/specs/CONTAINERS.md, Local DNS).
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-valid_name() {
-  [[ "${1:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ ]]
-}
+readonly NETNS_DIR=/var/run/netns
 
-CMD="${1:-}"
-NAME="${2:-}"
+usage="usage: wisp-netns add|delete <container> | route-add <container> <ifname> <ipv4>"
+(( $# >= 2 )) || refuse "$usage"
+match_one_of "the action" "$1" add delete route-add
+match_name "the container" "$2"
+NAME="$2"
+case "$1" in
+  add | delete) (( $# == 2 )) || refuse "$usage" ;;
+  route-add)
+    (( $# == 4 )) || refuse "$usage"
+    match "the interface" "$3" "$IFACE_RE"
+    match "the address" "$4" '^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$'
+    for octet in "${BASH_REMATCH[@]:1}"; do
+      (( 10#$octet <= 255 )) || refuse "the address is not valid: '$4'"
+    done
+    ;;
+esac
 
-case "$CMD" in
+case "$1" in
   add)
-    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
-    mkdir -p /var/run/netns
-    if [[ -e "/var/run/netns/$NAME" ]]; then
-      exit 0
-    fi
-    ip netns add "$NAME"
-    ip netns exec "$NAME" ip link set lo up
+    [[ ! -e "$NETNS_DIR/$NAME" ]] || exit 0
+    must "$QUICK_SEC" mkdir -p -- "$NETNS_DIR"
+    must "$QUICK_SEC" ip netns add "$NAME"
+    must "$QUICK_SEC" ip netns exec "$NAME" ip link set lo up
     ;;
   delete)
-    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
-    ip netns delete "$NAME" 2>/dev/null || true
-    ;;
-  ipv4)
-    # Print `ip addr` text for iface in netns — backend parses inet line. Used when CNI ADD omits
-    # ips[] (common with ipam.type=dhcp; cni-dhcp assigns asynchronously).
-    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
-    IFACE="${3:-eth0}"
-    if [[ ! "$IFACE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,14}$ ]]; then
-      echo "wisp-netns: invalid ifname" >&2
-      exit 1
-    fi
-    if [[ ! -e "/var/run/netns/$NAME" ]]; then
-      echo "wisp-netns: no netns: $NAME" >&2
-      exit 1
-    fi
-    ip -n "$NAME" -4 addr show dev "$IFACE" 2>/dev/null || true
+    [[ -e "$NETNS_DIR/$NAME" ]] || not_found "no network namespace $NAME"
+    must "$QUICK_SEC" ip netns delete "$NAME"
     ;;
   route-add)
-    # Install an on-link /32 route inside the netns so a specific host IP (e.g. the
-    # systemd-resolved mDNS stub on br0) is reachable directly via the container's veth
-    # instead of being sent to the LAN gateway and black-holed.
-    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
-    IFACE="${3:-}"
-    DST="${4:-}"
-    if [[ -z "$IFACE" || -z "$DST" ]]; then
-      echo "Usage: $0 route-add <name> <ifname> <ipv4>" >&2
-      exit 1
-    fi
-    if [[ ! "$IFACE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,14}$ ]]; then
-      echo "wisp-netns: invalid ifname" >&2
-      exit 1
-    fi
-    if [[ ! "$DST" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-      echo "wisp-netns: invalid ipv4" >&2
-      exit 1
-    fi
-    if [[ ! -e "/var/run/netns/$NAME" ]]; then
-      echo "wisp-netns: no netns: $NAME" >&2
-      exit 1
-    fi
-    ip -n "$NAME" route replace "$DST/32" dev "$IFACE"
-    ;;
-  *)
-    echo "Usage: $0 add|delete <name> | ipv4 <name> [ifname] | route-add <name> <ifname> <ipv4>" >&2
-    exit 1
+    [[ -e "$NETNS_DIR/$NAME" ]] || not_found "no network namespace $NAME"
+    must "$QUICK_SEC" ip -n "$NAME" route replace "$4/32" dev "$3"
     ;;
 esac

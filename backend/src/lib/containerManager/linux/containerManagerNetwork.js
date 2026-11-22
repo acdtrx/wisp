@@ -45,6 +45,11 @@ const CNI_CONF_NAME = '10-wisp-bridge.conflist';
 
 const RUN_SETUP = 'run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)';
 
+/* wisp-netns bounds each command at 10 s (+2 to end): an add runs three, a
+ * delete or a route one. */
+const NETNS_ADD_TIMEOUT_MS = 40_000;
+const NETNS_STEP_TIMEOUT_MS = 15_000;
+
 /**
  * Reject anything that isn't an existing Linux bridge.
  * `/sys/class/net/<iface>/bridge` is a directory that exists only on bridges — not on
@@ -172,9 +177,8 @@ async function ensureNetNS(name) {
   } catch {
     /* need to create */
   }
-  const netnsScript = helperPath('wisp-netns');
   try {
-    await runPrivileged(netnsScript, ['add', name], { timeoutMs: 15000 });
+    await runPrivileged(helperPath('wisp-netns'), ['add', name], { timeoutMs: NETNS_ADD_TIMEOUT_MS });
   } catch (err) {
     throw containerError(
       'CONTAINERD_ERROR',
@@ -217,7 +221,12 @@ async function removeNetNS(name) {
   } catch {
     return; // no netns, nothing to remove
   }
-  await runPrivileged(helperPath('wisp-netns'), ['delete', name], { timeoutMs: 15000 });
+  try {
+    await runPrivileged(helperPath('wisp-netns'), ['delete', name], { timeoutMs: NETNS_STEP_TIMEOUT_MS });
+  } catch (err) {
+    if (err.reason === 'not-found') return; // gone meanwhile: nothing was removed here
+    throw containerError('CONTAINERD_ERROR', `Failed to remove the netns of "${name}" (${err.reason ?? 'error'})`, err.detail ?? err.message);
+  }
   notifyContainerNetnsRemoved(name);
 }
 
@@ -306,13 +315,11 @@ function bridgeHasMdnsForwarder(bridgeInterface) {
  * Best-effort: a failure here logs a warning but does not block the container start.
  */
 async function installMdnsStubRoute(name) {
-  const netnsScript = helperPath('wisp-netns');
   try {
-    await runPrivileged(netnsScript, ['route-add', name, 'eth0', WISP_MDNS_STUB_IP], { timeoutMs: 8000 });
+    await runPrivileged(helperPath('wisp-netns'), ['route-add', name, 'eth0', WISP_MDNS_STUB_IP], { timeoutMs: NETNS_STEP_TIMEOUT_MS });
   } catch (err) {
-    const detail = `${err.stderr || ''} ${err.message || ''}`.trim();
     containerState.logger?.warn(
-      `Failed to install mDNS stub route (169.254.53.53) in netns "${name}": ${detail}. ` +
+      `Failed to install mDNS stub route (169.254.53.53) in netns "${name}": ${err.detail ?? err.message}. ` +
       '.local resolution inside this container will not work until helpers are refreshed.',
     );
   }
