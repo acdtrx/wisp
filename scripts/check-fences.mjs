@@ -75,6 +75,12 @@
  *      Repo layout): checked in the same import scan, none of its files
  *      imports anything, so the backend and the frontend can both load it.
  *
+ *  11. One change emitter (lib/base/emitter.js): over the same files, comments
+ *      stripped, no Set of handlers is written out by hand — a `new Set(` given
+ *      to a name or property ending in Handlers / Listeners / Subscribers (any
+ *      case) outside lib/base/. A reviewed allowance is an EXCEPTIONS line with
+ *      the specifier `emitter`. Known limit: a handler Set under another name.
+ *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
@@ -139,6 +145,9 @@ const FETCH_HOME = `${LIB}/downloads/`;
  * the only ones that may call the global fetch, open a WebSocket client or
  * import an HTTP client.
  */
+/** Rule 11: a hand-written emitter's set of handlers. */
+const HANDLER_SET = /(?<![\w$])[\w$]*(?:handlers|listeners|subscribers)\s*[:=]\s*new\s+Set\s*\(/gi;
+const BASE_DIR = `${LIB}/base/`;
 const FETCH_HELPERS = new Set([`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`]);
 const GLOBAL_FETCH = /(?<![\w$.])fetch\s*(?:\?\.\s*)?\(|(?<![\w$.])(?:globalThis|global)\s*(?:\?\.\s*|\.\s*)(?:fetch\b|\[\s*(['"`])fetch\1\s*\])|(?<![\w$.])(?:globalThis|global)\s*\[\s*(['"`])fetch\2\s*\]/g;
 const WEBSOCKET_CLIENT = /(?<![\w$.])new\s+(?:[\w$]+\s*(?:\?\.|\.)\s*)*WebSocket\s*\(/g;
@@ -167,6 +176,11 @@ const EXCEPTIONS = [
     file: 'backend/src/lib/downloads/ssrfSafeFetch.test.js',
     specifier: 'undici',
     reason: "the test of ssrfSafeFetch's per-hop Agent replaces undici with a module mock",
+  },
+  {
+    file: 'backend/src/lib/mdns/linux/avahi.js',
+    specifier: 'emitter',
+    reason: 'a service browse keeps its { onUp, onDown, onReset } subscribers per type, refcounted, and frees the avahi browser when the last one leaves: not a change emitter',
   },
 ];
 
@@ -493,6 +507,11 @@ async function main() {
         violations.push(`${fileRel}:${lineAt(m.index)} WebSocket — a WebSocket client is ${viaDownloads} (CODING-RULES §7)`);
       }
     }
+    if (!fileRel.startsWith(BASE_DIR) && !isExcepted('emitter')) {
+      for (const m of code.matchAll(HANDLER_SET)) {
+        violations.push(`${fileRel}:${lineAt(m.index)} emitter — a hand-written emitter: use createEmitter from lib/base (one change emitter)`);
+      }
+    }
     if (outsideFetchHome && !OPERATOR_FETCH_USERS.has(fileRel) && !isExcepted('fetchOperatorEndpoint')) {
       for (const m of code.matchAll(OPERATOR_FETCH)) {
         violations.push(`${fileRel}:${lineAt(m.index)} fetchOperatorEndpoint — only lib/oidc.js uses the operator fetch, which allows private addresses: every other URL goes through ssrfSafeFetch (CODING-RULES §9)`);
@@ -621,12 +640,13 @@ async function main() {
   const summary = `${count} imports across ${files.length} files`;
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   const runnerSummary = 'only the backend runs the state migrations';
+  const homesSummary = 'no hand-written emitter outside lib/base/';
   const fetchSummary = 'no global fetch, HTTP client import or WebSocket client outside lib/downloads/, and the operator fetch only in lib/oidc.js';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);
   }
-  console.log(`OK — ${summary}, all inside their fences; ${fetchSummary}; ${cycleSummary}; ${runnerSummary}.`);
+  console.log(`OK — ${summary}, all inside their fences; ${fetchSummary}; ${cycleSummary}; ${runnerSummary}; ${homesSummary}.`);
 }
 
 await main();
