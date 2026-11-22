@@ -46,6 +46,8 @@
 - **`npm run check` runs shellcheck** over every shell file, and fails without it.
 - **Setup installs exactly this release's helpers and their sudo rules**: any other `wisp-*` in `/usr/local/bin` or `/etc/sudoers.d`, an earlier release's, is removed.
 - **`wispctl` keeps `password` and `svc start|stop|restart|logs`**: `wispctl local …` and `wispctl svc uninstall` are gone.
+- **An update is the new release's own install, with a way back**: the updater stops Wisp, keeps a copy of the install folder, and runs the new tree's install (copy, setup, start); when any of it fails it puts the copy back and runs the old release's install, which also removes what the new one added.
+- **An install and an update keep the same files**: `config/` holds the host's own files, which neither deletes or overwrites; everything else in the install folder is the release's, and what it no longer ships is removed.
 
 ### Bug Fixes
 - **A failed RAM read says so on Host Overview** (`memory: null` with `memoryError` in the hardware inventory), where it showed no modules.
