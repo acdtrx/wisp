@@ -54,12 +54,13 @@ echo "--- Privileged helpers (/usr/local/bin) ---"
 
 # install_sudoers <file> <line>: the rule checked by visudo while still staged,
 # then put in place only when it differs. A rule visudo rejects never goes live,
-# and the one already in place stays.
+# and the one already in place stays. sudo-rs's visudo (Ubuntu from 25.10) says
+# "parsed OK" on stdout despite -q; its errors are on stderr.
 install_sudoers() {
   local file="$1" line="$2" staged
   staged="$(staged_file)"
   printf '%s\n' "$line" > "$staged"
-  visudo -cqf "$staged" || fail "$file: the rule \"$line\" is not valid sudoers syntax"
+  visudo -cqf "$staged" >/dev/null || fail "$file: the rule \"$line\" is not valid sudoers syntax"
   if write_if_changed "$file" 0440 "$staged"; then changed "$file"; fi
 }
 
