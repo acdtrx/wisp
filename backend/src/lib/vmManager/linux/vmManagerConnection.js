@@ -298,6 +298,11 @@ export async function connect(logger = null, opts = {}) {
   const bus = dbus.systemBus();
   /* Attached at creation: an 'error' with no listener would crash the process. */
   bus.on('error', (err) => handleBusError(bus, err));
+  /* dbus-next's bus forwards its connection's 'error' but not its 'end' (the
+   * socket closed), so a bus whose daemon died would otherwise be noticed only
+   * at our next write. `_connection` is private: without it, the 'error' path
+   * remains. */
+  bus._connection?.on?.('end', () => handleBusError(bus, new Error('system bus connection closed')));
   /* dbus-next never settles calls pending on a dead bus, so each setup call
    * races the bus failing — a refused socket rejects instead of hanging — and
    * is bounded like every libvirt call, so a wedged libvirt-dbus fails the
