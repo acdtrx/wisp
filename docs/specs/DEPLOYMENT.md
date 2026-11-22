@@ -291,144 +291,42 @@ The `v1.0.6` tag triggers `.github/workflows/release.yml`, which runs `npm run c
 
 When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`sudo -n`**:
 
+0. **Write it in the helpers' dialect** ([CODING-RULES §12](../CODING-RULES.md), Shell), with a test of its refusals in `backend/scripts/test/`.
 1. **Register it** in **`scripts/linux/setup/install-helpers.sh`**: its name in `HELPERS`, which installs it and its sudoers rule; a package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
-2. **Backend** — call it through the one runner, `runPrivileged(helperPath('wisp-<name>'), args, { timeoutMs })` from `lib/base/` (settled 2026-11-22). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path. The runner tells a failure apart as `missing` (not installed: run setup), `refused` (no sudoers rule lets the service run it), `failed` (the helper's own exit) or `timed-out`; the caller keeps its own error code on the wire. The fence check refuses a `'sudo'` anywhere else.
+2. **Backend** — call it through the one runner, `runPrivileged(helperPath('wisp-<name>'), args, { timeoutMs })` from `lib/base/` (settled 2026-11-22). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path. The runner tells a failure apart as `missing` (not installed: run setup), `refused` (sudo did not let the service run it), `timed-out`, or by the helper's own exit code `invalid`, `not-found`, `busy` or `failed`; the caller keeps its own error code on the wire. The fence check refuses a `'sudo'` anywhere else.
 3. **Docs** — `docs/specs/DEPLOYMENT.md` (this section), `docs/specs/API-<AREA>.md` / `CONFIGURATION.md` as appropriate; the CLI tools inventory in `docs/TECH-STACK.md`; the **shell-exec allowlist in `docs/CODING-RULES.md` §7**.
 4. **Install / upgrade** — Covered automatically if step 1 is done: setup's `helpers` step runs `install-helpers.sh` on every install and update.
 
-### `wisp-os-update` (installed to `/usr/local/bin/`)
+### The helpers
 
-OS package update helper invoked via `sudo`, with apt:
+Every helper is written in one dialect ([CODING-RULES §12](../CODING-RULES.md), Shell;
+settled 2026-11-22): called as `wisp-<name> <subcommand> <arguments in order>`, the answer
+on stdout, an error as one line on stderr, and the same exit codes in all of them (`0`
+done, `64` wrong argument, `2` not there, `75` busy, `1` anything else). Each checks every
+argument before it runs anything, and bounds each command that can hang. The shared parts
+are in `wisp-helper-lib.sh`, installed beside them. Setup's `helpers` step installs them
+all, with one sudo rule each (`<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/<name>`),
+at every install and update.
 
-| `check` | `upgrade` |
-|---------|-----------|
-| `apt-get update` + `apt-get -s dist-upgrade` (dry-run count) | `apt-get update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade` |
+| Helper | Calls | What it does |
+|--------|-------|--------------|
+| `wisp-os-update` | `list`, `upgrade` | `list`: syncs the package lists and prints `PKG<TAB>name<TAB>from<TAB>to` lines plus `TOTAL <bytes>`. `upgrade`: a full non-interactive upgrade (`dist-upgrade`, keeping changed config files); progress on stderr. A package lock held elsewhere is exit 75. It sets its own environment (`DEBIAN_FRONTEND=noninteractive`, `NEEDRESTART_MODE=a`, `UCF_FORCE_CONFFOLD=1`), because sudo drops the caller's. The contract is [HOST-MONITORING.md → OS updates](HOST-MONITORING.md#os-updates) |
+| `wisp-mount` | `smb-mount <share> <path> <credentials-file\|guest> <owner-only\|shared>`, `smb-check <share> <path> <credentials-file\|guest>`, `disk-mount <uuid> <path> <fstype> <ro\|rw>`, `unmount <path>`, `unmount-lazy <path>`, `rmdir <path>` | Mounts SMB shares and adopted removable drives under `/mnt/wisp/`. Rules: [STORAGE.md → Privileged helper](STORAGE.md#privileged-helper). Needs `cifs-utils` |
+| `wisp-dmidecode` | (no argument) | The RAM modules (`dmidecode --type 17`) as a JSON array; `[]` only when DMI lists none (a VM, usually) |
+| `wisp-smartctl` | `<disk>` | One disk's SMART data as smartctl's JSON; a disk in standby answers `{"standby":true}` and is not woken |
+| `wisp-power` | `shutdown`, `reboot` | `shutdown -h now` / `shutdown -r now` |
+| `wisp-nvram` | `copy <src> <dst>` | Copies a UEFI variables file (`VARS.fd`), which libvirt keeps readable by its own user only, and gives the copy to the service user. Both paths must be `VARS.fd` under `/var/lib/wisp/` or `/mnt/wisp/`, with no symbolic link on the way; the copy is written beside the target and renamed over it. A `vmsPath` or backup destination outside those folders is not supported |
+| `wisp-netns` | `add <container>`, `delete <container>`, `route-add <container> <ifname> <ipv4>` | The container's network namespace, `/var/run/netns/<container>`, and the on-link route to Wisp's DNS stub inside it |
+| `wisp-cni` | `add <container> <bridge> <mac>`, `del <container> <bridge>` | Runs the CNI `bridge` plugin (with the `dhcp` IPAM) for the container's own namespace. **The helper writes the network config itself** from its checked arguments and fixed settings (settled 2026-11-22): there is no network file on the host any more (`/etc/cni/net.d/10-wisp-bridge.conflist`, which setup now removes), and no caller can name another namespace, plugin or config. The plugin's result is the answer |
+| `wisp-bridge` | `create <base-bridge> <vlan-id>`, `delete <base-bridge> <vlan-id>` | A VLAN bridge on a base bridge, through netplan: writes or removes only its own file in `/etc/netplan` (`91-wisp-vlan__…`) and runs `netplan apply`. The bridge's name, the VLAN interface and the file name are derived from the two arguments. The base must be a bridge, not itself VLAN-tagged, with a member that is not a VLAN |
 
-Non-interactivity and the conffile policy are part of the OS Updates contract in [HOST-MONITORING.md](HOST-MONITORING.md#os-updates). The helper sets its own environment (`DEBIAN_FRONTEND=noninteractive`, `NEEDRESTART_MODE=a`, `UCF_FORCE_CONFFOLD=1`) because sudo's `env_reset` drops the caller's.
-
-| Command | Description |
-|---------|-------------|
-| `wisp-os-update check` | Sync package DB, count upgradable packages (prints one integer) |
-| `wisp-os-update list` | Sync package DB, print `PKG<TAB>name<TAB>from<TAB>to` lines plus `TOTAL <bytes>` (the op the backend uses for check and list) |
-| `wisp-os-update upgrade` | Sync package DB and perform a full non-interactive upgrade |
-
-The backend invokes **`/usr/local/bin/wisp-os-update`** only. Setup's `helpers` step installs it and configures sudoers. If the file is missing, OS update APIs return 503 `UPDATE_CHECK_UNAVAILABLE`.
-
-#### Troubleshooting: OS update check not working
-
-1. **Backend logs** — 503 responses include `detail` (often sudo/package manager stderr).
-2. **Path** — Confirm `/usr/local/bin/wisp-os-update` exists and setup completed its `helpers` step.
-3. **Privilege** — `/etc/sudoers.d/wisp-os-update` should allow: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-os-update`. Test: `sudo -n /usr/local/bin/wisp-os-update check`.
-4. **Package manager** — Network and apt sources must work.
-
-### `wisp-mount` (installed to `/usr/local/bin/`)
-
-Unified mount helper for SMB shares and adopted removable drives. Invoked via `sudo`:
-
-| Command | Description |
-|---------|-------------|
-| `wisp-mount smb mount <configPath>` | Mount an SMB share (config file supplies share, mountPath, username, password, uid, gid, optional `ownerOnly=1` → `file_mode=0600,dir_mode=0700`) |
-| `wisp-mount smb check <configPath>` | Test SMB connectivity by mounting then unmounting |
-| `wisp-mount disk mount <configPath>` | Mount an adopted removable drive by UUID (config file supplies uuid, mountPath, fsType, readOnly, uid, gid) |
-| `wisp-mount unmount <path>` | Unmount a mount point |
-| `wisp-mount unmount-lazy <path>` | Lazy-unmount (`umount -l`) for surprise-removed devices |
-| `wisp-mount rmdir <path>` | Remove an empty mount-point directory (delete flow only) |
-
-Every path must sit strictly under `/mnt/wisp/`; mount paths may not contain symlinked components, and `unmount*` acts only on paths listed in `/proc/self/mounts` (otherwise `not mounted`, exit `32`). Rules and rationale: [STORAGE.md — Privileged helper](STORAGE.md#privileged-helper).
-
-Requires `cifs-utils`. The backend writes a temp config file (mode `0600`) per operation, invokes `wisp-mount` via `sudo -n`, then removes the config file. The helper also deletes the config file after use.
-
-### `wisp-dmidecode` (installed to `/usr/local/bin/`)
-
-Reads SMBIOS memory devices (`dmidecode --type 17`) and prints JSON for Host Overview RAM modules. Invoked via `sudo -n` as the deploy user.
-
-The backend runs **`/usr/local/bin/wisp-dmidecode`**. Setup installs the helper, installs the `dmidecode` package, and adds `/etc/sudoers.d/wisp-dmidecode` so `sudo -n /usr/local/bin/wisp-dmidecode` succeeds.
-
-If the array is empty in the API: helper missing, sudoers not configured, `dmidecode` unavailable, or a VM/guest with no useful DMI (expected).
-
-#### Troubleshooting: RAM modules not listed
-
-1. **Test** — As deploy user: `sudo -n /usr/local/bin/wisp-dmidecode` should print JSON `[...]`. Compare with **`dmidecode --type 17`** (not the full `dmidecode` dump): each populated slot should have a numeric **Size** line (`MB`/`MiB`/`GB`/`GiB`).
-2. **Re-run setup** ([Setup](#setup)) so `/usr/local/bin/wisp-dmidecode` matches the version in `backend/scripts/`.
-3. **DMI** — Some environments expose no DIMM entries; live usage stats still come from `/proc`.
-
-### `wisp-smartctl` (installed to `/usr/local/bin/`)
-
-Reads per-disk SMART summaries for `GET /api/host/hardware` by running `smartctl --json -a /dev/<disk>` and returning JSON to the backend. Invoked via `sudo -n` as the deploy user.
-
-The backend runs **`/usr/local/bin/wisp-smartctl`**. Setup installs the helper and `/etc/sudoers.d/wisp-smartctl`; package install ensures `smartmontools` is present.
-
-If SMART fields are unavailable in the API for a disk, the backend keeps the disk row and returns `smart.supported: false` with a per-disk `smart.error`.
-
-### `wisp-power` (installed to `/usr/local/bin/`)
-
-Runs `shutdown -h now` or `shutdown -r now` for Host panel power actions. Invoked via `sudo -n` as the deploy user.
-
-The backend runs **`/usr/local/bin/wisp-power`**. Setup installs the helper and `/etc/sudoers.d/wisp-power`.
-
-**Troubleshooting:** As deploy user, `sudo -n /usr/local/bin/wisp-power` should print usage and exit 1 if sudoers allow the script (do not pass `shutdown`/`reboot` except on a host you intend to power off). Confirm `/etc/sudoers.d/wisp-power`: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-power`.
-
-### `wisp-nvram` (installed to `/usr/local/bin/`)
-
-Privileged copy of a UEFI NVRAM file (`VARS.fd`). libvirt creates `<vmDir>/VARS.fd` as `libvirt-qemu:kvm` mode `600`; the deploy user is in the `kvm` group but mode `600` only grants the owner read access — group membership doesn't help. Without the helper, **clone** of a UEFI VM fails with `EACCES`, and **backup**/**restore** silently drop NVRAM state (boot order, Secure Boot enrolled keys, custom NVRAM settings).
-
-| Command | Description |
-|---------|-------------|
-| `wisp-nvram copy <src> <dst>` | `cp -p` then chown destination to the invoking user (`SUDO_UID`/`SUDO_GID`). libvirt's `dynamic_ownership=1` reclaims ownership when the restored VM is started. |
-
-**Path validation:** Both paths must be absolute, basename must be `VARS.fd`, and after `realpath -m` both must sit under `/var/lib/wisp/` or `/mnt/wisp/`. Custom `vmsPath` / `backupLocalPath` outside these roots are not supported by the helper — keep backup destinations under `/var/lib/wisp/backups/` or use a Wisp-managed mount under `/mnt/wisp/`.
-
-The backend invokes `sudo -n /usr/local/bin/wisp-nvram copy ...` from `vmManager` (backup, restore). `install-helpers.sh` installs the helper and `/etc/sudoers.d/wisp-nvram`.
-
-### `wisp-netns` (installed to `/usr/local/bin/`)
-
-Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdir -p` and `ip netns add|delete`. The backend runs as the deploy user and cannot create that directory or netns without privilege; it invokes **`sudo -n /usr/local/bin/wisp-netns add|delete <name>`**.
-
-| Arguments | Description |
-|-----------|-------------|
-| `add <name>` | Ensure netns exists (idempotent if bind mount already present) |
-| `delete <name>` | Best-effort `ip netns delete` |
-| `ipv4 <name> [ifname]` | Print `ip -4 addr show dev <ifname>` inside the netns (default `eth0`). Used to persist DHCP-assigned addresses when the CNI ADD result has no `ips[]`. |
-| `route-add <name> <ifname> <ipv4>` | `ip -n <name> route replace <ipv4>/32 dev <ifname>` — installs an on-link /32 route inside the container's netns so Wisp's DNS forwarder stub IP (`169.254.53.53`) is reachable via the veth instead of being sent to the LAN gateway and black-holed. |
-
-**Troubleshooting:** `EACCES` on `mkdir '/var/run/netns'` in backend logs → helpers not installed or sudoers missing. Run [setup](#setup). Test: `sudo -n /usr/local/bin/wisp-netns add wisp-netns-test` then `sudo -n /usr/local/bin/wisp-netns delete wisp-netns-test`. Every install and update reinstalls the helpers (setup's `helpers` step), so **`wisp-netns ipv4`** and **`wisp-netns route-add`** always match the backend.
-
-### `wisp-cni` (installed to `/usr/local/bin/`)
-
-Runs a single CNI plugin binary from `/opt/cni/bin` with config JSON read from a temp file, setting `CNI_COMMAND`, `CNI_CONTAINERID`, `CNI_NETNS`, `CNI_IFNAME`, `CNI_PATH`. Used for bridge **ADD** / **DEL** so the deploy user does not need ambient `CAP_NET_ADMIN` on the Node process.
-
-**Usage (do not run by hand unless debugging):** `wisp-cni ADD\|DEL <plugin_basename> <container_id> <netns_path> <config.json> [<cni_bin_dir>]`.
-
-- **Bin dir is pinned** to `/opt/cni/bin` inside the helper (where `cni.sh` installs the plugins) and exported as `CNI_PATH`. The optional 6th argument is the backend's view of that dir (`WISP_CNI_BIN_DIR`, default `/opt/cni/bin`); any other value is refused, so an override fails loudly rather than letting the caller pick which binaries run as root. (settled 2026-10-16: the arg stays in the contract — a helper refreshed by the updater and the still-running old backend agree on it, and no backend change is needed.)
-- **Plugin** — bare name matching `^[a-z0-9-]+$`, resolved with `realpath` and confined under the (resolved) bin dir.
-- **Config file** — absolute path to a regular file **owned by the invoking user** (`SUDO_UID`, or root without sudo). The helper opens it once and checks the open descriptor, so it can't be swapped between check and use; the plugin never reads a file the caller couldn't already read.
-
-**Troubleshooting:** If container start returns 200 but the task exits or CNI errors appear in logs:
-
-1. **Plugin stdin** — The backend merges top-level `cniVersion` and `name` from the `.conflist` into each `plugins[]` entry before invoking the bridge plugin (a raw plugin fragment alone is invalid).
-2. **Binaries** — `/opt/cni/bin/bridge` and `/opt/cni/bin/dhcp` exist (`scripts/linux/setup/cni.sh`).
-3. **DHCP daemon** — For `ipam.type: dhcp`, **`cni-dhcp.service`** must be active (`systemctl status cni-dhcp`). If it is down, bridge ADD fails to obtain an IP.
-4. **Bridge interface** — `bridge` must name an existing Linux bridge on the host (e.g. `br0` or a managed VLAN bridge such as `br0-vlan10`). The backend asserts `/sys/class/net/<iface>/bridge` exists before every CNI ADD; otherwise ADD is refused with `CONTAINERD_ERROR`. If the default route is not via a bridge, run setup (`sudo <install-dir>/scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>`), which makes `br0` and writes the CNI configuration for it.
-5. **Sudoers** — `sudo -n /usr/local/bin/wisp-cni` succeeds as the deploy user.
-
-### `wisp-bridge` (installed to `/usr/local/bin/`)
-
-Manages Host Mgmt VLAN-tagged bridges through netplan and is invoked via `sudo -n` by the backend host routes.
-
-| Command | Description |
-|---------|-------------|
-| `wisp-bridge create-vlan-bridge --base <bridge> --vlan <id> --name <bridgeName> --file-name <name>.yaml` | Write managed netplan VLAN+bridge file and run `netplan apply` |
-| `wisp-bridge delete-vlan-bridge --base <bridge> --vlan <id> --name <bridgeName> --file-name <name>.yaml` | Remove managed netplan file, detach live links (`nomaster`), delete bridge+vlan interfaces, then run `netplan apply` |
-
-The helper writes/removes only Wisp-managed files in `/etc/netplan` (`91-wisp-vlan__*`) and leaves unrelated netplan config untouched.
-
-`--file-name` is validated against the regex `^91-wisp-vlan__[a-zA-Z0-9._-]+__[0-9]+__[a-zA-Z0-9._-]+\.yaml$` and the resolved path (`realpath -m`) must remain inside `/etc/netplan/`. This is defense-in-depth: it stops a future caller bug from turning the helper into an arbitrary-root-write primitive.
-
-Parent safety checks are enforced in both backend and helper:
-
-- parent must be an existing Linux bridge
-- parent must not be VLAN-tagged
-- parent must have at least one non-VLAN member interface
+**When a helper does not work**, the error on the page or in the journal says which of
+four things happened: the helper is not installed, or sudo refused it (both: run setup,
+[Setup](#setup)); it failed, with its own line; or it did not finish within its limit. To
+try one by hand, as the deploy user: `sudo -n /usr/local/bin/wisp-dmidecode` (never
+`wisp-power shutdown` on a host you mean to keep up). For container networking also check
+that `/opt/cni/bin/bridge` and `/opt/cni/bin/dhcp` exist, that `cni-dhcp.service` is
+active, and that the container's bridge is a bridge on the host.
 
 ### `wisp-updater` (installed to `/usr/local/bin/`, run via `wisp-updater.service`)
 

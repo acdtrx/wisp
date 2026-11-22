@@ -87,6 +87,11 @@
   `no-shadow` and `react-hooks/exhaustive-deps` (settled 2026-11-21: every effect
   states its dependencies). No style rule. A hand-written scan was rejected: an undefined name needs scope
   analysis (settled 2026-11-18).
+- **shellcheck**, a development tool installed on the machine (0.11.0; `brew install
+  shellcheck`, and the release workflow installs the same version by a pinned
+  checksum), required by the shell check (settled 2026-11-22): the privileged helpers
+  and setup are bash, the most privileged code Wisp has, and `bash -n` only says a
+  script parses.
 - **The other checks are Node scripts** in `scripts/` (`check-imports`, `check-fences`,
   the shell check): dependency-free scans for what ESLint does not see (the fences,
   names across backend files, facade parity, cycles, shell syntax). `check-exports` —

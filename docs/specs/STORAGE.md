@@ -18,14 +18,14 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 | `id` | Unique identifier (UUID) |
 | `type` | `"smb"` or `"disk"` |
 | `label` | Display name |
-| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape). Enforced by `validateCommonFields` on add and update; `wisp-mount` re-asserts it (see [Privileged helper](#privileged-helper)) so a regression can't shadow `/etc`, `/usr`, `/home`, etc. |
+| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape), and is **stored in canonical form** (settled 2026-11-22): a path typed with a trailing or doubled `/` is stored resolved, which is the form the mount table lists and `wisp-mount` takes. Enforced on add and update, and by the start's read of the settings; `wisp-mount` re-asserts it (see [Privileged helper](#privileged-helper)) so a regression can't shadow `/etc`, `/usr`, `/home`, etc. |
 | `autoMount` | When true (default), Wisp mounts on startup (SMB) or on device insertion (disk) |
 
 ### SMB-only fields (`type: "smb"`)
 
 | Field | Description |
 |-------|-------------|
-| `share` | SMB URL (e.g. `//192.168.1.100/backups`) |
+| `share` | The share, stored as `//host/share` or `//host/share/folder` (e.g. `//192.168.1.100/backups`). A share typed the Windows way (`\\host\share`) or with a trailing `/` is brought to that form when it is saved; one that still does not fit (no host, no share name, a comma) is refused with 422 `MOUNT_INVALID`, naming the form (settled 2026-11-22: the form is checked where it is typed, not when the helper refuses it at mount time) |
 | `username` | SMB auth user (optional) |
 | `password` | SMB auth password. Write-only — never returned in API responses; the response carries a `hasPassword: boolean` field instead so the UI can render an "on file" affordance without holding any secret. To leave the stored password unchanged on update, omit `password` (or send an empty string) — the backend treats both as "preserve". |
 | `hasPassword` | (response only) `true` when an SMB password is on file. Never accepted on input. |
@@ -85,32 +85,29 @@ Re-insertion after unplug auto-mounts silently. Removal triggers a lazy unmount 
 
 ## Privileged helper
 
-`backend/scripts/wisp-mount` (installed at `/usr/local/bin/wisp-mount` by `scripts/linux/setup/install-helpers.sh`) is the single privileged invocation point. The backend writes one or two mode-`0600` temp files per operation, runs the helper via `sudo -n`, then the helper removes the config after use.
+`backend/scripts/wisp-mount` (installed at `/usr/local/bin/wisp-mount` by `scripts/linux/setup/install-helpers.sh`) is the single privileged invocation point, written in the helpers' dialect ([CODING-RULES §12](../CODING-RULES.md), Shell). **It takes arguments, not a config file** (settled 2026-11-22): every value is checked against what it may be, so nothing a share or a disk carries can add a mount option.
 
-| Subcommand | Purpose |
-|------------|---------|
-| `smb mount <configPath>` | `mount -t cifs` (config supplies share, mountPath, credentialsPath, uid, gid, and `ownerOnly=1` for the backup mount) |
-| `smb check <configPath>` | SMB test — mount then unmount, no persistent state |
-| `disk mount <configPath>` | `mount -t <fsType> /dev/disk/by-uuid/<uuid>` (config supplies uuid, mountPath, fsType, readOnly, uid, gid) |
-| `unmount <path>` | `umount` |
+| Call | Purpose |
+|------|---------|
+| `smb-mount <share> <path> <credentials-file\|guest> <owner-only\|shared>` | `mount -t cifs`; `owner-only` for the backup mount |
+| `smb-check <share> <path> <credentials-file\|guest>` | SMB test — mount then unmount, no persistent state |
+| `disk-mount <uuid> <path> <fstype> <ro\|rw>` | `mount -t <fstype> /dev/disk/by-uuid/<uuid>` |
+| `unmount <path>` | `umount`; a path that is not mounted is exit 2 (not there) |
 | `unmount-lazy <path>` | `umount -l` (used on surprise device removal) |
-| `rmdir <path>` | Remove the empty mount-point directory (delete flow only); no-op if missing, non-empty or still mounted |
+| `rmdir <path>` | Remove the empty mount-point directory (delete flow only); a missing one is exit 2, one not empty or still mounted fails |
 
-**Path confinement.** Every path the helper acts on must sit strictly under `/mnt/wisp/` (never `/mnt/wisp` itself); anything else exits `64`. `/mnt/wisp` is writable by the deploy user, so the checks assume a hostile directory tree:
+**What each argument may be.** A share is `//host/path` with no comma and no control character. A UUID is hex digits and dashes, and must name a block device under `/dev/disk/by-uuid/`. A filesystem type is one of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3`. The owner of a mount (`uid`, `gid`) is not an argument: it is the user sudo ran the helper for.
 
-- **mount** (`smb mount|check`, `disk mount`): `realpath -m` must land under `/mnt/wisp/` and no existing path component may be a symlink — checked before `mkdir -p` and again right before `mount`, which then targets the canonical path. (A swap inside that last window can still win the race; closing it fully needs `/mnt/wisp` to stop being deploy-writable.)
-- **unmount / unmount-lazy / rmdir**: the parent goes through `realpath -e` and must be `/mnt/wisp` or below it; the last component is never `stat`-ed, because a `stat` on a dead CIFS share blocks until the server times out — the case `unmount-lazy` exists for. `unmount*` acts only when the path is listed as a mount point in `/proc/self/mounts` (which holds canonical paths, so a symlink can't stand in for one), otherwise it prints `not mounted` and exits `32`, as `umount` does. `rmdir` relies on `rmdir(2)` not following a symlink in the last component.
+**Path confinement.** Every path the helper acts on must be canonical and sit strictly under `/mnt/wisp/` (never `/mnt/wisp` itself), with no symbolic link below it; anything else exits `64`. `/mnt/wisp` is writable by the deploy user, so the checks assume a directory tree they do not control. `unmount*` and `rmdir` never `stat` the last component, because a `stat` on a dead CIFS share blocks until the server times out — the case `unmount-lazy` exists for; `unmount*` acts only when the path is listed as a mount point in `/proc/self/mounts`.
 
-The config file format is **strict line-oriented `key=value`** (no `source`, no shell evaluation). `wisp-mount` parses it with an allow-listed key set; unknown keys, malformed lines, or values containing `\n` / `\r` exit non-zero. The JS layer rejects `\n` / `\r` / `,` in `share`, `mountPath`, `username`, `password` before writing.
+For SMB, **credentials never appear on argv** (`/proc/<pid>/cmdline`). The backend writes a mode-`0600` credentials file in `mount.cifs` format (`username=…` / `password=…` / `domain=…` lines), passes its path, and unlinks it once the helper returns. **A share without a password** (settled 2026-11-22): with no username either, the backend passes `guest` and the share is mounted as a guest; with a username, the file always carries a `password=` line, empty when none was given, so `mount.cifs` never asks on a terminal that is not there. Before, such a mount waited for an answer until it was killed.
 
-For SMB, **credentials never appear on argv** (`/proc/<pid>/cmdline`). The backend writes a separate mode-`0600` credentials file in `mount.cifs` format (`username=...` / `password=...` / `domain=...` lines) and the helper passes its path via `mount -o credentials=<path>`. The kernel reads the file synchronously; the backend unlinks it once the helper returns.
+Mount options are chosen by filesystem, and **every mount is `nosuid,nodev`** (settled 2026-11-22): a disk or a share can carry setuid programs and device files, and Wisp mounts what a user plugs in. `noexec` is not set: containers run what is on these mounts.
 
-Mount options are chosen by filesystem:
-
-- `ext4` / `btrfs`: `defaults[,ro]` (filesystem stores POSIX perms)
-- `vfat` / `exfat` / `ntfs3`: `uid=$uid,gid=$gid,umask=0007[,ro]` (ownership must be passed at mount time)
+- `ext4` / `btrfs`: `nosuid,nodev[,ro]` (filesystem stores POSIX perms)
+- `vfat` / `exfat` / `ntfs3`: `nosuid,nodev,uid=…,gid=…,umask=0007[,ro]` (ownership must be passed at mount time)
 - `ntfs3`: forced `ro` (write support in `ntfs3` is still maturing; explicit opt-in could be added later)
-- SMB: `rw,credentials=<path>[,uid=$uid,gid=$gid][,file_mode=0600,dir_mode=0700]` — the modes only with `ownerOnly=1`, which the backend sets for the share configured as the backup mount ([BACKUPS.md § Backup file modes](BACKUPS.md#backup-file-modes))
+- SMB: `rw,nosuid,nodev,credentials=<path>` or `guest`, `uid=…,gid=…`, and `file_mode=0600,dir_mode=0700` only with `owner-only`, which the backend asks for the share configured as the backup mount ([BACKUPS.md § Backup file modes](BACKUPS.md#backup-file-modes))
 
 ## Mount table
 
@@ -198,5 +195,5 @@ See [ERROR-HANDLING.md](ERROR-HANDLING.md) for the global error-code table.
 
 (settled 2026-11-12, CODING-RULES §6.)
 - `qemu-img info` and `resize`: **20 s** (settled 2026-11-13). A convert has no total bound: it is stopped after **10 min** with no progress output, no growth of the destination and no bytes read (the bytes-read probe settled 2026-11-13).
-- `wisp-mount` bounds its own commands, each with a kill grace (`timeout --kill-after`), so each ends inside the backend's bound: mount **20 s** (+3) of the backend's **30 s**; unmount **60 s** (+5) of **75 s** — long enough to flush after a large backup; an SMB check's mount **15 s** (+3) and umount **8 s** (+2) of **30 s** (the unmount and check bounds settled 2026-11-13). `rmdir`: **5 s**.
+- `wisp-mount` bounds its own commands (the helpers' `bounded`: stopped at the limit, killed 2 s later), so each ends inside the backend's bound, which sits above the helper's worst case: a disk mount **20 s** of the backend's **40 s**; an SMB mount **20 s** of **50 s**; unmount **60 s** of **75 s** — long enough to flush after a large backup; an SMB check's mount **15 s** and umount **8 s** of **70 s** (the unmount and check bounds settled 2026-11-13; the backend's bounds raised 2026-11-22 to cover every command the helper runs on the way). `rmdir`: **15 s**.
 - Unmount and mount delete run as server jobs (settled 2026-11-13): an unmount's 75 s outlasts a short request.

@@ -156,7 +156,8 @@ source refer to them.
     the change emitter (`createEmitter`: a handler that throws is logged and the rest
     run) and the privileged runner (`runPrivileged`: a helper is the one setup installs
     in `/usr/local/bin`, run through `sudo -n` with a time bound, its failure told
-    apart as missing, refused, failed or timed out). Before, 37 emitters and 14 sudo
+    apart as missing, refused, failed or timed out, and a helper's own exit code as
+    invalid, not found or busy, §12). Before, 37 emitters and 14 sudo
     calls were each written out by hand, with different answers to a failing handler
     and five ways to find a helper. The fence check holds three rules for it: no
     hand-written emitter outside `lib/base/`, no `'sudo'` outside its runner, and no
@@ -282,6 +283,39 @@ In projects with a web UI: `FRONTEND-RULES.md`.
     call's bound (`NET_CMD_SEC`); apt, dpkg, npm, downloads, applies, service starts and
     the bridge's check run in the background and are waited for (`step_run`), and those
     that show progress are stopped after a time without it.
+- **A privileged helper** (`backend/scripts/wisp-*`, run as root through `sudo`) is
+  written in one dialect (settled 2026-11-22). It is the most privileged code Wisp has,
+  so each rule is one a reader can check line by line:
+  - **Who it defends against**: data, not the service user. The service user is root's
+    equal by design (the `libvirt` group; it stages the tree an update installs). What a
+    request body, a disk or a share can carry into an argument (a share name, a UUID, a
+    container's name, a path) must not be able to add an option or name another file.
+  - **Called as** `wisp-<name> <subcommand> <arguments in order>`: no flags, and nothing
+    in the environment chooses what it runs or acts on (it reads only `SUDO_UID` and
+    `SUDO_GID`, which sudo sets).
+  - **The answer is on stdout** (lines, or one JSON document, as the helper's contract
+    says) and nothing else is. **An error is one line on stderr**, `wisp-<name>: <what
+    failed>`, the last thing printed; an error is never inside the answer.
+  - **Exit codes mean the same in every helper**: `0` done, `64` an argument is wrong,
+    `2` the thing named is not there, `75` busy, try again, `1` anything else. No
+    command's own code passes through. The runner turns the code into a reason
+    (`invalid`, `not-found`, `busy`, `failed`), and a caller reads the reason, never the
+    sentence.
+  - **Every argument is checked before anything runs**: a name against its pattern, an
+    option against its list, a path in canonical form, held under the folders it may be
+    in, with no symbolic link below them. `--` goes before a caller's operand, and no
+    pattern admits a leading `-`.
+  - **It bounds what it runs**: a signal sent to `sudo` does not reach the helper's
+    child, so every command that can hang runs under `bounded <seconds> …`, and the
+    backend's own limit for the call sits above the helper's worst case.
+  - **It says when it could not do its job**: a failed read is never an empty answer,
+    and a delete that did not happen is never success.
+  - **The shared parts are in one file**, `backend/scripts/wisp-helper-lib.sh`, installed
+    beside the helpers and sourced by them: the exit codes, the refusals, `bounded`, the
+    path check, the shared patterns.
+  - **Each helper has a test of its refusals** (`backend/scripts/test/`), run without
+    root against stand-in commands: every wrong argument exits 64 with one line, an
+    empty stdout and no command run.
 
 ## 13. Prompts and Model-Facing Text
 
@@ -331,7 +365,10 @@ checks and the unit tests below for what they cover:
     Inline ESLint comments (`eslint-disable`, `/* global */`) are not honoured, and
     one left in the code fails the check: an allowance, if one is ever needed, is a
     reviewed line in `eslint.config.mjs`, like the lists of the other checks.
-  - the shell check: `bash -n` over every shell script.
+  - the shell check: `bash -n` and `shellcheck` over every shell script. shellcheck is
+    required (settled 2026-11-22: the check fails without it, it does not skip); an
+    inline `# shellcheck disable=` fails the check, and an allowance is a reviewed line
+    in `scripts/check-shell.mjs`, like the lists of the other checks.
   - `npm test`: the unit tests, `node --test` over the `*.test.js` files beside the
     modules they test (`frontend/src/`, `backend/src/`) and a migration's in
     `backend/migrations/test/`, which the migration loader never reads, for code with no

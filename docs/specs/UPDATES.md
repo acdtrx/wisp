@@ -236,6 +236,9 @@ The ledger restore lives in `wisp-updater`, so it is dark-shipped (see above): t
 | `0011-vm-local-dns-pref` | Every VM's saved definition loses the `wisp:localDns` pref (and `wisp:prefs`, or an emptied `<metadata>`, once no pref is left), through `vmManager.removeVMPref`: Wisp publishes no `.local` name for a VM since 2026-11-20 ([VM-MANAGEMENT.md → Local DNS](VM-MANAGEMENT.md#local-dns-mdns)). Numbered past `0010`, which an unreleased migration used and dev hosts' ledgers still record. | — (metadata only) |
 | `0012-vm-profile` | Every VM without a profile gets one, from what its saved definition holds: `windows-11` with Hyper-V features, else `linux` (through `vmManager.setMissingVMProfile`). Only that Wisp metadata element is written; no restart flag. A domain that is not persistent is left without one (settled 2026-11-21) |
 | `0013-cloud-init-key-source` | Every `<vmsPath>/*/cloud-init.json` loses `sshKeySource`, which nothing reads since the keys are picked from Wisp's list. The file keeps its mode and is written atomically; the seed ISO is not touched (settled 2026-11-21) |
+| `0014-retire-helper-path-overrides` | `runtime.env` loses the five `WISP_*_SCRIPT` lines: a helper is only ever the one setup installs. Other lines, comments and the file's mode stay (settled 2026-11-22) |
+| `0015-retire-cni-dir-overrides` | `runtime.env` loses `WISP_CNI_BIN_DIR` and `WISP_CNI_CONF_DIR`, which went with the CNI network file (settled 2026-11-22) |
+| `0016-canonical-mount-forms` | Every stored mount gets its `mountPath` in canonical form and its `share` as `//host/share[/folder]` (backslashes and trailing slashes tidied). A share that cannot be brought into form is left as it is and reported (settled 2026-11-22) |
 
 ## Layout
 
