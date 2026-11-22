@@ -1,104 +1,42 @@
 #!/usr/bin/env bash
-# Usage:
-#   wisp-nvram copy <src> <dst>
+# Usage: wisp-nvram copy <src> <dst>
 #
-# Privileged copy of a UEFI NVRAM file (VARS.fd). Needed because libvirt creates
-# /var/lib/wisp/vms/<name>/VARS.fd as libvirt-qemu:kvm mode 600 — the deploy user
-# is in the kvm group but mode 600 only grants the owner read access.
+# A copy of a VM's UEFI NVRAM file (VARS.fd), owned by the invoking user. libvirt
+# creates <vm-dir>/VARS.fd as libvirt-qemu:kvm, mode 600: the deploy user is in
+# the kvm group, but mode 600 grants only the owner. Used by a VM's backup
+# (src <vm-dir>/VARS.fd, dst <backup-dir>/VARS.fd) and its restore (the other
+# way); libvirt's dynamic_ownership reclaims the file when the VM starts.
 #
-# Used by:
-#   - VM backup:  src=<vm>/VARS.fd          dst=<backupDir>/VARS.fd
-#   - VM restore: src=<backupDir>/VARS.fd   dst=<newVm>/VARS.fd
-#
-# After copy the destination is chowned to the invoking user (SUDO_UID/SUDO_GID —
-# the deploy user; the destination dir's owner when run without sudo). libvirt's
-# dynamic_ownership=1 reclaims ownership when the restored VM is started.
-#
-# Path validation:
-#   - Both src and dst must be absolute paths.
-#   - basename of both must be VARS.fd (narrows blast radius).
-#   - After realpath -m, both must sit under one of:
-#       /var/lib/wisp/   (default vmsPath, default backupLocalPath)
-#       /mnt/wisp/       (Wisp-managed SMB / disk mount root)
-#   This is defense-in-depth; the JS caller already passes only NVRAM paths.
-#
-# Install: sudoers NOPASSWD for this script (installed by scripts/linux/setup/install-helpers.sh).
-set -euo pipefail
+# Both paths: canonical, named VARS.fd, under /var/lib/wisp or /mnt/wisp, with
+# no symbolic link below those. The copy is written beside dst and renamed over
+# it, so a link put at dst is replaced, never written through.
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-CMD="${1:-}"
-SRC="${2:-}"
-DST="${3:-}"
+ROOTS=(/var/lib/wisp /mnt/wisp)
+# A few MB, local or on a backup mount.
+readonly COPY_SEC=30
 
-ALLOWED_ROOTS=(/var/lib/wisp /mnt/wisp)
+(( $# == 3 )) || refuse "usage: wisp-nvram copy <src> <dst>"
+match_one_of "the action" "$1" copy
+SRC="$2"
+DST="$3"
+path_under "src" "$SRC" "${ROOTS[@]}"
+path_under "dst" "$DST" "${ROOTS[@]}"
+[[ "${SRC##*/}" == VARS.fd ]] || refuse "src must be named VARS.fd: '$SRC'"
+[[ "${DST##*/}" == VARS.fd ]] || refuse "dst must be named VARS.fd: '$DST'"
+invoking_user
 
-usage() {
-  echo "Usage: $0 copy <src> <dst>" >&2
-  exit 64
-}
+[[ -f "$SRC" ]] || not_found "src is not there: $SRC"
+DST_DIR="${DST%/*}"
+[[ -d "$DST_DIR" ]] || not_found "the folder of dst is not there: $DST_DIR"
 
-assert_absolute() {
-  local p="$1" label="$2"
-  if [[ -z "$p" || "${p:0:1}" != "/" ]]; then
-    echo "wisp-nvram: $label must be an absolute path" >&2
-    exit 64
-  fi
-}
-
-assert_basename_vars_fd() {
-  local p="$1" label="$2"
-  local base="${p##*/}"
-  if [[ "$base" != "VARS.fd" ]]; then
-    echo "wisp-nvram: $label basename must be VARS.fd (got '$base')" >&2
-    exit 64
-  fi
-}
-
-# Returns 0 if $1 (after realpath -m) sits under one of ALLOWED_ROOTS.
-assert_under_allowed_root() {
-  local p="$1" label="$2"
-  local resolved
-  resolved="$(realpath -m -- "$p")"
-  for root in "${ALLOWED_ROOTS[@]}"; do
-    case "$resolved" in
-      "$root"/*) return 0 ;;
-    esac
-  done
-  echo "wisp-nvram: $label '$resolved' must be under one of: ${ALLOWED_ROOTS[*]}" >&2
-  exit 64
-}
-
-do_copy() {
-  assert_absolute "$SRC" "src"
-  assert_absolute "$DST" "dst"
-  assert_basename_vars_fd "$SRC" "src"
-  assert_basename_vars_fd "$DST" "dst"
-  assert_under_allowed_root "$SRC" "src"
-  assert_under_allowed_root "$DST" "dst"
-
-  if [[ ! -f "$SRC" ]]; then
-    echo "wisp-nvram: src not found: $SRC" >&2
-    exit 2
-  fi
-
-  # cp -p preserves mode/owner/timestamps of the source. dst will be 600 owned
-  # by libvirt-qemu — chown to the invoker so the deploy user can read its own
-  # backup. libvirt's dynamic_ownership=1 reclaims ownership when the VM starts.
-  cp -p -- "$SRC" "$DST"
-
-  # SUDO_UID / SUDO_GID are set when invoked via sudo. Fall back to the file
-  # owner of the destination dir so a direct (non-sudo) invocation in tests
-  # still produces sensible perms.
-  local target_uid="${SUDO_UID:-}"
-  local target_gid="${SUDO_GID:-}"
-  if [[ -z "$target_uid" || -z "$target_gid" ]]; then
-    local dst_dir="${DST%/*}"
-    target_uid="$(stat -c '%u' "$dst_dir")"
-    target_gid="$(stat -c '%g' "$dst_dir")"
-  fi
-  chown "$target_uid:$target_gid" "$DST"
-}
-
-case "$CMD" in
-  copy) do_copy ;;
-  *) usage ;;
-esac
+TMP=""
+remove_tmp() { [[ -z "$TMP" ]] || bounded "$QUICK_SEC" rm -f -- "$TMP" || true; }
+trap remove_tmp EXIT
+capture "$QUICK_SEC" mktemp "$DST_DIR/.VARS.fd.wisp-new.XXXXXX" || fail "cannot create a file in $DST_DIR${BOUNDED_ERR:+: $BOUNDED_ERR}"
+TMP="$CAPTURED"
+must "$COPY_SEC" cp --preserve=mode,timestamps -- "$SRC" "$TMP"
+must "$QUICK_SEC" chown -- "$INVOKER_UID:$INVOKER_GID" "$TMP"
+must "$QUICK_SEC" mv -fT -- "$TMP" "$DST"
+TMP=""
