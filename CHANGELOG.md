@@ -44,10 +44,13 @@
 - **An SMB share with no username and no password mounts as a guest**, and one with a username and no password mounts too.
 - **API: a container's `network.interface` must be a network interface name** — a `PATCH` with another answers 400 `VALIDATION_FAILED`.
 - **`npm run check` runs shellcheck** over every shell file, and fails without it.
+- **Setup installs exactly this release's helpers and their sudo rules**: any other `wisp-*` in `/usr/local/bin` or `/etc/sudoers.d`, an earlier release's, is removed.
+- **`wispctl` keeps `password` and `svc start|stop|restart|logs`**: `wispctl local …` and `wispctl svc uninstall` are gone.
 
 ### Bug Fixes
 - **A failed RAM read says so on Host Overview** (`memory: null` with `memoryError` in the hardware inventory), where it showed no modules.
 - **A sudo refusal on Ubuntu 26.04 (sudo-rs) reads as a refusal** naming setup, not as the helper's failure.
+- **`release.sh` with a wrong changelog stops before it changes a file.**
 - **A failing listener no longer fails a sections or homepage save**: it is logged, as for every other change.
 - **A running container's IPv4 address is followed again** — a DHCP renewal that hands it another address reaches its record and its `.local` name within a minute; the probe never read it before.
 - **"Restart to apply" only after a change that needs it** — re-sending a container's current command, limits, root setting or network no longer sets it.
