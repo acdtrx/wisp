@@ -87,6 +87,12 @@
  *      before a logger exists or at exit writes to process.stderr. A reviewed
  *      allowance is an EXCEPTIONS line with the specifier `console`.
  *
+ *  13. One way to run something as root (lib/base/privileged.js,
+ *      runPrivileged): no `'sudo'` literal in backend/src or backend/migrations
+ *      but in that file, comments stripped. A reviewed allowance is an
+ *      EXCEPTIONS line with the specifier `sudo`. Known limit: a command
+ *      built from pieces (`'su' + 'do'`).
+ *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
@@ -154,6 +160,9 @@ const FETCH_HOME = `${LIB}/downloads/`;
 /** Rule 11: a hand-written emitter's set of handlers. */
 const HANDLER_SET = /(?<![\w$])[\w$]*(?:handlers|listeners|subscribers)\s*[:=]\s*new\s+Set\s*\(/gi;
 const BASE_DIR = `${LIB}/base/`;
+/** Rule 13: the one file that runs sudo, and the literal it may hold alone. */
+const PRIVILEGED_RUNNER = `${LIB}/base/privileged.js`;
+const SUDO_LITERAL = /(['"`])sudo\1/g;
 /** Rule 12: a console call. */
 const CONSOLE_CALL = /(?<![\w$./-])console\s*(?:\?\.|\.)/g;
 const FETCH_HELPERS = new Set([`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`]);
@@ -184,6 +193,11 @@ const EXCEPTIONS = [
     file: 'backend/src/lib/downloads/ssrfSafeFetch.test.js',
     specifier: 'undici',
     reason: "the test of ssrfSafeFetch's per-hop Agent replaces undici with a module mock",
+  },
+  {
+    file: 'backend/src/lib/base/privileged.test.js',
+    specifier: 'sudo',
+    reason: "the runner's test puts a stand-in sudo first on PATH",
   },
   {
     file: 'backend/src/lib/mdns/linux/avahi.js',
@@ -520,6 +534,11 @@ async function main() {
         violations.push(`${fileRel}:${lineAt(m.index)} emitter — a hand-written emitter: use createEmitter from lib/base (one change emitter)`);
       }
     }
+    if (fileRel.startsWith('backend/') && fileRel !== PRIVILEGED_RUNNER && !isExcepted('sudo')) {
+      for (const m of code.matchAll(SUDO_LITERAL)) {
+        violations.push(`${fileRel}:${lineAt(m.index)} sudo — run a helper with runPrivileged from lib/base (one way to run something as root)`);
+      }
+    }
     if (fileRel.startsWith('backend/') && !isExcepted('console')) {
       for (const m of code.matchAll(CONSOLE_CALL)) {
         violations.push(`${fileRel}:${lineAt(m.index)} console — the backend logs to the start's logger: configure({ logger }) in a module, log() from lib/log.js in the glue, process.stderr before a logger exists (one logger)`);
@@ -653,7 +672,7 @@ async function main() {
   const summary = `${count} imports across ${files.length} files`;
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   const runnerSummary = 'only the backend runs the state migrations';
-  const homesSummary = 'no hand-written emitter outside lib/base/, no console in the backend';
+  const homesSummary = 'no hand-written emitter outside lib/base/, no console in the backend, sudo only in lib/base/privileged.js';
   const fetchSummary = 'no global fetch, HTTP client import or WebSocket client outside lib/downloads/, and the operator fetch only in lib/oidc.js';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
