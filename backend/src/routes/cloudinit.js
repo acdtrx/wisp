@@ -25,7 +25,7 @@ export default async function cloudInitRoutes(fastify) {
       response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
-      await saveVmCloudInit(request.params.name, request.body, request.log);
+      await saveVmCloudInit(request.params.name, request.body);
       reply.code(204).send();
     },
   });

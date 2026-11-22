@@ -10,7 +10,8 @@ import {
   vmError,
 } from './vmManagerConnection.js';
 import { extractDiskSnippet } from './vmManagerDisk.js';
-import { buildDiskXml } from './vmManagerXml.js';
+import { buildDiskXml, setWispPendingRestart } from './vmManagerXml.js';
+import { refreshVMListCache } from './vmManagerList.js';
 import { redefineVM } from './vmManagerDefine.js';
 import { cdromElement } from './vmManagerDevices.js';
 import { isShutOff } from './libvirtConstants.js';
@@ -22,9 +23,10 @@ import { isShutOff } from './libvirtConstants.js';
  * @param {string} slot - target dev (e.g. 'sdc', 'sdd', 'sde')
  * @param {string} isoPath - absolute path to the ISO file (route-validated)
  * @param {{ createIfMissing?: boolean }} [opts] - if `createIfMissing` is true and the
- *   slot doesn't exist in the domain XML, the slot is created (sata, readonly cdrom)
- *   instead of throwing DISK_NOT_FOUND. Used by cloud-init's first-enable path where
- *   the sde slot may not exist yet.
+ *   slot doesn't exist in the domain XML, the slot is created (sata, readonly cdrom) in
+ *   the saved definition instead of throwing DISK_NOT_FOUND; a VM that is on gets the
+ *   restart-required flag. Used by cloud-init's first-enable path where the sde slot
+ *   may not exist yet.
  */
 export async function attachISO(name, slot, isoPath, opts = {}) {
   const { createIfMissing = false } = opts;
@@ -40,22 +42,25 @@ export async function attachISO(name, slot, isoPath, opts = {}) {
     if (!createIfMissing) {
       throw vmError('DISK_NOT_FOUND', `CDROM slot ${slot} not found in VM "${name}"`);
     }
-    const newDisk = cdromElement({ slot, path: isoPath });
-    if (isOn) {
-      try {
-        await iface.AttachDevice(buildDiskXml(newDisk), 3);
-      } catch (err) {
-        throw vmError('LIBVIRT_ERROR', `Failed to attach ISO to ${slot}`, err.message);
-      }
-      return;
-    }
+    // A new SATA CD-ROM cannot be hot-plugged: the slot is added to the saved
+    // definition, whatever the state, and a VM that is on gets it at its next
+    // start (flagged, as an edit is). The saved definition may already hold the
+    // slot, added while the VM ran: its media is set there.
     await redefineVM(domPath, (dom) => {
       if (!dom.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
       const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : dom.devices.disk ? [dom.devices.disk] : [];
-      dom.devices.disk = [...disks, newDisk];
+      const saved = disks.find((d) => d.target?.['@_dev'] === slot);
+      if (saved) {
+        saved['@_type'] = 'file';
+        saved.source = { '@_file': isoPath };
+      } else {
+        dom.devices.disk = [...disks, cdromElement({ slot, path: isoPath })];
+      }
+      if (isOn) setWispPendingRestart(dom, new Date().toISOString());
     }, {
       defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to attach ISO to ${slot}`, err.message),
     });
+    if (isOn) refreshVMListCache();
     return;
   }
 

@@ -138,11 +138,11 @@ test('a first boot setup is saved only on a VM whose profile takes one; one with
   for (const profile of ['windows-11', 'other', null]) {
     calls.length = 0;
     impl.getVMConfig = async () => ({ name: 'v', profile });
-    await assert.rejects(saveVmCloudInit('v', SETUP, log), (err) => err.code === 'INVALID_REQUEST');
+    await assert.rejects(saveVmCloudInit('v', SETUP), (err) => err.code === 'INVALID_REQUEST');
     assert.deepEqual(names(), ['getVMConfig']);
   }
   impl.getVMConfig = async () => ({ name: 'v', profile: 'linux' });
-  await saveVmCloudInit('v', SETUP, log);
-  assert.deepEqual(calls.at(-1), ['updateCloudInit', 'v', SETUP, log]);
+  await saveVmCloudInit('v', SETUP);
+  assert.deepEqual(calls.at(-1), ['updateCloudInit', 'v', SETUP]);
   assertUnlocked('v');
 });

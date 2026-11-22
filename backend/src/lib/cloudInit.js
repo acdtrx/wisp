@@ -394,7 +394,7 @@ export async function getCloudInitConfig(vmName) {
   };
 }
 
-export async function updateCloudInit(vmName, config, log) {
+export async function updateCloudInit(vmName, config) {
   // The VM must exist: generateCloudInit tolerates a missing domain (create
   // builds the seed before the define), and would make its directory.
   await getVMXML(vmName);
@@ -414,11 +414,11 @@ export async function updateCloudInit(vmName, config, log) {
   }
 
   await generateCloudInit(vmName, config);
+  // The config is on file from here on: announce it even when the attach throws,
+  // and the save fails with that error.
   try {
     await attachCloudInitDisk(vmName);
-  } catch (err) {
-    /* ISO regenerated; live attach can fail if VM state disallows it — config still saved */
-    log?.warn?.({ err: err.message, vm: vmName }, '[cloudInit] Could not hot-swap cloud-init disk');
+  } finally {
+    announceCloudInitChange(vmName);
   }
-  announceCloudInitChange(vmName);
 }

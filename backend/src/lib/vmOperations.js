@@ -293,11 +293,11 @@ export function detachVmUsb(name, vendorId, productId) {
  * Save the VM's cloud-init config: rewrites cloud-init.json and the seed ISO in its
  * directory, and redefines the sde slot. Only for a VM whose profile takes one.
  */
-export function saveVmCloudInit(name, config, log) {
+export function saveVmCloudInit(name, config) {
   return withVmOperationLock(name, 'cloud-init change', async () => {
     const { profile } = await getVMConfig(name);
     assertFirstBootSetupFits(profile, name);
-    return updateCloudInit(name, config, log);
+    return updateCloudInit(name, config);
   });
 }
 
