@@ -40,7 +40,7 @@
 
 ### Bug Fixes
 - **A running container's IPv4 address is followed again** — a DHCP renewal that hands it another address reaches its record and its `.local` name within a minute; the probe never read it before.
-- **"Restart to apply" only after a change that needs it** — re-sending a container's current command, limits, root setting or network no longer sets it, and neither does a secret mount's flag sent in a mount list.
+- **"Restart to apply" only after a change that needs it** — re-sending a container's current command, limits, root setting or network no longer sets it.
 - **A container whose network files are missing fails its start and names the file** — the netns or CNI helper, the bridge network file or the containers' resolver file — instead of starting with a built-in network or without `.local` names; running setup again puts them back.
 - **A console password set outside Wisp survives an edit**, and a VM started with `virsh create` is no longer made permanent by one: Wisp refuses to change its definition (409 `VM_TRANSIENT`).
 - **An edit made as a VM starts is no longer lost**: every change to a VM's definition is written one at a time.
