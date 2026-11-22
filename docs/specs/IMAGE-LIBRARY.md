@@ -4,7 +4,7 @@ The image library is a central place to manage **VM disk and ISO files** on disk
 
 ## Container (OCI) images
 
-On the standalone Host **Library** page, the **All** filter shows **VM library files and OCI images in one sorted list** (name order). The **OCI** filter lists only containerd images. Images appear after pulls (e.g. when creating a container) **or** after an operator loads one on the server with `ctr -n wisp image import foo.tar` — anything in the `wisp` containerd namespace is listed. **Delete** removes the image from containerd unless a Wisp container still references it (409). The VM file picker (disk/CDROM) does **not** include the OCI filter — only ISO/disk files are selectable there. The **Create Container** form has its own picker (see below) that shows **only** OCI images.
+On the standalone Host **Library** page, the **All** filter shows **VM library files and OCI images in one sorted list** (name order). The **OCI** filter lists only containerd images. Images appear after pulls (e.g. when creating a container) **or** after an operator loads one on the server with `ctr -n wisp image import foo.tar` — anything in the `wisp` containerd namespace is listed. **Delete** removes the image from containerd unless a Wisp container still references it (409), or Wisp cannot tell whether one does (the delete is refused with the failed read as its reason). The VM file picker (disk/CDROM) does **not** include the OCI filter — only ISO/disk files are selectable there. The **Create Container** form has its own picker (see below) that shows **only** OCI images.
 
 ## Storage
 

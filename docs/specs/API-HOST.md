@@ -414,7 +414,7 @@ Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `a
 
 Remove one mount from settings, unmounting it first. If it was **`backupMountId`**, that field is cleared.
 
-- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ mounts }` — the mounts after removal | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_IN_USE` — in use by a container
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ mounts }` — the mounts after removal | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_IN_USE` — in use by a container | **503 / 500:** the container list's own code (`NO_CONTAINERD`, …) — Wisp cannot tell whether the mount is in use, so it is not removed
 
 ### GET /api/host/mounts/status · `read`
 

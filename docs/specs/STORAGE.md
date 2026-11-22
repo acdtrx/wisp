@@ -153,7 +153,7 @@ Storage mounts are designed to be referenced by other features. Current consumer
 - **Backup destinations** — `settings.backupMountId` can point at any storage mount; backup flows mount it on demand and write backup archives into it.
 - **Container directory mounts** — a container's `mounts[].sourceId` can reference a storage mount id; `mounts[].subPath` scopes to a sub-directory. See [CONTAINERS.md](CONTAINERS.md) §**Mount entry** for the full flow (validation, pre-start checks, zip-upload restriction to Local).
 
-`DELETE /api/host/mounts/:id` refuses with **409** `MOUNT_IN_USE` when any container's `mounts[*].sourceId` still references the id (detail lists the container names). The operator must remove the bind from those containers before the storage mount can be deleted, otherwise the next start would silently bind a missing source. Mirrors `assertBridgeNotInUse` for managed bridges.
+`DELETE /api/host/mounts/:id` refuses with **409** `MOUNT_IN_USE` when any container's `mounts[*].sourceId` still references the id (detail lists the container names). The operator must remove the bind from those containers before the storage mount can be deleted, otherwise the next start would silently bind a missing source. Mirrors `assertBridgeNotInUse` for managed bridges. When Wisp cannot tell whether the mount is in use (the container list cannot be read), the delete is refused with that read's code and "Cannot tell whether … is in use: <cause>"; the same holds for a bridge, a library file and an OCI image (settled 2026-11-22).
 
 ## API
 

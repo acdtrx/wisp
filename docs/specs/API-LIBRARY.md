@@ -38,6 +38,7 @@ Delete a file from the library.
 - **204:** deleted; announced like an upload
 - **404:** `LIBRARY_FILE_NOT_FOUND` — file not found
 - **409:** `LIBRARY_FILE_IN_USE` — file in use, referenced by one or more VMs (detail lists names)
+- **503 / 500:** the VM list's own code (`NO_CONNECTION`, `LIBVIRT_ERROR`) — Wisp cannot tell whether the file is in use, so it is not deleted
 
 ### PATCH /api/library/:filename · `admin`
 

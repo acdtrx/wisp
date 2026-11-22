@@ -119,7 +119,7 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 | `vms` | Same array as `GET /api/vms` | On libvirt `DomainEvent` (define/undefine/start/stop/…) and qemu binary replacement on disk |
 | `containers` | Same array as `GET /api/containers` | On containerd events, `container.json` writes, image-update completion |
 | `sections` | The `{ sections, assignments }` envelope (see [Sections](API-WORKSPACE.md#sections)) | After every successful section or assignment write |
-| `home` | The `{ tiles, groups }` envelope (see [Home page](API-WORKSPACE.md#home-page)) | On every VM list change, container list change (which includes `container.json` writes, so app-config edits land here), and homepage write |
+| `home` | The `{ tiles, groups }` envelope (see [Home page](API-WORKSPACE.md#home-page)) | On every VM list change, container list change, `container.json` write (so app-config edits land here) and homepage write |
 | `discovery` | Sorted peer array (see [Discovery](API-HOST.md#discovery)) | On mDNS browse events (peer appeared/left, avahi restart) |
 | `backups` | Per-workload last-backup-attempt map (below) | After every backup attempt (manual or scheduled, success or failure) and every backup delete/prune — consumers also use the frame as the cue to refetch the backup lists |
 | `jobs` | Same body as `GET /api/jobs` (`{ jobs: [rows] }`) | When the list changes: a job created, a job's status changed (done, error, cancelled), finished jobs expired — never on a progress event, which stays on the job's [progress stream](#get-apijobsjobidprogress--read) (settled 2026-11-20) |
@@ -199,7 +199,7 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
 }
 ```
 
-- `runningContainers` is the count of containers in the running state (0 when containerd is unavailable or on non-Linux dev hosts).
+- `runningContainers` is the count of containers in the running state (0 on non-Linux dev hosts). It is `null` when the container list could not be read (containerd down), as `runningVMs`, `cpu.allocated` and `memory.allocatedGB` are when the VM list could not (libvirt down): a figure is never a guessed 0.
 - `cpuTemp` and `cpuPowerWatts` are `null` when unavailable (e.g. non-Intel, VM, or no thermal/powercap sysfs).
 - `cpuTemp` is selected from the best CPU-relevant sensor (package/core sensors preferred over generic ACPI/platform sensors).
 - `cpuTempThresholds` contains thresholds for the selected primary CPU sensor as `{ maxC, critC }` (or `null` when unavailable).

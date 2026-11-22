@@ -56,6 +56,8 @@ Remove an image from containerd. Query parameter **`ref`** (required): the image
 
 **409:** `CONTAINER_IMAGE_IN_USE` — at least one Wisp container’s `container.json` `image` is this name, verbatim or after reference normalization. Delete or reconfigure those containers first.
 
+**503 / 500:** the container list's own code (`NO_CONTAINERD`, …) — Wisp cannot tell whether the image is in use, so it is not deleted.
+
 **400:** `VALIDATION_FAILED` — empty or missing `ref`.
 
 **503:** `NO_CONTAINERD`

@@ -190,7 +190,9 @@ consumer, and nothing has called for more).
     check settles (manual, hourly, failed): each rewrites the cached status.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` calls each
   manager's `configure()` with its paths and callbacks (`resolveMount`,
-  `tryAcquireOperationLock`) before any route registers. The start's state migrations
+  `tryAcquireOperationLock`) before any route registers. A fenced module gets its
+  logger the same way (`configure({ logger })`, `host` included), never by importing
+  one. The start's state migrations
   configure and connect them first, with the tolerant config reader and
   `{ watchEvents: false }`: no event subscriptions or timers, so none of the event-driven
   writes (restart-flag clearing, the network probe), and uncached lists that are complete

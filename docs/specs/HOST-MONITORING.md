@@ -40,7 +40,7 @@ In addition to host-level metrics, the stats include aggregate allocation across
 | Running VM count | Number of active domains |
 | Running container count | Number of containers in the running state (from containerd + on-disk configs, same as the workload list) |
 
-VM allocation fields are summed from the event-driven `vmListCache` in `vmManagerList.js` — every stats tick reads from in-memory state with **zero libvirt traffic**. The cache itself only refreshes when libvirt fires a `DomainEvent` (start, stop, define, undefine), so allocations cost nothing per tick yet stay accurate as VMs change. The running container count is computed each tick via `getRunningContainerCount()` (see container manager list).
+VM allocation fields are summed from the VM list that `vmManagerList.js` holds in memory. The list is read from libvirt when libvirt fires a `DomainEvent` (start, stop, define, undefine) and on the next ask after a libvirt call failed, never on a healthy tick. Each stats tick asks libvirt **one cheap question** (its version), so that a libvirtd that stopped or restarted is noticed while a tab is open: a failed answer marks the list stale, and the same tick reads it and reports the error. The question also makes libvirt-dbus subscribe to libvirt's events again after a libvirtd restart (settled 2026-11-22; without it a tab showing only the sidebar asked libvirt nothing, and a stopped libvirt's VMs stayed on screen as they were). The running container count is computed each tick via `getRunningContainerCount()` (see container manager list). A figure whose list could not be read is `null`, never a guessed 0 (below).
 
 ### SSE stream
 
@@ -82,7 +82,8 @@ Host statistics are pushed on the `stats` topic of `GET /api/events` (the single
 }
 ```
 
-- `runningContainers` is the number of containers reported as running (same source as the workload list; 0 when unavailable).
+- `runningContainers` is the number of containers reported as running (same source as the workload list). It is `null` when the container list could not be read, as `runningVMs`, `cpu.allocated` and `memory.allocatedGB` are when the VM list could not (settled 2026-11-22: a manager does its job or says it could not). The top bar shows "—" for a `null` figure.
+- A per-tick sensor or counter read that fails is no value, and is logged once per path, not every tick.
 - `cpuTemp` and `cpuPowerWatts` may be `null`.
 - `cpuTempThresholds` contains thresholds for the selected primary CPU sensor as `{ maxC, critC }` (or `null` when unavailable).
 - `thermalZones` includes all readable thermal sensors (`type`, user-facing `label`, `tempC`, `maxC`, `critC`, `pciAddress`). It can be empty when sensors are unavailable. For entries sourced from hwmon, `pciAddress` is derived from the resolved `device` symlink path by taking the **last** `dddd:dd:dd.d` segment (so NVMe and other devices nested under a PCI function still map to that function’s BDF); `null` if no PCI segment is found. Thermal zones from `/sys/class/thermal` use `pciAddress: null`.
@@ -136,13 +137,13 @@ The frontend subscribes when a VM is selected and unsubscribes when deselected (
 
 Per-tick libvirt traffic is intentionally minimal:
 
-- **Non-running VM (cached):** zero DBus calls. `getVMStats` fast-paths on `getCachedStateCode(name)`; the cache is refreshed on every libvirt `DomainEvent`, so the cost stays at zero until the VM is actually running again.
-- **Running VM:** one `GetStats(VM_STATS_MASK, 0)` per tick — and that's it on most ticks. The bitmask narrows the call to the four groups we actually consume (`CPU_TOTAL | VCPU | INTERFACE | BLOCK`), excluding `BALLOON` (which forces a qemu-monitor round-trip on libvirtd). Only when the cached `guestAgent` flag is true *and* the per-VM 30 s `guestInfoCache` entry has expired: one `InterfaceAddresses` + `GetHostname` pair to the in-guest agent (so ~1 in 6 ticks). **No `DomainLookupByName`, no `GetState`, no `Introspect`, no `GetXMLDesc`.**
+- **Non-running VM (cached):** zero DBus calls. `getVMStats` fast-paths on `getCachedStateCode(name)`; the cache is refreshed on every libvirt `DomainEvent`, so the cost stays at zero until the VM is actually running again. With no list cached (before the first read, or after a failed one), the tick reads the domain and its `GetState` from libvirt.
+- **Running VM:** one `GetStats(VM_STATS_MASK, 0)` per tick — and that's it on most ticks. The bitmask narrows the call to the four groups we actually consume (`CPU_TOTAL | VCPU | INTERFACE | BLOCK`), excluding `BALLOON` (which forces a qemu-monitor round-trip on libvirtd). Only when the cached `guestAgent` flag is true *and* the per-VM 30 s `guestInfoCache` entry has expired: one `InterfaceAddresses` + `GetHostname` pair to the in-guest agent (so ~1 in 6 ticks). **No `DomainLookupByName`, no `GetState`, no `Introspect`, no `GetXMLDesc`.** A `GetStats` that fails (libvirt gone, or the VM stopped as the tick ran) fails the tick: the stream sends its error frame and the page shows "Figures unavailable: …", never zeros (settled 2026-11-22).
 
 How the per-tick cost was driven down:
 
 - `DomainLookupByName` is skipped via `getCachedDomainPath(name)` — paths are captured by `ListDomains` during cache population and are stable for the lifetime of the domain definition.
-- `GetState` is skipped — `getCachedStateCode(name)` is kept current by `DomainEvent` signals; the rare race (state changes between event and tick) is handled by the existing `try/catch` around `GetStats`.
+- `GetState` is skipped — `getCachedStateCode(name)` is kept current by `DomainEvent` signals; in the rare race (state changes between event and tick) that one tick fails, and the next reads the new state.
 - `Introspect` is skipped — `getDomainObjAndIface` reads from `connectionState.domainProxyCache`, populated once per domain path and invalidated on disconnect / undefine.
 - `GetXMLDesc` is skipped — vCPU count and guest-agent presence come from the `vmListCache` via `getCachedVcpus`/`getCachedGuestAgent`.
 - Guest-agent calls (`InterfaceAddresses`, `GetHostname`) are gated by `guestInfoCache` (TTL 30 s, dropped when state turns non-running) — these are the heaviest because libvirtd has to round-trip through virtio-serial to qemu-ga inside the guest, and the data they return (hostname, primary IP) is essentially static between DHCP renewals.
