@@ -26,7 +26,7 @@ import { buildOCISpec } from './containerManagerSpec.js';
 import { getContainersPath, getContainerDir, getContainerFilesDir, getContainerNetnsPath } from './containerPaths.js';
 import { createNewRun } from './containerManagerLogs.js';
 import {
-  setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig,
+  setupNetwork, teardownNetwork, releaseNetworkLease, removeContainerNetns, mergeNetworkLeaseIntoConfig,
   generateContainerMac,
   resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
@@ -891,7 +891,9 @@ async function unlessGone(promise) {
  * with deleteFiles false, everything but files/). A step that fails stops the
  * delete there and names itself; what it would have removed, and everything
  * after it, stays — the container is still listed, and a second delete carries
- * on, since each step takes "not there" as done.
+ * on, since each step takes "not there" as done. A network lease that cannot
+ * be released is the exception: the rest runs, and the delete ends as
+ * CONTAINER_DELETE_INCOMPLETE naming it.
  */
 export async function deleteContainer(name, deleteFiles = true) {
   const step = async (what, fn) => {
@@ -918,10 +920,18 @@ export async function deleteContainer(name, deleteFiles = true) {
    * The A record is Wisp glue's to withdraw. */
   await deregisterServicesForContainer(name);
 
+  // A lease that cannot be released (the CNI DHCP daemon down) does not stop
+  // the delete: the netns goes, the rest runs, and the delete ends saying so.
+  let leaseError = null;
   await step('tearing down its network', async () => {
     if (!(await pathExists(getContainerNetnsPath(name)))) return;
     const config = await readContainerConfig(name);
-    await teardownNetwork(name, config.network);
+    try {
+      await releaseNetworkLease(name, config.network);
+    } catch (err) {
+      leaseError = err;
+    }
+    await removeContainerNetns(name);
   });
 
   await step('removing its snapshot', () => unlessGone(callUnary(
@@ -939,5 +949,13 @@ export async function deleteContainer(name, deleteFiles = true) {
     // refresh while container.json was still on disk: read the list again now
     // that the folder is gone, or partly gone.
     notifyContainerConfigWrite(name);
+  }
+
+  if (leaseError) {
+    throw wrapContainerError(
+      'CONTAINER_DELETE_INCOMPLETE',
+      `Container "${name}" was deleted, but its network lease was not released`,
+      leaseError,
+    );
   }
 }

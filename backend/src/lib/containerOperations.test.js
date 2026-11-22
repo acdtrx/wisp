@@ -202,6 +202,24 @@ test('a delete is followed by its follow-ups: the .local name, the backup status
   ]);
 });
 
+test('a delete that could not release the network lease still runs its follow-ups, then fails with that error', async () => {
+  impl.deleteContainer = async () => {
+    throw createAppError('CONTAINER_DELETE_INCOMPLETE', 'Container "gone" was deleted, but its network lease was not released');
+  };
+  const { jobId } = await startContainerDeleteJob({ name: 'gone', log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.deepEqual(names(), [
+    'assertContainerState', 'deleteContainer', 'unpublishContainer', 'forgetBackupStatus', 'removeWorkloadAssignment',
+  ]);
+});
+
+test('a delete stopped at a failed step runs no follow-ups', async () => {
+  impl.deleteContainer = async () => { throw createAppError('CONTAINERD_ERROR', 'Could not delete container "gone": removing its snapshot failed'); };
+  const { jobId } = await startContainerDeleteJob({ name: 'gone', log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.deepEqual(names(), ['assertContainerState', 'deleteContainer']);
+});
+
 test('a kill during a stop cuts its grace period short: it answers at once, and only the stop acts on the task', async () => {
   impl.stopContainer = (_name, { graceSignal }) => new Promise((resolve) => {
     graceSignal.addEventListener('abort', () => {

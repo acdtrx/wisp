@@ -633,15 +633,33 @@ export async function setupNetwork(name, networkConfig = {}) {
 }
 
 /**
- * Tear down networking for a container: CNI DEL, then the netns. A step that
- * fails throws; a caller that only tidies up after another failure catches it.
+ * Release a container's network attachment through CNI DEL: the DHCP lease
+ * held under its id, and the veth. Throws when the plugin fails.
  */
-export async function teardownNetwork(name, networkConfig = {}) {
-  const nsPath = getContainerNetnsPath(name);
+export async function releaseNetworkLease(name, networkConfig = {}) {
   const cniConfig = await getCNIConfig();
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
-  const pluginName = pluginConfig.type || 'bridge';
+  await execCNI(pluginConfig.type || 'bridge', 'DEL', name, getContainerNetnsPath(name), pluginConfig);
+}
 
-  await execCNI(pluginName, 'DEL', name, nsPath, pluginConfig);
+/** Remove a container's netns (its veth goes with it); throws when the delete fails. */
+export async function removeContainerNetns(name) {
   await removeNetNS(name);
+}
+
+/**
+ * Tear down networking for a container: CNI DEL, then the netns, which is
+ * removed even when the DEL failed. A step that fails throws (the DEL's error
+ * after the netns is gone); a caller that only tidies up after another failure
+ * catches it.
+ */
+export async function teardownNetwork(name, networkConfig = {}) {
+  let leaseError = null;
+  try {
+    await releaseNetworkLease(name, networkConfig);
+  } catch (err) {
+    leaseError = err;
+  }
+  await removeNetNS(name);
+  if (leaseError) throw leaseError;
 }

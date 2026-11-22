@@ -297,7 +297,13 @@ export function startContainerDeleteJob({ name, deleteFiles = true, log }) {
     check: () => assertContainerState(name, 'exists'),
     log,
     run: async () => {
-      await deleteContainer(name, deleteFiles);
+      try {
+        await deleteContainer(name, deleteFiles);
+      } catch (err) {
+        // The container is gone even though its lease was not released: its follow-ups still run.
+        if (err.code === 'CONTAINER_DELETE_INCOMPLETE') await followWorkloadDelete({ type: 'container', name, log });
+        throw err;
+      }
       await followWorkloadDelete({ type: 'container', name, log });
       return { name };
     },

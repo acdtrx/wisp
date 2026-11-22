@@ -296,6 +296,7 @@ Each code a client can receive, with its status.
 | `LIBVIRT_ERROR` | 500 | libvirt refused or failed the call |
 | `VM_DELETE_INCOMPLETE` | 500 | The VM was deleted, but its folder could not be removed; the detail names it |
 | `CONTAINERD_ERROR` | 500 | containerd failed the call, or did not answer in time |
+| `CONTAINER_DELETE_INCOMPLETE` | 500 | The container was deleted, but its network lease was not released; the detail names the cause |
 | `DISK_INFO_FAILED` | 500 | The disk image could not be inspected |
 | `NVRAM_COPY_FAILED` | 500 | The VM's UEFI NVRAM could not be copied |
 | `BACKUP_FAILED` | 500 | The backup failed |
