@@ -19,6 +19,17 @@
  * inline `# shellcheck disable=` fails the check, as an inline ESLint comment
  * does: an allowance is a reviewed line in EXCEPTIONS below, for one file and
  * one code. The `shell=` and `source=` directives, which only inform it, stay.
+ *
+ * How a script is used, held by its mode and its first line: one that starts
+ * with a shebang is run by path, so git holds it 100755; one without is
+ * sourced, so it is 100644 and starts with `# shellcheck shell=bash`. A
+ * tracked file's mode is git's, an untracked one's the file's own.
+ *
+ * And the helpers folder holds only helpers (docs/specs/DEPLOYMENT.md,
+ * Privileged helpers): every file directly in backend/scripts/ is a
+ * `wisp-<name>` that starts with a bash shebang (a helper, or the updater) or
+ * the one shared file, wisp-helper-lib.sh. Setup installs every such script as
+ * a root command with a sudo rule, so nothing else may sit there.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { openSync, readSync, closeSync, readFileSync, statSync } from 'node:fs';
@@ -94,6 +105,41 @@ if (failures.length > 0) {
 }
 
 const problems = [];
+
+const SOURCED_FIRST_LINE = '# shellcheck shell=bash';
+const trackedModes = new Map(
+  execFileSync('git', ['ls-files', '-z', '-s'], { cwd: REPO_ROOT, encoding: 'utf8' })
+    .split('\0').filter(Boolean)
+    .map((entry) => {
+      const [meta, file] = entry.split('\t');
+      return [file, meta.split(' ')[0]];
+    }),
+);
+const modeOf = (rel) => trackedModes.get(rel)
+  ?? ((statSync(path.join(REPO_ROOT, rel)).mode & 0o111) ? '100755' : '100644');
+for (const rel of scripts) {
+  const first = firstLine(path.join(REPO_ROOT, rel));
+  const mode = modeOf(rel);
+  if (SHELL_SHEBANG.test(first)) {
+    if (mode !== '100755') problems.push(`${rel}: starts with a shebang, so it is run by path and must be 100755 (it is ${mode}): git update-index --chmod=+x ${rel}`);
+  } else if (first !== SOURCED_FIRST_LINE) {
+    problems.push(`${rel}: has no shebang, so it is sourced and must start with "${SOURCED_FIRST_LINE}"`);
+  } else if (mode !== '100644') {
+    problems.push(`${rel}: is sourced (no shebang), so it must be 100644 (it is ${mode}): git update-index --chmod=-x ${rel}`);
+  }
+}
+
+const HELPERS_DIR = 'backend/scripts/';
+const HELPER_LIB = `${HELPERS_DIR}wisp-helper-lib.sh`;
+const BASH_SHEBANG = /^#!\s*\S*\/(?:env\s+)?bash(?:\s|$)/;
+for (const rel of [...new Set(listed)]) {
+  if (!rel.startsWith(HELPERS_DIR) || rel.slice(HELPERS_DIR.length).includes('/')) continue;
+  if (rel === HELPER_LIB || !isFile(path.join(REPO_ROOT, rel))) continue;
+  const name = rel.slice(HELPERS_DIR.length);
+  if (!/^wisp-[a-z0-9-]+$/.test(name) || !BASH_SHEBANG.test(firstLine(path.join(REPO_ROOT, rel)))) {
+    problems.push(`${rel}: the helpers folder holds only wisp-<name> scripts that start with a bash shebang, and ${HELPER_LIB}: setup installs each as a root command with a sudo rule`);
+  }
+}
 for (const rel of scripts) {
   readFileSync(path.join(REPO_ROOT, rel), 'utf8').split('\n').forEach((line, i) => {
     if (INLINE_DISABLE.test(line)) problems.push(`${rel}:${i + 1}: an inline shellcheck disable; add a reviewed line to EXCEPTIONS in scripts/check-shell.mjs instead`);
@@ -130,7 +176,7 @@ if (findings) problems.push(findings.trimEnd());
 if (problems.length > 0) {
   for (const p of problems) console.error(p);
   const version = spawnSync('shellcheck', ['--version'], { encoding: 'utf8' }).stdout.match(/version: (\S+)/)?.[1];
-  console.error(`\nshellcheck ${version ?? '(version unknown)'} fails ${scripts.length} shell scripts.`);
+  console.error(`\nThe shell check fails (${scripts.length} shell scripts; shellcheck ${version ?? '(version unknown)'}).`);
   process.exit(1);
 }
-console.log(`OK — ${scripts.length} shell scripts parse with bash -n and pass shellcheck.`);
+console.log(`OK — ${scripts.length} shell scripts parse with bash -n, pass shellcheck, and have the mode their use needs; the helpers folder holds only helpers.`);
