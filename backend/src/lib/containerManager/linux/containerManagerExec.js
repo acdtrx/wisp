@@ -6,7 +6,6 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { constants as fsConstants, open as openFd } from 'node:fs';
 import { Socket } from 'node:net';
 import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 
 import {
@@ -15,7 +14,8 @@ import {
   callUnary,
   packAny,
 } from './containerManagerConnection.js';
-import { getContainerDir, getContainersPath } from './containerPaths.js';
+import { getContainersPath } from './containerPaths.js';
+import { readContainerConfig } from './containerManagerConfigIo.js';
 import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
 
 const OCI_PROCESS_TYPE_URL = 'types.containerd.io/opencontainers/runtime-spec/1/Process';
@@ -82,14 +82,7 @@ function buildExecProcessSpec(u) {
 }
 
 async function readContainerRunAsRoot(name) {
-  const dir = getContainerDir(name);
-  try {
-    const raw = await readFile(join(dir, 'container.json'), 'utf8');
-    const config = JSON.parse(raw);
-    return !!config.runAsRoot;
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
-  }
+  return !!(await readContainerConfig(name)).runAsRoot;
 }
 
 /**

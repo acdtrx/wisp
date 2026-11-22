@@ -2,15 +2,13 @@
  * Starting a container: a new task from the current image and config, with its
  * network, mounts and log run; restart (stop, then start).
  */
-import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { readFile } from 'node:fs/promises';
 
 import {
   containerError, containerState, getClient, callUnary, packAny, isWispError, wrapContainerError,
 } from './containerManagerConnection.js';
 import { buildOCISpec, OCI_SPEC_TYPE_URL } from './containerManagerSpec.js';
-import { getContainerDir, getContainerFilesDir, resolveMount } from './containerPaths.js';
+import { getContainerFilesDir, resolveMount } from './containerPaths.js';
 import { createNewRun } from './containerManagerLogs.js';
 import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig, resolveContainerResolvConf,
@@ -120,17 +118,9 @@ async function rollbackFailedStart(name, networkConfig) {
  * registered only once the task has started.
  */
 export async function startExistingContainer(name) {
-  const containerDir = getContainerDir(name);
   const filesDir = getContainerFilesDir(name);
 
-  // Read container.json
-  let config;
-  try {
-    const raw = await readFile(join(containerDir, 'container.json'), 'utf8');
-    config = JSON.parse(raw);
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container config not found for "${name}"`);
-  }
+  let config = await readContainerConfig(name);
 
   // Remove any stale task (STOPPED still exists until Delete; Create would fail
   // with "already exists"). cleanupTask also finalizes the prior log run if

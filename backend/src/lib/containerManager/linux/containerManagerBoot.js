@@ -2,11 +2,8 @@
  * The container passes at backend boot: autostart, and resuming a task an
  * interrupted backup left paused.
  */
-import { join } from 'node:path';
-import { readFile } from 'node:fs/promises';
-
 import { containerState } from './containerManagerConnection.js';
-import { getContainerDir } from './containerPaths.js';
+import { readContainerConfig } from './containerManagerConfigIo.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
 import { listContainers } from './containerManagerList.js';
 import { resumeContainer } from './containerManagerLifecycle.js';
@@ -33,9 +30,10 @@ export async function startAutostartContainersAtBackendBoot(log) {
 
     let autostart = false;
     try {
-      const raw = await readFile(join(getContainerDir(c.name), 'container.json'), 'utf8');
-      autostart = JSON.parse(raw).autostart === true;
-    } catch {
+      autostart = (await readContainerConfig(c.name)).autostart === true;
+    } catch (err) {
+      // Deleted since the list was read: nothing to start.
+      if (err.code !== 'CONTAINER_NOT_FOUND') log.warn({ err, container: c.name }, 'Container autostart: its configuration could not be read');
       continue;
     }
     if (!autostart) continue;

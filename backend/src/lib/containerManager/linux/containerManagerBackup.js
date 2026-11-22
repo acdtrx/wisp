@@ -45,7 +45,7 @@ import {
   getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
 } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartState.js';
-import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+import { readContainerConfig, readContainerConfigFile, writeContainerConfig } from './containerManagerConfigIo.js';
 import { writeJsonAtomic } from './atomicJson.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
@@ -698,7 +698,7 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
   /* Rewrite container.json with the new name and a fresh MAC. */
   let config;
   try {
-    config = JSON.parse(await readFile(join(finalDir, 'container.json'), 'utf8'));
+    config = await readContainerConfigFile(join(finalDir, 'container.json'), newNameTrim);
   } catch (err) {
     /* Roll back the directory placement so the user can retry cleanly. */
     await rm(finalDir, { recursive: true, force: true }).catch(() => {});
@@ -810,7 +810,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
   /* Validate the staged container.json before touching the live directory. */
   let config;
   try {
-    config = JSON.parse(await readFile(join(stagingDir, extractedTop, 'container.json'), 'utf8'));
+    config = await readContainerConfigFile(join(stagingDir, extractedTop, 'container.json'), name);
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     throw containerError('BACKUP_INVALID', 'Backup container.json missing or invalid', err.message);

@@ -13,7 +13,8 @@ import { execFile as execFileCb, spawn } from 'node:child_process';
 import { TextDecoder, TextEncoder } from 'node:util';
 
 import { containerError } from './containerManagerConnection.js';
-import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
+import { getContainerFilesDir } from './containerPaths.js';
+import { readContainerConfig } from './containerManagerConfigIo.js';
 import { findMount, validateMountSegmentName, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
 import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
 import { atomicTmpName } from './atomicJson.js';
@@ -30,17 +31,6 @@ function execFile(command, args, options) {
       }
     });
   });
-}
-
-async function loadContainerJson(containerName) {
-  const p = join(getContainerDir(containerName), 'container.json');
-  let raw;
-  try {
-    raw = await readFile(p, 'utf8');
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${containerName}" not found`);
-  }
-  return JSON.parse(raw);
 }
 
 function artifactPath(containerName, mountName) {
@@ -101,7 +91,7 @@ function isUnzipMissingError(err) {
  * is created at SECRET_MOUNT_FILE_MODE. The caller removes `tmp` on failure.
  */
 export async function planMountFileUpload(containerName, mountName) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -198,7 +188,7 @@ function extractZipWithUnzipCli(zipPath, destDirAbs) {
 
 /** A directory mount's config entry, or the error a zip upload to it gets. */
 async function zipTargetMount(containerName, mountName) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -243,7 +233,7 @@ export async function extractMountZip({ containerName, mountName, zipPath }) {
 
 /** Empty file (0 bytes) or empty directory. */
 export async function initMountContent(containerName, mountName) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -272,7 +262,7 @@ export async function initMountContent(containerName, mountName) {
  * (CONTAINER_MOUNT_TYPE_MISMATCH).
  */
 export async function assertMountOperation(containerName, mountName, what) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -284,7 +274,7 @@ export async function assertMountOperation(containerName, mountName, what) {
 
 /** Remove backing file or directory; mount row stays in container.json until PATCH. */
 export async function deleteMountData(containerName, mountName) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -322,7 +312,7 @@ export async function deleteMountBackingStore(containerName, mountEntry) {
  * now configured as Storage-sourced no longer uses files/<name>.
  */
 export async function deleteRemovedMountData(containerName, mountName) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const configured = findMount(config, mountName);
   if (configured && !configured.sourceId) {
     throw containerError('CONFIG_ERROR', `Mount "${mountName}" is still configured — remove it from the mount list first`);
@@ -376,7 +366,7 @@ export async function renameMountBackingStore(containerName, fromName, toName) {
  * A `secret` mount's content is write-only for every caller: refused with CONTAINER_MOUNT_SECRET.
  */
 export async function getMountFileTextContent(containerName, mountName) {
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -440,7 +430,7 @@ export async function putMountFileTextContent(containerName, mountName, content,
       `Mount file exceeds ${MOUNT_FILE_CONTENT_MAX_BYTES} bytes`,
     );
   }
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
@@ -511,7 +501,7 @@ export async function setMountFileMode(containerName, mountName, mode) {
   if (!Number.isInteger(mode) || mode < 0 || mode > 0o7777) {
     throw containerError('INVALID_CONTAINER_MOUNTS', 'mode must be a permission-bits integer');
   }
-  const config = await loadContainerJson(containerName);
+  const config = await readContainerConfig(containerName);
   const m = findMount(config, mountName);
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);

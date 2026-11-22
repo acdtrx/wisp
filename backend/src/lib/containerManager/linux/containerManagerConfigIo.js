@@ -13,23 +13,36 @@ import { writeJsonAtomic } from './atomicJson.js';
 const configWriteHandlers = new Set();
 
 /**
- * A container's `container.json`: CONTAINER_NOT_FOUND when it does not exist,
- * INTERNAL_ERROR when it cannot be read, PARSE_ERROR when it is not JSON.
+ * The one read of a `container.json`, at `path`: CONTAINER_NOT_FOUND when it
+ * does not exist, INTERNAL_ERROR when it cannot be read, PARSE_ERROR when it is
+ * not a JSON object. `name` is the container it belongs to, for the messages.
+ * Writes are atomic (writeJsonAtomic), so a half-written file is never read.
  */
-export async function readContainerConfig(name) {
-  const path = join(getContainerDir(name), 'container.json');
+export async function readContainerConfigFile(path, name) {
   let raw;
   try {
     raw = await readFile(path, 'utf8');
   } catch (err) {
-    if (err.code === 'ENOENT') throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
+      throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+    }
     throw wrapContainerError('INTERNAL_ERROR', `Cannot read the configuration of container "${name}"`, err);
   }
+  let config;
   try {
-    return JSON.parse(raw);
+    config = JSON.parse(raw);
   } catch (err) {
     throw wrapContainerError('PARSE_ERROR', `The configuration of container "${name}" is not valid JSON`, err);
   }
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw containerError('PARSE_ERROR', `The configuration of container "${name}" is not a JSON object`);
+  }
+  return config;
+}
+
+/** A container's `container.json` (readContainerConfigFile's answers). */
+export function readContainerConfig(name) {
+  return readContainerConfigFile(join(getContainerDir(name), 'container.json'), name);
 }
 
 /* Secret env values (and app secrets such as API tokens) sit in plaintext in

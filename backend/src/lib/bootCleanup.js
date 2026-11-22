@@ -11,12 +11,13 @@
  * in a container's files/), never a name a mount is configured under. Never
  * touches user data.
  */
-import { readdir, readFile, unlink } from 'node:fs/promises';
+import { readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { ATOMIC_TMP_SUFFIX_RE } from './atomicJson.js';
 import { CONFIG_PATH } from './config.js';
 import { getSettings } from './settings.js';
+import { readContainerConfig } from './containerManager/index.js';
 
 async function sweepDir(dir, log, { keep = new Set() } = {}) {
   let entries;
@@ -80,10 +81,15 @@ export async function cleanPartialJsonArtifacts(log) {
     // files/ holds the mounts' data under their names: those are never swept.
     let mountNames = new Set();
     try {
-      const config = JSON.parse(await readFile(join(containerDir, 'container.json'), 'utf8'));
+      const config = await readContainerConfig(entry.name);
       mountNames = new Set((config.mounts || []).map((m) => m.name));
-    } catch {
-      continue; // no readable config: leave files/ alone
+    } catch (err) {
+      // No container here (a staging or session directory): nothing to keep apart.
+      // A config that cannot be read: leave files/ alone, and say so.
+      if (err.code !== 'CONTAINER_NOT_FOUND') {
+        log?.warn?.({ err: err.message, container: entry.name }, '[bootCleanup] a container configuration could not be read: its files/ was not swept');
+      }
+      continue;
     }
     await sweepDir(join(containerDir, 'files'), log, { keep: mountNames });
   }
