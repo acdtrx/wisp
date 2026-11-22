@@ -29,7 +29,7 @@ shut off, with a small lock by its title; the disabled action says "stop the VM 
 | Group | Shows | Changed by | Request |
 |---|---|---|---|
 | **Size** *(needs shut off)* | CPU cores, memory | Edit: a preset or custom cores and memory | `PATCH /api/vms/:name` `{ vcpus, memoryMiB }` |
-| **Disks and media** | Each disk: size and image. Each CD: its ISO | Disk *(needs shut off)*: Add, Edit (size, bus), Remove. CD, at any time: Insert, Change, Eject | The disk and CD routes ([API-VMS.md](API-VMS.md)) |
+| **Disks and media** | Each disk: size and image. Each CD: its ISO | Disk *(needs shut off)*: Add (with its bus), Edit (size; the bus is shown), Remove. CD, at any time: Insert, Change, Eject | The disk and CD routes ([API-VMS.md](API-VMS.md)) |
 | **Network** *(needs shut off)* | Each adapter: bridge, model and MAC (the address is in the figures) | Add, Edit (bridge, MAC, model), Remove | `PATCH` `{ nics }`, the whole list |
 | **First boot setup** (a VM whose profile has it) | Host name, user, whether a password is set, the SSH keys by name, the options; "Off" for a stored setup that is switched off, "Not set up." for none | Edit (which turns it on); Remove, which asks first | `PUT` and `DELETE /api/vms/:name/cloudinit` |
 | **USB devices** | The devices passed through | Attach, Detach, at any time | The USB routes |
@@ -45,8 +45,9 @@ shut off, with a small lock by its title; the disabled action says "stop the VM 
   picked from Wisp's list ([SETTINGS.md](SETTINGS.md)); a key pasted here is added to
   that list. A key the VM holds that is not in the list shows as a row of its own, and
   stays unless it is unchecked. The password field is empty and keeps the stored one unless typed.
-- **Expert settings** holds, grouped: boot (order, menu); firmware and machine (firmware,
-  machine type, CPU model, nested virtualisation); display (video, console protocol);
+- **Expert settings** holds, grouped: boot (order, menu); firmware and machine (firmware and
+  machine type, shown and not edited: they are set at create; CPU model, nested
+  virtualisation); display (video, console protocol);
   integration (guest agent, memory balloon, random number device, TPM); and the
   operating system the Windows tuning follows.
 

@@ -142,7 +142,7 @@ A configured network backup path that is not mounted is omitted from the scan (s
 
 Any failure in steps 4–6 (gunzip error, a restored disk with a backing file, ISO rebuild failure, define failure) removes the new VM's directory, so a failed restore leaves nothing behind; a failure in steps 1–3 happens before it exists.
 
-A backup made before VMs had a profile is refused at restore with `BACKUP_INVALID`, before anything is created (settled 2026-11-21, on the user's decision: an older backup is made again, and no code reads an older shape).
+A backup made before VMs had a profile is refused at restore with `BACKUP_INVALID`, before anything is created (settled 2026-11-21, on the user's decision: an older backup is made again, and no code reads an older shape). The same holds for every older layout: a manifest without the VM's name or its directory, and a disk stored uncompressed, are refused the same way, and the code that read them is gone (2026-11-22).
 
 ### Archive validation (VM backups)
 
@@ -228,7 +228,6 @@ Backup creation, container restore-in-place and restore as new (VM and container
 | Disk attach (new or existing image) | `POST /api/vms/:name/disks` | the call |
 | Disk detach | `DELETE /api/vms/:name/disks/:slot` | the call |
 | Disk resize | `POST /api/vms/:name/disks/:slot/resize` | the call |
-| Disk bus change | `POST /api/vms/:name/disks/:slot/bus` | the call |
 | CD-ROM attach / eject | `POST` / `DELETE /api/vms/:name/cdrom/:slot` | the call |
 | USB attach / detach | `POST /api/vms/:name/usb`, `DELETE /api/vms/:name/usb/:id` | the call |
 | Cloud-init save / remove | `PUT` / `DELETE /api/vms/:name/cloudinit` | the call |

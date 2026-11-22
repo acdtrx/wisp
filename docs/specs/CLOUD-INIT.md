@@ -104,7 +104,7 @@ When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `
 1. Save the new config to `cloud-init.json`
 2. Re-hash the password (if changed)
 3. Regenerate the seed ISO
-4. Attach/update `sde` in the domain XML
+4. Attach/update `sde` in the domain XML. A VM made without first boot setup has no `sde` slot: the slot is added to the saved definition, whatever the VM's state, and a VM that is on shows "restart required" (a SATA CD-ROM cannot be hot-plugged, and the seed is read at the next boot). A failed attach fails the save with its error (settled 2026-11-22; before, the failure was swallowed, so turning first boot setup on for a running VM reported success and added nothing).
 
 `PUT` with **`enabled: false`** (soft-disable):
 1. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling) — except `password`: a disabled config takes no new password, and the stored hash stays as it was (settled 2026-11-12)

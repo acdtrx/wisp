@@ -123,9 +123,9 @@ Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, ro
 
 Update VM configuration.
 
-- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `autostart`. Any other key, here or in a `nics[]` entry, is refused: **400** `VALIDATION_FAILED` naming it. `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`, as is a `name` that breaks the [name rules](ERROR-HANDLING.md#name-validation).
+- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `autostart`. Any other key, here or in a `nics[]` entry, is refused: **400** `VALIDATION_FAILED` naming it. That includes `firmware` and `machineType`: with a disk's bus they are set at create and not changed afterwards (settled 2026-11-22; changing the firmware of an existing VM turned "UEFI" into "UEFI with Secure Boot" and left a variables file behind, and a bus change off VirtIO always failed). `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`, as is a `name` that breaks the [name rules](ERROR-HANDLING.md#name-validation).
 - **204:** saved; the VM's new state reaches clients as `{ kind: "vm", id: <name> }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. When the VM is running and the patch changed its domain definition (anything but icon and autostart), its `pendingRestart` flag is set
-- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not, and a rename also takes the new name's (`VM_BUSY` while a job holds that name)
+- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming a VM that is not shut off; `VM_TRANSIENT` for a VM started outside Wisp with no saved definition (`virsh create`), on this and every route that changes a definition; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not, and a rename also takes the new name's (`VM_BUSY` while a job holds that name)
 - A NIC takes no VLAN: `vlan` in a `nics[]` entry is an unknown key, **400** `VALIDATION_FAILED`; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 ### DELETE /api/vms/:name · `admin`
@@ -239,17 +239,6 @@ Resize a disk.
 - **204:** done; the VM's new state reaches clients as `{ kind: "vm", id }` on the `changes` topic
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **422:** `RESIZE_INVALID` (not larger than the current size), `DISK_IMAGE_UNSAFE` (the disk has a backing file), `DISK_FORMAT_UNSUPPORTED` (its `<driver type>` is not qcow2/raw)
-
-### POST /api/vms/:name/disks/:slot/bus · `admin`
-
-Change the disk controller (bus) for a block disk slot. VM must be stopped.
-
-- **Body:** `{ bus: "virtio" | "scsi" | "sata" | "ide" }`
-- **204:** done; the VM's new state reaches clients as `{ kind: "vm", id }` on the `changes` topic
-- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
-- **422:** `DISK_NOT_FOUND` — slot is not a block disk; an invalid `bus` is **400** `VALIDATION_FAILED`
-
----
 
 ## CDROM (ISO)
 
