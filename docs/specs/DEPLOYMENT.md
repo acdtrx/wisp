@@ -292,7 +292,7 @@ The `v1.0.6` tag triggers `.github/workflows/release.yml`, which runs `npm run c
 When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`sudo -n`**:
 
 0. **Write it in the helpers' dialect** ([CODING-RULES §12](../CODING-RULES.md), Shell), with a test of its refusals in `backend/scripts/test/`.
-1. **Register it** in **`scripts/linux/setup/install-helpers.sh`**: its name in `HELPERS`, which installs it and its sudoers rule; a package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
+1. **Put it in `backend/scripts/`**, executable, with a shebang: the helpers are that folder (every `wisp-*` script there but the updater; the shell check holds the folder to helpers, the updater, the shared file and one listed exception, `wisp-port.sh`), and setup installs each with its sudoers rule. A package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
 2. **Backend** — call it through the one runner, `runPrivileged(helperPath('wisp-<name>'), args, { timeoutMs })` from `lib/base/` (settled 2026-11-22). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path. The runner tells a failure apart as `missing` (not installed: run setup), `refused` (sudo did not let the service run it), `timed-out`, or by the helper's own exit code `invalid`, `not-found`, `busy` or `failed`; the caller keeps its own error code on the wire. The fence check refuses a `'sudo'` anywhere else.
 3. **Docs** — `docs/specs/DEPLOYMENT.md` (this section), `docs/specs/API-<AREA>.md` / `CONFIGURATION.md` as appropriate; the CLI tools inventory in `docs/TECH-STACK.md`; the **shell-exec allowlist in `docs/CODING-RULES.md` §7**.
 4. **Install / upgrade** — Covered automatically if step 1 is done: setup's `helpers` step runs `install-helpers.sh` on every install and update.
@@ -307,6 +307,18 @@ argument before it runs anything, and bounds each command that can hang. The sha
 are in `wisp-helper-lib.sh`, installed beside them. Setup's `helpers` step installs them
 all, with one sudo rule each (`<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/<name>`),
 at every install and update.
+
+**Setup installs exactly the set** (settled 2026-11-22). Every entry named `wisp-*` in
+`/usr/local/bin` and in `/etc/sudoers.d` is setup's: each run installs this release's
+helpers, the shared file, the updater and their rules, and then removes any other
+`wisp-*` it finds in the two folders, naming each. So a helper a release stops shipping
+goes at the update, with its rule, and a rollback removes what the failed release added
+(from the release after this one: the first rollback goes back to a setup without the
+sweep). The removal comes last, a rule before its file, so a step that fails half way
+has removed nothing. A file of your own with that prefix in those folders is removed
+too. Before, nothing was ever removed but two old helpers on a list that never ended.
+
+**A release is installed by the release before it** (settled 2026-11-22). The updater that applies an update is the one already on the host, and it reads the new tree: `backend/package.json`, `scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>`, `systemd/linux/wisp.service`, and `backend/scripts/wisp-port.sh` for the port its health check asks. A file or an argument one of them needs can only go a release after the updater stopped needing it; a removal made earlier fails every update from then on (removing `wisp-port.sh` would have, on a host with another port than 8080).
 
 | Helper | Calls | What it does |
 |--------|-------|--------------|

@@ -77,7 +77,11 @@ Written into CODING-RULES §12 as shell rules, with the helpers as their first u
 - `wispctl` keeps what the docs describe: `password`, and `svc start`, `stop`, `restart`,
   `logs`. `local` (a second way to run Wisp, round systemd) and `svc uninstall` (removes
   one unit and leaves the rest) go; a real uninstall is a backlog entry.
-- A file the helpers folder holds that is not a helper moves to setup (`wisp-port.sh`).
+- A file the helpers folder holds that is not a helper moves to setup. `wisp-port.sh`
+  stays for now, as the folder's one listed exception: the updater of the releases up to
+  v2.8.0-beta.1 reads it from the tree it installs, to find the port to check (found in
+  milestone 2's review, 2026-11-22). It moves when no host can be updated by such an
+  updater (backlog).
 
 ### An update is an install with a way back (settled 2026-11-22)
 
