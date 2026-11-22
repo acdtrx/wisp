@@ -57,19 +57,26 @@ trap stop_child TERM INT
 
 # idle_run SECS cmd...: run cmd with its stdout and stderr passed through to our
 # stderr and copied into $RUN_LOG; killed after SECS seconds without a line of
-# output (exit 124). Returns cmd's exit status.
+# output (exit 124). Returns cmd's exit status. It is called where `set -e`
+# does not hold (run_step's `||`), so each step that can fail says so itself.
+# The FIFO is read on descriptor 7 (bash 3.2, which the tests run, has no
+# {fd} allocation).
 idle_run() {
   local secs="$1"; shift
-  local fifo fd line r rc=0 timed_out=0
+  local fifo line r rc=0 timed_out=0
   : > "$RUN_LOG"
-  fifo="$(mktemp -u -t wisp-os-update-fifo.XXXXXX)"
-  mkfifo -m 600 "$fifo"
+  fifo="$(mktemp -u -t wisp-os-update-fifo.XXXXXX)" || fail "cannot name a FIFO"
+  mkfifo -m 600 "$fifo" || fail "cannot make the FIFO $fifo"
   "$@" > "$fifo" 2>&1 &
   CHILD_PID=$!
-  exec {fd}< "$fifo"
+  if ! exec 7< "$fifo"; then
+    kill -KILL "$CHILD_PID" 2>/dev/null || true
+    rm -f -- "$fifo"
+    fail "cannot read the FIFO $fifo"
+  fi
   rm -f -- "$fifo"
   while :; do
-    IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
+    IFS= read -r -t "$secs" -u 7 line && r=0 || r=$?
     if (( r == 0 )); then
       printf '%s\n' "$line" >&2
       printf '%s\n' "$line" >> "$RUN_LOG"
@@ -86,7 +93,7 @@ idle_run() {
     fi
     break
   done
-  exec {fd}<&-
+  exec 7<&-
   wait "$CHILD_PID" 2>/dev/null || rc=$?
   CHILD_PID=""
   (( timed_out )) && return 124
@@ -110,6 +117,7 @@ simulate_dist_upgrade() {
   local rc=0
   capture "$SIMULATE_TIMEOUT" env LC_ALL=C apt-get -s dist-upgrade || rc=$?
   (( rc == 124 )) && fail "apt-get -s dist-upgrade did not finish within ${SIMULATE_TIMEOUT} s"
+  (( rc == 127 )) && fail "apt-get is not installed"
   OUT="$CAPTURED"
 }
 

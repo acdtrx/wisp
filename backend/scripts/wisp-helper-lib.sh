@@ -131,7 +131,10 @@ BOUNDED_ERR=""
 bounded() {
   local secs="$1" rc=0
   shift
-  { BOUNDED_ERR="$(timeout --kill-after="$KILL_GRACE_SEC" "$secs" "$@" 2>&1 >&3 3>&-)"; } 3>&1 || rc=$?
+  # The substitution's status is the command's: the ERR trap, which -E hands
+  # to the subshell, is cleared there first, or bash 3.2 runs it and exits 1
+  # whatever the command returned (bash 5 does not).
+  { BOUNDED_ERR="$(trap - ERR; timeout --kill-after="$KILL_GRACE_SEC" "$secs" "$@" 2>&1 >&3 3>&-)"; } 3>&1 || rc=$?
   BOUNDED_ERR="${BOUNDED_ERR//$'\n'/; }"
   BOUNDED_ERR="${BOUNDED_ERR:0:400}"
   (( rc == 137 )) && rc=124
@@ -139,11 +142,13 @@ bounded() {
 }
 
 # capture <seconds> <command>…: bounded, its stdout kept in CAPTURED (trailing
-# newlines dropped) rather than passed through.
+# newlines dropped) rather than passed through. Called where `set -e` does not
+# hold (`capture … || rc=$?`), so its own step says when it fails. A helper
+# killed by a signal leaves the temp file in /tmp.
 CAPTURED=""
 capture() {
   local out rc=0
-  out="$(mktemp -t wisp-helper.XXXXXX)"
+  out="$(mktemp -t wisp-helper.XXXXXX)" || fail "cannot create a temp file"
   bounded "$@" > "$out" || rc=$?
   CAPTURED="$(< "$out")"
   rm -f -- "$out"

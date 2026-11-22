@@ -45,3 +45,10 @@ test('the modules DMI lists are one JSON array; none is []', () => {
   assert.equal(none.code, 0, none.stderr);
   assert.deepEqual(JSON.parse(none.stdout), []);
 });
+
+test('dmidecode past its limit, or not installed, is exit 1 and its line', () => {
+  const slow = bench.run('wisp-dmidecode', [], { standIns: { timeout: 'exit 124' } });
+  assert.deepEqual([slow.code, slow.stdout, slow.stderr], [1, '', 'wisp-dmidecode: dmidecode did not finish within 10 s\n']);
+  const none = bench.run('wisp-dmidecode', [], { standIns: { dmidecode: null } });
+  assert.deepEqual([none.code, none.stdout, none.stderr], [1, '', 'wisp-dmidecode: dmidecode is not installed: run setup\n']);
+});

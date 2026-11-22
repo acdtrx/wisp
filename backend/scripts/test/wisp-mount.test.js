@@ -78,3 +78,20 @@ test('a disk that is not there is exit 2, before anything runs', () => {
   assert.equal(r.stderr, `wisp-mount: no disk with UUID ${UUID}\n`);
   assert.deepEqual(r.calls, []);
 });
+
+test('a mount past its limit says so, exit 1', () => {
+  const r = bench.run('wisp-mount', ['smb-mount', SHARE, POINT, 'guest', 'shared'], {
+    standIns: { timeout: '[ "$3" = mount ] && exit 124; shift 2; exec "$@"' },
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.equal(r.stderr, 'wisp-mount: mount did not finish within 20 s\n');
+  assert.ok(r.calls.includes(`mkdir -p -- ${POINT}`), r.calls.join('\n'));
+});
+
+test('a mount gets nosuid,nodev, the invoking user and -- before the share', () => {
+  const r = bench.run('wisp-mount', ['smb-mount', SHARE, POINT, 'guest', 'owner-only']);
+  assert.equal(r.code, 0, r.stderr);
+  const uid = process.getuid();
+  const gid = process.getgid();
+  assert.ok(r.calls.includes(`mount -t cifs -o nosuid,nodev,uid=${uid},gid=${gid},guest,file_mode=0600,dir_mode=0700 -- ${SHARE} ${POINT}`), r.calls.join('\n'));
+});

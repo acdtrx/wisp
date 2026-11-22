@@ -16,17 +16,18 @@ const SCRIPTS_DIR = fileURLToPath(new URL('../', import.meta.url));
 const BASH = execFileSync('/bin/sh', ['-c', 'command -v bash'], { encoding: 'utf8' }).trim();
 
 /** Commands the helpers act with: each stood in by one that records its call and succeeds. */
-const STOOD_IN = ['apt-get', 'chown', 'cp', 'dmidecode', 'ip', 'mkdir', 'mkfifo', 'mount', 'mv', 'netplan', 'realpath',
+const STOOD_IN = ['apt-get', 'chown', 'cp', 'dmidecode', 'ip', 'mkdir', 'mount', 'mv', 'netplan', 'realpath',
   'rmdir', 'shutdown', 'sleep', 'smartctl', 'stat', 'sync', 'umount'];
 /** Text and temp-file tools: recorded, then the real one runs. */
-const PASSED_THROUGH = ['awk', 'cat', 'grep', 'head', 'mktemp', 'rm', 'sed', 'tail', 'tr'];
+const PASSED_THROUGH = ['awk', 'cat', 'env', 'grep', 'head', 'mkfifo', 'mktemp', 'rm', 'sed', 'tail', 'tr'];
 /** `timeout <grace> <secs> cmd…` stood in by running cmd (a stand-in itself). */
 const TIMEOUT = 'shift 2; exec "$@"';
 const realPath = (name) => execFileSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim();
 
 /**
  * A stand-in environment for one test file. `standIns` overrides a command's
- * stand-in with a shell body of its own (it still records its call).
+ * stand-in with a shell body of its own (it still records its call), or with
+ * null takes it away (the command is then not installed).
  */
 export function helperBench() {
   const dir = mkdtempSync(path.join(tmpdir(), 'wisp-helper-test-'));
@@ -36,6 +37,10 @@ export function helperBench() {
 
   const standIn = (name, body = 'exit 0') => {
     const p = path.join(bin, name);
+    if (body === null) {
+      rmSync(p, { force: true });
+      return;
+    }
     writeFileSync(p, `#!/bin/sh\nprintf '%s\\n' "${name} $*" >> '${log}'\n${body}\n`);
     chmodSync(p, 0o755);
   };
