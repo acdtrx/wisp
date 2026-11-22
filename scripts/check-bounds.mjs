@@ -68,7 +68,7 @@ const SETUP_STOP_SEC = setupBound('SETUP_STOP_SEC');
 const NET_CMD_SEC = setupBound('NET_CMD_SEC');
 const UDEV_CALL_SEC = setupBound('UDEV_CALL_SEC');
 const u = assignments('backend/scripts/wisp-updater', ['KILL_GRACE_SEC', 'STOP_WISP_SEC', 'ROLLBACK_RESTORE_SEC',
-  'ROLLBACK_INSTALL_SEC', 'STATUS_SEC']);
+  'ROLLBACK_INSTALL_SEC', 'ROLLBACK_START_SEC', 'STATUS_SEC']);
 const unit = assignments('systemd/linux/wisp-updater.service', ['TimeoutStartSec', 'TimeoutStopSec']);
 const wisp = assignments('systemd/linux/wisp.service', ['TimeoutStopSec']);
 const updaterLock = assignments('backend/scripts/wisp-updater', ['WISP_LOCK'], '\\S+');
@@ -83,12 +83,16 @@ if (!limit) problems.push(`${FRONTEND}: no "const UPDATER_LIMIT_MS = (<start> + 
 if (problems.length === 0) {
   const g = u.KILL_GRACE_SEC;
   // The install running when the start times out, stopped: it ends within
-  // setup's stop bound (scripts/linux/install-tree.sh passes the TERM on).
+  // setup's stop bound (scripts/linux/install-tree.sh passes the TERM to
+  // setup's leader, and to any other phase's whole group, which ends at once).
   const stopped = SETUP_STOP_SEC;
   // Then the rollback: stop wisp, restore the tree, the restored tree's install
-  // (past its limit, a TERM, and setup's stop bound again), wisp's state.
+  // (past its limit, a TERM, and setup's stop bound again), the read of wisp's
+  // state, the start made when that install did not start it, and the read of
+  // its state for the last line.
   const rollback = (u.STOP_WISP_SEC + g) + (u.ROLLBACK_RESTORE_SEC + g)
-    + (u.ROLLBACK_INSTALL_SEC + SETUP_STOP_SEC) + (u.STATUS_SEC + g);
+    + (u.ROLLBACK_INSTALL_SEC + SETUP_STOP_SEC) + (u.STATUS_SEC + g)
+    + (u.ROLLBACK_START_SEC + g) + (u.STATUS_SEC + g);
   const need = stopped + rollback;
   if (unit.TimeoutStopSec < need) {
     problems.push(`systemd/linux/wisp-updater.service: TimeoutStopSec=${unit.TimeoutStopSec} is below the worst case of a stopped update, ${need} s (the install stopped, ${stopped} s; then the rollback, ${rollback} s)`);

@@ -74,14 +74,16 @@ SERVICE_UNIT=wisp
 # SIGKILL: the stopped setup ending, then the rollback, each of its parts
 # bounded here — stop wisp, restore the tree, the restored tree's install (its
 # setup and its start; past its limit, a TERM, and setup's own stop bound
-# again), the read of wisp's state; a part that runs past its bound gets
-# KILL_GRACE_SEC more to die. scripts/check-bounds.mjs (npm run check) sums the
+# again), the read of wisp's state, the start made here when that install did
+# not start it, and the read of its state for the last line; a part that runs
+# past its bound gets KILL_GRACE_SEC more to die. scripts/check-bounds.mjs (npm run check) sums the
 # worst case from these numbers and setup's, and fails when the unit's
 # TimeoutStopSec (systemd/linux/wisp-updater.service) is below it.
 KILL_GRACE_SEC=10
 STOP_WISP_SEC=40
 ROLLBACK_RESTORE_SEC=120
 ROLLBACK_INSTALL_SEC=420
+ROLLBACK_START_SEC=120
 STATUS_SEC=10
 # The install lock another install, update or setup holds is waited for this
 # long. Its path is setup's too (scripts/linux/setup/lib.sh, WISP_LOCK), kept
@@ -199,11 +201,22 @@ rollback() {
   # tree is its own source), its setup puts back its helpers, sudo rules and
   # units, removing what the newer release added, and it is started.
   echo "step:rollback-install"
+  local installed=0
   if [[ -x "$INSTALL_DIR/$INSTALL_TREE" ]]; then
-    run_child "$ROLLBACK_INSTALL_SEC" own-bound "$INSTALL_DIR/$INSTALL_TREE" "$INSTALL_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" \
-      || echo "rollback-warning: the restored release's install failed or ran past ${ROLLBACK_INSTALL_SEC}s (above): its setup or its start did not complete"
+    if run_child "$ROLLBACK_INSTALL_SEC" own-bound "$INSTALL_DIR/$INSTALL_TREE" "$INSTALL_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP"; then
+      installed=1
+    else
+      echo "rollback-warning: the restored release's install failed or ran past ${ROLLBACK_INSTALL_SEC}s (above): its helpers, sudo rules, units and the backend's dependencies may still be the new release's"
+    fi
   else
-    echo "rollback-warning: $INSTALL_DIR/$INSTALL_TREE missing: the restored release is neither set up nor started"
+    echo "rollback-warning: $INSTALL_DIR/$INSTALL_TREE missing: the restored release is not set up"
+  fi
+  # A rollback always ends by starting the release that ran before: when its
+  # install did not get to (or through) its start, the start is made here.
+  if (( ! installed )) && [[ "$(run_child "$STATUS_SEC" 0 systemctl is-active "$SERVICE_UNIT")" != active ]]; then
+    echo "step:rollback-start"
+    run_child "$ROLLBACK_START_SEC" 0 systemctl start "$SERVICE_UNIT" \
+      || echo "rollback-warning: the restored release did not start within ${ROLLBACK_START_SEC}s"
   fi
   rollback_left
 }
