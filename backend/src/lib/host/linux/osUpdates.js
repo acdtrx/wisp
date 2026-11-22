@@ -65,12 +65,13 @@ export function isUpgradeInProgress() {
 /*
  * Bounds (CODING-RULES §6; contracts in docs/specs/HOST-MONITORING.md § OS
  * Updates): the helper passes apt's output through on stderr, and the
- * run is stopped after this long without any of it. `list` gets 90 s — above
- * the helper's own per-step bounds (60 s each), which stop a hung step first;
- * `upgrade` 15 min, since dkms and initramfs builds can be silent for minutes.
+ * run is stopped after this long without any of it. Each is above the
+ * helper's own bound for its steps, which stops a hung step first: `list` 90 s
+ * over 60 s each, `upgrade` 15.5 min over the 15 min a dkms or initramfs build
+ * can be silent for.
  */
 const LIST_IDLE_MS = 90_000;
-const UPGRADE_IDLE_MS = 15 * 60_000;
+const UPGRADE_IDLE_MS = 15.5 * 60_000;
 
 /**
  * Run wisp-os-update `action` through the privileged runner, stopped after
@@ -93,7 +94,7 @@ async function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = 
     if (err.reason === 'timed-out') {
       throw createAppError(UNAVAILABLE, `OS update ${action} printed nothing for ${stallMinutes(idleMs)} and was stopped`, tail(5));
     }
-    if (err.reason === 'failed' && err.exitCode === 75) {
+    if (err.reason === 'busy') {
       /* EX_TEMPFAIL: another apt/dpkg process holds the package-manager lock. */
       throw createAppError(BUSY, 'Another package manager operation is running on the host', tail(5) || 'package manager lock held by another process');
     }

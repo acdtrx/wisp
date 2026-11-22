@@ -1,40 +1,43 @@
 #!/usr/bin/env bash
-# Usage: wisp-os-update check | list | upgrade
-#   check   - sync package database, then count packages that would be upgraded; prints one integer.
-#   list    - sync package database, then emit a structured list of upgradable packages:
+# Usage: wisp-os-update list | upgrade
+#   list    - sync the package database, then the packages an upgrade would
+#             change, on stdout:
 #               PKG<TAB>name<TAB>from<TAB>to     (one line per package, "from" empty for new installs)
 #               TOTAL <bytes>                    (estimated download size; 0 if unknown)
-#   upgrade - sync package database and perform a full upgrade (non-interactive).
+#   upgrade - sync the package database and perform a full upgrade (non-interactive).
 #             Debian uses dist-upgrade so kept-back packages needing new deps
-#             (kernel-meta jumps etc.) install too; check/list simulate the same
-#             action so the count matches what upgrade will do.
+#             (kernel-meta jumps etc.) install too; list simulates the same
+#             action so the list matches what upgrade will do.
 # Non-interactive by construction: nothing may prompt, because the caller is a
-# backend with no terminal and a prompt is a hang until the timeout kills the
+# backend with no terminal and a prompt is a hang until a bound kills the
 # package manager mid-run. Locally modified config files are always kept
 # (--force-confold).
-# Exit codes:
-#   0   success
-#   75  EX_TEMPFAIL — another apt/dpkg process is holding the package-manager lock
-#   1   any other failure (privilege, missing tools, parse error, etc.)
-# Must be run with sufficient privilege (root or sudo).
-# Wisp hosts run Debian or Ubuntu (setup refuses any other): apt.
-set -euo pipefail
+#
+# Progress: the package manager's output, passed through on stderr (the
+# backend's progress signal); the error line, when there is one, comes last.
+# Exit 75 when another apt/dpkg process holds the package manager's lock.
+# shellcheck source=wisp-helper-lib.sh
+source "${BASH_SOURCE[0]%/*}/wisp-helper-lib.sh"
 
-# Pattern matched against apt/dpkg stderr to identify lock-contention errors.
-# When matched, the script exits 75 so callers can distinguish "busy" from "broken".
+(( $# == 1 )) || refuse "usage: wisp-os-update list|upgrade"
+match_one_of "the action" "$1" list upgrade
+CMD="$1"
+
+# Pattern matched against apt/dpkg output to identify lock-contention errors.
 LOCK_PATTERN='Could not get lock|Could not open lock|Unable to (acquire|lock)|Resource temporarily unavailable|already locked|frontend is locked'
 
 # Bounds (CODING-RULES §6; the values are contracts in docs/specs/HOST-MONITORING.md
-# § OS Updates). Every package-manager step passes its output through to stderr —
-# the backend's progress signal, which it watches for inactivity — and keeps a
-# copy for lock detection. A step that shows progress is bounded on inactivity
-# here too, so a hung one is killed rather than orphaned holding the lock: the
-# index refresh after REFRESH_IDLE seconds without output. The simulated upgrade
-# prints nothing until it ends, so it gets a fixed SIMULATE_TIMEOUT. The upgrade
-# itself has no bound here: the backend stops it after its own inactivity bound,
-# and a TERM reaching this script stops the running step's child with it.
+# § OS Updates). Every package-manager step passes its output through to stderr
+# and keeps a copy for lock detection. A step that shows progress is stopped
+# here after a time without output, so a hung one is killed rather than
+# orphaned holding the lock: the index refresh after REFRESH_IDLE seconds, the
+# upgrade after UPGRADE_IDLE (dkms and initramfs builds can be silent for
+# minutes). The simulated upgrade prints nothing until it ends, so it gets a
+# fixed SIMULATE_TIMEOUT. A TERM reaching this script (the backend's own,
+# outer bound, or its stop) stops the running step's child with it.
 REFRESH_IDLE=60
 SIMULATE_TIMEOUT=60
+UPGRADE_IDLE=900
 
 RUN_LOG="$(mktemp -t wisp-os-update-log.XXXXXX)"
 CHILD_PID=""
@@ -53,8 +56,8 @@ stop_child() {
 trap stop_child TERM INT
 
 # idle_run SECS cmd...: run cmd with its stdout and stderr passed through to our
-# stderr and copied into $RUN_LOG; with SECS > 0, killed after SECS seconds
-# without a line of output (exit 124). Returns cmd's exit status.
+# stderr and copied into $RUN_LOG; killed after SECS seconds without a line of
+# output (exit 124). Returns cmd's exit status.
 idle_run() {
   local secs="$1"; shift
   local fifo fd line r rc=0 timed_out=0
@@ -66,11 +69,7 @@ idle_run() {
   exec {fd}< "$fifo"
   rm -f -- "$fifo"
   while :; do
-    if (( secs > 0 )); then
-      IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
-    else
-      IFS= read -r -u "$fd" line && r=0 || r=$?
-    fi
+    IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
     if (( r == 0 )); then
       printf '%s\n' "$line" >&2
       printf '%s\n' "$line" >> "$RUN_LOG"
@@ -90,45 +89,29 @@ idle_run() {
   exec {fd}<&-
   wait "$CHILD_PID" 2>/dev/null || rc=$?
   CHILD_PID=""
-  if (( timed_out )); then
-    echo "wisp-os-update: $1 printed nothing for ${secs}s and was stopped" >&2
-    return 124
-  fi
+  (( timed_out )) && return 124
   return "$rc"
 }
 
-# run_step SECS cmd...: idle_run, then exit 75 when the output names a held
-# package-manager lock and 1 on any other failure.
+# run_step SECS cmd...: idle_run; a failure ends the helper: busy when the
+# output names a held package-manager lock, else failed, each with its line.
 run_step() {
-  local rc=0
+  local secs="$1" rc=0
   idle_run "$@" || rc=$?
   (( rc == 0 )) && return 0
-  if grep -qE "$LOCK_PATTERN" "$RUN_LOG"; then exit 75; fi
-  exit 1
+  grep -qE "$LOCK_PATTERN" "$RUN_LOG" && busy "another package manager holds the lock; try again later"
+  (( rc == 124 )) && fail "$2 printed nothing for ${secs} s and was stopped"
+  fail "$2 failed (exit $rc)"
 }
 
-# bounded SECS cmd...: a fixed bound for a step with no progress output.
-bounded() {
-  local secs="$1"; shift
-  local rc=0
-  timeout --kill-after=5 "$secs" "$@" || rc=$?
-  if (( rc == 124 || rc == 137 )); then
-    echo "wisp-os-update: $1 timed out after ${secs}s" >&2
-  fi
-  return "$rc"
-}
-
-# `apt-get -s dist-upgrade` output (it may exit non-zero and still print what
-# it would do; only a timeout is a failure).
+# `apt-get -s dist-upgrade` output, into OUT (it may exit non-zero and still
+# print what it would do; only a timeout is a failure).
 simulate_dist_upgrade() {
-  local out rc=0
-  out=$(export LC_ALL=C; bounded "$SIMULATE_TIMEOUT" apt-get -s dist-upgrade 2>&1) || rc=$?
-  # bounded's message went into $out with the rest of the output: say it again.
-  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: apt-get -s dist-upgrade timed out after ${SIMULATE_TIMEOUT}s" >&2; exit 1; fi
-  printf '%s\n' "$out"
+  local rc=0
+  capture "$SIMULATE_TIMEOUT" env LC_ALL=C apt-get -s dist-upgrade || rc=$?
+  (( rc == 124 )) && fail "apt-get -s dist-upgrade did not finish within ${SIMULATE_TIMEOUT} s"
+  OUT="$CAPTURED"
 }
-
-CMD="${1:-}"
 
 # sudo's env_reset drops the caller's environment, so these are set here.
 # - DEBIAN_FRONTEND=noninteractive: debconf takes defaults instead of asking.
@@ -140,22 +123,9 @@ export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 export UCF_FORCE_CONFFOLD=1
 case "$CMD" in
-  check)
-    run_step "$REFRESH_IDLE" apt-get update
-    # Simulate dist-upgrade so count matches what the upgrade action would install (excludes phased-only, etc.).
-    OUT=$(simulate_dist_upgrade) || exit 1
-    SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
-    if [[ -z "$SUMMARY" ]]; then
-      echo 0
-    else
-      # First comma-separated field is "N upgraded" (avoid matching "not upgraded" later in the line).
-      FIRST="${SUMMARY%%,*}"
-      echo "${FIRST%% upgraded}"
-    fi
-    ;;
   list)
     run_step "$REFRESH_IDLE" apt-get update
-    OUT=$(simulate_dist_upgrade) || exit 1
+    simulate_dist_upgrade
     # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
     echo "$OUT" | awk -v OFS='\t' '
       /^Inst / {
@@ -186,16 +156,11 @@ case "$CMD" in
     ;;
   upgrade)
     run_step "$REFRESH_IDLE" apt-get update
-    # Output passed through: the backend's inactivity bound watches it.
     # confdef+confold: an untouched conffile takes the package's new version,
     # a locally modified one is kept (the new one lands as .dpkg-dist).
-    run_step 0 apt-get -y \
+    run_step "$UPGRADE_IDLE" apt-get -y \
       -o Dpkg::Options::=--force-confdef \
       -o Dpkg::Options::=--force-confold \
       dist-upgrade
-    ;;
-  *)
-    echo "Usage: $0 check|list|upgrade" >&2
-    exit 1
     ;;
 esac
