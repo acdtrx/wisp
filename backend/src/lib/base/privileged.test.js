@@ -56,6 +56,9 @@ test('missing, refused, failed and timed out are told apart', async () => {
   assert.deepEqual([err.reason, err.exitCode, err.detail], ['failed', 2, 'src not found']);
   // A command that exits 1 with stderr of its own is its own failure, not a refusal.
   assert.equal(await reason(runPrivileged(script('one', 'echo "no such disk" >&2; exit 1'), [], { timeoutMs: 5000 })), 'failed');
+  // A warning sudo prints before it runs the command is not a refusal either.
+  const warned = script('warned', 'echo "sudo: unable to resolve host box: Name or service not known" >&2; echo "no such disk" >&2; exit 1');
+  assert.equal(await reason(runPrivileged(warned, [], { timeoutMs: 5000 })), 'failed');
   assert.equal(await reason(runPrivileged(script('slow', 'sleep 5'), [], { timeoutMs: 100, graceMs: 100 })), 'timed-out');
 });
 

@@ -51,10 +51,13 @@ export class PrivilegedError extends Error {
 /**
  * sudo's refusal: it exits 1 and says so on stderr in its own words (LC_ALL=C) —
  * `sudo: a password is required` (no NOPASSWD rule for the command), or
- * `Sorry, user … is not allowed to execute …` (a rule that denies it).
+ * `Sorry, user … is not allowed to execute …` (a rule that denies it). Only
+ * those lines: sudo also prints warnings of its own and then runs the command
+ * (`sudo: unable to resolve host …`), and a helper that then exits 1 failed
+ * by itself.
  */
 function isSudoRefusal(code, stderr) {
-  return code === 1 && /^(?:sudo: |Sorry, user )/m.test(stderr);
+  return code === 1 && /^(?:sudo: a password is required|Sorry, user .* is not allowed to execute )/m.test(stderr);
 }
 
 /**
