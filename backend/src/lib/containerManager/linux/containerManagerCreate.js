@@ -19,7 +19,8 @@ import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 import { pullImage, getImageConfig } from './containerManagerPull.js';
 import { SNAPSHOTTER, prepareSnapshot, getSnapshotMounts } from './containerManagerSnapshot.js';
 
-const RUNTIME_NAME = 'io.containerd.runc.v2';
+/** The runtime every container is defined with. */
+export const RUNTIME_NAME = 'io.containerd.runc.v2';
 
 /**
  * The name checks a create makes first, quick and without side effects:

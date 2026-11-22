@@ -16,7 +16,7 @@ import {
 } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
-import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { getTaskState } from './containerManagerLifecycle.js';
 
 const OCI_PROCESS_TYPE_URL = 'types.containerd.io/opencontainers/runtime-spec/1/Process';
 
@@ -127,7 +127,7 @@ export async function execInContainer(name, opts = {}) {
   const rows = Math.max(1, Math.min(4096, Number(opts.rows) || 24));
 
   const task = await getTaskState(name);
-  if (!task || normalizeTaskStatus(task.status) !== 'RUNNING') {
+  if (!task || task.status !== 'RUNNING') {
     throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }
 
@@ -251,7 +251,7 @@ export async function execCommandInContainer(name, args, opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 30000;
 
   const task = await getTaskState(name);
-  if (!task || normalizeTaskStatus(task.status) !== 'RUNNING') {
+  if (!task || task.status !== 'RUNNING') {
     throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }
 

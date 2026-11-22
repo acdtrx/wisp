@@ -2,7 +2,7 @@
  * Row-scoped container bind mount CRUD (add / update / remove one mount).
  */
 import { containerError } from './containerManagerConnection.js';
-import { getTaskState } from './containerManagerLifecycle.js';
+import { getTaskState, isTaskOn } from './containerManagerLifecycle.js';
 import {
   validateAndNormalizeMounts,
   validateMountSegmentName,
@@ -24,10 +24,6 @@ import { readContainerConfig as loadContainerConfig, writeContainerConfig } from
 import { markPendingRestart } from './containerManagerPendingRestart.js';
 
 const RESTART_WHEN_RUNNING = true;
-
-function taskIsRunning(task) {
-  return !!task && (task.status === 'RUNNING' || task.status === 'PAUSED');
-}
 
 /**
  * Append one mount, create backing artifact. Returns { requiresRestart }.
@@ -52,7 +48,7 @@ export async function addContainerMount(containerName, mountDef) {
   list.push(normalized);
   config.mounts = list;
   const task = await getTaskState(containerName);
-  const isRunning = taskIsRunning(task);
+  const isRunning = isTaskOn(task);
   const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
   if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);
@@ -142,7 +138,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
     list[idx] = updated;
     config.mounts = list;
     const task = await getTaskState(containerName);
-    const isRunning = taskIsRunning(task);
+    const isRunning = isTaskOn(task);
     const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
     if (requiresRestart) markPendingRestart(config);
     await writeContainerConfig(containerName, config);
@@ -278,7 +274,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   list[idx] = updated;
   config.mounts = list;
   const task = await getTaskState(containerName);
-  const isRunning = taskIsRunning(task);
+  const isRunning = isTaskOn(task);
   const requiresRestart = isRunning && RESTART_WHEN_RUNNING && !layoutUnchanged;
   if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);
@@ -310,7 +306,7 @@ export async function removeContainerMount(containerName, mountName) {
   list.splice(idx, 1);
   config.mounts = list;
   const task = await getTaskState(containerName);
-  const isRunning = taskIsRunning(task);
+  const isRunning = isTaskOn(task);
   const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
   if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);

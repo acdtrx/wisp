@@ -11,7 +11,7 @@ import { readContainerConfig } from './containerManagerConfigIo.js';
 const SIGTERM = 15;
 const SIGKILL = 9;
 
-/** containerd.types.task.Status enum order (proto3) */
+/** containerd.types.task.Status names */
 const TASK_STATUS_NAMES = ['UNKNOWN', 'CREATED', 'RUNNING', 'STOPPED', 'PAUSED', 'PAUSING'];
 
 const CANON_TO_UI = {
@@ -24,35 +24,16 @@ const CANON_TO_UI = {
 };
 
 /**
- * Normalize task status from gRPC.
- * Handles numeric enums, string digits (`"2"` → RUNNING), bigint, and case-insensitive names.
- * Some loaders expose enums as indices; returning them as raw strings broke list/stats mapping.
+ * A task status as Wisp compares it: the enum's name, which gRPC answers carry
+ * (the proto loader decodes enums as strings); anything else, or none, is UNKNOWN.
  */
 export function normalizeTaskStatus(status) {
-  if (status == null || status === '') return 'UNKNOWN';
-  if (typeof status === 'bigint') {
-    const n = Number(status);
-    if (Number.isFinite(n) && n >= 0 && n < TASK_STATUS_NAMES.length) {
-      return TASK_STATUS_NAMES[Math.floor(n)];
-    }
-    return 'UNKNOWN';
-  }
-  if (typeof status === 'number' && Number.isFinite(status)) {
-    const i = Math.floor(status);
-    if (i >= 0 && i < TASK_STATUS_NAMES.length) return TASK_STATUS_NAMES[i];
-    return 'UNKNOWN';
-  }
-  if (typeof status === 'string') {
-    const t = status.trim();
-    if (/^\d+$/.test(t)) {
-      const i = parseInt(t, 10);
-      if (i >= 0 && i < TASK_STATUS_NAMES.length) return TASK_STATUS_NAMES[i];
-      return 'UNKNOWN';
-    }
-    const upper = t.toUpperCase();
-    if (TASK_STATUS_NAMES.includes(upper)) return upper;
-  }
-  return 'UNKNOWN';
+  return TASK_STATUS_NAMES.includes(status) ? status : 'UNKNOWN';
+}
+
+/** Whether a task (getTaskState's answer) is on: running or paused. */
+export function isTaskOn(task) {
+  return !!task && (task.status === 'RUNNING' || task.status === 'PAUSED');
 }
 
 /**
@@ -93,7 +74,7 @@ export async function assertContainerState(name, what) {
   await readContainerConfig(name);
   if (what === 'exists') return;
   const task = await getTaskState(name);
-  const st = task ? normalizeTaskStatus(task.status) : null;
+  const st = task ? task.status : null;
   if (what === 'start' && st === 'RUNNING') {
     throw containerError('CONTAINER_ALREADY_RUNNING', `Container "${name}" is already running`);
   }
@@ -218,14 +199,18 @@ function sleepUnlessCut(ms, signal) {
   });
 }
 
-async function waitForStop(name, timeoutMs) {
+/**
+ * Wait, up to `timeoutMs`, for the task to stop or go — exponential backoff,
+ * no flat sleep. Resolves whether it did.
+ */
+export async function waitForStop(name, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let sleepMs = 100;
-  while (Date.now() < deadline) {
+  for (;;) {
     const task = await getTaskState(name);
-    if (!task || task.status === 'STOPPED') return;
+    if (!task || task.status === 'STOPPED') return true;
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return;
+    if (remaining <= 0) return false;
     await new Promise((r) => setTimeout(r, Math.min(sleepMs, remaining)));
     sleepMs = Math.min(sleepMs * 2, 2000);
   }

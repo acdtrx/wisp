@@ -5,16 +5,12 @@
  * by `lib/containerMdnsReconciler.js` glue when `localDns` is true).
  */
 import { containerError } from './containerManagerConnection.js';
-import { getTaskState } from './containerManagerLifecycle.js';
+import { getTaskState, isTaskOn } from './containerManagerLifecycle.js';
 import {
   registerService, deregisterService, deregisterServicesForContainer, sanitizeHostname,
   isValidServiceType, isValidServicePort,
 } from '../../mdns/index.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-
-function taskIsRunning(task) {
-  return task && (task.status === 'RUNNING' || task.status === 'PAUSED');
-}
 
 function serviceKey(containerName, port) {
   return `${containerName}#${port}`;
@@ -111,7 +107,7 @@ export async function addContainerService(name, serviceDef) {
   await writeContainerConfig(name, config);
 
   const task = await getTaskState(name);
-  if (taskIsRunning(task) && config.network?.ip) {
+  if (isTaskOn(task) && config.network?.ip) {
     const host = `${sanitizeHostname(name)}.local`;
     await registerService(
       serviceKey(name, normalized.port),
@@ -172,7 +168,7 @@ export async function updateContainerService(name, port, changes) {
   await writeContainerConfig(name, config);
 
   const task = await getTaskState(name);
-  if (taskIsRunning(task) && config.network?.ip) {
+  if (isTaskOn(task) && config.network?.ip) {
     const host = `${sanitizeHostname(name)}.local`;
     await registerService(serviceKey(name, next.port), name, next.type, next.port, next.txt, host);
   }

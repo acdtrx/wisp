@@ -3,7 +3,7 @@
  * Changes are written to container.json; running containers need a restart for most changes.
  */
 import { containerError } from './containerManagerConnection.js';
-import { getTaskState } from './containerManagerLifecycle.js';
+import { getTaskState, isTaskOn } from './containerManagerLifecycle.js';
 import { normalizeContainerMac } from './containerManagerNetwork.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
@@ -247,7 +247,7 @@ export async function updateContainerConfig(name, changes) {
   /** Secret file mounts the new list un-marks; emptied before the write. */
   let unflaggedSecretMounts = [];
   const task = await getTaskState(name);
-  const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
+  const isRunning = isTaskOn(task);
 
   if ('envPatch' in changes) {
     const mutated = applyEnvPatch(config, changes.envPatch);

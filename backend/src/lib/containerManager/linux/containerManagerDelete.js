@@ -10,27 +10,11 @@ import {
 } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir, getContainerNetnsPath } from './containerPaths.js';
 import { releaseNetworkLease, removeContainerNetns } from './containerManagerNetwork.js';
-import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { getTaskState, isTaskOn, waitForStop } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartState.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { readContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 import { SNAPSHOTTER, SNAPSHOT_REMOVE_DEADLINE_MS } from './containerManagerSnapshot.js';
-
-/** Wait for the task to stop or go, up to `maxTotalMs`; still running then throws. */
-async function waitUntilTaskStoppedOrGone(name, maxTotalMs) {
-  const deadline = Date.now() + maxTotalMs;
-  let sleepMs = 100;
-  for (;;) {
-    const task = await getTaskState(name);
-    if (!task || normalizeTaskStatus(task.status) === 'STOPPED') return;
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      throw containerError('CONTAINERD_ERROR', `Container "${name}" did not stop within ${Math.round(maxTotalMs / 1000)} s of being killed`);
-    }
-    await new Promise((r) => setTimeout(r, Math.min(sleepMs, remaining)));
-    sleepMs = Math.min(sleepMs * 2, 2000);
-  }
-}
 
 /**
  * Remove a container's folder: everything, or with `deleteFiles` false
@@ -99,10 +83,12 @@ export async function deleteContainer(name, deleteFiles = true) {
   await step('stopping its task', async () => {
     const task = await getTaskState(name);
     if (!task) return;
-    if (task.status === 'RUNNING' || task.status === 'PAUSED') {
+    if (isTaskOn(task)) {
       noteIntentionalStop(name, task.pid);
       await unlessGone(callUnary(getClient('tasks'), 'kill', { containerId: name, signal: 9, all: true }));
-      await waitUntilTaskStoppedOrGone(name, 15000);
+      if (!(await waitForStop(name, 15000))) {
+        throw containerError('CONTAINERD_ERROR', `Container "${name}" did not stop within 15 s of being killed`);
+      }
     }
     await unlessGone(callUnary(getClient('tasks'), 'delete', { containerId: name }));
   });

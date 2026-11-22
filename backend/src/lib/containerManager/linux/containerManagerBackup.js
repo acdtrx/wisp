@@ -42,7 +42,7 @@ import {
   CONTAINERS_BACKUP_DIRNAME, getContainerDir, getContainerFilesDir, getContainersPath, pathUnder,
 } from './containerPaths.js';
 import {
-  getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
+  getTaskState, cleanupTask, pauseContainer, resumeContainer,
 } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartState.js';
 import { readContainerConfig, readContainerConfigFile, writeContainerConfig } from './containerManagerConfigIo.js';
@@ -50,7 +50,9 @@ import { writeJsonAtomic } from './atomicJson.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
 import { pullImage } from './containerManagerPull.js';
-import { buildOCISpec } from './containerManagerSpec.js';
+import { buildOCISpec, OCI_SPEC_TYPE_URL } from './containerManagerSpec.js';
+import { assertContainerNameAvailable, RUNTIME_NAME } from './containerManagerCreate.js';
+import { SNAPSHOTTER } from './containerManagerSnapshot.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';
 import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
@@ -73,10 +75,6 @@ const RESTORE_TAR_STALL_MS = 10 * 60_000;
 const BACKUP_DIR_MODE = 0o700;
 const BACKUP_FILE_MODE = 0o600;
 const CONTAINER_DIR_MODE = 0o700;
-
-const RUNTIME_NAME = 'io.containerd.runc.v2';
-const SNAPSHOTTER = 'overlayfs';
-const OCI_SPEC_TYPE_URL = 'types.containerd.io/opencontainers/runtime-spec/1/Spec';
 
 /** VM backups' sibling namespace under each backup root (vmManager-owned). */
 const VMS_BACKUP_DIRNAME = 'vms';
@@ -227,7 +225,7 @@ async function ensureWritableDir(p) {
 async function freezeForBackup(name) {
   const task = await getTaskState(name);
   if (!task) return false;
-  const st = normalizeTaskStatus(task.status);
+  const st = task.status;
   if (st === 'STOPPED') {
     await cleanupTask(name);
     return false;
@@ -655,18 +653,7 @@ export async function planContainerBackupRestore(backupPath, newName) {
   const newNameTrim = newName.trim();
 
   /* Pre-flight: target name must be free both on disk and in containerd. */
-  try {
-    await access(getContainerDir(newNameTrim));
-    throw containerError('CONTAINER_EXISTS', `Container directory for "${newNameTrim}" already exists`);
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-  try {
-    await callUnary(getClient('containers'), 'get', { id: newNameTrim });
-    throw containerError('CONTAINER_EXISTS', `Container "${newNameTrim}" already exists in containerd`);
-  } catch (err) {
-    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
-  }
+  await assertContainerNameAvailable(newNameTrim);
 
   const { manifest, archivePath } = await readContainerBackupManifest(backupPath);
   return { newName: newNameTrim, manifest, archivePath };
@@ -792,7 +779,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
   noteIntentionalStop(name);
   const task = await getTaskState(name);
   if (task) {
-    const st = normalizeTaskStatus(task.status);
+    const st = task.status;
     if (st === 'STOPPED') {
       await cleanupTask(name);
     } else if (st !== 'CREATED') {

@@ -14,7 +14,7 @@ import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig, resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
 import {
-  getTaskState, normalizeTaskStatus, cleanupTask, resumeContainer, stopContainer,
+  getTaskState, isTaskOn, cleanupTask, resumeContainer, stopContainer,
 } from './containerManagerLifecycle.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
@@ -251,8 +251,7 @@ export async function startExistingContainer(name) {
       // loop) found this start holding the lock, so the exit handler left the
       // services to it: drop them now rather than advertise a dead task.
       const task = await getTaskState(name);
-      const st = task ? normalizeTaskStatus(task.status) : null;
-      if (Number(task?.pid) !== Number(taskPid) || (st !== 'RUNNING' && st !== 'PAUSED')) {
+      if (Number(task?.pid) !== Number(taskPid) || !isTaskOn(task)) {
         containerState.logger?.info?.({ container: name, pid: taskPid }, '[containerManager] task exited during start — services deregistered');
         await deregisterServicesForContainer(name);
       }
@@ -265,7 +264,7 @@ export async function startExistingContainer(name) {
 export async function startContainer(name) {
   noteContainerStart(name);
   const task = await getTaskState(name);
-  const st = task ? normalizeTaskStatus(task.status) : null;
+  const st = task ? task.status : null;
 
   if (task && st === 'RUNNING') {
     throw containerError('CONTAINER_ALREADY_RUNNING', `Container "${name}" is already running`);
@@ -293,7 +292,7 @@ export async function startContainer(name) {
 
 export async function restartContainer(name) {
   const task = await getTaskState(name);
-  if (task && (task.status === 'RUNNING' || task.status === 'PAUSED')) {
+  if (isTaskOn(task)) {
     try { await stopContainer(name); } catch { /* may already be stopped */ }
   }
   await startContainer(name);

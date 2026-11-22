@@ -43,7 +43,7 @@ import { readContainerConfig } from './containerManagerConfigIo.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
-import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { getTaskState } from './containerManagerLifecycle.js';
 import { startContainer } from './containerManagerStart.js';
 import {
   RESTART_POLICIES, intentionalStopPids, pendingRestarts, backoffState, fireScheduledRestartChange, cancelPendingRestart,
@@ -128,7 +128,7 @@ async function runRestart(name, exitStatus, attempt) {
   }
 
   const task = await getTaskState(name);
-  const st = task ? normalizeTaskStatus(task.status) : null;
+  const st = task ? task.status : null;
   if (st === 'RUNNING' || st === 'PAUSED' || st === 'PAUSING' || st === 'CREATED') {
     log()?.info?.({ container: name, state: st.toLowerCase(), attempt }, 'Restart-policy restart skipped: already started');
     return;

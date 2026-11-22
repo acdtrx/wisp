@@ -15,7 +15,7 @@ import {
   listContainerImages, getImageDigest,
 } from './containerManagerImages.js';
 import { pullImage } from './containerManagerPull.js';
-import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { getTaskState, isTaskOn } from './containerManagerLifecycle.js';
 import { refreshContainerListCache, findContainersUsingImage } from './containerManagerList.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
 
@@ -45,10 +45,7 @@ export function getImageUpdateStatus() {
 async function containerFlaggedForDigest(name, newDigest) {
   const config = await readContainerConfig(name);
   if (!config.imageDigest || config.imageDigest === newDigest) return false;
-  const task = await getTaskState(name);
-  if (!task) return false;
-  const st = normalizeTaskStatus(task.status);
-  return st === 'RUNNING' || st === 'PAUSED';
+  return isTaskOn(await getTaskState(name));
 }
 
 const SKIPPED = Symbol('skipped');

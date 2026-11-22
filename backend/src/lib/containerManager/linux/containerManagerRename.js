@@ -13,43 +13,21 @@ import { rename, access } from 'node:fs/promises';
 
 import { containerError, getClient, callUnary } from './containerManagerConnection.js';
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
-import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
+import { getTaskState, cleanupTask } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartState.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from './containerValidation.js';
 import { teardownNetwork } from './containerManagerNetwork.js';
-
-const SNAPSHOTTER = 'overlayfs';
-
-async function ensureNewNameFree(newName) {
-  try {
-    await access(getContainerDir(newName));
-    throw containerError(
-      'CONTAINER_EXISTS',
-      `Container directory for "${newName}" already exists`,
-    );
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-
-  try {
-    await callUnary(getClient('containers'), 'get', { id: newName });
-    throw containerError(
-      'CONTAINER_EXISTS',
-      `Container "${newName}" already exists in containerd`,
-    );
-  } catch (err) {
-    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
-  }
-}
+import { assertContainerNameAvailable } from './containerManagerCreate.js';
+import { SNAPSHOTTER } from './containerManagerSnapshot.js';
 
 async function ensureStopped(name) {
   // A restart-policy restart pending under the old name must not fire mid-rename.
   noteIntentionalStop(name);
   const task = await getTaskState(name);
   if (!task) return;
-  const st = normalizeTaskStatus(task.status);
+  const st = task.status;
   if (st === 'STOPPED') {
     /* Dangling task record from a previous run — finalize it before rename
      * so Containers.Delete doesn't fail with "task must be deleted first". */
@@ -121,7 +99,7 @@ export async function renameContainer(oldName, newName) {
   const config = await readContainerConfig(oldName);
 
   await ensureStopped(oldName);
-  await ensureNewNameFree(newNameTrim);
+  await assertContainerNameAvailable(newNameTrim);
 
   const captured = await callUnary(getClient('containers'), 'get', { id: oldName });
   const oldRecord = captured.container;
