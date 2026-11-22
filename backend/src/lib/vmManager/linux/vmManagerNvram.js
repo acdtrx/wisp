@@ -6,9 +6,10 @@
 import { vmError } from './vmManagerConnection.js';
 import { runPrivileged, helperPath } from '../../base/index.js';
 
-/* The helper's worst case: its copy's 30 s and three quick steps of 10 s, each
- * with 2 s to end, ends inside this. */
-const NVRAM_COPY_TIMEOUT_MS = 75_000;
+/* The helper's worst case ends inside this: its copy's 30 s and four quick
+ * steps of 10 s (the temp file, chown, rename, and the temp file's removal
+ * after a failure), each with 2 s to end. */
+const NVRAM_COPY_TIMEOUT_MS = 85_000;
 
 // allowMissing: if src doesn't exist, return silently — used by callers that
 // want a missing file to be a legitimate skip (BIOS-only VM, NVRAM declared in

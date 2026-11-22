@@ -10,12 +10,13 @@ import { isMountPoint } from '../mountTable.js';
 
 /*
  * Each ends after the helper's own worst case (docs/specs/STORAGE.md,
- * Timeouts), its commands' kill graces included: a mount's mkdir (10 s) and
- * mount (20 s); a check's mkdir, mount (15 s), umount (8 s) and rmdir (10 s);
- * an unmount's 60 s, long enough to flush after a large backup; an rmdir's 10 s.
+ * Timeouts), each of its commands with 2 s to end: a mount's credentials
+ * owner read (10 s), mkdir (10 s) and mount (20 s); a check's owner read,
+ * mkdir, mount (15 s), umount (8 s) and rmdir (10 s); an unmount's 60 s, long
+ * enough to flush after a large backup; an rmdir's 10 s.
  */
-const MOUNT_TIMEOUT_MS = 40_000;
-const CHECK_TIMEOUT_MS = 60_000;
+const MOUNT_TIMEOUT_MS = 50_000;
+const CHECK_TIMEOUT_MS = 70_000;
 const UNMOUNT_TIMEOUT_MS = 75_000;
 const RMDIR_TIMEOUT_MS = 15_000;
 
