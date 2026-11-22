@@ -7,6 +7,21 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**A container's DHCP lease is never released to the LAN's server.** At every CNI DEL
+the `cni-dhcp` daemon logs "releasing lease", then "failed to release DHCP lease: unable
+to get interface information: route ip+net: no such network interface", and no
+DHCPRELEASE leaves the host: it drops the lease from its own state, and the LAN's server
+keeps it until it expires. Seen on tini's journal for every container delete on
+2026-11-22, the release before this feature and with it (found building the privileged
+helpers, milestone 1). **Revisit trigger:** a LAN whose DHCP pool runs short of addresses
+held by deleted containers.
+
+**The OS update list's download size is always 0.** `wisp-os-update list` reads the size
+from apt's "Need to get … of archives." line, which `apt-get -s dist-upgrade` never
+prints, so `TOTAL` is 0 and `downloadBytes` with it (seen on Ubuntu 26.04 with 213
+packages to upgrade, 2026-11-22, the release before this feature too). **Revisit
+trigger:** the update card shows, or needs, the download size.
+
 **The import check misreads a destructured dynamic import with a name holding
 "import".** `scripts/check-imports.mjs` marks a `const { … } = await import('…')` as read
 by the position of the first `import` in the statement, so a destructured name such as
