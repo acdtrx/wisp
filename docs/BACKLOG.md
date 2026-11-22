@@ -7,23 +7,35 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
-**`wisp-port.sh` stays in the helpers folder for older updaters.** The updater of
-releases up to v2.8.0-beta.1 sources `backend/scripts/wisp-port.sh` from the tree it has
-just installed, to health-check the new backend on its port, and falls back to 8080
-without it: a host with another `WISP_PORT` would fail every update and roll back. The
-installer is its only other reader, so it can move into `install-root.sh` once no host
-can be updated by an updater that reads it (scripts/check-shell.mjs's `NOT_HELPERS` names
-it until then; found in the privileged helpers milestone 2 review, 2026-11-22).
-**Revisit trigger:** the first release cut after one whose updater no longer reads it.
+**`wisp-port.sh`, and what else only an old updater reads, go in the release after the
+next one.** The updater of v2.8.0-beta.1 and v2.7.0 sources `backend/scripts/wisp-port.sh`
+from the tree it has just installed, to ask the new backend on its port (8080 without
+it). The next release still ships it, so a host on one of those releases updates to it
+by itself; from then on its updater no longer reads it. In the release after the next
+one, then, it moves into `install-root.sh`, its one other reader (and leaves
+`NOT_HELPERS` in scripts/check-shell.mjs), and at the same time can go what else only
+those updaters read from the new tree: `scripts/linux/setup/common-steps.sh` kept
+callable directly with `<install-dir> <deploy-user>` (the updaters since call
+`scripts/linux/install-tree.sh`), and `systemd/linux/wisp.service`'s `WISP_USER` and
+`WISP_PATH` placeholders as they render them (setup renders the unit too, and keeps
+whatever form it then chooses). `backend/package.json` and the public
+`/api/auth/oidc/status` stay for readers of their own. A host that skips the next
+release, still on v2.8.0-beta.1 or older then, no longer updates by itself and is
+updated by hand (`install.sh` or `push.sh`), as hosts older than v2.0.2 are (the user's
+choice, 2026-11-23: three installs in all). The versions in `backend/package.json` and
+`frontend/package.json` go in the same release (the next entry). **Revisit trigger:**
+the release after the next one is cut.
 
-**The version is still written in three package.json files.** The root's is the one
-source since privileged helpers milestone 2 (2026-11-22): the running release's version and
-a staged tree's are read there only. `backend/package.json` and `frontend/package.json`
-still carry it, `scripts/release.sh` writes all three (and their lockfiles), and the
-release workflow asserts the three agree, because a release before that one checks a
-staged tree's `backend/package.json` and would refuse an update without it. **Revisit
-trigger:** the first release cut after the one that ships the root-only staging check:
-then the two versions, their writes and their assertion can go.
+**The versions in `backend/package.json` and `frontend/package.json` go in the release
+after the next one.** The root's is the one source since privileged helpers milestone 2
+(2026-11-22): the running release's version and a staged tree's are read there only.
+The backend of v2.8.0-beta.1 and v2.7.0 still checks a staged tree's
+`backend/package.json` version before it hands the update on, so the next release still
+carries all three, `scripts/release.sh` still writes them (and their lockfiles) and the
+release workflow still asserts they agree. In the release after the next one the two
+versions, their writes and their assertion go, with what the entry above lists; a host
+that skipped the next release is updated by hand, as it says (the user's choice,
+2026-11-23). **Revisit trigger:** the release after the next one is cut.
 
 **A rolled-back release's staged tree stays under `/var/lib/wisp/updates`.** After a
 rollback the updater leaves the staged tree (`staging-<version>`) and the target file in
