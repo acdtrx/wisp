@@ -100,9 +100,13 @@ async function bridgeHasNonVlanMember(bridgeName) {
   }
 }
 
+/* wisp-bridge's worst case: three link steps of 10 s and netplan apply's 90 s,
+ * each with 2 s to end. */
+const BRIDGE_HELPER_TIMEOUT_MS = 150_000;
+
 async function runHelper(args) {
   try {
-    await runPrivileged(helperPath(HELPER_NAME), args, { timeoutMs: 120000 });
+    await runPrivileged(helperPath(HELPER_NAME), args, { timeoutMs: BRIDGE_HELPER_TIMEOUT_MS });
   } catch (err) {
     if (err.reason === 'missing') throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
     throw networkingError('NETWORK_BRIDGE_APPLY_FAILED', `Failed to apply netplan bridge change (${err.reason ?? 'error'})`, err.detail ?? err.message);
@@ -219,17 +223,7 @@ export async function planManagedNetworkBridgeCreate(input) {
 
 /** Create the bridge a `planManagedNetworkBridgeCreate` plan describes (netplan apply). */
 export async function createManagedNetworkBridge({ baseBridge, vlanId, bridgeName }) {
-  await runHelper([
-    'create-vlan-bridge',
-    '--base',
-    baseBridge,
-    '--vlan',
-    String(vlanId),
-    '--name',
-    bridgeName,
-    '--file-name',
-    netplanFilename(baseBridge, vlanId, bridgeName),
-  ]);
+  await runHelper(['create', baseBridge, String(vlanId)]);
 
   return {
     name: bridgeName,
@@ -269,17 +263,7 @@ export async function planManagedNetworkBridgeDelete(nameRaw, { assertNotInUse }
 /** Delete the bridge a `planManagedNetworkBridgeDelete` plan names (netplan apply). */
 export async function deleteManagedNetworkBridge(target) {
   const name = target.bridgeName;
-  await runHelper([
-    'delete-vlan-bridge',
-    '--base',
-    target.baseBridge,
-    '--vlan',
-    String(target.vlanId),
-    '--name',
-    name,
-    '--file-name',
-    netplanFilename(target.baseBridge, target.vlanId, target.bridgeName),
-  ]);
+  await runHelper(['delete', target.baseBridge, String(target.vlanId)]);
 
   return { name };
 }
