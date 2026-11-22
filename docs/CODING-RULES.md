@@ -148,11 +148,24 @@ source refer to them.
     it), strict managers and carved modules, and routes that take no operation lock (a
     workload command's lock is its operation module's, ARCHITECTURE.md, Repo layout), and
     outbound HTTP outside `lib/downloads/` (the global `fetch`, Node's HTTP clients, a
-    WebSocket client; its header lists what it cannot see). A reviewed allowance is one
-    line in its `EXCEPTIONS`.
+    WebSocket client; its header lists what it cannot see), and the three shared homes
+    below. A reviewed allowance is one line in its `EXCEPTIONS`.
+  - Applied — **shared homes** (settled 2026-11-22): `lib/base/` is the one module every
+    other may import, the strict managers and the carved modules included; it imports
+    only Node builtins, and holds what all of them need and none should write again:
+    the change emitter (`createEmitter`: a handler that throws is logged and the rest
+    run) and the privileged runner (`runPrivileged`: a helper is the one setup installs
+    in `/usr/local/bin`, run through `sudo -n` with a time bound, its failure told
+    apart as missing, refused, failed or timed out). Before, 37 emitters and 14 sudo
+    calls were each written out by hand, with different answers to a failing handler
+    and five ways to find a helper. The fence check holds three rules for it: no
+    hand-written emitter outside `lib/base/`, no `'sudo'` outside its runner, and no
+    `console.` in the backend (a module logs to the logger `configure()` handed it, the
+    glue to `lib/log.js`; what runs before a logger exists, or at exit, writes to
+    `process.stderr`). Add to `lib/base/` only what every kind of module needs.
   - Applied — **strict managers**: give vmManager and containerManager **zero Wisp-glue
-    imports**: stdlib, their own internals, and the carved cross-cutting modules
-    (`mdns/`, `networking/`, `storage/`) only. Change them only for **generic
+    imports**: stdlib, their own internals, `lib/base/`, and the carved cross-cutting
+    modules (`mdns/`, `networking/`, `storage/`) only. Change them only for **generic
     libvirt/containerd functionality**; put Wisp-specific orchestration (cloud-init flow,
     mDNS hooks, section assignments, cleanup rollbacks) in app-glue files (a workload
     command's in its side's operation module), kept flat at `lib/` top level so each
@@ -162,7 +175,8 @@ source refer to them.
     `{ createIfMissing }` / `{ removeSlot }`, so cloud-init's slot rides the public
     primitive while its orchestration stays in `lib/cloudInit.js`).
   - Applied: the other carved modules (`host/`, `networking/`, `mdns/`, `storage/`) may
-    import `createAppError` from `lib/appErrors.js`; only the managers are strict.
+    import `createAppError` from `lib/appErrors.js` and `lib/base/`; only the managers
+    are strict.
 - Prefer native/API access over shelling out to CLI tools. Exec a binary only when there
   is no practical programmatic alternative, and confirm first.
   - Applied — the exec allowlist: `qemu-img`, `cp --reflink=auto` (with a `copyFile`

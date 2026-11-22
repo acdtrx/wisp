@@ -292,7 +292,7 @@ The `v1.0.6` tag triggers `.github/workflows/release.yml`, which runs `npm run c
 When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`sudo -n`**:
 
 1. **Register it** in **`scripts/linux/setup/install-helpers.sh`**: its name in `HELPERS`, which installs it and its sudoers rule; a package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
-2. **Backend** — Prefer **`/usr/local/bin/<name>`** first, then bundled `backend/scripts/`, with an optional env override (match `host/linux/osUpdates.js` / `host/linux/hostPower.js` / `host/linux/hostHardware.js` patterns). A bundled fallback is exec'd directly (as root; `sudo -n` only matches the installed path), so commit the script executable (`git update-index --chmod=+x`), and resolve the path from the module's own location to `backend/scripts/` — `npm run check-imports` flags a `resolve(__dirname, …)` target that doesn't exist.
+2. **Backend** — call it through the one runner, `runPrivileged(helperPath('wisp-<name>'), args, { timeoutMs })` from `lib/base/` (settled 2026-11-22). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path. The runner tells a failure apart as `missing` (not installed: run setup), `refused` (no sudoers rule lets the service run it), `failed` (the helper's own exit) or `timed-out`; the caller keeps its own error code on the wire. The fence check refuses a `'sudo'` anywhere else.
 3. **Docs** — `docs/specs/DEPLOYMENT.md` (this section), `docs/specs/API-<AREA>.md` / `CONFIGURATION.md` as appropriate; the CLI tools inventory in `docs/TECH-STACK.md`; the **shell-exec allowlist in `docs/CODING-RULES.md` §7**.
 4. **Install / upgrade** — Covered automatically if step 1 is done: setup's `helpers` step runs `install-helpers.sh` on every install and update.
 
@@ -342,7 +342,7 @@ Requires `cifs-utils`. The backend writes a temp config file (mode `0600`) per o
 
 Reads SMBIOS memory devices (`dmidecode --type 17`) and prints JSON for Host Overview RAM modules. Invoked via `sudo -n` as the deploy user.
 
-The backend tries **`/usr/local/bin/wisp-dmidecode`** first (after server setup), then the bundled script under `backend/scripts/` if `WISP_DMIDECODE_SCRIPT` is unset. Setup installs the helper, installs the `dmidecode` package, and adds `/etc/sudoers.d/wisp-dmidecode` so `sudo -n /usr/local/bin/wisp-dmidecode` succeeds.
+The backend runs **`/usr/local/bin/wisp-dmidecode`**. Setup installs the helper, installs the `dmidecode` package, and adds `/etc/sudoers.d/wisp-dmidecode` so `sudo -n /usr/local/bin/wisp-dmidecode` succeeds.
 
 If the array is empty in the API: helper missing, sudoers not configured, `dmidecode` unavailable, or a VM/guest with no useful DMI (expected).
 
@@ -356,7 +356,7 @@ If the array is empty in the API: helper missing, sudoers not configured, `dmide
 
 Reads per-disk SMART summaries for `GET /api/host/hardware` by running `smartctl --json -a /dev/<disk>` and returning JSON to the backend. Invoked via `sudo -n` as the deploy user.
 
-The backend tries **`/usr/local/bin/wisp-smartctl`** first (after server setup), then the bundled script under `backend/scripts/` if `WISP_SMARTCTL_SCRIPT` is unset. Setup installs the helper and `/etc/sudoers.d/wisp-smartctl`; package install ensures `smartmontools` is present.
+The backend runs **`/usr/local/bin/wisp-smartctl`**. Setup installs the helper and `/etc/sudoers.d/wisp-smartctl`; package install ensures `smartmontools` is present.
 
 If SMART fields are unavailable in the API for a disk, the backend keeps the disk row and returns `smart.supported: false` with a per-disk `smart.error`.
 
@@ -364,7 +364,7 @@ If SMART fields are unavailable in the API for a disk, the backend keeps the dis
 
 Runs `shutdown -h now` or `shutdown -r now` for Host panel power actions. Invoked via `sudo -n` as the deploy user.
 
-The backend tries **`/usr/local/bin/wisp-power`** first, then the bundled `backend/scripts/wisp-power`, unless `WISP_POWER_SCRIPT` is set. Setup installs the helper and `/etc/sudoers.d/wisp-power`.
+The backend runs **`/usr/local/bin/wisp-power`**. Setup installs the helper and `/etc/sudoers.d/wisp-power`.
 
 **Troubleshooting:** As deploy user, `sudo -n /usr/local/bin/wisp-power` should print usage and exit 1 if sudoers allow the script (do not pass `shutdown`/`reboot` except on a host you intend to power off). Confirm `/etc/sudoers.d/wisp-power`: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-power`.
 

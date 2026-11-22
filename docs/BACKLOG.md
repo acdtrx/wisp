@@ -278,6 +278,15 @@ registries both hold each app's label, description and default image; `applyAppC
 (docs/reviews/2026-11-17/AUDIT.md, C-8; 2026-11-22). **Revisit trigger:** the next app,
 or the next change to `applyAppConfig`.
 
+**host and storage's smaller duplicates (audit V-11), and the silent catches left (V-6).**
+Left by phase 5 of the 2026-11-17 plan, which did not reach them: `smbMount.js` and
+`diskMount.js` are near-twins; three error factories are byte-identical; the storage
+facade's generic exports (`start`, `stop`, `getDevices`, `onChange`, `refresh`) are
+renamed by every caller. Milestone 1 logged the failed host reads; the other silent
+catches the audit counted in host, storage and mdns were not counted again
+(docs/reviews/2026-11-17/AUDIT.md, V-6 and V-11; 2026-11-22). **Revisit trigger:** the
+next change to the mount helpers, or the docs and rule sweep (phase 8).
+
 **An unchanged app save sets "restart required" when the app has no reload command.**
 `applyAppConfig` (`backend/src/lib/containerApps/index.js`) flags a running app container
 whenever it has no reload command (or the env changed), even when the save changed

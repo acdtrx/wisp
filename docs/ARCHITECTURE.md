@@ -190,9 +190,11 @@ consumer, and nothing has called for more).
     check settles (manual, hourly, failed): each rewrites the cached status.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` calls each
   manager's `configure()` with its paths and callbacks (`resolveMount`,
-  `tryAcquireOperationLock`) before any route registers. A fenced module gets its
-  logger the same way (`configure({ logger })`, `host` included), never by importing
-  one. The start's state migrations
+  `tryAcquireOperationLock`) before any route registers. **One logger** (settled 2026-11-22): the start's logger
+  is the only one. Every fenced module (the managers, `host`, `mdns`, `networking`,
+  `storage`) gets it the same way, `configure({ logger })`, never by importing one or
+  at connect; the glue reads it from `lib/log.js`, which the start sets first. No code
+  writes to `console`. The start's state migrations
   configure and connect them first, with the tolerant config reader and
   `{ watchEvents: false }`: no event subscriptions or timers, so none of the event-driven
   writes (restart-flag clearing, the network probe), and uncached lists that are complete
@@ -276,7 +278,9 @@ consumer, and nothing has called for more).
   follow-ups outside the workload's own record (its section assignment and its last
   backup attempt, both sides'; a container's `.local` name) are written once
   (`lib/workloadFollowUps.js`), and every backup runs through one orchestration
-  (`lib/workloadBackup.js`). The fences between them are CODING-RULES
+  (`lib/workloadBackup.js`). `lib/base/` is the one module every other may import, and
+  imports nothing of Wisp's: the change emitter and the privileged runner
+  (CODING-RULES §7, shared homes). The fences between them are CODING-RULES
   §7: one caller per external system, and managers free of Wisp glue. The import graph
   stays acyclic, enforced by a lint (settled 2026-11-15: restored from the template).
 - `frontend/src/`: `api/` (the fetch wrappers and the SSE client), `store/` (one Zustand

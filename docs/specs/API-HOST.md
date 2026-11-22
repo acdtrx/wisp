@@ -289,7 +289,7 @@ Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `
 
 ### POST /api/host/power/shutdown · `admin`
 
-Shut down the host. Requires `wisp-power` at `/usr/local/bin` (installed by setup) or `WISP_POWER_SCRIPT`, plus matching sudoers.
+Shut down the host. Requires `wisp-power` at `/usr/local/bin` and its sudoers rule, both installed by setup.
 
 - **204:** the shutdown was started
 - **503:** `POWER_UNAVAILABLE` — power script not configured or privilege error

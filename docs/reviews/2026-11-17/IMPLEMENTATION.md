@@ -231,12 +231,39 @@ Phase 6 was then replaced by a redesign of the pages (see there).
 
 ### 5. Manager internals — L
 
-In progress since 2026-11-22 as `features/manager-internals.md`, from
-`anchor/manager-internals`, in five milestones ordered by what the user would notice.
-The two rulings this phase needed are made (2026-11-22): a manager does its job or says
+Done 2026-11-22, merged to `main` from `anchor/manager-internals`, in five milestones
+ordered by what the user would notice, each with its open points settled first and one
+review. The two rulings this phase needed (2026-11-22): a manager does its job or says
 it could not ("strict manager": an error where a list answered "none", a refusal where a
 delete could not be checked), and a VM's firmware, machine type and disk bus are set at
 create and not changed afterwards.
+
+1. A manager says when it failed: strict lists that announce only a change, `null`
+   figures, deletes that say what they left, in-use checks that refuse when they cannot
+   tell; one libvirt question on the 5 s stats tick, so a stopped libvirt is noticed
+   (the user's choice).
+2. The server never waits on a mount: the Host page lists local storage only (the
+   user's choice, after a size read in a worker thread was built and found to hold
+   Wisp's exit); mDNS and the VM side notice a closed bus socket and reopen it.
+3. One way to change a VM's definition: `redefineVM` with a write queue per domain, one
+   state question (`isShutOff`), device XML built once, rename apart from the config
+   edit, the old rename repair and the older backup layouts gone.
+4. Containers: one config read, the create file split into eight modules with no import
+   cycle left, one restart-required rule, one source for a container's address per
+   step, one way per network step. The start had never used the CNI result's address,
+   and the 60 s probe had never read one: both found by observing, and fixed.
+5. Shared homes: `lib/base/` (the one emitter for 37 hand-written ones, the one
+   privileged runner for 14 sudo sites), one logger, three fence rules that hold them;
+   the five `WISP_*_SCRIPT` overrides retired (migration `0014`).
+
+Not done, from the list below: the SMB and disk mount twins and the rest of V-11; a
+count of the silent catches left after milestone 1 logged the host reads (V-6); the rest
+of C-7 and all of C-8 (backlog); "A timed-out avahi registration is never retried"
+(backlog); the readers of a dead share other than the Host page (backlog, "A hung CIFS
+mount blocks Node's filesystem calls"). Not run: a restore of a backup made before VM
+profiles, end to end (the user tests it); a self-update; an OS upgrade.
+Found for the next feature (the helpers): `wisp-cni`, `wisp-netns` and `wisp-port.sh` are
+not marked executable in git, and nothing calls `wisp-netns ipv4` any more.
 
 Ruled by the user on 2026-11-21, for the question this phase was holding: a backup in an
 older shape may be refused at restore. No code is kept to read an older shape; the user
