@@ -18,7 +18,7 @@ import {
 } from './pciIds.js';
 import { readAllDiskSmartSummaries } from './smart.js';
 import { readMountTable } from '../../storage/index.js';
-import { isAbsent, logHostFailure } from '../hostLog.js';
+import { isAbsent, logHostFailure, logHostFailureOnce } from '../hostLog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -221,11 +221,28 @@ function isNetnsBindMount(mount) {
   );
 }
 
+/** containerd's per-task mounts (a running container's rootfs): not host storage. */
+function isContainerdTaskMount(mount) {
+  return mount.startsWith('/run/containerd/') || mount.startsWith('/var/run/containerd/');
+}
+
 /**
- * Filesystem usage per mount point from the mount table + statfs.
+ * A network share, by `df -l`'s rule on the mount's source: `host:path` (NFS,
+ * sshfs, ceph, gluster) or `//host/share` (SMB/CIFS).
+ */
+function isNetworkShare(source) {
+  return typeof source === 'string' && (source.includes(':') || source.startsWith('//'));
+}
+
+/**
+ * Filesystem usage of the host's local storage, from the mount table + statfs.
  * One row per mount point: when mounts are stacked on a path, the topmost
  * (last in mount order) is the one statfs sees, so it alone is reported.
- * Excludes pseudo/virtual filesystems and network-namespace bind mounts (containers / CNI).
+ * Excludes pseudo/virtual filesystems, network-namespace bind mounts and
+ * containerd's task mounts (containers / CNI: not host storage), and network
+ * shares — a statfs on a share that does not answer would block the main
+ * thread (a share's state is the Mounts card's). A read that fails leaves its
+ * row out and is logged once for its path.
  * @returns {{ mount: string, device: string, totalBytes: number, usedBytes: number, availBytes: number }[] }
  */
 export function getFilesystemUsage() {
@@ -235,7 +252,8 @@ export function getFilesystemUsage() {
   const result = [];
   for (const { source: device, mountPoint: mount, fsType: fstype } of visibleByMountPoint.values()) {
     if (mount.startsWith('/proc') || mount.startsWith('/sys') || mount.startsWith('/dev')) continue;
-    if (isNetnsBindMount(mount)) continue;
+    if (isNetnsBindMount(mount) || isContainerdTaskMount(mount)) continue;
+    if (isNetworkShare(device)) continue;
     if (fstype === 'tmpfs' || fstype === 'devtmpfs' || fstype === 'squashfs') continue;
 
     try {
@@ -253,7 +271,7 @@ export function getFilesystemUsage() {
         availBytes,
       });
     } catch (err) {
-      logHostFailure(err, 'Filesystem usage read failed', { mount });
+      logHostFailureOnce(mount, err, 'Filesystem usage read failed', { mount });
     }
   }
   return result;
