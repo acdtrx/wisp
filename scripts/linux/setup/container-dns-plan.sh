@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by the network plan (bridge-plan.sh) and the container-dns step, as
 # root; do not execute it. The container DNS stub's names, its netplan
 # definition, and its refusals, made before anything changes: Wisp's container

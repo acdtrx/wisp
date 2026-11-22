@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by wispctl and the installer; do not execute it.
 #
 # wisp_service <start|restart> [sudo]: start or restart wisp.service and wait

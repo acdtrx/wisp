@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared by the setup steps; source it, do not execute it. A step checks first
 # and changes only what is missing: it reports each change with `changed`, and
 # `step_done` says "in place" when there was none.

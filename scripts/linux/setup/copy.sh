@@ -11,7 +11,7 @@ fi
 
 SOURCE_DIR="$1"
 INSTALL_DIR="$2"
-INSTALL_DIR="$(echo "$INSTALL_DIR" | sed 's:/*$::')"
+INSTALL_DIR="${INSTALL_DIR%"${INSTALL_DIR##*[!/]}"}"
 
 if [[ -z "$INSTALL_DIR" ]]; then
   echo "ERROR: Install directory cannot be empty."

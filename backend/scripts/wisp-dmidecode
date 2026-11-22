@@ -62,7 +62,6 @@ flush_pending() {
   fi
   ((first)) || echo ','
   first=0
-  # shellcheck disable=SC2312
   vj="$(voltage_json_value)"
   printf '  {"type":%s,"sizeBytes":%d,"speedMts":%s,"slot":%s,"formFactor":%s,"manufacturer":%s,"voltage":%s}' \
     "$(json_str_or_null "$type_str")" \

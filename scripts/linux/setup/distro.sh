@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by setup and its steps; do not execute it. Wisp hosts run Debian or
 # Ubuntu (or a derivative that says so in ID_LIKE) with systemd 254 or newer:
 # any other host is refused here, before a step changes anything.
@@ -12,7 +13,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 _ID=""
 _ID_LIKE=""
 if [[ -f /etc/os-release ]]; then
+  # shellcheck source=/dev/null
   _ID="$(. /etc/os-release && echo "${ID:-}")"
+  # shellcheck source=/dev/null
   _ID_LIKE="$(. /etc/os-release && echo "${ID_LIKE:-}")"
 fi
 case " ${_ID} ${_ID_LIKE} " in

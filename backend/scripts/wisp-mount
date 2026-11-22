@@ -160,18 +160,18 @@ resolve_wisp_child() {
 # canonical paths (never a symlink) with space, tab, newline and backslash
 # octal-escaped; escape ours the same way and compare whole fields.
 is_mount_target() {
-  local want="" c i dev target rest
+  local want="" c i target rest
   for (( i = 0; i < ${#1}; i++ )); do
     c="${1:i:1}"
     case "$c" in
       ' ') want+='\040' ;;
       $'\t') want+='\011' ;;
       $'\n') want+='\012' ;;
-      '\') want+='\134' ;;
+      \\) want+='\134' ;;
       *) want+="$c" ;;
     esac
   done
-  while read -r dev target rest; do
+  while read -r _ target rest; do
     [[ "$target" == "$want" ]] && return 0
   done < /proc/self/mounts
   return 1

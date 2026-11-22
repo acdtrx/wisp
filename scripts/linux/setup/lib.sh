@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by setup, its steps and the installer; do not execute it. Helpers
 # they share, with no state of their own. Nothing here sets a trap of its
 # caller's.

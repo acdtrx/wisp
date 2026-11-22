@@ -122,7 +122,7 @@ fi
 # the distro is neither.
 docker_apt_repo() {
   (
-    # shellcheck disable=SC1091
+    # shellcheck source=/dev/null
     . /etc/os-release
     case " ${ID:-} ${ID_LIKE:-} " in
       *" ubuntu "*) echo "ubuntu ${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" ;;

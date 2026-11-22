@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by the installer and the steps that write its answers; do not execute
 # it. One check for each answer an install holds, so the installer asks for
 # exactly what the steps would write.

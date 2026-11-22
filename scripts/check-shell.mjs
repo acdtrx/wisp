@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * `bash -n` over every shell script in the repo: run with `npm run check` (or
- * `node scripts/check-shell.mjs`) from the repo root; exits 1 on any syntax error.
+ * `bash -n`, then shellcheck, over every shell script in the repo: run with
+ * `npm run check` (or `node scripts/check-shell.mjs`) from the repo root; exits
+ * 1 on any syntax error or finding, and when shellcheck is not installed (it is
+ * required, never skipped).
  *
  * A file is a shell script when its first line is a bash or sh shebang, or its
  * name ends in `.sh` (a sourced helper such as backend/scripts/wisp-port.sh has
@@ -12,13 +14,36 @@
  * `bash -n` parses with the bash on PATH: bash 3.2 on macOS, bash 5 on the Linux
  * hosts and in CI. A failure prints that version, since bash 3.2 rejects some
  * syntax bash 5 accepts.
+ *
+ * shellcheck reads the repo's `.shellcheckrc`, which disables nothing. An
+ * inline `# shellcheck disable=` fails the check, as an inline ESLint comment
+ * does: an allowance is a reviewed line in EXCEPTIONS below, for one file and
+ * one code. The `shell=` and `source=` directives, which only inform it, stay.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { openSync, readSync, closeSync, statSync } from 'node:fs';
+import { openSync, readSync, closeSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
+
+/** Reviewed allowances: shellcheck's `code` is not run on `file`, for `why`. */
+const EXCEPTIONS = [
+  { file: 'scripts/linux/setup/bounds.sh', code: 'SC2034', why: 'it only holds the bounds the scripts that source it read' },
+  { file: 'scripts/linux/setup/lib.sh', code: 'SC2034', why: 'WISP_LOCK and SETUP_PYTHON are read by the scripts that source it' },
+  { file: 'scripts/linux/setup/install-state.sh', code: 'SC2034', why: 'PASSWORD_RULE is read by the scripts that source it' },
+  { file: 'scripts/linux/setup/container-dns-plan.sh', code: 'SC2034', why: 'DNS_STUB_PLANNED is read by the scripts that source it' },
+  { file: 'scripts/linux/setup/network-plan.sh', code: 'SC2034', why: 'HOST_KVM is written to the plan record by name (plan-record.sh)' },
+  { file: 'scripts/linux/setup/bridge-plan.sh', code: 'SC2153', why: 'NET_PLAN_DIR is set by the scripts that source it' },
+  { file: 'scripts/linux/setup/bridge.sh', code: 'SC2329', why: 'read_now, read_uplink and undo_stopped run by name (step_run, STEP_ON_STOP)' },
+  { file: 'scripts/linux/install-root.sh', code: 'SC2094', why: 'the log is the worker\'s argument and its output both, never read here' },
+  { file: 'scripts/linux/setup/config.sh', code: 'SC2016', why: 'a node -e program, which the shell must not expand' },
+  { file: 'scripts/linux/setup/password.sh', code: 'SC2016', why: 'a node -e program, which the shell must not expand' },
+  { file: 'scripts/release.sh', code: 'SC2016', why: 'a node -e program, which the shell must not expand' },
+  { file: 'backend/scripts/wisp-updater', code: 'SC2016', why: 'a sh -c program, its values passed as arguments' },
+  { file: 'backend/scripts/wisp-updater', code: 'SC2329', why: 'rollback runs from the EXIT trap' },
+];
+const INLINE_DISABLE = /#\s*shellcheck\s+(?:\S+\s+)*disable=/;
 const SHELL_SHEBANG = /^#!\s*\S*\/(?:env\s+)?(?:bash|sh)(?:\s|$)/;
 
 function firstLine(file) {
@@ -66,4 +91,45 @@ if (failures.length > 0) {
   console.error(`\n${failures.length} shell script(s) fail bash -n (bash ${version}, ${scripts.length} scripts checked).`);
   process.exit(1);
 }
-console.log(`OK — ${scripts.length} shell scripts parse with bash -n.`);
+
+const problems = [];
+for (const rel of scripts) {
+  readFileSync(path.join(REPO_ROOT, rel), 'utf8').split('\n').forEach((line, i) => {
+    if (INLINE_DISABLE.test(line)) problems.push(`${rel}:${i + 1}: an inline shellcheck disable; add a reviewed line to EXCEPTIONS in scripts/check-shell.mjs instead`);
+  });
+}
+for (const { file } of EXCEPTIONS) {
+  if (!scripts.includes(file)) problems.push(`scripts/check-shell.mjs: EXCEPTIONS names ${file}, which is not a shell script here`);
+}
+
+/** One run per set of excluded codes: the files without any in one run. */
+const runs = new Map();
+for (const rel of scripts) {
+  const codes = EXCEPTIONS.filter((e) => e.file === rel).map((e) => e.code).sort().join(',');
+  if (!runs.has(codes)) runs.set(codes, []);
+  runs.get(codes).push(rel);
+}
+let findings = '';
+for (const [codes, files] of runs) {
+  const run = spawnSync('shellcheck', [...(codes ? ['--exclude', codes] : []), '--format', 'gcc', ...files], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  if (run.error) {
+    console.error(run.error.code === 'ENOENT'
+      ? 'shellcheck is not installed, and the check needs it: install it (brew install shellcheck, apt install shellcheck).'
+      : `could not run shellcheck: ${run.error.message}`);
+    process.exit(1);
+  }
+  if (run.status !== 0) findings += run.stdout || run.stderr || `shellcheck exited ${run.status}\n`;
+}
+if (findings) problems.push(findings.trimEnd());
+
+if (problems.length > 0) {
+  for (const p of problems) console.error(p);
+  const version = spawnSync('shellcheck', ['--version'], { encoding: 'utf8' }).stdout.match(/version: (\S+)/)?.[1];
+  console.error(`\nshellcheck ${version ?? '(version unknown)'} fails ${scripts.length} shell scripts.`);
+  process.exit(1);
+}
+console.log(`OK — ${scripts.length} shell scripts parse with bash -n and pass shellcheck.`);

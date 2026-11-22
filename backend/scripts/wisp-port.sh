@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced, not run: `wisp_port <runtime.env path>` prints the port wisp.service
 # listens on — WISP_PORT read as the backend reads it (backend/src/lib/
 # loadRuntimeEnv.js): each line trimmed, quotes optional, an empty value or no

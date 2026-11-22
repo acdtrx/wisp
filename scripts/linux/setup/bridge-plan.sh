@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by network-plan.sh and the bridge step, as root; do not
 # execute it. The network plan's reads and refusals: the uplink, whether netplan
 # runs it, the bridge worked out as edits of the operator's netplan file and
@@ -174,6 +175,14 @@ dhcp_identity() {
   fi
 }
 
+# one_line <text>: its words on one line, one space apart: a list a tool
+# printed, put in a message.
+one_line() {
+  local -a words
+  read -r -d '' -a words <<<"$*" || true
+  printf '%s' "${words[*]:-}"
+}
+
 # networkd_takers <own-file>: refused when another .network file, beside the
 # one netplan renders for the uplink, could take it (networkd.py): setup leaves
 # exactly one definition for it.
@@ -183,7 +192,7 @@ networkd_takers() {
   takers="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/networkd.py" takers "$UPLINK" "$UPLINK_MAC" "${UPLINK_PERMADDR:-}" "$driver" "$1")" \
     || net_fail "cannot read systemd-networkd's files"
   [[ -z "$takers" ]] \
-    || refuse NETWORKD_SECOND_FILE "systemd-networkd could take the uplink $UPLINK from $(echo $takers) too, beside netplan's $1: setup leaves exactly one definition for it. Make that file match only other interfaces, or remove it, and run this again."
+    || refuse NETWORKD_SECOND_FILE "systemd-networkd could take the uplink $UPLINK from $(one_line "$takers") too, beside netplan's $1: setup leaves exactly one definition for it. Make that file match only other interfaces, or remove it, and run this again."
   printf '%s\n' "takers none"
 }
 
@@ -224,7 +233,7 @@ refuse_netplan_not_applied() {
     || net_fail "cannot read netplan's configuration"
   bridges="$(sed -n 's/^bridges\.//p' <<<"$UPLINK_DEPENDENTS")"
   [[ -z "$bridges" ]] \
-    || refuse NETPLAN_NOT_APPLIED "netplan's configuration defines the bridge $(echo $bridges) on the uplink $UPLINK, but it is not live: the default route is on $UPLINK itself." \
+    || refuse NETPLAN_NOT_APPLIED "netplan's configuration defines the bridge $(one_line "$bridges") on the uplink $UPLINK, but it is not live: the default route is on $UPLINK itself." \
       "${remedy[@]}"
 }
 
@@ -234,7 +243,7 @@ netplan_stage() {
   local d
   for d in "${NETPLAN_DIRS[@]}"; do
     [[ -d "$d" ]] || continue
-    mkdir -p "$1$(dirname "$d")" && cp -a "$d" "$1$d" || net_fail "cannot stage $d"
+    { mkdir -p "$1$(dirname "$d")" && cp -a "$d" "$1$d"; } || net_fail "cannot stage $d"
   done
   rm -f "$1$DNS_STUB_NETPLAN_FILE" || net_fail "cannot stage netplan's directories in $1"
 }
@@ -242,8 +251,8 @@ netplan_stage() {
 # (container-dns-plan.sh) added to a stage: what netplan reads once the
 # container-dns step has run, which goes live before the bridge step.
 netplan_stage_stub() {
-  mkdir -p "$1$(dirname "$DNS_STUB_NETPLAN_FILE")" \
-    && install -m 0600 "$NET_PLAN_DIR/$DNS_STUB_PLANNED" "$1$DNS_STUB_NETPLAN_FILE" \
+  { mkdir -p "$1$(dirname "$DNS_STUB_NETPLAN_FILE")" \
+    && install -m 0600 "$NET_PLAN_DIR/$DNS_STUB_PLANNED" "$1$DNS_STUB_NETPLAN_FILE"; } \
     || net_fail "cannot stage $DNS_STUB_NETPLAN_FILE"
 }
 # netplan_rejects <netplan args...>: whether netplan rejects what it is asked
@@ -288,11 +297,11 @@ plan_bridge() {
   # with the port, its settings neither moved nor kept by setup's rule.
   dropins="$(networkd_json "$UPLINK" NetworkFileDropins)" || net_fail "cannot read systemd-networkd's status of $UPLINK"
   [[ -z "$dropins" ]] \
-    || refuse NETPLAN_DROPINS "systemd-networkd runs $UPLINK from netplan's $UPLINK_NETFILE with drop-ins ($(echo $dropins)): put their settings in the netplan definition, and run this again."
+    || refuse NETPLAN_DROPINS "systemd-networkd runs $UPLINK from netplan's $UPLINK_NETFILE with drop-ins ($(one_line "$dropins")): put their settings in the netplan definition, and run this again."
   networkd_takers "$UPLINK_NETFILE" >/dev/null
   uplink_client_id
   dhcp_identity
-  [[ -z "$UPLINK_DEPENDENTS" ]] || net_refuse UPLINK_DEPENDENT "netplan's $(echo $UPLINK_DEPENDENTS) hangs off or holds $UPLINK's definition."
+  [[ -z "$UPLINK_DEPENDENTS" ]] || net_refuse UPLINK_DEPENDENT "netplan's $(one_line "$UPLINK_DEPENDENTS") hangs off or holds $UPLINK's definition."
   def="$NET_PLAN_DIR/uplink.yaml"
   net_read netplan get "ethernets.$UPLINK_NETPLAN_ID" > "$def" || exit 1
   # The uplink's definition, checked; what moves to the bridge worked out; the

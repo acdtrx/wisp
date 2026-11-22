@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by setup and its network steps; do not execute it. Setup's bounds, in
 # one place, written plainly enough for any bash to read: scripts/check-bounds.mjs
 # reads them here (on the Mac's bash 3.2 too) and checks that the updater's stop

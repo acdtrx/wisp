@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by the network plan, the bridge step and the container-dns step; do
 # not execute it. What an interface holds at layer 3, read from the kernel,
 # systemd-networkd and systemd-resolved, in one canonical form: the plan records

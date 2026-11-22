@@ -58,6 +58,21 @@ jobs:
           (cd frontend && npm ci)
           (cd backend && npm ci)
 
+      # The shell check needs shellcheck, at the version development runs: the
+      # runner's own (0.9.0 from apt) reports checks 0.11.0 turned off by
+      # default, and lacks those it added. The pinned checksum refuses any other
+      # file.
+      - name: Install shellcheck 0.11.0
+        run: |
+          set -euo pipefail
+          SC_TARBALL="$RUNNER_TEMP/shellcheck.tar.xz"
+          curl -fsSL --connect-timeout 10 --max-time 120 -o "$SC_TARBALL" \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $SC_TARBALL" | sha256sum -c -
+          tar -xJf "$SC_TARBALL" -C "$RUNNER_TEMP"
+          sudo install -m 0755 "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
       # The gate: nothing is built, staged or published unless every check passes.
       - name: Check
         timeout-minutes: 10

@@ -1,0 +1,5 @@
+# shellcheck's settings for every shell file (scripts/check-shell.mjs runs it).
+# No check is disabled here: an allowance is a reviewed line in that script's
+# EXCEPTIONS, for one file and one code.
+external-sources=true
+source-path=SCRIPTDIR

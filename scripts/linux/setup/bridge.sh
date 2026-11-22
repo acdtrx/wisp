@@ -152,8 +152,8 @@ bridge_check() {
       [[ "$carrier" == 1 ]] || WHY+=", $BRIDGE has no carrier"
       [[ "$mac" == "$UPLINK_MAC" ]] || WHY+=", $BRIDGE has hardware address '${mac}' (was $UPLINK_MAC)"
       [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
-      [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
-      [[ -z "$port" ]] || WHY+=", $UPLINK still holds [$(echo $port)]"
+      [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(one_line "$have")], $UPLINK held [$(one_line "$want")]"
+      [[ -z "$port" ]] || WHY+=", $UPLINK still holds [$(one_line "$port")]"
       [[ "$bunit" == "$bridge_unit" ]] || WHY+=", systemd-networkd runs $BRIDGE from '${bunit}', not $bridge_unit"
       [[ "$uunit" == "$UPLINK_NETFILE" ]] || WHY+=", systemd-networkd runs $UPLINK from '${uunit}', not $UPLINK_NETFILE"
       rm -f "$STEP_TMP_DIR"/now.*
@@ -222,7 +222,7 @@ undo() {
     addr="$(awk '$1 == "addr4" && !done { print $2; done = 1 }' <<<"$UPLINK_HOLDS")"
     outcome+="; $UPLINK holds the addresses, routes and name servers it held before${addr:+ ($addr)}"
   else
-    outcome+="; but $UPLINK holds [$(echo $UPLINK_HOLDS)] after ${NET_APPLY_SEC} s, where it held [$(echo $UPLINK_HELD)] before"
+    outcome+="; but $UPLINK holds [$(one_line "$UPLINK_HOLDS")] after ${NET_APPLY_SEC} s, where it held [$(one_line "$UPLINK_HELD")] before"
   fi
   undo_fail "$BRIDGE was not applied ($WHY). $outcome."
 }

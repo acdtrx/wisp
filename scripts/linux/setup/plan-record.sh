@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by setup, its network steps and the installer; do not execute it.
 # The network plan's record: what network-plan.sh found, one `KEY<TAB>value`
 # line each, in the plan's directory (NET_PLAN_DIR/plan). The steps after the
