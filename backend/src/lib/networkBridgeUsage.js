@@ -5,40 +5,37 @@
  */
 import { listVMs, getVMConfig } from './vmManager/index.js';
 import { listContainers, getContainerConfig } from './containerManager/index.js';
-import { createAppError } from './appErrors.js';
+import { createAppError, inUseCheckFailed } from './appErrors.js';
+
+/** The VMs and containers whose NIC or network is on `bridgeName`; a read that fails throws. */
+async function findBridgeUsers(bridgeName) {
+  const vmRefs = [];
+  for (const vm of await listVMs()) {
+    const config = await getVMConfig(vm.name);
+    const nics = Array.isArray(config.nics) ? config.nics : [];
+    if (nics.some((nic) => nic?.type === 'bridge' && nic?.source === bridgeName)) vmRefs.push(vm.name);
+  }
+  const containerRefs = [];
+  for (const container of await listContainers()) {
+    const config = await getContainerConfig(container.name);
+    if (config?.network?.interface === bridgeName) containerRefs.push(container.name);
+  }
+  return { vmRefs, containerRefs };
+}
 
 /**
  * Throw NETWORK_BRIDGE_IN_USE when any VM NIC or container network is attached
- * to `bridgeName`. Passed to `planManagedNetworkBridgeDelete` as its in-use check.
+ * to `bridgeName`, and refuse the delete when that cannot be read. Passed to
+ * `planManagedNetworkBridgeDelete` as its in-use check.
  */
 export async function assertBridgeNotInUse(bridgeName) {
-  const vmRefs = [];
-  const vms = await listVMs();
-  for (const vm of vms) {
-    try {
-      const config = await getVMConfig(vm.name);
-      const nics = Array.isArray(config.nics) ? config.nics : [];
-      if (nics.some((nic) => nic?.type === 'bridge' && nic?.source === bridgeName)) {
-        vmRefs.push(vm.name);
-      }
-    } catch {
-      /* skip VM if config unavailable */
-    }
+  let vmRefs;
+  let containerRefs;
+  try {
+    ({ vmRefs, containerRefs } = await findBridgeUsers(bridgeName));
+  } catch (err) {
+    throw inUseCheckFailed(`bridge "${bridgeName}"`, err);
   }
-
-  const containerRefs = [];
-  const containers = await listContainers();
-  for (const container of containers) {
-    try {
-      const config = await getContainerConfig(container.name);
-      if (config?.network?.interface === bridgeName) {
-        containerRefs.push(container.name);
-      }
-    } catch {
-      /* skip container if config unavailable */
-    }
-  }
-
   if (vmRefs.length === 0 && containerRefs.length === 0) return;
   const detail = [
     vmRefs.length ? `VMs: ${vmRefs.slice(0, 5).join(', ')}` : null,

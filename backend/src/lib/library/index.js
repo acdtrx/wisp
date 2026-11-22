@@ -16,7 +16,7 @@ import {
   downloadArchCloudImage as downloadArchCloud,
   downloadAndDecompressHaos as downloadHaos,
 } from '../downloads/index.js';
-import { createAppError, isAppError, wrapAppError } from '../appErrors.js';
+import { createAppError, inUseCheckFailed, isAppError, wrapAppError } from '../appErrors.js';
 import { ensureImageDir, getImagePath } from '../paths.js';
 import { findVMsUsingImage } from '../vmManager/index.js';
 
@@ -78,7 +78,12 @@ async function existingLibraryFile(name) {
 
 /* A domain XML that points at a missing file fails its next start. */
 async function assertNotUsedByVMs(name, path) {
-  const inUseBy = await findVMsUsingImage(path);
+  let inUseBy;
+  try {
+    inUseBy = await findVMsUsingImage(path);
+  } catch (err) {
+    throw inUseCheckFailed(`"${name}"`, err);
+  }
   if (inUseBy.length > 0) {
     throw createAppError('LIBRARY_FILE_IN_USE', `Detach "${name}" from these VMs first: ${inUseBy.join(', ')}`);
   }

@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import Fastify from 'fastify';
 
 import {
-  createAppError, errorBody, errorStatus, handleRequestError, isAppError, isExpectedAppError, redactCause, wrapAppError,
+  createAppError, errorBody, errorStatus, handleRequestError, inUseCheckFailed, isAppError, isExpectedAppError, redactCause, wrapAppError,
 } from './appErrors.js';
 import { ERROR_STATUS } from './errorCodes.js';
 
@@ -186,4 +186,13 @@ test('a schema refusal answers 400 VALIDATION_FAILED naming the field', async ()
   assert.equal(malformed.statusCode, 400);
   assert.equal(malformed.json().error, 'MALFORMED_JSON');
   await app.close();
+});
+
+test('an in-use check that could not read refuses with the read\'s own code, never "nobody uses it"', () => {
+  const wrapped = inUseCheckFailed('"disk.qcow2"', createAppError('NO_CONNECTION', 'Not connected to libvirt'));
+  assert.equal(wrapped.code, 'NO_CONNECTION');
+  assert.equal(wrapped.message, 'Cannot tell whether "disk.qcow2" is in use: Not connected to libvirt');
+  const fromNode = inUseCheckFailed('mount "nas"', Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));
+  assert.equal(fromNode.code, 'INTERNAL_ERROR');
+  assert.equal(fromNode.raw, 'EACCES: permission denied');
 });

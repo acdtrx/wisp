@@ -53,6 +53,15 @@ export function wrapAppError(code, message, ...inners) {
   return createAppError(code, messages.length ? `${message}: ${messages.join('; ')}` : message, raws.join('; '));
 }
 
+/**
+ * The refusal of a delete whose in-use check could not read what it checks:
+ * the failed read's own code (a manager's `NO_CONNECTION`, `NO_CONTAINERD`, …),
+ * its error the cause — never "nobody uses it".
+ */
+export function inUseCheckFailed(what, err) {
+  return wrapAppError(isAppError(err) ? err.code : 'INTERNAL_ERROR', `Cannot tell whether ${what} is in use`, err);
+}
+
 /** The HTTP status of a code; 500 for a code the table does not hold. */
 export function errorStatus(code) {
   return ERROR_STATUS[code] ?? 500;

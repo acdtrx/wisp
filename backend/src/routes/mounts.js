@@ -11,7 +11,7 @@ import {
   refresh as refreshDiskSnapshot, getDevices as getDiskDevices,
 } from '../lib/storage/index.js';
 import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
-import { asAppError, createAppError } from '../lib/appErrors.js';
+import { asAppError, createAppError, inUseCheckFailed } from '../lib/appErrors.js';
 import { startJob, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
 import {
   createdIdSchema, idParamsSchema, jobAckSchema, mountResponseSchema, noContentSchema,
@@ -116,7 +116,12 @@ export default async function mountsRoutes(fastify) {
       /* Refuse if any container's mounts[*].sourceId references this id —
        * removing it would leave the container with a dangling source on
        * next start. Mirrors assertBridgeNotInUse / findVMsUsingImage. */
-      const inUseBy = await findContainersUsingStorageMount(d.id);
+      let inUseBy;
+      try {
+        inUseBy = await findContainersUsingStorageMount(d.id);
+      } catch (err) {
+        throw inUseCheckFailed(`mount "${d.label || d.mountPath}"`, err);
+      }
       if (inUseBy.length > 0) {
         throw createAppError('MOUNT_IN_USE', `Detach this mount from containers first: ${inUseBy.join(', ')}`);
       }
