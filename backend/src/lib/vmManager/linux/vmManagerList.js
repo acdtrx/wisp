@@ -12,6 +12,7 @@ import {
   subscribeDomainChange,
   subscribeDisconnect,
   subscribeCallFailed,
+  isDomainNotFound,
   getDomainXML,
 } from './vmManagerConnection.js';
 import { isWispError, wrapVmError } from '../vmManagerShared.js';
@@ -22,9 +23,11 @@ import { STATE_NAMES, isOfflineState } from './libvirtConstants.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */
 
-/** The last list read whole, or null: not read yet, or the last read or a later
- *  libvirt call failed, so the next listVMs() reads libvirt again. */
+/** The last list read whole, or null: not read yet, or stale (the last read,
+ *  or a libvirt call since, failed), so the next listVMs() reads libvirt again. */
 let vmListCache = null;
+/** What the subscribers were last told, by value (see announce); null: nothing yet. */
+let lastAnnounced = null;
 let readPromise = null;
 let refreshQueued = false;
 const listChangeHandlers = new Set();
@@ -32,7 +35,7 @@ const listChangeHandlers = new Set();
 /**
  * Read every domain's summary from libvirt: the whole list, or it throws —
  * NO_CONNECTION without a connection, LIBVIRT_ERROR with libvirt's own text
- * when a call fails.
+ * when a call fails. A domain gone between ListDomains and its read is left out.
  */
 async function fetchVMListFromLibvirt() {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
@@ -46,71 +49,82 @@ async function fetchVMListFromLibvirt() {
 
 async function readEveryDomain() {
   const paths = await connectionState.connectIface.ListDomains(3);
-
-  const list = await Promise.all(
-    paths.map(async (p) => {
-      const { iface } = await getDomainObjAndIface(p);
-
-      const [xml, [stateCode]] = await Promise.all([
-        iface.GetXMLDesc(2),
-        iface.GetState(0),
-      ]);
-
-      const config = parseVMFromXML(xml);
-      if (!config) throw vmError('PARSE_ERROR', `Failed to parse the definition of domain ${p}`);
-
-      const staleBinary = stateCode === 1 ? await isVMBinaryStale(config.name) : false;
-      const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
-      const pendingRestart = pendingRestartInForce(config.pendingRestart, startedAt);
-
-      return {
-        name: config.name,
-        uuid: config.uuid,
-        domainPath: p,
-        state: STATE_NAMES[stateCode] ?? 'unknown',
-        stateCode,
-        vcpus: config.vcpus,
-        memoryMiB: config.memoryMiB,
-        profile: config.profile,
-        iconId: config.iconId ?? null,
-        pendingRestart,
-        startedAt,
-        guestAgent: !!config.guestAgent,
-        staleBinary,
-      };
-    }),
-  );
-  return list;
+  const list = await Promise.all(paths.map(async (p) => {
+    try {
+      return await readDomainSummary(p);
+    } catch (err) {
+      if (isDomainNotFound(err)) return null;
+      throw err;
+    }
+  }));
+  return list.filter(Boolean);
 }
 
-function fireListChange() {
+async function readDomainSummary(p) {
+  const { iface } = await getDomainObjAndIface(p);
+
+  const [xml, [stateCode]] = await Promise.all([
+    iface.GetXMLDesc(2),
+    iface.GetState(0),
+  ]);
+
+  const config = parseVMFromXML(xml);
+  if (!config) throw vmError('PARSE_ERROR', `Failed to parse the definition of domain ${p}`);
+
+  const staleBinary = stateCode === 1 ? await isVMBinaryStale(config.name) : false;
+  const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
+  const pendingRestart = pendingRestartInForce(config.pendingRestart, startedAt);
+
+  return {
+    name: config.name,
+    uuid: config.uuid,
+    domainPath: p,
+    state: STATE_NAMES[stateCode] ?? 'unknown',
+    stateCode,
+    vcpus: config.vcpus,
+    memoryMiB: config.memoryMiB,
+    profile: config.profile,
+    iconId: config.iconId ?? null,
+    pendingRestart,
+    startedAt,
+    guestAgent: !!config.guestAgent,
+    staleBinary,
+  };
+}
+
+/**
+ * Tell the subscribers a read's outcome — the list, or null for an error —
+ * only when it differs from what they were last told: a list unequal by value,
+ * a list after an error or an error after a list, or another error. A read
+ * that gives the same answer tells nobody, so a subscriber whose own work
+ * fails cannot set off read after read.
+ */
+function announce(list, err) {
+  const key = err
+    ? `error ${err.code}\n${err.message}\n${err.raw ?? ''}`
+    : `list ${JSON.stringify(list)}`;
+  if (key === lastAnnounced) return;
+  lastAnnounced = key;
   for (const h of listChangeHandlers) {
-    try { h(vmListCache); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] vm-list-change handler threw'); }
+    try { h(list); } catch (hErr) { connectionState.logger?.warn?.({ err: hErr?.message || hErr }, '[vmManager] vm-list-change handler threw'); }
   }
 }
 
-/**
- * Forget the cached list and tell the subscribers (with null), so their next
- * read asks libvirt again and sends what it finds — the list, or its error.
- * Only a cached list is dropped: a read that fails while none is cached
- * changes nothing, so a failing read never sets off another.
- */
-function dropVMListCache() {
-  if (vmListCache === null) return;
+/** The list is stale: the next listVMs() reads libvirt. Tells nobody. */
+function markVMListStale() {
   vmListCache = null;
-  fireListChange();
 }
 
 /**
- * One read of the list at a time, shared by every caller that asks meanwhile.
- * A read that succeeds becomes the cache and is announced; one that fails
- * drops the cache.
+ * One read of the list at a time, shared by every caller that asks meanwhile
+ * (a subscriber that asks while it is told joins the same read). A read that
+ * succeeds becomes the cache; one that fails leaves the list stale.
  */
 function readVMList() {
   if (!readPromise) {
     readPromise = fetchVMListFromLibvirt()
-      .then((list) => { vmListCache = list; fireListChange(); return list; })
-      .catch((err) => { dropVMListCache(); throw err; })
+      .then((list) => { vmListCache = list; announce(list, null); return list; })
+      .catch((err) => { markVMListStale(); announce(null, err); throw err; })
       .finally(() => {
         readPromise = null;
         if (refreshQueued) refreshVMListCache();
@@ -139,15 +153,18 @@ export function refreshVMListCache() {
 }
 
 subscribeDomainChange(refreshVMListCache);
-subscribeDisconnect(dropVMListCache);
+/* A disconnect drops the guest-agent listeners with the connection: whatever the
+ * next read finds is announced, so they are attached again. */
+subscribeDisconnect(() => { markVMListStale(); lastAnnounced = null; });
 /* A libvirt call that failed may mean libvirt is gone, which libvirt-dbus
- * reports in no other way: the list is read again on its next use. */
-subscribeCallFailed(dropVMListCache);
+ * reports in no other way: the list is read again by whoever next asks for it
+ * (with a tab open, the host stats every 5 s). */
+subscribeCallFailed(markVMListStale);
 
 /**
- * Subscribe to VM list cache changes. Handler fires after each successful read
- * (with the new list) and when the cached list is dropped (with null: a
- * disconnect, a failed read or a failed libvirt call). Returns an unsubscribe
+ * Subscribe to the VM list's changes: `handler(list)` when a read gives a list
+ * other than the one last announced, `handler(null)` when it fails where the
+ * last announcement was a list or another error. Returns an unsubscribe
  * function.
  */
 export function subscribeVMListChange(handler) {

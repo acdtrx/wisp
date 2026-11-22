@@ -45,6 +45,8 @@ export const connectionState = {
    *  libvirtd on each fetch). Cleared on bus disconnect; individual entries dropped
    *  on UNDEFINED DomainEvent so deleted-then-recreated paths get a fresh proxy. */
   domainProxyCache: new Map(),
+  /** libvirt's and QEMU's versions, read at each connect: `{ libvirt, qemu }`, or null. */
+  versions: null,
   /** Pino-compatible logger plumbed via connect(); null until connected. */
   logger: null,
   /** false (connect option): no DomainEvent listener, no QEMU-binary watcher,
@@ -274,6 +276,7 @@ function handleBusError(bus, err) {
   connectionState.bus = null;
   connectionState.connectIface = null;
   connectionState.connectProps = null;
+  connectionState.versions = null;
   connectionState.domainProxyCache.clear();
   detachAllAgentSubscriptions();
   fireDisconnect();
@@ -305,7 +308,14 @@ export async function connect(logger = null, opts = {}) {
   try {
     obj = await Promise.race([boundedLibvirt(bus.getProxyObject('org.libvirt', '/org/libvirt/QEMU'), 'introspection'), busFailed]);
     const props = obj.getInterface('org.freedesktop.DBus.Properties');
-    await Promise.race([boundedLibvirt(props.Get('org.libvirt.Connect', 'LibVersion'), 'Get LibVersion'), busFailed]);
+    const [libVersion, qemuVersion] = await Promise.race([Promise.all([
+      boundedLibvirt(props.Get('org.libvirt.Connect', 'LibVersion'), 'Get LibVersion'),
+      boundedLibvirt(props.Get('org.libvirt.Connect', 'Version'), 'Get Version'),
+    ]), busFailed]);
+    connectionState.versions = {
+      libvirt: formatVersion(unwrapVariant(libVersion)),
+      qemu: formatVersion(unwrapVariant(qemuVersion)),
+    };
   } catch (err) {
     try { bus.disconnect(); } catch { /* bus may already be closed */ }
     // A failed first connect (libvirt-dbus not up yet at boot) retries on the
@@ -367,6 +377,7 @@ export function disconnect() {
   }
   connectionState.connectIface = null;
   connectionState.connectProps = null;
+  connectionState.versions = null;
   connectionState.domainProxyCache.clear();
   fireDisconnect();
 }

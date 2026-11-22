@@ -50,6 +50,8 @@ function deriveUpdateAvailable(config, state, libraryDigests) {
 /** The last list read whole, or null: not read yet, or the last read failed or
  *  the events stream broke, so the next listContainers() reads it again. */
 let containerListCache = null;
+/** What the subscribers were last told, by value (see announce); null: nothing yet. */
+let lastAnnounced = null;
 let readPromise = null;
 let refreshQueued = false;
 /** Resolvers waiting for a refresh that starts after they asked. */
@@ -148,28 +150,33 @@ async function fetchContainerListFromDisk() {
   return results;
 }
 
-function fireListChange() {
+/**
+ * Tell the subscribers a read's outcome — the list, or null for an error —
+ * only when it differs from what they were last told: a list unequal by value,
+ * a list after an error or an error after a list, or another error. A read
+ * that gives the same answer tells nobody, so a subscriber whose own work
+ * fails cannot set off read after read.
+ */
+function announce(list, err) {
+  const key = err
+    ? `error ${err.code}\n${err.message}\n${err.raw ?? ''}`
+    : `list ${JSON.stringify(list)}`;
+  if (key === lastAnnounced) return;
+  lastAnnounced = key;
   for (const h of listChangeHandlers) {
-    try { h(containerListCache); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] list-change handler threw'); }
+    try { h(list); } catch (hErr) { containerState.logger?.warn?.({ err: hErr?.message || hErr }, '[containerManager] list-change handler threw'); }
   }
 }
 
-/**
- * Forget the cached list and tell the subscribers (with null), so their next
- * read builds it again and sends what it finds — the list, or its error. Only
- * a cached list is dropped: a read that fails while none is cached changes
- * nothing, so a failing read never sets off another.
- */
-function dropContainerListCache() {
-  if (containerListCache === null) return;
+/** The list is stale: the next listContainers() reads it. Tells nobody. */
+function markContainerListStale() {
   containerListCache = null;
-  fireListChange();
 }
 
 /**
  * Read the list: one read at a time, shared by every caller that asks
- * meanwhile. A read that succeeds becomes the cache and is announced; one that
- * fails drops the cache.
+ * meanwhile (a subscriber that asks while it is told joins the same read). A
+ * read that succeeds becomes the cache; one that fails leaves the list stale.
  */
 function readContainerList() {
   if (!readPromise) {
@@ -177,8 +184,8 @@ function readContainerList() {
     refreshWaiters = [];
     refreshQueued = false;
     readPromise = fetchContainerListFromDisk()
-      .then((list) => { containerListCache = list; fireListChange(); return list; })
-      .catch((err) => { dropContainerListCache(); throw err; })
+      .then((list) => { containerListCache = list; announce(list, null); return list; })
+      .catch((err) => { markContainerListStale(); announce(null, err); throw err; })
       .finally(() => {
         readPromise = null;
         for (const resolve of waiters) resolve();
@@ -269,8 +276,9 @@ function startEventsStream() {
     eventsStream.on('error', (err) => {
       containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error — will reconnect');
       stopEventsStream();
-      // containerd may be gone: the list is read again on its next use.
-      dropContainerListCache();
+      // containerd may be gone: the list is read again by whoever next asks for
+      // it (with a tab open, the host stats every 5 s).
+      markContainerListStale();
       scheduleEventsReconnect();
     });
     eventsStream.on('end', () => {
@@ -300,14 +308,16 @@ subscribeContainerdConnectFailed(scheduleEventsReconnect);
 subscribeContainerdDisconnect(() => {
   clearEventsReconnect();
   stopEventsStream();
-  dropContainerListCache();
+  markContainerListStale();
+  lastAnnounced = null;
 });
 subscribeContainerConfigWrite(refreshContainerListCache);
 subscribeScheduledRestartChange(refreshContainerListCache);
 
 /**
- * Subscribe to container list cache changes. Handler fires after each successful
- * refresh (with the new list) and on disconnect (with null). Returns an unsubscribe.
+ * Subscribe to the container list's changes: `handler(list)` when a read gives
+ * a list other than the one last announced, `handler(null)` when it fails where
+ * the last announcement was a list or another error. Returns an unsubscribe.
  */
 export function subscribeContainerListChange(handler) {
   listChangeHandlers.add(handler);

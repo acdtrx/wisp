@@ -6,7 +6,7 @@
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { connectionState, formatVersion, unwrapVariant } from './vmManagerConnection.js';
+import { connectionState } from './vmManagerConnection.js';
 
 function getPrimaryAddress() {
   const ifaces = networkInterfaces();
@@ -26,27 +26,15 @@ function getPrimaryAddress() {
 }
 
 export async function getHostInfo() {
-  const info = {
+  return {
     hostname: hostname(),
     nodeVersion: process.version,
-    libvirtVersion: null,
-    qemuVersion: null,
+    libvirtVersion: connectionState.versions?.libvirt ?? null,
+    qemuVersion: connectionState.versions?.qemu ?? null,
     uptimeSeconds: uptime(),
     primaryAddress: getPrimaryAddress(),
     kernel: release(),
   };
-
-  if (connectionState.connectIface && connectionState.connectProps) {
-    try {
-      info.libvirtVersion = formatVersion(unwrapVariant(await connectionState.connectProps.Get('org.libvirt.Connect', 'LibVersion')));
-      info.qemuVersion = formatVersion(unwrapVariant(await connectionState.connectProps.Get('org.libvirt.Connect', 'Version')));
-    } catch (err) {
-      /* libvirt props unavailable — leave version fields null */
-      connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to read versions');
-    }
-  }
-
-  return info;
 }
 
 export function getHostHardware() {

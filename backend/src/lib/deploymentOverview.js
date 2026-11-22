@@ -55,7 +55,7 @@ export async function gatherDeployment() {
 
   const vmEntries = await Promise.all(vms.map(async (vm) => ({
     vm,
-    net: vm.state === 'running' ? await getGuestNetwork(vm.name) : { ip: null, hostname: null },
+    net: vm.state === 'running' ? await getGuestNetwork(vm.name, { domainPath: vm.domainPath }) : { ip: null, hostname: null },
   })));
 
   return {

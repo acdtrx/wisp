@@ -148,10 +148,10 @@ subscribeVMListChange((list) => { listenToRunningAgents(list); });
  * vmManager facade so glue (the deployment overview, MCP's get_vm) can read
  * current network state without touching libvirt ifaces. Either field is null
  * when the agent is not configured or not responding; a VM that cannot be
- * looked up throws.
+ * looked up throws. `domainPath` (a VM list row's) saves the lookup by name.
  */
-export async function getGuestNetwork(name) {
-  const path = await resolveDomain(name);
+export async function getGuestNetwork(name, { domainPath } = {}) {
+  const path = domainPath ?? await resolveDomain(name);
   const { agentIface } = await getDomainObjAndIface(path);
   const [ip, hostname] = await Promise.all([
     getGuestPrimaryAddressFromIface(agentIface),

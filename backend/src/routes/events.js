@@ -168,7 +168,9 @@ export default async function eventsRoutes(fastify) {
         subscribeBackupEvents(() => { sendBackups(); }),
         subscribeSettingsChange(() => { sendChange({ kind: CHANGE_KIND.SETTINGS }); }),
         subscribeVMChange((name) => { sendChange({ kind: CHANGE_KIND.VM, id: name }); }),
-        subscribeContainerChange((name) => { sendChange({ kind: CHANGE_KIND.CONTAINER, id: name }); }),
+        /* A container.json write changes what Home derives (an app's links, the
+         * services) even when the list it announces does not change. */
+        subscribeContainerChange((name) => { sendChange({ kind: CHANGE_KIND.CONTAINER, id: name }); sendHome(); }),
         subscribeCloudInitChange((name) => { sendChange({ kind: CHANGE_KIND.VM, id: name }); }),
         subscribeApiTokensChange(() => { sendChange({ kind: CHANGE_KIND.TOKENS }); }),
         subscribeNetworkBridgesChange(() => { sendChange({ kind: CHANGE_KIND.NETWORK_BRIDGES }); }),
