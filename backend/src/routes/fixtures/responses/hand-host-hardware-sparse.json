@@ -1,7 +1,7 @@
 {
   "route": "GET /api/host/hardware",
   "status": 200,
-  "note": "A hybrid CPU, a SMART read that failed, the fields dmidecode and sysfs may leave out, and a mount whose size read did not answer.",
+  "note": "A hybrid CPU, a SMART read that failed, and the fields dmidecode and sysfs may leave out.",
   "body": {
     "cpu": {
       "cacheKb": 8192,
@@ -59,13 +59,6 @@
         "mount": "/boot/efi",
         "totalBytes": 1050000000,
         "usedBytes": 50000000
-      },
-      {
-        "mount": "/mnt/wisp/nas",
-        "device": "//nas/media",
-        "totalBytes": null,
-        "usedBytes": null,
-        "availBytes": null
       }
     ],
     "memory": [

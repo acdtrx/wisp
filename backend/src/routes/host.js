@@ -522,9 +522,9 @@ export default async function hostRoutes(fastify) {
                 properties: {
                   mount: { type: 'string' },
                   device: { type: 'string' },
-                  totalBytes: { type: ['number', 'null'] },
-                  usedBytes: { type: ['number', 'null'] },
-                  availBytes: { type: ['number', 'null'] },
+                  totalBytes: { type: 'number' },
+                  usedBytes: { type: 'number' },
+                  availBytes: { type: 'number' },
                 },
                 additionalProperties: false,
               },

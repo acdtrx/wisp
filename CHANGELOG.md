@@ -77,7 +77,6 @@
 - **A delete says what it could not remove** — a VM whose folder stays ends as failed, naming the folder; a VM that cannot be stopped is not deleted (its disks could be removed under the running VM). A container delete stops at the step that failed, naming it, and can be run again; a network lease it could not release does not stop it, and the delete ends saying so.
 - **Live figures that could not be read are not shown as zeros** — a VM's or container's figures show the read's error instead.
 - **containerd started after Wisp is picked up** without restarting Wisp.
-- **A network share that does not answer no longer freezes Wisp** — the Host page reads each mount's size off the main thread and waits at most 3 s; a share that does not answer shows as "Not answering", and every other page goes on answering.
 - **Container `.local` names come back after the system bus restarts** — Wisp reopens its mDNS connection by itself and publishes the names again, without a restart.
 - **Failed host reads are logged** — a SMART, RAM, sensor, USB or other host read that fails is in the journal instead of silently left out.
 

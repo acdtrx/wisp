@@ -2,7 +2,7 @@
  * Host hardware info from /proc, /sys, optional pci.ids, and optional helper scripts.
  * All file reads; CLI helpers used for RAM (wisp-dmidecode) and disk SMART (wisp-smartctl).
  */
-import { readFileSync, readdirSync, readlinkSync } from 'node:fs';
+import { readFileSync, readdirSync, readlinkSync, statfsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -17,7 +17,7 @@ import {
   normalizePciClassHex,
 } from './pciIds.js';
 import { readAllDiskSmartSummaries } from './smart.js';
-import { mountSizeReadsInFlight, readMountSize, readMountTable } from '../../storage/index.js';
+import { readMountTable } from '../../storage/index.js';
 import { isAbsent, logHostFailure } from '../hostLog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -221,49 +221,42 @@ function isNetnsBindMount(mount) {
   );
 }
 
-/** Mounts whose size read timed out and was logged, until a read of theirs comes back. */
-const loggedUnanswered = new Set();
-
 /**
  * Filesystem usage per mount point from the mount table + statfs.
  * One row per mount point: when mounts are stacked on a path, the topmost
  * (last in mount order) is the one statfs sees, so it alone is reported.
  * Excludes pseudo/virtual filesystems and network-namespace bind mounts (containers / CNI).
- * Each size is read off the main thread and bounded (storage's readMountSize):
- * a mount that does not answer in time, or whose read fails, keeps its row
- * with null sizes. A failure is logged each time; a timeout once while the
- * mount stays unanswered.
- * @returns {Promise<{ mount: string, device: string, totalBytes: number|null, usedBytes: number|null, availBytes: number|null }[]>}
+ * @returns {{ mount: string, device: string, totalBytes: number, usedBytes: number, availBytes: number }[] }
  */
-export async function getFilesystemUsage() {
+export function getFilesystemUsage() {
   const visibleByMountPoint = new Map();
   for (const entry of readMountTable()) visibleByMountPoint.set(entry.mountPoint, entry);
 
-  const mounts = [...visibleByMountPoint.values()].filter(({ mountPoint: mount, fsType: fstype }) => (
-    !mount.startsWith('/proc') && !mount.startsWith('/sys') && !mount.startsWith('/dev')
-    && !isNetnsBindMount(mount)
-    && fstype !== 'tmpfs' && fstype !== 'devtmpfs' && fstype !== 'squashfs'
-  ));
+  const result = [];
+  for (const { source: device, mountPoint: mount, fsType: fstype } of visibleByMountPoint.values()) {
+    if (mount.startsWith('/proc') || mount.startsWith('/sys') || mount.startsWith('/dev')) continue;
+    if (isNetnsBindMount(mount)) continue;
+    if (fstype === 'tmpfs' || fstype === 'devtmpfs' || fstype === 'squashfs') continue;
 
-  return Promise.all(mounts.map(async ({ source: device, mountPoint: mount }) => {
-    const read = await readMountSize(mount);
-    if (read.sizes) {
-      loggedUnanswered.delete(mount);
-      return { mount, device, ...read.sizes };
+    try {
+      const st = statfsSync(mount);
+      // `df` semantics: used = total − free; available = what an unprivileged
+      // writer (the deploy user) can still use, i.e. excluding the root reserve.
+      const totalBytes = st.blocks * st.bsize;
+      const usedBytes = (st.blocks - st.bfree) * st.bsize;
+      const availBytes = st.bavail * st.bsize;
+      result.push({
+        mount,
+        device,
+        totalBytes,
+        usedBytes: Math.max(0, usedBytes),
+        availBytes,
+      });
+    } catch (err) {
+      logHostFailure(err, 'Filesystem usage read failed', { mount });
     }
-    if (read.error) {
-      loggedUnanswered.delete(mount);
-      logHostFailure(read.error, 'Filesystem usage read failed', { mount });
-    } else if (!loggedUnanswered.has(mount)) {
-      loggedUnanswered.add(mount);
-      logHostFailure(
-        { message: 'no answer within the size read bound', code: 'TIMEOUT' },
-        'Filesystem usage read did not answer (logged once while it stays unanswered)',
-        { mount, readsInFlight: mountSizeReadsInFlight() },
-      );
-    }
-    return { mount, device, totalBytes: null, usedBytes: null, availBytes: null };
-  }));
+  }
+  return result;
 }
 
 /**
@@ -466,7 +459,7 @@ export async function getRamInfo() {
 export async function getHostHardwareInfo() {
   const cpu = getCpuInfo();
   const disks = await readAllDiskSmartSummaries(getDiskInfo());
-  const filesystems = await getFilesystemUsage();
+  const filesystems = getFilesystemUsage();
   const network = getNetworkAdapters();
   const memory = await getRamInfo();
   const pciDevices = getPciDevices();

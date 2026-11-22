@@ -2,9 +2,8 @@
  * Host hardware for macOS: `system_profiler -json` inventory + statfs + os.networkInterfaces.
  */
 import { cpus, networkInterfaces } from 'node:os';
-import { existsSync } from 'node:fs';
+import { existsSync, statfsSync } from 'node:fs';
 
-import { readMountSize } from '../../storage/index.js';
 import { mapProfilerToHardwareParts, runSystemProfilerJson } from './systemProfilerHardware.js';
 
 /**
@@ -27,15 +26,33 @@ function getCpuInfoFromOs() {
 }
 
 /**
- * The two system volumes' sizes, through the same bounded read as Linux.
- * @returns {Promise<{ mount: string, device: string, totalBytes: number|null, usedBytes: number|null, availBytes: number|null }[]>}
+ * @returns {{ mount: string, device: string, totalBytes: number, usedBytes: number, availBytes: number }[] }
  */
-async function getFilesystemUsage() {
-  const paths = ['/', '/System/Volumes/Data'].filter((mount) => existsSync(mount));
-  return Promise.all(paths.map(async (mount) => {
-    const read = await readMountSize(mount);
-    return { mount, device: '', ...(read.sizes ?? { totalBytes: null, usedBytes: null, availBytes: null }) };
-  }));
+function getFilesystemUsage() {
+  const paths = ['/', '/System/Volumes/Data'];
+  const result = [];
+
+  for (const mount of paths) {
+    if (!existsSync(mount)) continue;
+    try {
+      const st = statfsSync(mount);
+      // Same `df` semantics as the Linux implementation.
+      const totalBytes = st.blocks * st.bsize;
+      const usedBytes = Math.max(0, (st.blocks - st.bfree) * st.bsize);
+      const availBytes = st.bavail * st.bsize;
+      result.push({
+        mount,
+        device: '',
+        totalBytes,
+        usedBytes,
+        availBytes,
+      });
+    } catch {
+      /* skip paths we cannot stat */
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -127,7 +144,7 @@ export async function getHostHardwareInfo() {
   return {
     cpu,
     disks: profilerParts ? profilerParts.disks : [],
-    filesystems: await getFilesystemUsage(),
+    filesystems: getFilesystemUsage(),
     network,
     memory: profilerParts ? profilerParts.memory : [],
     pciDevices: profilerParts ? profilerParts.pciDevices : [],
