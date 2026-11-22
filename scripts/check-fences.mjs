@@ -81,6 +81,12 @@
  *      case) outside lib/base/. A reviewed allowance is an EXCEPTIONS line with
  *      the specifier `emitter`. Known limit: a handler Set under another name.
  *
+ *  12. One logger (ARCHITECTURE.md, Managers are configured): no `console.` in
+ *      backend/src or backend/migrations, comments stripped. A module logs to
+ *      the logger configure() handed it, the glue to lib/log.js; what runs
+ *      before a logger exists or at exit writes to process.stderr. A reviewed
+ *      allowance is an EXCEPTIONS line with the specifier `console`.
+ *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
@@ -148,6 +154,8 @@ const FETCH_HOME = `${LIB}/downloads/`;
 /** Rule 11: a hand-written emitter's set of handlers. */
 const HANDLER_SET = /(?<![\w$])[\w$]*(?:handlers|listeners|subscribers)\s*[:=]\s*new\s+Set\s*\(/gi;
 const BASE_DIR = `${LIB}/base/`;
+/** Rule 12: a console call. */
+const CONSOLE_CALL = /(?<![\w$./-])console\s*(?:\?\.|\.)/g;
 const FETCH_HELPERS = new Set([`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`]);
 const GLOBAL_FETCH = /(?<![\w$.])fetch\s*(?:\?\.\s*)?\(|(?<![\w$.])(?:globalThis|global)\s*(?:\?\.\s*|\.\s*)(?:fetch\b|\[\s*(['"`])fetch\1\s*\])|(?<![\w$.])(?:globalThis|global)\s*\[\s*(['"`])fetch\2\s*\]/g;
 const WEBSOCKET_CLIENT = /(?<![\w$.])new\s+(?:[\w$]+\s*(?:\?\.|\.)\s*)*WebSocket\s*\(/g;
@@ -512,6 +520,11 @@ async function main() {
         violations.push(`${fileRel}:${lineAt(m.index)} emitter — a hand-written emitter: use createEmitter from lib/base (one change emitter)`);
       }
     }
+    if (fileRel.startsWith('backend/') && !isExcepted('console')) {
+      for (const m of code.matchAll(CONSOLE_CALL)) {
+        violations.push(`${fileRel}:${lineAt(m.index)} console — the backend logs to the start's logger: configure({ logger }) in a module, log() from lib/log.js in the glue, process.stderr before a logger exists (one logger)`);
+      }
+    }
     if (outsideFetchHome && !OPERATOR_FETCH_USERS.has(fileRel) && !isExcepted('fetchOperatorEndpoint')) {
       for (const m of code.matchAll(OPERATOR_FETCH)) {
         violations.push(`${fileRel}:${lineAt(m.index)} fetchOperatorEndpoint — only lib/oidc.js uses the operator fetch, which allows private addresses: every other URL goes through ssrfSafeFetch (CODING-RULES §9)`);
@@ -640,7 +653,7 @@ async function main() {
   const summary = `${count} imports across ${files.length} files`;
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   const runnerSummary = 'only the backend runs the state migrations';
-  const homesSummary = 'no hand-written emitter outside lib/base/';
+  const homesSummary = 'no hand-written emitter outside lib/base/, no console in the backend';
   const fetchSummary = 'no global fetch, HTTP client import or WebSocket client outside lib/downloads/, and the operator fetch only in lib/oidc.js';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
