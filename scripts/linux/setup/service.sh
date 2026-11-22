@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by wispctl and the installer; do not execute it.
+# Sourced by wispctl, the installer and install-tree.sh; do not execute it.
 #
 # wisp_service <start|restart> [sudo]: start or restart wisp.service and wait
 # until the backend is ready — the unit is Type=notify, so this returns once it
