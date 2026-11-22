@@ -14,6 +14,8 @@ import {
 import { dirname, basename, join } from 'node:path';
 
 import { readMountTable } from '../mountTable.js';
+import { createEmitter } from '../../base/index.js';
+import { storageLogger } from '../storageLog.js';
 
 const BY_UUID_DIR = '/dev/disk/by-uuid';
 const SYS_CLASS_BLOCK = '/sys/class/block';
@@ -55,7 +57,7 @@ let cache = null;
 let uuidWatcher = null;
 
 /** @type { Set<() => void> } */
-const changeListeners = new Set();
+const disksChange = createEmitter('storage: disk change', storageLogger);
 
 let debounceTimer = null;
 let mountPollTimer = null;
@@ -220,13 +222,7 @@ function notifyIfChanged() {
   if (prevKey === nextKey) return;
 
   cache = next;
-  for (const fn of changeListeners) {
-    try {
-      fn();
-    } catch {
-      /* listener threw — ignore */
-    }
-  }
+  disksChange.emit();
 }
 
 function scheduleRefresh() {
@@ -310,7 +306,4 @@ export function refresh() {
  * @param {() => void} callback
  * @returns {() => void} unsubscribe
  */
-export function onChange(callback) {
-  changeListeners.add(callback);
-  return () => changeListeners.delete(callback);
-}
+export const onChange = disksChange.subscribe;

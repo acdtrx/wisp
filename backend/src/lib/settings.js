@@ -20,6 +20,8 @@ import { writeJsonAtomic } from './atomicJson.js';
 import {
   MAX_SSH_KEYS, defaultSshKeyName, parseSshKey, readSshKey, sshKeyFingerprint, validSshKeyName,
 } from './sshKeys.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 export { MOUNT_ROOT, MAIN_SECTION_ID, UNGROUPED_GROUP_ID } from './configSchema.js';
 
@@ -152,31 +154,18 @@ let writeLock = Promise.resolve();
  *  settings fields, OIDC and the mounts. Sections, homepage and token writes share
  *  the write lock but not this signal: they have their own topics. No replay —
  *  it is a cue to read the settings again, not their state. */
-const settingsChangeHandlers = new Set();
+const settingsChange = createEmitter('settings: change', log);
 
-export function subscribeSettingsChange(handler) {
-  settingsChangeHandlers.add(handler);
-  return () => settingsChangeHandlers.delete(handler);
-}
+export const subscribeSettingsChange = settingsChange.subscribe;
 
 /** Notified after a mount is added, edited or removed (on top of the settings
  *  cue every write gives). No replay: a cue to read the mounts again. */
-const mountsChangeHandlers = new Set();
+const mountsChange = createEmitter('settings: mounts change', log);
 
-export function subscribeMountsChange(handler) {
-  mountsChangeHandlers.add(handler);
-  return () => mountsChangeHandlers.delete(handler);
-}
+export const subscribeMountsChange = mountsChange.subscribe;
 
 function announceMountsChange() {
-  for (const handler of mountsChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      // A broken subscriber must not fail the saved write or silence the others.
-      console.error('settings: mounts change subscriber failed', err);
-    }
-  }
+  mountsChange.emit();
 }
 
 /** Persist a settings change, then announce it. A mutator that throws rejects
@@ -184,14 +173,7 @@ function announceMountsChange() {
  *  a write that landed never fails on reading it back. */
 async function commitSettings(mutate) {
   const written = await writeSettingsUnderLock(mutate);
-  for (const handler of settingsChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      // A broken subscriber must not fail the saved write or silence the others.
-      console.error('settings: change subscriber failed', err);
-    }
-  }
+  settingsChange.emit();
   return written;
 }
 

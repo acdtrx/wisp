@@ -28,6 +28,8 @@ import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { acquireContainerOperationLock } from '../containerOperationLock.js';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { SUBJECT_KINDS } from './jobSubjectKinds.js';
+import { createEmitter } from '../base/index.js';
+import { log } from '../log.js';
 
 const JOB_TTL_MS = 5 * 60 * 1000;
 const KNOWN_KINDS = new Set(Object.values(JOB_KIND));
@@ -41,24 +43,11 @@ const KNOWN_KINDS = new Set(Object.values(JOB_KIND));
 /** Insertion order is creation order: the listing reads it backwards. */
 const jobs = new Map();
 
-const jobsChangeHandlers = new Set();
+const jobsChange = createEmitter('Job list change', log);
 
 /** Run `handler()` after every change of the job list (header). Returns its unsubscribe. */
-export function subscribeJobsChange(handler) {
-  jobsChangeHandlers.add(handler);
-  return () => jobsChangeHandlers.delete(handler);
-}
+export const subscribeJobsChange = jobsChange.subscribe;
 
-/** A handler that throws is logged and skipped: announcing never fails the change it announces. */
-function announceJobsChange(log) {
-  for (const handler of jobsChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      log.warn({ err }, 'Job list change handler failed');
-    }
-  }
-}
 
 function sameSubject(a, b) {
   if (!a || !b) return a === b;
@@ -169,7 +158,7 @@ function finishJob(job, status, event) {
   job.streams = [];
   for (const stream of streams) endStream(stream);
   scheduleSweep();
-  announceJobsChange(job.log);
+  jobsChange.emit();
 }
 
 /** Pending sweep; armed for the earliest finished job's expiry while any finished job remains. */
@@ -195,7 +184,7 @@ export function sweepExpiredJobs(trigger = 'manual') {
     }
   }
   scheduleSweep({ reschedule: true });
-  if (lastRemoved) announceJobsChange(lastRemoved.log);
+  if (lastRemoved) jobsChange.emit();
   return removed;
 }
 
@@ -371,7 +360,7 @@ export async function startJob({
         finishJob(job, 'error', { step: 'error', ...body });
       },
     );
-  announceJobsChange(log);
+  jobsChange.emit();
   return ackOf(jobId, job);
 }
 

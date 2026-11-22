@@ -4,6 +4,7 @@
  * Single public surface for VM/container managers and host routes.
  */
 import { platform } from 'node:os';
+import { createEmitter } from '../base/index.js';
 
 const isLinux = platform() === 'linux';
 
@@ -14,17 +15,12 @@ const managedImpl = await import(
   isLinux ? './linux/managedBridges.js' : './darwin/managedBridges.js',
 );
 
-/** The start's logger, set by configure(): what this module carries on from is logged to it. */
+/** The start's logger, set by configure(). */
 let logger = null;
 
-/** Boot wiring (lib/managerBootstrap.js): the logger. */
+/** Boot wiring (lib/managerBootstrap.js): the start's logger. */
 export function configure(cfg = {}) {
   logger = cfg.logger ?? null;
-}
-
-/** The configured logger, for this module's own files. */
-export function moduleLogger() {
-  return logger;
 }
 
 export { isVlanLikeBridgeName } from './bridgeNaming.js';
@@ -44,22 +40,12 @@ export const planManagedNetworkBridgeDelete = managedImpl.planManagedNetworkBrid
 /** Notified after a managed bridge create or delete settles. A failed one is
  *  announced too: netplan may have written part of it. No replay: a cue to list
  *  the bridges again. */
-const bridgesChangeHandlers = new Set();
+const bridgesChange = createEmitter('networking: bridges change', () => logger);
 
-export function subscribeNetworkBridgesChange(handler) {
-  bridgesChangeHandlers.add(handler);
-  return () => bridgesChangeHandlers.delete(handler);
-}
+export const subscribeNetworkBridgesChange = bridgesChange.subscribe;
 
 function announceNetworkBridgesChange() {
-  for (const handler of bridgesChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      // A broken subscriber must not fail the change or silence the others.
-      console.error('networking: bridges change subscriber failed', err);
-    }
-  }
+  bridgesChange.emit();
 }
 
 function announcingBridgesChange(mutation) {

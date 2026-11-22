@@ -10,7 +10,8 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { isAbsent, logHostFailure } from '../hostLog.js';
+import { isAbsent, logHostFailure, hostLogger } from '../hostLog.js';
+import { createEmitter } from '../../base/index.js';
 
 const SYSFS_USB_DEVICES = '/sys/bus/usb/devices';
 const DEV_BUS_USB = '/dev/bus/usb';
@@ -34,7 +35,7 @@ const watchers = [];
 const watchedBusDirs = new Set();
 
 /** @type { Set<() => void> } */
-const changeListeners = new Set();
+const devicesChange = createEmitter('[host] USB change', hostLogger);
 
 let debounceTimer = null;
 let started = false;
@@ -180,13 +181,7 @@ function notifyIfChanged() {
   if (prevKey === nextKey) return;
 
   cache = next;
-  for (const fn of changeListeners) {
-    try {
-      fn();
-    } catch (err) {
-      logHostFailure(err, 'USB change listener threw');
-    }
-  }
+  devicesChange.emit();
 }
 
 function scheduleRefresh() {
@@ -309,9 +304,4 @@ export function getDevices() {
  * @param {() => void} callback
  * @returns {() => void} unsubscribe
  */
-export function onChange(callback) {
-  changeListeners.add(callback);
-  return () => {
-    changeListeners.delete(callback);
-  };
-}
+export const onChange = devicesChange.subscribe;

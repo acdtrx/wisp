@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 
 import { createAppError } from './appErrors.js';
 import { getRawApiTokens, withSettingsWriteLock } from './settings.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 export const API_TOKEN_SCOPES = ['read', 'admin'];
 const TOKEN_RANDOM_BYTES = 32;
@@ -9,22 +11,12 @@ const LABEL_MAX_LENGTH = 64;
 
 /** Notified after a token is created or revoked. No replay: a cue to list the
  *  tokens again. */
-const tokensChangeHandlers = new Set();
+const tokensChange = createEmitter('apiTokens: change', log);
 
-export function subscribeApiTokensChange(handler) {
-  tokensChangeHandlers.add(handler);
-  return () => tokensChangeHandlers.delete(handler);
-}
+export const subscribeApiTokensChange = tokensChange.subscribe;
 
 function announceApiTokensChange() {
-  for (const handler of tokensChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      // A broken subscriber must not fail the saved change or silence the others.
-      console.error('apiTokens: change subscriber failed', err);
-    }
-  }
+  tokensChange.emit();
 }
 
 function hashToken(token) {

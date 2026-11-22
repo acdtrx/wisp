@@ -5,6 +5,7 @@
  * backoff, and who is told when a scheduled restart changes.
  */
 import { containerState } from './containerManagerConnection.js';
+import { createEmitter } from '../../base/index.js';
 
 export const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
@@ -14,30 +15,22 @@ export const intentionalStopPids = new Map();
 export const pendingRestarts = new Map();
 /** name → { nextDelayMs, attempt, lastStartAt } — kept while a crash loop is in progress. */
 export const backoffState = new Map();
-const scheduledRestartChangeHandlers = new Set();
 
 function log() {
   return containerState.logger;
 }
 
+const scheduledRestartChange = createEmitter('Scheduled-restart change', log);
+
 export function fireScheduledRestartChange(name) {
-  for (const handler of scheduledRestartChangeHandlers) {
-    try {
-      handler(name);
-    } catch (err) {
-      log()?.warn?.({ err: err?.message || String(err), container: name }, 'Scheduled-restart change handler threw');
-    }
-  }
+  scheduledRestartChange.emit(name);
 }
 
 /**
  * Subscribe to scheduled-restart changes (scheduled, cancelled, fired). The
  * handler gets the container name. Returns an unsubscribe.
  */
-export function subscribeScheduledRestartChange(handler) {
-  scheduledRestartChangeHandlers.add(handler);
-  return () => scheduledRestartChangeHandlers.delete(handler);
-}
+export const subscribeScheduledRestartChange = scheduledRestartChange.subscribe;
 
 /**
  * The restart the policy has scheduled for this container, or null.

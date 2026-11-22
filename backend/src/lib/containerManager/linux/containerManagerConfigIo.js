@@ -9,8 +9,9 @@ import { readFile } from 'node:fs/promises';
 import { containerError, containerState, wrapContainerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
 import { writeJsonAtomic } from './atomicJson.js';
+import { createEmitter } from '../../base/index.js';
 
-const configWriteHandlers = new Set();
+const configWrite = createEmitter('[containerManager] config-write', () => containerState.logger);
 
 /**
  * The one read of a `container.json`, at `path`: CONTAINER_NOT_FOUND when it
@@ -56,13 +57,8 @@ export async function writeContainerConfig(name, config) {
   notifyContainerConfigWrite(name);
 }
 
-export function subscribeContainerConfigWrite(handler) {
-  configWriteHandlers.add(handler);
-  return () => configWriteHandlers.delete(handler);
-}
+export const subscribeContainerConfigWrite = configWrite.subscribe;
 
 export function notifyContainerConfigWrite(name) {
-  for (const h of configWriteHandlers) {
-    try { h(name); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] config-write handler threw'); }
-  }
+  configWrite.emit(name);
 }

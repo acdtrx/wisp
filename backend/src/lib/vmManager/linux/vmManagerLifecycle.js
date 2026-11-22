@@ -12,8 +12,9 @@ import {
 } from './vmManagerConnection.js';
 import { isShutOff, VIR_DOMAIN_STATE_RUNNING, VIR_DOMAIN_STATE_PAUSED } from './libvirtConstants.js';
 import { getCachedVMName } from './vmManagerList.js';
+import { createEmitter } from '../../base/index.js';
 
-const vmStoppedHandlers = new Set();
+const vmStopped = createEmitter('[vmManager] vm-stopped', () => connectionState.logger);
 
 /**
  * Subscribe to VM stops: `handler(name)` once libvirt reports that a VM's QEMU
@@ -22,22 +23,12 @@ const vmStoppedHandlers = new Set();
  * is the cached list's, null when the list does not know the domain. Only
  * fires with event watching; no replay. Returns an unsubscribe function.
  */
-export function subscribeVMStopped(handler) {
-  vmStoppedHandlers.add(handler);
-  return () => vmStoppedHandlers.delete(handler);
-}
+export const subscribeVMStopped = vmStopped.subscribe;
 
 // Named from the list, not read from libvirt: the domain may already be gone
 // (a transient one, or a running VM's delete undefining it right after).
 function announceVMStopped(domainPath) {
-  const name = getCachedVMName(domainPath);
-  for (const handler of vmStoppedHandlers) {
-    try {
-      handler(name);
-    } catch (err) {
-      connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] vm-stopped handler threw');
-    }
-  }
+  vmStopped.emit(getCachedVMName(domainPath));
 }
 
 subscribeDomainStopped(announceVMStopped);

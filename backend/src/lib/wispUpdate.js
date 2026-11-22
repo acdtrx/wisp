@@ -22,6 +22,8 @@ import { createAppError } from './appErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
 import { createStallWatchdog, stallMinutes, killProcessGroup } from './storage/index.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -141,22 +143,12 @@ export function compareSemver(a, b) {
 
 /** Notified after every check settles — success, failure or the hourly poll —
  *  since each rewrites the cached status. No replay: a cue to read it again. */
-const updateChangeHandlers = new Set();
+const updateChange = createEmitter('wispUpdate: change', log);
 
-export function subscribeWispUpdateChange(handler) {
-  updateChangeHandlers.add(handler);
-  return () => updateChangeHandlers.delete(handler);
-}
+export const subscribeWispUpdateChange = updateChange.subscribe;
 
 function announceWispUpdateChange() {
-  for (const handler of updateChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      // A broken subscriber must not fail the check or silence the others.
-      console.error('wispUpdate: change subscriber failed', err);
-    }
-  }
+  updateChange.emit();
 }
 
 export function getCachedStatus() {

@@ -23,6 +23,8 @@ import { writeJsonAtomic } from './atomicJson.js';
 import { errorBody } from './appErrors.js';
 import { subscribeVMBackupDeleted } from './vmManager/index.js';
 import { subscribeContainerBackupDeleted } from './containerManager/index.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Repo-root config/ (beside wisp-config.json), the directory the updater's swap
@@ -31,7 +33,7 @@ const STATUS_PATH = resolve(__dirname, '../../../config/backup-status.json');
 
 let cache = null;
 let writeChain = Promise.resolve();
-const changeHandlers = new Set();
+const backupsChange = createEmitter('backupStatus: change', log);
 
 /** @typedef {'vm' | 'container'} WorkloadType */
 
@@ -148,13 +150,7 @@ export async function forgetBackupStatus({ type, name }) {
 
 /** Poke subscribers that backup state changed (new/pruned/deleted backups, attempt status). */
 export function notifyBackupsChanged() {
-  for (const handler of changeHandlers) {
-    try {
-      handler();
-    } catch {
-      /* a broken subscriber must not break the backup flow that notified */
-    }
-  }
+  backupsChange.emit();
 }
 
 /* A backup deleted by any caller (the routes, the scheduler's retention) changes
@@ -162,7 +158,4 @@ export function notifyBackupsChanged() {
 subscribeVMBackupDeleted(() => notifyBackupsChanged());
 subscribeContainerBackupDeleted(() => notifyBackupsChanged());
 
-export function subscribeBackupEvents(handler) {
-  changeHandlers.add(handler);
-  return () => changeHandlers.delete(handler);
-}
+export const subscribeBackupEvents = backupsChange.subscribe;

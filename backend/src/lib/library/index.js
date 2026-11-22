@@ -19,26 +19,18 @@ import {
 import { createAppError, inUseCheckFailed, isAppError, wrapAppError } from '../appErrors.js';
 import { ensureImageDir, getImagePath } from '../paths.js';
 import { findVMsUsingImage } from '../vmManager/index.js';
+import { createEmitter } from '../base/index.js';
+import { log } from '../log.js';
 
 /** Notified after a file is uploaded, renamed, deleted or downloaded into the
  *  library, and after a failed upload or download removed its partial file. No
  *  replay: a cue to list the library again. */
-const libraryChangeHandlers = new Set();
+const libraryChange = createEmitter('library: change', log);
 
-export function subscribeLibraryChange(handler) {
-  libraryChangeHandlers.add(handler);
-  return () => libraryChangeHandlers.delete(handler);
-}
+export const subscribeLibraryChange = libraryChange.subscribe;
 
 function announceLibraryChange() {
-  for (const handler of libraryChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      // A broken subscriber must not fail the write or silence the others.
-      console.error('library: change subscriber failed', err);
-    }
-  }
+  libraryChange.emit();
 }
 
 /** For a write that may leave a partial file in the library before it fails (a

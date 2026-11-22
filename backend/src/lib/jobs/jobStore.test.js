@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createAppError } from '../appErrors.js';
+import { setLog } from '../log.js';
 import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { acquireContainerOperationLock } from '../containerOperationLock.js';
 import {
@@ -401,11 +402,13 @@ test('the store announces each list change — create, end, expiry — and no pr
   unsubscribe();
 });
 
-test('a list change handler that throws is logged and the start still answers', async () => {
+test('a list change handler that throws is logged (to the process logger) and the start still answers', async () => {
   const log = fakeLog();
+  setLog(log);
   const unsubscribe = subscribeJobsChange(() => { throw new Error('handler broke'); });
   const ack = await startJob({ kind: JOB_KIND.LIBRARY_DOWNLOAD, title: 'x', log, run: async () => ({}) });
   unsubscribe();
+  setLog(null);
   assert.ok(hasJob(ack.jobId));
   assert.ok(log.lines.some(([level, , message]) => level === 'warn' && message === 'Job list change handler failed'));
   await settle();

@@ -20,6 +20,7 @@ import { parseVMFromXML } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
 import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
 import { STATE_NAMES, isShutOff } from './libvirtConstants.js';
+import { createEmitter } from '../../base/index.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */
 
@@ -30,7 +31,7 @@ let vmListCache = null;
 let lastAnnounced = null;
 let readPromise = null;
 let refreshQueued = false;
-const listChangeHandlers = new Set();
+const listChange = createEmitter('[vmManager] vm-list-change', () => connectionState.logger);
 
 /**
  * Read every domain's summary from libvirt: the whole list, or it throws —
@@ -105,9 +106,7 @@ function announce(list, err) {
     : `list ${JSON.stringify(list)}`;
   if (key === lastAnnounced) return;
   lastAnnounced = key;
-  for (const h of listChangeHandlers) {
-    try { h(list); } catch (hErr) { connectionState.logger?.warn?.({ err: hErr?.message || hErr }, '[vmManager] vm-list-change handler threw'); }
-  }
+  listChange.emit(list);
 }
 
 /** The list is stale: the next listVMs() reads libvirt. Tells nobody. */
@@ -167,10 +166,7 @@ subscribeCallFailed(markVMListStale);
  * last announcement was a list or another error. Returns an unsubscribe
  * function.
  */
-export function subscribeVMListChange(handler) {
-  listChangeHandlers.add(handler);
-  return () => listChangeHandlers.delete(handler);
-}
+export const subscribeVMListChange = listChange.subscribe;
 
 /**
  * Read staleBinary for a VM from the cached list. Returns false if the cache is not

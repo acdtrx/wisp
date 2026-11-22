@@ -7,22 +7,14 @@
  */
 import { containerState } from './containerManagerConnection.js';
 import { subscribeContainerConfigWrite } from './containerManagerConfigIo.js';
+import { createEmitter } from '../../base/index.js';
 
-const containerChangeHandlers = new Set();
+const containerChange = createEmitter('[containerManager] container-change', () => containerState.logger);
 
-export function subscribeContainerChange(handler) {
-  containerChangeHandlers.add(handler);
-  return () => containerChangeHandlers.delete(handler);
-}
+export const subscribeContainerChange = containerChange.subscribe;
 
 export function announceContainerChange(name) {
-  for (const handler of containerChangeHandlers) {
-    try {
-      handler(name);
-    } catch (err) {
-      containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] container-change handler threw');
-    }
-  }
+  containerChange.emit(name);
 }
 
 /** Wrap a mount-content mutation so it announces the change once it succeeded.
@@ -37,24 +29,15 @@ export function announcingContainerChange(mutation, changedName = (args) => args
 
 /** Notified after a container backup was deleted (by any caller: the route, the
  *  scheduler's retention). No replay: a cue to read the backup lists again. */
-const backupDeletedHandlers = new Set();
+const backupDeleted = createEmitter('[containerManager] backup-deleted', () => containerState.logger);
 
-export function subscribeContainerBackupDeleted(handler) {
-  backupDeletedHandlers.add(handler);
-  return () => backupDeletedHandlers.delete(handler);
-}
+export const subscribeContainerBackupDeleted = backupDeleted.subscribe;
 
 /** Wrap the backup delete so it announces itself once it succeeded. */
 export function announcingContainerBackupDeleted(deleteBackup) {
   return async (...args) => {
     const result = await deleteBackup(...args);
-    for (const handler of backupDeletedHandlers) {
-      try {
-        handler();
-      } catch (err) {
-        containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] backup-deleted handler threw');
-      }
-    }
+    backupDeleted.emit();
     return result;
   };
 }

@@ -10,6 +10,7 @@ import protoLoader from '@grpc/proto-loader';
 import protobuf from 'protobufjs';
 
 import { containerError, isWispError, wrapContainerError } from '../containerManagerShared.js';
+import { createEmitter } from '../../base/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROTOS_DIR = resolve(__dirname, '../../../protos');
@@ -30,43 +31,22 @@ export const containerState = {
   watchEvents: true,
 };
 
-const connectHandlers = new Set();
-const disconnectHandlers = new Set();
-const connectFailedHandlers = new Set();
+const containerdConnected = createEmitter('[containerManager] connect', () => containerState.logger);
+const containerdDisconnected = createEmitter('[containerManager] disconnect', () => containerState.logger);
+const containerdConnectFailed = createEmitter('[containerManager] connect-failed', () => containerState.logger);
 
 /** Subscribe to containerd-ready events; handler fires after each successful connect. */
-export function subscribeContainerdConnect(handler) {
-  connectHandlers.add(handler);
-  return () => connectHandlers.delete(handler);
-}
+export const subscribeContainerdConnect = containerdConnected.subscribe;
 
 /** Subscribe to containerd-disconnect events; handler fires when the client is torn down. */
-export function subscribeContainerdDisconnect(handler) {
-  disconnectHandlers.add(handler);
-  return () => disconnectHandlers.delete(handler);
-}
+export const subscribeContainerdDisconnect = containerdDisconnected.subscribe;
 
 /**
  * Subscribe to a failed connect: handler fires when `connect()` could not reach
  * containerd, with event watching on. The clients stay; `retryConnect()` tries
  * again.
  */
-export function subscribeContainerdConnectFailed(handler) {
-  connectFailedHandlers.add(handler);
-  return () => connectFailedHandlers.delete(handler);
-}
-
-function fireConnect() {
-  for (const h of connectHandlers) {
-    try { h(); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] connect handler threw'); }
-  }
-}
-
-function fireDisconnect() {
-  for (const h of disconnectHandlers) {
-    try { h(); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] disconnect handler threw'); }
-  }
-}
+export const subscribeContainerdConnectFailed = containerdConnectFailed.subscribe;
 
 export { containerError, isWispError, wrapContainerError };
 
@@ -363,9 +343,7 @@ export async function connect(opts = {}) {
     await retryConnect();
   } catch (err) {
     if (containerState.watchEvents) {
-      for (const h of connectFailedHandlers) {
-        try { h(); } catch (hErr) { containerState.logger?.warn?.({ err: hErr?.message || hErr }, '[containerManager] connect-failed handler threw'); }
-      }
+      containerdConnectFailed.emit();
     }
     throw err;
   }
@@ -396,7 +374,7 @@ export async function retryConnect() {
   }
 
   containerState.connected = true;
-  fireConnect();
+  containerdConnected.emit();
 }
 
 export function disconnect() {
@@ -408,7 +386,7 @@ export function disconnect() {
   containerState.connected = false;
   containerState.containerStartTimes.clear();
   containerState.logger = null;
-  fireDisconnect();
+  containerdDisconnected.emit();
 }
 
 export function getClient(name) {

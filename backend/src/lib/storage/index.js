@@ -8,6 +8,8 @@
  * (sole consumer is hostHardware).
  */
 import { platform } from 'node:os';
+import { createEmitter } from '../base/index.js';
+import { setStorageLogger, storageLogger } from './storageLog.js';
 
 const isLinux = platform() === 'linux';
 
@@ -21,17 +23,9 @@ const smbImpl = await import(
   isLinux ? './linux/smbMount.js' : './darwin/smbMount.js',
 );
 
-/** The start's logger, set by configure(): what this module carries on from is logged to it. */
-let logger = null;
-
-/** Boot wiring (lib/managerBootstrap.js): the logger. */
+/** Boot wiring (lib/managerBootstrap.js): the start's logger. */
 export function configure(cfg = {}) {
-  logger = cfg.logger ?? null;
-}
-
-/** The configured logger, for this module's own files. */
-export function moduleLogger() {
-  return logger;
+  setStorageLogger(cfg.logger ?? null);
 }
 
 export {
@@ -53,24 +47,14 @@ export const refresh = monitorImpl.refresh;
 
 /** Notified after a mount or unmount (disk or SMB) succeeded. No replay: a cue to
  *  read the mount status again. */
-const mountStateHandlers = new Set();
+const mountStateChange = createEmitter('storage: mount state', storageLogger);
 
-export function subscribeMountStateChange(handler) {
-  mountStateHandlers.add(handler);
-  return () => mountStateHandlers.delete(handler);
-}
+export const subscribeMountStateChange = mountStateChange.subscribe;
 
 function announcingMountState(operation) {
   return async (...args) => {
     const result = await operation(...args);
-    for (const handler of mountStateHandlers) {
-      try {
-        handler();
-      } catch (err) {
-        // A broken subscriber must not fail the mount or silence the others.
-        console.error('storage: mount state subscriber failed', err);
-      }
-    }
+    mountStateChange.emit();
     return result;
   };
 }

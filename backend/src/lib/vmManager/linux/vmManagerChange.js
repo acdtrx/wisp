@@ -6,22 +6,14 @@
  * after a rename). No replay: it is a cue to read the VM again.
  */
 import { connectionState } from './vmManagerConnection.js';
+import { createEmitter } from '../../base/index.js';
 
-const vmChangeHandlers = new Set();
+const vmChange = createEmitter('[vmManager] vm-change', () => connectionState.logger);
 
-export function subscribeVMChange(handler) {
-  vmChangeHandlers.add(handler);
-  return () => vmChangeHandlers.delete(handler);
-}
+export const subscribeVMChange = vmChange.subscribe;
 
 export function announceVMChange(name) {
-  for (const handler of vmChangeHandlers) {
-    try {
-      handler(name);
-    } catch (err) {
-      connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] vm-change handler threw');
-    }
-  }
+  vmChange.emit(name);
 }
 
 /**
@@ -40,24 +32,15 @@ export function announcingVMChange(mutation, changedName = (args) => args[0]) {
 
 /** Notified after a VM backup was deleted (by any caller). No replay: a cue to
  *  read the backup lists again. */
-const backupDeletedHandlers = new Set();
+const backupDeleted = createEmitter('[vmManager] backup-deleted', () => connectionState.logger);
 
-export function subscribeVMBackupDeleted(handler) {
-  backupDeletedHandlers.add(handler);
-  return () => backupDeletedHandlers.delete(handler);
-}
+export const subscribeVMBackupDeleted = backupDeleted.subscribe;
 
 /** Wrap the backup delete so it announces itself once it succeeded. */
 export function announcingVMBackupDeleted(deleteBackup) {
   return async (...args) => {
     const result = await deleteBackup(...args);
-    for (const handler of backupDeletedHandlers) {
-      try {
-        handler();
-      } catch (err) {
-        connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] backup-deleted handler threw');
-      }
-    }
+    backupDeleted.emit();
     return result;
   };
 }

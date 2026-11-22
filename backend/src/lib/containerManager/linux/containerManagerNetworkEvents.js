@@ -32,10 +32,10 @@ import { readContainerConfig, writeContainerConfig } from './containerManagerCon
 import { getTaskState } from './containerManagerLifecycle.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
 import { ipv4CidrFromProcFibTrie, ipv6GlobalCidrFromProcIfInet6 } from '../../networking/index.js';
+import { createEmitter } from '../../base/index.js';
 
 const PERIODIC_INTERVAL_MS = 60_000;
 
-const networkChangeHandlers = new Set();
 const emittedSnapshots = new Map(); // name -> { state, ip }
 
 let reconcileInFlight = false;
@@ -46,11 +46,10 @@ function log() {
   return containerState.logger || console;
 }
 
+const networkChange = createEmitter('[containerManager] container-network-change', log);
+
 function fireNetworkChange(name, snapshot) {
-  for (const h of networkChangeHandlers) {
-    try { h(name, snapshot); }
-    catch (err) { log().warn?.({ err: err?.message || err }, '[containerManager] container-network-change handler threw'); }
-  }
+  networkChange.emit(name, snapshot);
 }
 
 function snapshotEqual(a, b) {
@@ -194,12 +193,12 @@ function scheduleReconcile(list) {
  * without waiting for the next containerd event or the 60s probe.
  */
 export function subscribeContainerNetworkChange(handler) {
-  networkChangeHandlers.add(handler);
+  const unsubscribe = networkChange.subscribe(handler);
   for (const [name, snapshot] of emittedSnapshots) {
     try { handler(name, snapshot); }
     catch (err) { log().warn?.({ err: err?.message || err }, '[containerManager] container-network-change replay handler threw'); }
   }
-  return () => networkChangeHandlers.delete(handler);
+  return unsubscribe;
 }
 
 /* The 60 s safety probe runs only while a connection watches events: armed by

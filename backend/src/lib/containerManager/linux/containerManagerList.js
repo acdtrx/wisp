@@ -28,6 +28,7 @@ import { normalizeImageRef } from './containerImageRef.js';
 import { readContainerConfig, subscribeContainerConfigWrite } from './containerManagerConfigIo.js';
 import { handleTaskExitEvent } from './containerManagerRestartPolicy.js';
 import { getScheduledRestart, subscribeScheduledRestartChange } from './containerManagerRestartState.js';
+import { createEmitter } from '../../base/index.js';
 
 /**
  * Derived `updateAvailable`: true when the container is running/paused AND
@@ -54,7 +55,7 @@ let refreshQueued = false;
 /** Resolvers waiting for a refresh that starts after they asked. */
 let refreshWaiters = [];
 let eventsStream = null;
-const listChangeHandlers = new Set();
+const listChange = createEmitter('[containerManager] list-change', () => containerState.logger);
 
 /** Containerd event topics that change the image store (GET /api/containers/images). */
 const IMAGE_TOPICS = new Set(['/images/create', '/images/update', '/images/delete']);
@@ -62,21 +63,12 @@ const IMAGE_TOPICS = new Set(['/images/create', '/images/update', '/images/delet
 /** Notified after containerd reports an image created, updated or deleted in
  *  Wisp's namespace — every writer, a pull, a delete or `ctr` from outside. No
  *  replay: a cue to list the images again. */
-const imagesChangeHandlers = new Set();
+const imagesChange = createEmitter('[containerManager] images-change', () => containerState.logger);
 
-export function subscribeImagesChange(handler) {
-  imagesChangeHandlers.add(handler);
-  return () => imagesChangeHandlers.delete(handler);
-}
+export const subscribeImagesChange = imagesChange.subscribe;
 
 function announceImagesChange() {
-  for (const handler of imagesChangeHandlers) {
-    try {
-      handler();
-    } catch (err) {
-      containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] images-change handler threw');
-    }
-  }
+  imagesChange.emit();
 }
 
 /** Containerd event topics that affect what listContainers returns. */
@@ -160,9 +152,7 @@ function announce(list, err) {
     : `list ${JSON.stringify(list)}`;
   if (key === lastAnnounced) return;
   lastAnnounced = key;
-  for (const h of listChangeHandlers) {
-    try { h(list); } catch (hErr) { containerState.logger?.warn?.({ err: hErr?.message || hErr }, '[containerManager] list-change handler threw'); }
-  }
+  listChange.emit(list);
 }
 
 /** The list is stale: the next listContainers() reads it. Tells nobody. */
@@ -316,10 +306,7 @@ subscribeScheduledRestartChange(refreshContainerListCache);
  * a list other than the one last announced, `handler(null)` when it fails where
  * the last announcement was a list or another error. Returns an unsubscribe.
  */
-export function subscribeContainerListChange(handler) {
-  listChangeHandlers.add(handler);
-  return () => listChangeHandlers.delete(handler);
-}
+export const subscribeContainerListChange = listChange.subscribe;
 
 /**
  * List all containers (summary for the left panel list).

@@ -30,6 +30,8 @@ import {
   getVMXML,
   parseVMFromXML,
 } from './vmManager/index.js';
+import { createEmitter } from './base/index.js';
+import { log } from './log.js';
 
 const execFile = promisify(execFileCb);
 
@@ -41,22 +43,12 @@ const ISO_BUILD_TIMEOUT_MS = 20_000;
 /** Notified with the VM's name after its cloud-init config is saved, disabled or
  *  removed (`cloud-init.json` is Wisp's record, so no vmManager event covers it).
  *  No replay: a cue to read the VM's cloud-init again. */
-const cloudInitChangeHandlers = new Set();
+const cloudInitChange = createEmitter('cloud-init: change', log);
 
-export function subscribeCloudInitChange(handler) {
-  cloudInitChangeHandlers.add(handler);
-  return () => cloudInitChangeHandlers.delete(handler);
-}
+export const subscribeCloudInitChange = cloudInitChange.subscribe;
 
 function announceCloudInitChange(vmName) {
-  for (const handler of cloudInitChangeHandlers) {
-    try {
-      handler(vmName);
-    } catch (err) {
-      // A broken subscriber must not fail the saved change or silence the others.
-      console.error('cloud-init: change subscriber failed', err);
-    }
-  }
+  cloudInitChange.emit(vmName);
 }
 
 async function hashPassword(password) {

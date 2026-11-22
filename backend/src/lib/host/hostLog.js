@@ -8,6 +8,11 @@ export function setHostLogger(next) {
   logger = next;
 }
 
+/** The host module's logger (for its emitters), null until configured. */
+export function hostLogger() {
+  return logger;
+}
+
 /** Log a failure the host code caught and carried on from, with what it was doing. */
 export function logHostFailure(err, what, fields = {}) {
   logger?.warn({ ...fields, err: err?.message || String(err), code: err?.code }, `[host] ${what}`);

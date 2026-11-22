@@ -21,6 +21,7 @@ import { containerError, containerState } from './containerManagerConnection.js'
 import { getContainerNetnsPath } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { isVlanLikeBridgeName } from '../../networking/index.js';
+import { createEmitter } from '../../base/index.js';
 
 const execFile = promisify(execFileCb);
 
@@ -233,7 +234,7 @@ async function ensureNetNS(name) {
   }
 }
 
-const netnsRemovedHandlers = new Set();
+const netnsRemoved = createEmitter('[containerManager] netns-removed', () => containerState.logger);
 
 /**
  * Subscribe to "Wisp removed a container's network namespace". Handler
@@ -244,16 +245,10 @@ const netnsRemovedHandlers = new Set();
  * orphan cleanup. A plain stop keeps the netns, so it does not fire.
  * Returns an unsubscribe function.
  */
-export function subscribeContainerNetnsRemoved(handler) {
-  netnsRemovedHandlers.add(handler);
-  return () => netnsRemovedHandlers.delete(handler);
-}
+export const subscribeContainerNetnsRemoved = netnsRemoved.subscribe;
 
 export function notifyContainerNetnsRemoved(name) {
-  for (const h of netnsRemovedHandlers) {
-    try { h(name); }
-    catch (err) { (containerState.logger || console).warn?.({ err: err?.message || err }, '[containerManager] netns-removed handler threw'); }
-  }
+  netnsRemoved.emit(name);
 }
 
 /**

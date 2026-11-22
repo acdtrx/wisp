@@ -19,6 +19,7 @@ import {
 } from './mdns/index.js';
 import { getSettings } from './settings.js';
 import { getCurrentVersion } from './wispUpdate.js';
+import { createEmitter } from './base/index.js';
 
 const WISP_SERVICE_TYPE = '_wisp._tcp';
 // Never put '#' in this key: deregisterServicesForContainer() prefix-matches
@@ -33,20 +34,14 @@ let stopBrowse = null;
 
 /** instanceName -> { name, url, version, host } */
 const peers = new Map();
-const subscribers = new Set();
+const peersChange = createEmitter('[discovery] peers change', () => log());
 
 function log() {
   return logger || console;
 }
 
 function emitChange() {
-  for (const handler of subscribers) {
-    try {
-      handler();
-    } catch (err) {
-      log().warn?.({ err: err?.message || err }, '[discovery] subscriber threw');
-    }
-  }
+  peersChange.emit();
 }
 
 /**
@@ -188,9 +183,4 @@ export function getDiscoveredPeers() {
  * Notify on any peer-list change. No replay — the SSE route sends its own
  * initial snapshot (same contract as vmManager.subscribeVMListChange).
  */
-export function subscribeDiscoveredPeersChange(handler) {
-  subscribers.add(handler);
-  return () => {
-    subscribers.delete(handler);
-  };
-}
+export const subscribeDiscoveredPeersChange = peersChange.subscribe;

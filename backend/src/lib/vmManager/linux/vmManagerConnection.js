@@ -12,6 +12,7 @@ import {
 } from '../vmManagerShared.js';
 import { STATE_NAMES } from './libvirtConstants.js';
 import { watchQemuBinaries } from './vmManagerProc.js';
+import { createEmitter } from '../../base/index.js';
 
 let qemuBinaryWatcherCleanup = null;
 
@@ -25,18 +26,6 @@ export const connectionState = {
    *  Dropped when the domain stops or is undefined so the next run starts clean. */
   vmStartTimes: new Map(),
   prevVMStats: new Map(),
-  /** Subscribers invoked on every libvirt DomainEvent and after (re)connect. */
-  domainChangeHandlers: new Set(),
-  /** Subscribers invoked on bus disconnect / error. */
-  disconnectHandlers: new Set(),
-  /** Subscribers invoked with the domain path on a STARTED DomainEvent. */
-  domainStartedHandlers: new Set(),
-  /** Subscribers invoked with the domain path on a STOPPED DomainEvent. */
-  domainStoppedHandlers: new Set(),
-  /** Subscribers invoked after each successful (re)connect that watches events. */
-  connectedHandlers: new Set(),
-  /** Subscribers invoked on every libvirt AgentEvent (per-domain qemu-ga lifecycle). */
-  agentEventHandlers: new Set(),
   /** Per-domain AgentEvent subscriptions: domainPath -> { iface, listener }. */
   agentSubscriptions: new Map(),
   /** Per-domain proxy object cache: path -> { iface, props }. Avoids a DBus Introspect
@@ -81,8 +70,21 @@ export function boundedLibvirt(promise, what, ms = LIBVIRT_CALL_TIMEOUT_MS) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** Subscribers told after a libvirt call failed with anything but "no such domain". */
-const callFailedHandlers = new Set();
+const vmLog = () => connectionState.logger;
+/** Told after a libvirt call failed with anything but "no such domain". */
+const callFailed = createEmitter('[vmManager] call-failed', vmLog);
+/** Told on every libvirt DomainEvent and after (re)connect. */
+const domainChange = createEmitter('[vmManager] domain-change', vmLog);
+/** Told on bus disconnect / error. */
+const disconnected = createEmitter('[vmManager] disconnect', vmLog);
+/** Told with the domain path on a STARTED DomainEvent. */
+const domainStarted = createEmitter('[vmManager] domain-started', vmLog);
+/** Told with the domain path on a STOPPED DomainEvent. */
+const domainStopped = createEmitter('[vmManager] domain-stopped', vmLog);
+/** Told after each successful (re)connect that watches events. */
+const connected = createEmitter('[vmManager] connected', vmLog);
+/** Told on every libvirt AgentEvent (per-domain qemu-ga lifecycle). */
+const agentEvent = createEmitter('[vmManager] agent-event', vmLog);
 
 /**
  * Subscribe to failed libvirt calls: `handler()` after any call through a
@@ -90,10 +92,7 @@ const callFailedHandlers = new Set();
  * libvirtd stops, libvirt-dbus stays on the bus and fails each call; a failed
  * call is how Wisp learns of it. Returns an unsubscribe function.
  */
-export function subscribeCallFailed(handler) {
-  callFailedHandlers.add(handler);
-  return () => callFailedHandlers.delete(handler);
-}
+export const subscribeCallFailed = callFailed.subscribe;
 
 /**
  * libvirt's "no such domain" answer. libvirt-dbus answers every failure with
@@ -123,7 +122,7 @@ function boundedInterface(iface, { reportFailures = true } = {}) {
         const bounded = boundedLibvirt(result, prop, LIFECYCLE_METHODS.has(prop) ? LIBVIRT_LIFECYCLE_TIMEOUT_MS : LIBVIRT_CALL_TIMEOUT_MS);
         if (!reportFailures) return bounded;
         return bounded.catch((err) => {
-          if (!isDomainNotFound(err)) fireHandlers(callFailedHandlers, 'call-failed');
+          if (!isDomainNotFound(err)) callFailed.emit();
           throw err;
         });
       };
@@ -145,45 +144,30 @@ export async function getLibvirtInterface(path, name) {
  * Subscribers added after `connect()` should run their own initial pass.
  * Returns an unsubscribe function.
  */
-export function subscribeDomainChange(handler) {
-  connectionState.domainChangeHandlers.add(handler);
-  return () => connectionState.domainChangeHandlers.delete(handler);
-}
+export const subscribeDomainChange = domainChange.subscribe;
 
 /**
  * Subscribe to domain starts (a new QEMU process): `handler(domainPath)` on
  * every STARTED DomainEvent. Only fires with `watchEvents`. Returns an
  * unsubscribe function.
  */
-export function subscribeDomainStarted(handler) {
-  connectionState.domainStartedHandlers.add(handler);
-  return () => connectionState.domainStartedHandlers.delete(handler);
-}
+export const subscribeDomainStarted = domainStarted.subscribe;
 
 /**
  * Subscribe to domain stops (its QEMU process ended): `handler(domainPath)` on
  * every STOPPED DomainEvent. Only fires with `watchEvents`. Returns an
  * unsubscribe function.
  */
-export function subscribeDomainStopped(handler) {
-  connectionState.domainStoppedHandlers.add(handler);
-  return () => connectionState.domainStoppedHandlers.delete(handler);
-}
+export const subscribeDomainStopped = domainStopped.subscribe;
 
 /**
  * Subscribe to (re)connects: `handler()` after each successful connect that
  * watches events — the point to catch up on whatever happened while Wisp was
  * not connected. Returns an unsubscribe function.
  */
-export function subscribeConnected(handler) {
-  connectionState.connectedHandlers.add(handler);
-  return () => connectionState.connectedHandlers.delete(handler);
-}
+export const subscribeConnected = connected.subscribe;
 
-export function subscribeDisconnect(handler) {
-  connectionState.disconnectHandlers.add(handler);
-  return () => connectionState.disconnectHandlers.delete(handler);
-}
+export const subscribeDisconnect = disconnected.subscribe;
 
 /**
  * Subscribe to libvirt per-domain qemu-ga lifecycle (AgentEvent signal).
@@ -191,29 +175,10 @@ export function subscribeDisconnect(handler) {
  *   state: 0 = disconnected, 1 = connected (matches VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_STATE_*)
  * Returns an unsubscribe function.
  */
-export function subscribeAgentEvent(handler) {
-  connectionState.agentEventHandlers.add(handler);
-  return () => connectionState.agentEventHandlers.delete(handler);
-}
-
-function fireHandlers(handlers, label, ...args) {
-  for (const h of handlers) {
-    try { h(...args); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, `[vmManager] ${label} handler threw`); }
-  }
-}
+export const subscribeAgentEvent = agentEvent.subscribe;
 
 function fireDomainChange() {
-  fireHandlers(connectionState.domainChangeHandlers, 'domain-change');
-}
-
-function fireDisconnect() {
-  fireHandlers(connectionState.disconnectHandlers, 'disconnect');
-}
-
-function fireAgentEvent(vmName, payload) {
-  for (const h of connectionState.agentEventHandlers) {
-    try { h(vmName, payload); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] agent-event handler threw'); }
-  }
+  domainChange.emit();
 }
 
 /* Reconnect after the system bus connection drops: bounded exponential backoff,
@@ -278,7 +243,7 @@ function handleBusError(bus, err) {
   connectionState.versions = null;
   connectionState.domainProxyCache.clear();
   detachAllAgentSubscriptions();
-  fireDisconnect();
+  disconnected.emit();
   // Only with event watching, as for a failed connect: without it the caller
   // (the start's migrations) connects once, and its later calls report the
   // missing connection.
@@ -344,9 +309,9 @@ export async function connect(opts = {}) {
       connectionState.domainProxyCache.delete(domainPath);
     }
     // VIR_DOMAIN_EVENT_STARTED — a new QEMU process.
-    if (event === 2) fireHandlers(connectionState.domainStartedHandlers, 'domain-started', domainPath);
+    if (event === 2) domainStarted.emit(domainPath);
     // VIR_DOMAIN_EVENT_STOPPED — the QEMU process ended.
-    if (event === 5) fireHandlers(connectionState.domainStoppedHandlers, 'domain-stopped', domainPath);
+    if (event === 5) domainStopped.emit(domainPath);
     fireDomainChange();
   });
 
@@ -354,7 +319,7 @@ export async function connect(opts = {}) {
     qemuBinaryWatcherCleanup = watchQemuBinaries(fireDomainChange);
   }
 
-  fireHandlers(connectionState.connectedHandlers, 'connected');
+  connected.emit();
   fireDomainChange();
 }
 
@@ -382,7 +347,7 @@ export function disconnect() {
   connectionState.connectProps = null;
   connectionState.versions = null;
   connectionState.domainProxyCache.clear();
-  fireDisconnect();
+  disconnected.emit();
 }
 
 export async function getDomainObjAndIface(path) {
@@ -456,7 +421,7 @@ export async function attachAgentSubscription(domainPath, vmName) {
   try {
     const { iface } = await getDomainObjAndIface(domainPath);
     const listener = (state, reason) => {
-      fireAgentEvent(vmName, { state, reason, domainPath });
+      agentEvent.emit(vmName, { state, reason, domainPath });
     };
     iface.on('AgentEvent', listener);
     connectionState.agentSubscriptions.set(domainPath, { iface, listener, vmName });
