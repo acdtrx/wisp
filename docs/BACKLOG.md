@@ -111,6 +111,13 @@ on tini, before and after phase 5's milestone 3 (2026-11-22). Fix shape: write
 `migratable` for host-passthrough only. **Revisit trigger:** the next CPU work, or a user
 choosing that model.
 
+**A CD or USB change on a transient VM fails as a libvirt error.** The hot-plug paths
+(`vmManagerIso.js`, `vmManagerUsb.js`) pass LIVE|CONFIG for a VM that is on, and libvirt
+refuses the CONFIG half on a domain started with `virsh create`: 500 LIBVIRT_ERROR
+"transient domains do not have any persistent config" (seen on tini in phase 5's
+milestone 3 run, 2026-11-22). Fix shape: LIVE only when the domain is not persistent, or
+refuse with VM_TRANSIENT. **Revisit trigger:** a transient VM managed through Wisp.
+
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
