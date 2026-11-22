@@ -83,10 +83,10 @@ export async function attachISO(name, slot, isoPath, opts = {}) {
  *
  * @param {string} name - VM name
  * @param {string} slot - target dev
- * @param {{ removeSlot?: boolean }} [opts] - if `removeSlot` is true: missing slot
- *   returns silently (no DISK_NOT_FOUND), live UpdateDevice failures are swallowed,
- *   and on an offline VM the device is removed from the domain XML entirely. Used by
- *   cloud-init's detach path to clean up the sde entry when cloud-init is disabled.
+ * @param {{ removeSlot?: boolean }} [opts] - if `removeSlot` is true: a missing slot
+ *   is already done (no DISK_NOT_FOUND), and on an offline VM the device is removed
+ *   from the domain XML entirely. Used by cloud-init's detach path to clean up the
+ *   sde entry when cloud-init is disabled. A step that fails fails the eject.
  */
 export async function ejectISO(name, slot, opts = {}) {
   const { removeSlot = false } = opts;
@@ -108,9 +108,7 @@ export async function ejectISO(name, slot, opts = {}) {
   try {
     await iface.UpdateDevice(buildDiskXml(disk), flags);
   } catch (err) {
-    if (!removeSlot) throw vmError('LIBVIRT_ERROR', `Failed to eject ${slot}`, err.message);
-    /* removeSlot best-effort: live UpdateDevice may fail when the VM state disallows
-       a hot eject; the offline-remove path below handles the cleanup if applicable. */
+    throw vmError('LIBVIRT_ERROR', `Failed to eject ${slot}`, err.message);
   }
 
   if (removeSlot && !isRunning) {
@@ -122,8 +120,8 @@ export async function ejectISO(name, slot, opts = {}) {
       dom.devices.disk = filtered.length === 1 ? filtered[0] : filtered;
       try {
         await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-      } catch {
-        /* best-effort define after detach — slot's source already cleared above */
+      } catch (err) {
+        throw vmError('LIBVIRT_ERROR', `Failed to remove ${slot}`, err.message);
       }
     }
   }

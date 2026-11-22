@@ -15,6 +15,11 @@ import {
 } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
+
+/** Running, blocked or paused: a QEMU process whose figures can be read. */
+function isActiveState(code) {
+  return code === 1 || code === 2 || code === 3;
+}
 import {
   subscribeVMListChange,
   getCachedStaleBinary,
@@ -141,23 +146,22 @@ subscribeVMListChange((list) => { listenToRunningAgents(list); });
  * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
  * Returns `{ ip, hostname }` with either field possibly null. Exposed on the
  * vmManager facade so glue (the deployment overview, MCP's get_vm) can read
- * current network state without touching libvirt ifaces. Returns
- * `{ ip: null, hostname: null }` if the domain can't be resolved or the agent
- * is not configured/responding.
+ * current network state without touching libvirt ifaces. Either field is null
+ * when the agent is not configured or not responding; a VM that cannot be
+ * looked up throws.
  */
 export async function getGuestNetwork(name) {
-  let path;
-  try {
-    path = await resolveDomain(name);
-  } catch {
-    return { ip: null, hostname: null };
-  }
-  const { iface } = await getDomainObjAndIface(path);
+  const path = await resolveDomain(name);
+  const { agentIface } = await getDomainObjAndIface(path);
   const [ip, hostname] = await Promise.all([
-    getGuestPrimaryAddressFromIface(iface),
-    getGuestHostnameFromIface(iface),
+    getGuestPrimaryAddressFromIface(agentIface),
+    getGuestHostnameFromIface(agentIface),
   ]);
   return { ip, hostname };
+}
+
+function offlineStats(stateCode) {
+  return { state: STATE_NAMES[stateCode] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false };
 }
 
 export async function getVMStats(name) {
@@ -165,54 +169,43 @@ export async function getVMStats(name) {
   // entirely. The cache is refreshed on every DomainEvent, so a cached non-running
   // state means the SSE tick costs zero DBus calls until the VM actually starts.
   const cachedState = getCachedStateCode(name);
-  if (cachedState !== undefined && cachedState !== 1 && cachedState !== 2 && cachedState !== 3) {
+  if (cachedState !== undefined && !isActiveState(cachedState)) {
     invalidateGuestInfo(name);
-    return { state: STATE_NAMES[cachedState] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false };
+    return offlineStats(cachedState);
   }
 
-  // Resolve the domain path from the cache (set by ListDomains) — saves a per-tick
-  // DomainLookupByName. Fall back to the live lookup only if the cache is empty
-  // (briefly, during reconnect or before the first refresh has populated it).
+  // The domain path and state from the cache (set by ListDomains) save a per-tick
+  // DomainLookupByName and GetState; with no cached list (before the first read,
+  // or after a failed one) both are read from libvirt.
   const path = getCachedDomainPath(name) ?? await resolveDomain(name);
-  const { iface } = await getDomainObjAndIface(path);
-  // No GetState round-trip here: cachedState is kept current via DomainEvent and
-  // we already short-circuited any non-running state above. If a state change races
-  // the tick, GetStats either returns nothing or errors — both handled below.
-  const stateCode = cachedState ?? 1;
+  const { iface, agentIface } = await getDomainObjAndIface(path);
+  const stateCode = cachedState ?? (await iface.GetState(0))[0];
+  if (!isActiveState(stateCode)) {
+    invalidateGuestInfo(name);
+    return offlineStats(stateCode);
+  }
+  // A GetStats that fails (libvirt gone, or the VM stopped as the tick ran)
+  // fails the tick: its figures are missing, never zeros.
 
   const cachedVcpus = getCachedVcpus(name);
   const now = Date.now();
   const prev = connectionState.prevVMStats.get(path);
 
-  let allStats = {};
-  try {
-    const raw = await iface.GetStats(VM_STATS_MASK, 0);
-    allStats = unwrapDict(raw);
-  } catch {
-    /* GetStats may not be available for this QEMU/libvirt build */
-  }
+  const allStats = unwrapDict(await iface.GetStats(VM_STATS_MASK, 0));
 
   let cpuPercent = 0;
-  let cpuTime;
-  try {
-    cpuTime = Number(allStats['cpu.time'] || 0);
-
-    if (!cpuTime) {
-      const vcpuCount = Number(allStats['vcpu.current'] || cachedVcpus || 0);
-      for (let i = 0; i < vcpuCount; i++) {
-        cpuTime = (cpuTime || 0) + Number(allStats[`vcpu.${i}.time`] || 0);
-      }
+  let cpuTime = Number(allStats['cpu.time'] || 0);
+  if (!cpuTime) {
+    const vcpuCount = Number(allStats['vcpu.current'] || cachedVcpus || 0);
+    for (let i = 0; i < vcpuCount; i++) {
+      cpuTime += Number(allStats[`vcpu.${i}.time`] || 0);
     }
-
-    if (cpuTime && prev?.cpuTime != null && prev.timestamp) {
-      const elapsedNs = (now - prev.timestamp) * 1e6;
-      const deltaNs = cpuTime - prev.cpuTime;
-      const totalCapacity = elapsedNs * (cachedVcpus || 1);
-      cpuPercent = totalCapacity > 0 ? Math.min(100, (deltaNs / totalCapacity) * 100) : 0;
-    }
-  } catch {
-    /* stats shape missing or unexpected; leave cpuTime undefined */
-    cpuTime = undefined;
+  }
+  if (cpuTime && prev?.cpuTime != null && prev.timestamp) {
+    const elapsedNs = (now - prev.timestamp) * 1e6;
+    const deltaNs = cpuTime - prev.cpuTime;
+    const totalCapacity = elapsedNs * (cachedVcpus || 1);
+    cpuPercent = totalCapacity > 0 ? Math.min(100, (deltaNs / totalCapacity) * 100) : 0;
   }
 
   let diskRd = 0;
@@ -258,14 +251,10 @@ export async function getVMStats(name) {
       guestIp = cached.ip;
       guestHostname = cached.hostname;
     } else {
-      try {
-        [guestIp, guestHostname] = await Promise.all([
-          getGuestPrimaryAddressFromIface(iface),
-          getGuestHostnameFromIface(iface),
-        ]);
-      } catch {
-        /* guest agent calls may fail if agent unavailable */
-      }
+      [guestIp, guestHostname] = await Promise.all([
+        getGuestPrimaryAddressFromIface(agentIface),
+        getGuestHostnameFromIface(agentIface),
+      ]);
       guestInfoCache.set(name, { ip: guestIp, hostname: guestHostname, fetchedAt: now });
     }
     // Treat any successful response as "agent connected." Both helpers swallow

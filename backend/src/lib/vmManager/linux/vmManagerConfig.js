@@ -9,7 +9,7 @@ import dbus from 'dbus-next';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import {
-  connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, unwrapVariant, vmError,
+  connectionState, resolveDomain, domainExists, getDomainState, getDomainXML, getDomainObjAndIface, unwrapVariant, vmError,
 } from './vmManagerConnection.js';
 import {
   parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, removeWispPref, domainDefinitionSignature,
@@ -45,12 +45,7 @@ export async function updateVMConfig(name, changes) {
         throw vmError('VM_MUST_BE_OFFLINE', `Stop VM "${name}" before renaming`);
       }
       validateVMName(newName);
-      try {
-        await connectionState.connectIface.DomainLookupByName(newName);
-        throw vmError('VM_EXISTS', `VM "${newName}" already exists`);
-      } catch (err) {
-        if (err.code === 'VM_EXISTS') throw err;
-      }
+      if (await domainExists(newName)) throw vmError('VM_EXISTS', `VM "${newName}" already exists`);
 
       // Where do this VM's files actually live? `getVMBasePath(currentName)`
       // is the *expected* dir, but legacy state from a pre-fix rename can

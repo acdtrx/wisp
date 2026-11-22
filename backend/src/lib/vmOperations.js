@@ -157,7 +157,13 @@ export function startVmDeleteJob({ name, deleteDisks, log }) {
     check: () => assertVMState(name, 'exists'),
     log,
     run: async () => {
-      await deleteVM(name, deleteDisks);
+      try {
+        await deleteVM(name, deleteDisks);
+      } catch (err) {
+        // The VM is gone even though its folder stayed: its follow-ups still run.
+        if (err.code === 'VM_DELETE_INCOMPLETE') await followWorkloadDelete({ type: 'vm', name, log });
+        throw err;
+      }
       await followWorkloadDelete({ type: 'vm', name, log });
       return { name };
     },

@@ -102,6 +102,20 @@ test('a delete is followed by its follow-ups: the backup status and the section 
   ]);
 });
 
+test('a delete that left the VM folder behind still runs its follow-ups, then fails with that error', async () => {
+  impl.deleteVM = async () => { throw createAppError('VM_DELETE_INCOMPLETE', 'VM "gone" was deleted, but its folder /v/gone could not be removed'); };
+  const { jobId } = await startVmDeleteJob({ name: 'gone', deleteDisks: true, log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.deepEqual(names(), ['assertVMState', 'deleteVM', 'forgetBackupStatus', 'removeWorkloadAssignment']);
+});
+
+test('a delete that failed before the VM was gone runs no follow-ups', async () => {
+  impl.deleteVM = async () => { throw createAppError('LIBVIRT_ERROR', 'Failed to stop VM "gone" before deleting it'); };
+  const { jobId } = await startVmDeleteJob({ name: 'gone', deleteDisks: true, log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.deepEqual(names(), ['assertVMState', 'deleteVM']);
+});
+
 const SETUP = { hostname: 'w', username: 'wisp', password: 'pw' };
 
 test('a create with a first boot setup is refused for a profile that takes none, before any job', () => {

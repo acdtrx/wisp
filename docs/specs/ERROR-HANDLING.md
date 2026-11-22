@@ -294,6 +294,7 @@ Each code a client can receive, with its status.
 | `INTERNAL_ERROR` | 500 | An error without a code: a fault on the server |
 | `CONFIG_INVALID` | 500 | `wisp-config.json` fails its strict read |
 | `LIBVIRT_ERROR` | 500 | libvirt refused or failed the call |
+| `VM_DELETE_INCOMPLETE` | 500 | The VM was deleted, but its folder could not be removed; the detail names it |
 | `CONTAINERD_ERROR` | 500 | containerd failed the call, or did not answer in time |
 | `DISK_INFO_FAILED` | 500 | The disk image could not be inspected |
 | `NVRAM_COPY_FAILED` | 500 | The VM's UEFI NVRAM could not be copied |

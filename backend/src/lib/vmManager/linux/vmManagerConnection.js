@@ -80,11 +80,38 @@ export function boundedLibvirt(promise, what, ms = LIBVIRT_CALL_TIMEOUT_MS) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/** Subscribers told after a libvirt call failed with anything but "no such domain". */
+const callFailedHandlers = new Set();
+
+/**
+ * Subscribe to failed libvirt calls: `handler()` after any call through a
+ * bounded interface failed with something other than "no such domain". When
+ * libvirtd stops, libvirt-dbus stays on the bus and fails each call; a failed
+ * call is how Wisp learns of it. Returns an unsubscribe function.
+ */
+export function subscribeCallFailed(handler) {
+  callFailedHandlers.add(handler);
+  return () => callFailedHandlers.delete(handler);
+}
+
+/**
+ * libvirt's "no such domain" answer. libvirt-dbus answers every failure with
+ * the one DBus error name `org.libvirt.Error`, so libvirt's own text is all
+ * that tells it apart.
+ */
+export function isDomainNotFound(err) {
+  const msg = err?.message || '';
+  return msg.includes('Domain not found') || msg.includes('virDomainLookupByName');
+}
+
 /**
  * A DBus interface whose method calls (the capitalized members) are bounded;
- * everything else — its event-emitter side included — passes through.
+ * everything else — its event-emitter side included — passes through. A call
+ * that fails tells the call-failed subscribers, unless `reportFailures` is
+ * false: for the guest-agent calls, whose failure is the normal answer of a VM
+ * without a running agent.
  */
-function boundedInterface(iface) {
+function boundedInterface(iface, { reportFailures = true } = {}) {
   return new Proxy(iface, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
@@ -92,7 +119,12 @@ function boundedInterface(iface) {
       return (...args) => {
         const result = value.apply(target, args);
         if (!result || typeof result.then !== 'function') return result;
-        return boundedLibvirt(result, prop, LIFECYCLE_METHODS.has(prop) ? LIBVIRT_LIFECYCLE_TIMEOUT_MS : LIBVIRT_CALL_TIMEOUT_MS);
+        const bounded = boundedLibvirt(result, prop, LIFECYCLE_METHODS.has(prop) ? LIBVIRT_LIFECYCLE_TIMEOUT_MS : LIBVIRT_CALL_TIMEOUT_MS);
+        if (!reportFailures) return bounded;
+        return bounded.catch((err) => {
+          if (!isDomainNotFound(err)) fireHandlers(callFailedHandlers, 'call-failed');
+          throw err;
+        });
       };
     },
   });
@@ -344,9 +376,12 @@ export async function getDomainObjAndIface(path) {
   if (cached) return cached;
   if (!connectionState.bus) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const obj = await boundedLibvirt(connectionState.bus.getProxyObject('org.libvirt', path), 'introspection');
+  const domainIface = obj.getInterface('org.libvirt.Domain');
   const entry = {
-    iface: boundedInterface(obj.getInterface('org.libvirt.Domain')),
+    iface: boundedInterface(domainIface),
     props: boundedInterface(obj.getInterface('org.freedesktop.DBus.Properties')),
+    /** The same interface for the guest-agent calls only (see boundedInterface). */
+    agentIface: boundedInterface(domainIface, { reportFailures: false }),
   };
   connectionState.domainProxyCache.set(path, entry);
   return entry;
@@ -358,11 +393,22 @@ export async function resolveDomain(name) {
     const path = await connectionState.connectIface.DomainLookupByName(name);
     return unwrapVariant(path);
   } catch (err) {
-    const msg = err.message || '';
-    if (msg.includes('Domain not found') || msg.includes('virDomainLookupByName')) {
-      throw vmError('VM_NOT_FOUND', `VM "${name}" not found`, msg);
-    }
-    throw vmError('LIBVIRT_ERROR', `Failed to look up VM "${name}"`, msg);
+    if (isDomainNotFound(err)) throw vmError('VM_NOT_FOUND', `VM "${name}" not found`, err.message);
+    throw vmError('LIBVIRT_ERROR', `Failed to look up VM "${name}"`, err.message);
+  }
+}
+
+/**
+ * Whether libvirt has a domain named `name`: false only on libvirt's own "no
+ * such domain"; a lookup that fails otherwise throws, never reads as "free".
+ */
+export async function domainExists(name) {
+  try {
+    await resolveDomain(name);
+    return true;
+  } catch (err) {
+    if (err.code === 'VM_NOT_FOUND') return false;
+    throw err;
   }
 }
 

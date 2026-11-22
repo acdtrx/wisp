@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 
 import dbus from 'dbus-next';
 
-import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, getLibvirtInterface, vmError, generateMAC } from './vmManagerConnection.js';
+import { connectionState, resolveDomain, domainExists, getDomainState, getDomainXML, getDomainObjAndIface, getLibvirtInterface, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseDomainRaw, buildXml, setWispProfile } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
@@ -217,13 +217,7 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
 
 /** Throws VM_EXISTS when libvirt already has a domain with this name. */
 async function assertNoDomainNamed(name) {
-  try {
-    await connectionState.connectIface.DomainLookupByName(name);
-  } catch {
-    /* lookup failed — no domain by that name */
-    return;
-  }
-  throw vmError('VM_EXISTS', `VM "${name}" already exists`);
+  if (await domainExists(name)) throw vmError('VM_EXISTS', `VM "${name}" already exists`);
 }
 
 function vmDirExistsError(name, dir) {
@@ -438,36 +432,33 @@ export async function deleteVM(name, deleteDisks = false) {
   const state = await getDomainState(path);
   const { iface } = await getDomainObjAndIface(path);
 
+  // A VM that cannot be stopped is not deleted: undefining it would leave it
+  // running, transient, with its disks removed under it.
   if (!isOfflineState(state.code)) {
     try {
       await iface.Destroy(0);
-    } catch {
-      /* may already be stopped */
+    } catch (err) {
+      throw vmError('LIBVIRT_ERROR', `Failed to stop VM "${name}" before deleting it`, err.message);
     }
   }
 
   // Detect UEFI before undefine so we can pass the right flag (otherwise
   // Undefine refuses on a domain with managed NVRAM). Also note where the
   // NVRAM file actually lives — if it's outside this VM's per-VM directory
-  // (legacy state from a pre-fix rename, or a domain defined outside Wisp), we must NOT
-  // pass VIR_DOMAIN_UNDEFINE_NVRAM since libvirt would delete a file that
-  // may belong to another VM.
-  let hasNvram = false;
+  // (a domain defined outside Wisp), we must NOT pass VIR_DOMAIN_UNDEFINE_NVRAM
+  // since libvirt would delete a file that may belong to another VM. A
+  // definition that cannot be read leaves the flag unknown: the delete fails.
+  const parsed = parseDomainRaw(await getDomainXML(path));
+  const dom = parsed?.domain;
+  if (!dom) throw vmError('PARSE_ERROR', `Failed to parse the definition of VM "${name}"`);
+  const loaderNode = dom.os?.loader;
+  const nvramNode = dom.os?.nvram;
+  const hasNvram = !!nvramNode ||
+    (typeof loaderNode === 'object' && loaderNode['@_type'] === 'pflash');
   let nvramFile = null;
-  try {
-    const xml = await getDomainXML(path);
-    const parsed = parseDomainRaw(xml);
-    const dom = parsed?.domain;
-    const loaderNode = dom?.os?.loader;
-    const nvramNode = dom?.os?.nvram;
-    hasNvram = !!nvramNode ||
-      (typeof loaderNode === 'object' && loaderNode['@_type'] === 'pflash');
-    if (typeof nvramNode === 'string') nvramFile = nvramNode.trim();
-    else if (nvramNode && typeof nvramNode === 'object' && typeof nvramNode['#text'] === 'string') {
-      nvramFile = nvramNode['#text'].trim();
-    }
-  } catch {
-    /* proceed with default flag if XML read fails */
+  if (typeof nvramNode === 'string') nvramFile = nvramNode.trim();
+  else if (nvramNode && typeof nvramNode === 'object' && typeof nvramNode['#text'] === 'string') {
+    nvramFile = nvramNode['#text'].trim();
   }
   const ownVmDir = getVMBasePath(name);
   const nvramInOwnDir = nvramFile && (nvramFile === join(ownVmDir, 'VARS.fd') || nvramFile.startsWith(`${ownVmDir}/`));
@@ -485,7 +476,7 @@ export async function deleteVM(name, deleteDisks = false) {
   let undefineFlags = VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA;
   if (hasNvram) {
     // Only let libvirt delete the NVRAM file when it lives inside this VM's
-    // own directory. Otherwise (legacy mismatch, a file shared with another
+    // own directory. Otherwise (defined outside Wisp, a file shared with another
     // domain, etc.) keep it — deleting could corrupt another VM.
     const safeToDeleteNvram = deleteDisks && nvramInOwnDir;
     undefineFlags |= safeToDeleteNvram ? VIR_DOMAIN_UNDEFINE_NVRAM : VIR_DOMAIN_UNDEFINE_KEEP_NVRAM;
@@ -497,14 +488,19 @@ export async function deleteVM(name, deleteDisks = false) {
     throw vmError('LIBVIRT_ERROR', `Failed to delete VM "${name}"`, err.message);
   }
 
-  if (deleteDisks) {
-    const vmBasePath = getVMBasePath(name);
-    await rm(vmBasePath, { recursive: true, force: true }).catch(() => {
-      /* VM dir may be partially gone */
-    });
-  }
-
   connectionState.vmStartTimes.delete(path);
   connectionState.prevVMStats.delete(path);
   refreshVMListCache();
+
+  if (deleteDisks) {
+    try {
+      await rm(ownVmDir, { recursive: true, force: true });
+    } catch (err) {
+      throw vmError(
+        'VM_DELETE_INCOMPLETE',
+        `VM "${name}" was deleted, but its folder ${ownVmDir} could not be removed`,
+        err.message,
+      );
+    }
+  }
 }

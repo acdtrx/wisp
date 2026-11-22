@@ -11,6 +11,8 @@ import {
   vmError,
   subscribeDomainChange,
   subscribeDisconnect,
+  subscribeCallFailed,
+  getDomainXML,
 } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
@@ -19,27 +21,23 @@ import { STATE_NAMES, isOfflineState } from './libvirtConstants.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */
 
+/** The last list read whole, or null: not read yet, or the last read or a later
+ *  libvirt call failed, so the next listVMs() reads libvirt again. */
 let vmListCache = null;
-let refreshPromise = null;
+let readPromise = null;
 let refreshQueued = false;
 const listChangeHandlers = new Set();
 
 /**
- * Read every domain's summary from libvirt. Lenient (the cached list behind the
- * UI): no connection is an empty list, and a domain whose reads fail is left
- * out. `complete` (the uncached list — callers that act on every VM) returns
- * the whole list or throws: NO_CONNECTION, or LIBVIRT_ERROR naming the domains
- * it could not read.
+ * Read every domain's summary from libvirt: the whole list, or it throws —
+ * NO_CONNECTION without a connection, the failing call's own error otherwise.
  */
-async function fetchVMListFromLibvirt({ complete = false } = {}) {
-  if (!connectionState.connectIface) {
-    if (complete) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
-    return [];
-  }
+async function fetchVMListFromLibvirt() {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
   const paths = await connectionState.connectIface.ListDomains(3);
 
-  const results = await Promise.allSettled(
+  const list = await Promise.all(
     paths.map(async (p) => {
       const { iface } = await getDomainObjAndIface(p);
 
@@ -49,7 +47,7 @@ async function fetchVMListFromLibvirt({ complete = false } = {}) {
       ]);
 
       const config = parseVMFromXML(xml);
-      if (!config) return null;
+      if (!config) throw vmError('PARSE_ERROR', `Failed to parse the definition of domain ${p}`);
 
       const staleBinary = stateCode === 1 ? await isVMBinaryStale(config.name) : false;
       const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
@@ -72,19 +70,7 @@ async function fetchVMListFromLibvirt({ complete = false } = {}) {
       };
     }),
   );
-
-  if (complete) {
-    const failures = results
-      .map((r, i) => (r.status === 'rejected' ? `${paths[i]}: ${r.reason?.message || r.reason}` : null))
-      .filter(Boolean);
-    if (failures.length > 0) {
-      throw vmError('LIBVIRT_ERROR', `Could not read ${failures.length} of ${paths.length} VMs`, failures.join('; '));
-    }
-  }
-
-  return results
-    .filter((r) => r.status === 'fulfilled' && r.value != null)
-    .map((r) => r.value);
+  return list;
 }
 
 function fireListChange() {
@@ -94,41 +80,65 @@ function fireListChange() {
 }
 
 /**
- * Trigger a VM list cache refresh. Called by the DomainEvent listener (lifecycle
- * events from libvirt-dbus) and explicitly by mutation paths in vmManager
- * (create/delete/rename), since libvirt-dbus DEFINED events have proven
- * unreliable enough that new VMs would otherwise miss the LeftBar until a manual
- * page refresh. Idempotent: a second call while a refresh is in flight queues
- * exactly one follow-up. Mirrors containerManager's subscribeContainerConfigWrite.
+ * Forget the cached list and tell the subscribers (with null), so their next
+ * read asks libvirt again and sends what it finds — the list, or its error.
+ * Only a cached list is dropped: a read that fails while none is cached
+ * changes nothing, so a failing read never sets off another.
  */
-export function refreshVMListCache() {
-  // No cache without DomainEvents (listVMs reads libvirt on every call).
-  if (!connectionState.watchEvents) return;
-  if (refreshPromise) {
-    refreshQueued = true;
-    return;
-  }
-  refreshQueued = false;
-  refreshPromise = fetchVMListFromLibvirt()
-    .then((list) => { vmListCache = list; fireListChange(); })
-    .catch((err) => { connectionState.logger?.warn?.({ err: err.message }, '[vmManager] VM list cache refresh failed'); })
-    .finally(() => {
-      refreshPromise = null;
-      if (refreshQueued) refreshVMListCache();
-    });
-}
-
-function invalidateVMListCache() {
+function dropVMListCache() {
+  if (vmListCache === null) return;
   vmListCache = null;
   fireListChange();
 }
 
-subscribeDomainChange(refreshVMListCache);
-subscribeDisconnect(invalidateVMListCache);
+/**
+ * One read of the list at a time, shared by every caller that asks meanwhile.
+ * A read that succeeds becomes the cache and is announced; one that fails
+ * drops the cache.
+ */
+function readVMList() {
+  if (!readPromise) {
+    readPromise = fetchVMListFromLibvirt()
+      .then((list) => { vmListCache = list; fireListChange(); return list; })
+      .catch((err) => { dropVMListCache(); throw err; })
+      .finally(() => {
+        readPromise = null;
+        if (refreshQueued) refreshVMListCache();
+      });
+  }
+  return readPromise;
+}
 
 /**
- * Subscribe to VM list cache changes. Handler fires after each successful refresh
- * (with the new list) and on disconnect (with null). Returns an unsubscribe function.
+ * Read the list again. Called on every libvirt DomainEvent and by the
+ * mutation paths (create, delete, rename, config writes): libvirt-dbus's
+ * DEFINED events are not reliable enough to carry those. A call while a read
+ * is in flight queues exactly one more.
+ */
+export function refreshVMListCache() {
+  // No cache without DomainEvents (listVMs reads libvirt on every call).
+  if (!connectionState.watchEvents) return;
+  if (readPromise) {
+    refreshQueued = true;
+    return;
+  }
+  refreshQueued = false;
+  readVMList().catch((err) => {
+    connectionState.logger?.warn?.({ err: err.message }, '[vmManager] VM list refresh failed');
+  });
+}
+
+subscribeDomainChange(refreshVMListCache);
+subscribeDisconnect(dropVMListCache);
+/* A libvirt call that failed may mean libvirt is gone, which libvirt-dbus
+ * reports in no other way: the list is read again on its next use. */
+subscribeCallFailed(dropVMListCache);
+
+/**
+ * Subscribe to VM list cache changes. Handler fires after each successful read
+ * (with the new list) and when the cached list is dropped (with null: a
+ * disconnect, a failed read or a failed libvirt call). Returns an unsubscribe
+ * function.
  */
 export function subscribeVMListChange(handler) {
   listChangeHandlers.add(handler);
@@ -213,15 +223,11 @@ export function getCachedVMName(domainPath) {
 
 /* ── Public API ─────────────────────────────────────────────────────── */
 
+/** The VM list, whole, or the error of the read that could not get it. */
 export async function listVMs() {
-  // Without DomainEvents nothing keeps the cache coherent — read libvirt each
-  // time. That caller (the start's migrations) acts on every VM, so it gets the
-  // whole list or an error, never a silently shorter one.
-  if (!connectionState.watchEvents) return fetchVMListFromLibvirt({ complete: true });
-  if (vmListCache === null) {
-    vmListCache = await fetchVMListFromLibvirt();
-  }
-  return vmListCache;
+  // Without DomainEvents nothing keeps the cache coherent — read libvirt each time.
+  if (!connectionState.watchEvents) return fetchVMListFromLibvirt();
+  return vmListCache ?? readVMList();
 }
 
 /**
@@ -231,7 +237,7 @@ export async function listVMs() {
  * per-tick `GetXMLDesc` calls from the stats SSE.
  */
 export async function getRunningVMAllocations() {
-  const list = vmListCache ?? await listVMs();
+  const list = await listVMs();
   let vcpus = 0;
   let memoryBytes = 0;
   let count = 0;
@@ -264,34 +270,18 @@ async function enrichDisksWithSizeGiB(disks) {
 }
 
 /**
- * Find VMs that reference an absolute file path in any `<disk><source file>`
- * (block disk or CDROM). Used by the image library to refuse rename/delete on
- * files that are still attached — otherwise a VM's next start would fail with
- * "no such file" because the domain XML still points at the old/missing path.
- *
- * Returns an array of VM names. Empty array means no references found.
+ * VMs that reference an absolute file path in any `<disk><source file>`
+ * (block disk or CDROM) of their saved definition: the image library refuses
+ * to rename or delete a file a VM's next start would miss. Reads the VM list
+ * and each VM's definition; a read that fails throws, so a caller that guards
+ * a delete refuses it rather than reading the failure as "nobody uses it".
  */
 export async function findVMsUsingImage(absPath) {
-  if (!absPath || typeof absPath !== 'string') return [];
-  const target = String(absPath);
+  const vms = await listVMs();
   const refs = [];
-  let domainPaths;
-  try {
-    domainPaths = await connectionState.connectIface.ListDomains(3);
-  } catch {
-    return [];
-  }
-  for (const dp of domainPaths) {
-    try {
-      const { iface } = await getDomainObjAndIface(dp);
-      const xml = await iface.GetXMLDesc(2);
-      const config = parseVMFromXML(xml);
-      if (!config) continue;
-      const inUse = (config.disks || []).some((d) => d.source === target);
-      if (inUse) refs.push(config.name);
-    } catch {
-      /* skip VM if XML unavailable — best-effort scan */
-    }
+  for (const vm of vms) {
+    const config = parseVMFromXML(await getDomainXML(vm.domainPath, { inactive: true }));
+    if ((config?.disks || []).some((d) => d.source === absPath)) refs.push(vm.name);
   }
   return refs;
 }
@@ -304,7 +294,7 @@ export async function getVMConfig(name) {
   const [xml, [stateCode], autostart] = await Promise.all([
     iface.GetXMLDesc(2),
     iface.GetState(0),
-    props.Get('org.libvirt.Domain', 'Autostart').then((v) => !!unwrapVariant(v)).catch(() => false),
+    props.Get('org.libvirt.Domain', 'Autostart').then((v) => !!unwrapVariant(v)),
   ]);
 
   const config = parseVMFromXML(xml);
