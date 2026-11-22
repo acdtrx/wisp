@@ -29,7 +29,8 @@
  * Privileged helpers): every file directly in backend/scripts/ is a
  * `wisp-<name>` that starts with a bash shebang (a helper, or the updater) or
  * the one shared file, wisp-helper-lib.sh. Setup installs every such script as
- * a root command with a sudo rule, so nothing else may sit there.
+ * a root command with a sudo rule, so nothing else may sit there, but for the
+ * reviewed files in NOT_HELPERS.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { openSync, readSync, closeSync, readFileSync, statSync } from 'node:fs';
@@ -131,10 +132,17 @@ for (const rel of scripts) {
 
 const HELPERS_DIR = 'backend/scripts/';
 const HELPER_LIB = `${HELPERS_DIR}wisp-helper-lib.sh`;
+/** Reviewed files of the helpers folder that are no helper (setup installs none of them), with why. */
+const NOT_HELPERS = [
+  {
+    file: `${HELPERS_DIR}wisp-port.sh`,
+    why: 'the updater of releases up to v2.8.0-beta.1 sources it from the tree it installs, at this path',
+  },
+];
 const BASH_SHEBANG = /^#!\s*\S*\/(?:env\s+)?bash(?:\s|$)/;
 for (const rel of [...new Set(listed)]) {
   if (!rel.startsWith(HELPERS_DIR) || rel.slice(HELPERS_DIR.length).includes('/')) continue;
-  if (rel === HELPER_LIB || !isFile(path.join(REPO_ROOT, rel))) continue;
+  if (rel === HELPER_LIB || NOT_HELPERS.some((n) => n.file === rel) || !isFile(path.join(REPO_ROOT, rel))) continue;
   const name = rel.slice(HELPERS_DIR.length);
   if (!/^wisp-[a-z0-9-]+$/.test(name) || !BASH_SHEBANG.test(firstLine(path.join(REPO_ROOT, rel)))) {
     problems.push(`${rel}: the helpers folder holds only wisp-<name> scripts that start with a bash shebang, and ${HELPER_LIB}: setup installs each as a root command with a sudo rule`);
@@ -144,6 +152,9 @@ for (const rel of scripts) {
   readFileSync(path.join(REPO_ROOT, rel), 'utf8').split('\n').forEach((line, i) => {
     if (INLINE_DISABLE.test(line)) problems.push(`${rel}:${i + 1}: an inline shellcheck disable; add a reviewed line to EXCEPTIONS in scripts/check-shell.mjs instead`);
   });
+}
+for (const { file } of NOT_HELPERS) {
+  if (!listed.includes(file)) problems.push(`scripts/check-shell.mjs: NOT_HELPERS names ${file}, which is not here`);
 }
 for (const { file } of EXCEPTIONS) {
   if (!scripts.includes(file)) problems.push(`scripts/check-shell.mjs: EXCEPTIONS names ${file}, which is not a shell script here`);

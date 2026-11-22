@@ -7,6 +7,15 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**`wisp-port.sh` stays in the helpers folder for older updaters.** The updater of
+releases up to v2.8.0-beta.1 sources `backend/scripts/wisp-port.sh` from the tree it has
+just installed, to health-check the new backend on its port, and falls back to 8080
+without it: a host with another `WISP_PORT` would fail every update and roll back. The
+installer is its only other reader, so it can move into `install-root.sh` once no host
+can be updated by an updater that reads it (scripts/check-shell.mjs's `NOT_HELPERS` names
+it until then; found in the privileged helpers milestone 2 review, 2026-11-22).
+**Revisit trigger:** the first release cut after one whose updater no longer reads it.
+
 **The version is still written in three package.json files.** The root's is the one
 source since privileged helpers milestone 2 (2026-11-22): the running release's version and
 a staged tree's are read there only. `backend/package.json` and `frontend/package.json`
