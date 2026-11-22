@@ -4,8 +4,8 @@
  * migrations and boot work done — the updater's and the installer's gate. Node
  * has no unix datagram socket, so the message goes through systemd's own
  * `systemd-notify` (NotifyAccess=all lets a child send it; since systemd 246 it
- * waits until systemd has taken the message). Without NOTIFY_SOCKET (the Mac,
- * `wispctl local`, a shell) there is no one to tell.
+ * waits until systemd has taken the message). Without NOTIFY_SOCKET (the Mac, a
+ * shell) there is no one to tell.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

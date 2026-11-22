@@ -7,6 +7,13 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**There is no complete uninstall.** Nothing removes what an install put on a host:
+`wisp.service` and `wisp-updater.service`, the `wisp-*` helpers and their sudo rules, the
+container DNS stub's netplan file, the CNI plugins and `cni-dhcp.service`; and nothing
+says what an uninstall keeps (`/var/lib/wisp`, the bridge). `wispctl svc uninstall`, which
+removed `wisp.service` alone, is gone (privileged helpers, milestone 2, 2026-11-22).
+**Revisit trigger:** a user asks to remove Wisp from a host.
+
 **A container's DHCP lease is never released to the LAN's server.** At every CNI DEL
 the `cni-dhcp` daemon logs "releasing lease", then "failed to release DHCP lease: unable
 to get interface information: route ip+net: no such network interface", and no
