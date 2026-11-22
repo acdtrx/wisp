@@ -18,8 +18,7 @@ import { listHostBridges } from './networking/index.js';
 /**
  * @typedef {object} DeploymentContainer
  * @property {object} summary — the `listContainers()` row (name, state, image, iconId, …)
- * @property {object|null} config — the full container config, or null when
- *   `container.json` was unreadable (mid-create, mid-delete, malformed).
+ * @property {object} config — the full container config
  */
 
 /**
@@ -30,7 +29,8 @@ import { listHostBridges } from './networking/index.js';
  */
 
 /**
- * Gather the whole deployment in one pass.
+ * Gather the whole deployment in one pass: all of it, or the error of the read
+ * that failed.
  *
  * @returns {Promise<{
  *   settings: object,
@@ -49,26 +49,14 @@ export async function gatherDeployment() {
     listVMs(),
   ]);
 
-  const containerEntries = await Promise.all(containers.map(async (summary) => {
-    try {
-      return { summary, config: await getContainerConfig(summary.name) };
-    } catch {
-      /* container.json unreadable — callers fall back to the containerd-level summary */
-      return { summary, config: null };
-    }
-  }));
+  const containerEntries = await Promise.all(containers.map(async (summary) => (
+    { summary, config: await getContainerConfig(summary.name) }
+  )));
 
-  const vmEntries = await Promise.all(vms.map(async (vm) => {
-    let net = { ip: null, hostname: null };
-    if (vm.state === 'running') {
-      try {
-        net = await getGuestNetwork(vm.name);
-      } catch {
-        /* guest agent not running — IP unknown */
-      }
-    }
-    return { vm, net };
-  }));
+  const vmEntries = await Promise.all(vms.map(async (vm) => ({
+    vm,
+    net: vm.state === 'running' ? await getGuestNetwork(vm.name) : { ip: null, hostname: null },
+  })));
 
   return {
     settings,
@@ -89,19 +77,15 @@ export async function buildDeploymentOverview() {
   const { settings, hostInfo, bridges } = deployment;
 
   const containers = deployment.containers.map(({ summary, config }) => {
-    const base = {
-      name: summary.name,
-      state: summary.state,
-      image: summary.image,
-      updateAvailable: summary.updateAvailable === true,
-    };
-    if (!config) return base;
     // A stopped container's persisted address is only a DHCP lease
     // memory — the lease may have been reassigned to another workload
     // by now, so never present it as a current `ip`.
     const running = summary.state === 'running';
     return {
-      ...base,
+      name: summary.name,
+      state: summary.state,
+      image: summary.image,
+      updateAvailable: summary.updateAvailable === true,
       ip: running ? config.network?.ip ?? null : null,
       ...(running ? {} : { lastKnownIp: config.network?.ip ?? null }),
       bridge: config.network?.interface ?? null,

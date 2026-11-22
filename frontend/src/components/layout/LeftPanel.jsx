@@ -314,10 +314,6 @@ export default function LeftPanel() {
   const listError = vmListError || containerListError;
   /* Both lists are topics of the one events stream: reconnecting it asks for both. */
   const retryLists = () => useVmStore.getState().retry();
-  const dismissListError = () => {
-    useVmStore.getState().dismissError();
-    useContainerStore.getState().dismissError();
-  };
   const connectContainers = useContainerStore((s) => s.connect);
   const disconnectContainers = useContainerStore((s) => s.disconnect);
   const listFilter = useUiStore((s) => s.listFilter);
@@ -570,12 +566,20 @@ export default function LeftPanel() {
       {/* overscroll-contain stops the drawer's scroll from chaining to the
           content behind it on iOS when the list hits its top/bottom edge. */}
       <div className="flex-1 overflow-y-auto overscroll-contain py-1">
+        {/* Each list's own failure, over the list last read (dismissible) or alone. */}
         <ErrorBanner
           className="mx-3 my-2"
-          error={listError}
-          prefix="Couldn't load workloads"
+          error={vmListError}
+          prefix="Couldn't load the VMs"
           onRetry={retryLists}
-          onDismiss={listsLoaded ? dismissListError : undefined}
+          onDismiss={vmList != null ? useVmStore.getState().dismissError : undefined}
+        />
+        <ErrorBanner
+          className="mx-3 my-2"
+          error={containerListError}
+          prefix="Couldn't load the containers"
+          onRetry={retryLists}
+          onDismiss={containerList != null ? useContainerStore.getState().dismissError : undefined}
         />
         <ErrorBanner
           className="mx-3 my-2"

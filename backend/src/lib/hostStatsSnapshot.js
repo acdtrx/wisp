@@ -14,16 +14,28 @@ import { getRunningVMAllocations, getHostHardware } from './vmManager/index.js';
 import { getRunningContainerCount } from './containerManager/index.js';
 import { getCachedStatus as getWispUpdateStatus } from './wispUpdate.js';
 
+/**
+ * A figure read from a workload list, or null when the list could not be read:
+ * the list's own topic carries its error, and the host's figures stand without it.
+ */
+async function fromList(read) {
+  try {
+    return await read();
+  } catch {
+    return null;
+  }
+}
+
 export async function buildHostStatsPayload() {
   const hardware = getHostHardware();
   const host = getHostStats();
-  const vms = await getRunningVMAllocations();
-  const runningContainers = await getRunningContainerCount();
+  const vms = await fromList(getRunningVMAllocations);
+  const runningContainers = await fromList(getRunningContainerCount);
   const reboot = await getRebootSignal();
 
   return {
     cpu: {
-      allocated: vms.vcpus,
+      allocated: vms ? vms.vcpus : null,
       total: hardware.cores,
       usagePercent: Math.round(host.cpu.percent * 10) / 10,
       perCore: (host.cpu.perCore || []).map((p) => Math.round(p * 10) / 10),
@@ -45,7 +57,7 @@ export async function buildHostStatsPayload() {
     })),
     cpuPowerWatts: host.cpuPowerWatts,
     memory: {
-      allocatedGB: Math.round((vms.memoryBytes / (1024 ** 3)) * 10) / 10,
+      allocatedGB: vms ? Math.round((vms.memoryBytes / (1024 ** 3)) * 10) / 10 : null,
       totalGB: Math.round((hardware.totalMemoryBytes / (1024 ** 3)) * 10) / 10,
       usagePercent: Math.round(host.memory.percent * 10) / 10,
       usedBytes: host.memory.used ?? 0,
@@ -63,7 +75,7 @@ export async function buildHostStatsPayload() {
       rxMBs: Math.round(host.net.rxMBs * 100) / 100,
       txMBs: Math.round(host.net.txMBs * 100) / 100,
     },
-    runningVMs: vms.count,
+    runningVMs: vms ? vms.count : null,
     runningContainers,
     pendingUpdates: getPendingUpdatesCount(),
     updatesLastChecked: getLastCheckedAt(),

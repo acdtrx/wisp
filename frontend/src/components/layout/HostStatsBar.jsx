@@ -40,12 +40,12 @@ export default function HostStatsBar({ embedded = false }) {
     <>
       <StatPill
         label="CPU"
-        value={`${stats.cpu.allocated}/${stats.cpu.total} cores`}
+        value={`${stats.cpu.allocated ?? '—'}/${stats.cpu.total} cores`}
         percent={stats.cpu.usagePercent}
       />
       <StatPill
         label="RAM"
-        value={`${formatDecimal(stats.memory.allocatedGB)}/${formatDecimal(stats.memory.totalGB)} GB`}
+        value={`${stats.memory.allocatedGB == null ? '—' : formatDecimal(stats.memory.allocatedGB)}/${formatDecimal(stats.memory.totalGB)} GB`}
         percent={stats.memory.usagePercent}
       />
       <StatPill
@@ -59,10 +59,10 @@ export default function HostStatsBar({ embedded = false }) {
       <div className="flex items-center gap-2 rounded-md bg-surface px-3 py-1.5 border border-surface-border">
         <span className="text-[11px] font-medium uppercase tracking-wide text-text-muted whitespace-nowrap">Running</span>
         <Monitor className="h-3 w-3 shrink-0 text-text-secondary" aria-hidden />
-        <span className="text-xs font-semibold text-text-primary">{stats.runningVMs}</span>
+        <span className="text-xs font-semibold text-text-primary">{stats.runningVMs ?? '—'}</span>
         <span className="text-xs font-normal text-text-muted">|</span>
         <Box className="h-3 w-3 shrink-0 text-text-secondary" aria-hidden />
-        <span className="text-xs font-semibold text-text-primary">{stats.runningContainers ?? 0}</span>
+        <span className="text-xs font-semibold text-text-primary">{stats.runningContainers ?? '—'}</span>
       </div>
     </>
   );
