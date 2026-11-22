@@ -26,6 +26,8 @@ before(() => {
     'shift',
     'case "$1" in *refuse-me) echo "sudo: a password is required" >&2; exit 1;; esac',
     'case "$1" in *denied) echo "Sorry, user wisp is not allowed to execute $1 as root on host." >&2; exit 1;; esac',
+    'case "$1" in *rs-norule) echo "sudo: I\'m sorry wisp. I\'m afraid I can\'t do that" >&2; exit 1;; esac',
+    'case "$1" in *rs-nopass) echo "sudo: interactive authentication is required" >&2; exit 1;; esac',
     'exec "$@"',
   ].join('\n'));
   savedPath = process.env.PATH;
@@ -51,6 +53,11 @@ test('missing, refused, failed and timed out are told apart', async () => {
   assert.equal(await reason(runPrivileged(path.join(dir, 'nope'), [], { timeoutMs: 5000 })), 'missing');
   assert.equal(await reason(runPrivileged(script('refuse-me', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
   assert.equal(await reason(runPrivileged(script('denied', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
+  // sudo-rs (Ubuntu 26.04) refuses in words of its own.
+  assert.equal(await reason(runPrivileged(script('rs-norule', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
+  assert.equal(await reason(runPrivileged(script('rs-nopass', 'echo never'), [], { timeoutMs: 5000 })), 'refused');
+  const refused = await runPrivileged(script('refuse-me', 'echo never'), [], { timeoutMs: 5000 }).catch((e) => e);
+  assert.match(refused.detail, /^sudo refused .*: no sudoers rule lets the service run it/);
   // Not a helper (not under /usr/local/bin): its exit 2 is its own, a failure.
   const failing = script('fails', 'echo "progress" >&2; echo "src not found" >&2; exit 2');
   const err = await runPrivileged(failing, [], { timeoutMs: 5000 }).catch((e) => e);

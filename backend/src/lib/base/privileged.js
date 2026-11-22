@@ -47,8 +47,13 @@ export class PrivilegedError extends Error {
     this.stderr = stderr;
   }
 
-  /** The command's last line on stderr (a helper's error line), else the message: a caller's error detail. */
+  /**
+   * A caller's error detail: for the command's own failure its last line on
+   * stderr (a helper's error line), else the message, which says what the
+   * runner saw (missing, refused, past its bound).
+   */
   get detail() {
+    if (!['invalid', 'not-found', 'busy', 'failed'].includes(this.reason)) return this.message;
     const lines = this.stderr.split('\n').map((l) => l.trim()).filter(Boolean);
     return lines.at(-1) ?? this.message;
   }
@@ -64,15 +69,17 @@ export function exitReason(command, code) {
 }
 
 /**
- * sudo's refusal: it exits 1 and says so on stderr in its own words (LC_ALL=C) —
- * `sudo: a password is required` (no NOPASSWD rule for the command), or
- * `Sorry, user … is not allowed to execute …` (a rule that denies it). Only
- * those lines: sudo also prints warnings of its own and then runs the command
- * (`sudo: unable to resolve host …`), and a helper that then exits 1 failed
- * by itself.
+ * sudo's refusal: it exits 1 and says so on stderr in its own words (LC_ALL=C).
+ * sudo: `sudo: a password is required` (no NOPASSWD rule for the command), or
+ * `Sorry, user … is not allowed to execute …` (a rule that denies it).
+ * sudo-rs (Ubuntu from 25.10): `sudo: interactive authentication is required`,
+ * or `sudo: I'm sorry <user>. I'm afraid I can't do that`. Only those lines:
+ * sudo also prints warnings of its own and then runs the command (`sudo:
+ * unable to resolve host …`), and a helper that then exits 1 failed by itself.
  */
+const SUDO_REFUSAL = /^(?:sudo: a password is required|Sorry, user .* is not allowed to execute |sudo: interactive authentication is required|sudo: I'm sorry .*\. I'm afraid I can't do that)/m;
 function isSudoRefusal(code, stderr) {
-  return code === 1 && /^(?:sudo: a password is required|Sorry, user .* is not allowed to execute )/m.test(stderr);
+  return code === 1 && SUDO_REFUSAL.test(stderr);
 }
 
 /**
