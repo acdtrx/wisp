@@ -6,6 +6,7 @@ import { announcingVMChange, announcingVMBackupDeleted } from './vmManagerChange
 import { deleteBackup as deleteBackupImpl } from './vmManagerBackup.js';
 import {
   updateVMConfig as updateVMConfigImpl,
+  renameVM as renameVMImpl,
   setGraphicsListen as setGraphicsListenImpl,
   removeVMPref as removeVMPrefImpl,
   setMissingVMProfile as setMissingVMProfileImpl,
@@ -17,7 +18,6 @@ import {
   createAndAttachDisk as createAndAttachDiskImpl,
   detachDisk as detachDiskImpl,
   resizeDiskBySlot as resizeDiskBySlotImpl,
-  updateDiskBus as updateDiskBusImpl,
 } from './vmManagerDisk.js';
 import { attachISO as attachISOImpl, ejectISO as ejectISOImpl } from './vmManagerIso.js';
 
@@ -32,7 +32,7 @@ export {
 } from './vmManagerConnection.js';
 
 export { parseVMFromXML } from './vmManagerXml.js';
-export { isOfflineState } from './libvirtConstants.js';
+export { isShutOff } from './libvirtConstants.js';
 
 export {
   getHostInfo,
@@ -67,6 +67,7 @@ export {
 
 /* Every write to a VM's definition or devices announces itself (subscribeVMChange). */
 export const updateVMConfig = announcingVMChange(updateVMConfigImpl, (_args, result) => result.name);
+export const renameVM = announcingVMChange(renameVMImpl, (_args, result) => result.name);
 export { getGraphicsListen } from './vmManagerConfig.js';
 export const setGraphicsListen = announcingVMChange(
   setGraphicsListenImpl,
@@ -96,7 +97,6 @@ export const attachDisk = announcingVMChange(attachDiskImpl);
 export const createAndAttachDisk = announcingVMChange(createAndAttachDiskImpl);
 export const detachDisk = announcingVMChange(detachDiskImpl);
 export const resizeDiskBySlot = announcingVMChange(resizeDiskBySlotImpl);
-export const updateDiskBus = announcingVMChange(updateDiskBusImpl);
 
 export const attachISO = announcingVMChange(attachISOImpl);
 export const ejectISO = announcingVMChange(ejectISOImpl);

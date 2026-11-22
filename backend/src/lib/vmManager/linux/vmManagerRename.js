@@ -2,8 +2,7 @@
  * VM rename mechanics: relocate the on-disk directory and rewrite every
  * absolute path that referenced the old directory.
  *
- * This is split out of vmManagerConfig so the rename branch reads top-to-bottom
- * without burying the rest of updateVMConfig in path-rewriting boilerplate.
+ * Used by renameVM (vmManagerConfig).
  *
  * State touched:
  *   - libvirt domain XML: `<disk><source file>`, `<os><nvram>`, `<os><loader>`,
@@ -18,75 +17,14 @@
  *     path — that's expected, restore re-creates the per-VM dir under the
  *     current name).
  */
-import { rename as fsRename, access } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { rename as fsRename } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import { wrapVmError } from '../vmManagerShared.js';
 
 function startsWithDir(filePath, dir) {
   if (typeof filePath !== 'string') return false;
   return filePath === dir || filePath.startsWith(`${dir}/`);
-}
-
-/**
- * Walk every absolute path declared in the parsed domain and return them in
- * a flat list. Used to discover the per-VM directory at rename time without
- * trusting that it matches `getVMBasePath(name)` — pre-fix renames left
- * legacy state where the dir name and the libvirt domain name diverged.
- */
-function collectAbsolutePaths(dom) {
-  const paths = [];
-  if (!dom) return paths;
-  const disks = dom.devices?.disk;
-  const list = Array.isArray(disks) ? disks : (disks ? [disks] : []);
-  for (const d of list) {
-    const f = d?.source?.['@_file'];
-    if (typeof f === 'string' && f.startsWith('/')) paths.push(f);
-  }
-  const os = dom.os;
-  if (os) {
-    if (typeof os.nvram === 'string' && os.nvram.startsWith('/')) paths.push(os.nvram);
-    else if (os.nvram && typeof os.nvram === 'object' && typeof os.nvram['#text'] === 'string'
-      && os.nvram['#text'].startsWith('/')) paths.push(os.nvram['#text']);
-    if (os.loader && typeof os.loader === 'object' && typeof os.loader['#text'] === 'string'
-      && os.loader['#text'].startsWith('/')) paths.push(os.loader['#text']);
-  }
-  return paths;
-}
-
-/**
- * Pick the per-VM directory the domain actually uses on disk.
- *
- * Strategy: walk every absolute path the domain references and find the
- * deepest directory under `vmsRoot` (i.e. `<vmsRoot>/<somename>`). If two or
- * more candidates exist, pick the one that hosts the most paths (handles a
- * VM that mixes a per-VM disk with a CDROM from the shared image library).
- * Returns null if no path lives under vmsRoot — happens for VMs whose disks
- * all live in the shared image library (rare, e.g. CDROM-only VMs).
- */
-export function findActualVmDir(dom, vmsRoot) {
-  if (!vmsRoot) return null;
-  const root = vmsRoot.replace(/\/+$/, '');
-  const counts = new Map();
-  for (const p of collectAbsolutePaths(dom)) {
-    const parent = dirname(p);
-    if (parent === root || parent.startsWith(`${root}/`)) {
-      // Take the immediate child of vmsRoot — i.e. <vmsRoot>/<name>.
-      let candidate = parent;
-      while (dirname(candidate) !== root && candidate !== root) {
-        candidate = dirname(candidate);
-      }
-      if (candidate === root) continue;
-      counts.set(candidate, (counts.get(candidate) || 0) + 1);
-    }
-  }
-  if (counts.size === 0) return null;
-  let best = null;
-  let bestCount = -1;
-  for (const [dir, n] of counts) {
-    if (n > bestCount) { best = dir; bestCount = n; }
-  }
-  return best;
 }
 
 function rewriteAbs(filePath, oldDir, newDir) {
@@ -151,9 +89,4 @@ export async function moveVmDirectory(oldDir, newDir) {
     throw wrapVmError('CONFIG_ERROR', `Failed to move the directory of VM "${basename(oldDir)}" to "${basename(newDir)}"`, err);
   }
   return true;
-}
-
-export async function pathExists(p) {
-  try { await access(p); return true; }
-  catch { return false; }
 }

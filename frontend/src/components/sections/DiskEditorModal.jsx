@@ -12,7 +12,6 @@ import {
   attachDiskToVM,
   createDiskOnVM,
   resizeDisk,
-  updateDiskBus,
 } from '../../api/vms.js';
 import { formatSize } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
@@ -88,24 +87,23 @@ function LibraryDiskSelect({ value, onChange }) {
 
 /**
  * Modal form editor for one VM block disk (see docs/FRONTEND-RULES.md § Modal form
- * editor). Two entry points: edit — the `disk` row (`sda` / `sdb`) with its size
- * and bus — or add, with `disk` null, where the mode picker chooses between a
+ * editor). Two entry points: edit — the `disk` row (`sda` / `sdb`): its size, its bus
+ * shown — or add, with `disk` null, where the mode picker chooses between a
  * new empty volume and attaching a library image (plain select; the full
  * ImageLibraryModal stays the direct-action path for ISO slots).
  *
- * It takes the disk's values when it opens. Saves through the same row-scoped disk
- * APIs and in the same order the inline editors used, each one ending at its answer;
- * closes after the last, stays open on failure.
+ * It takes the disk's values when it opens. Saves through the row-scoped disk APIs,
+ * each one ending at its answer; closes after the last, stays open on failure.
  */
 export default function DiskEditorModal(props) {
   return props.open ? <DiskEditor {...props} /> : null;
 }
 
-/** What an edit's Save writes: the bus, and the size to 0.001 GiB (the listed size is
- *  rounded to whole GiB, so a sub-GiB delta is no change). */
+/** What an edit's Save writes: the size to 0.001 GiB (the listed size is rounded to
+ *  whole GiB, so a sub-GiB delta is no change). */
 function editSent(form) {
   const size = positiveNumber(form.sizeGB);
-  return { bus: form.bus, size: size == null ? null : Math.round(size * 1000) / 1000 };
+  return { size: size == null ? null : Math.round(size * 1000) / 1000 };
 }
 
 /** What a disk editor's values lack to be saved, by the field each is about: attaching,
@@ -158,7 +156,6 @@ function DiskEditor({
     const saved = editSent(start);
     save.run(async () => {
       if (isEdit) {
-        if (values.bus !== saved.bus) await updateDiskBus(vmName, slot, values.bus);
         if (values.size !== saved.size) await resizeDisk(vmName, slot, sizeValue);
       } else if (isAttach) {
         await attachDiskToVM(vmName, slot, form.imagePath, form.bus);
@@ -169,7 +166,13 @@ function DiskEditor({
     }).then((ok) => { if (ok) onClose(); });
   };
 
-  const busField = (
+  /* A disk's bus is chosen when it is added, and shown afterwards. */
+  const busField = isEdit ? (
+    <p className="rounded-md bg-surface px-3 py-2 text-xs text-text-secondary">
+      Bus: {DISK_BUS_OPTIONS.find((o) => o.value === form.bus)?.label ?? form.bus}
+      <span className="block text-text-muted">Set when the disk was added.</span>
+    </p>
+  ) : (
     <FormField label="Bus" htmlFor="disk-editor-bus">
       <select
         id="disk-editor-bus"

@@ -207,6 +207,7 @@ Each code a client can receive, with its status.
 | `VM_DIR_EXISTS` | 409 | A directory for that VM name exists on disk |
 | `VM_MUST_BE_OFFLINE` | 409 | The operation needs the VM stopped |
 | `VM_BUSY` | 409 | Another operation holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock); the detail names it |
+| `VM_TRANSIENT` | 409 | The VM is transient (not defined in libvirt, e.g. started with `virsh create`): Wisp does not change its definition |
 | `DISK_SLOT_IN_USE` | 409 | The disk slot is taken |
 | `BACKUP_EXISTS` | 409 | A backup with that timestamp exists |
 | `CONTAINER_ALREADY_RUNNING` | 409 | The container is already running |

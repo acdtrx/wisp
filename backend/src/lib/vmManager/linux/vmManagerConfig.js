@@ -7,151 +7,138 @@ import { rmdir } from 'node:fs/promises';
 import dbus from 'dbus-next';
 
 import { validateVMName } from './vmManagerValidation.js';
-import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
+import { getVMBasePath } from './vmManagerPaths.js';
 import {
-  connectionState, resolveDomain, domainExists, getDomainState, getDomainXML, getDomainObjAndIface, unwrapVariant, vmError,
+  connectionState, resolveDomain, domainExists, getDomainState, getDomainXML, getDomainObjAndIface, vmError,
 } from './vmManagerConnection.js';
+import { wrapVmError } from '../vmManagerShared.js';
 import {
-  parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, removeWispPref, domainDefinitionSignature,
-  domainNameFromParsed, getWispProfile, setWispProfile, profileFromDefinition,
+  parseVMFromXML, parseDomainRaw, setWispIcon, setWispPendingRestart, removeWispPref, domainDefinitionSignature,
+  getWispProfile, setWispProfile, profileFromDefinition,
 } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures, createOwnVMDir } from './vmManagerCreate.js';
-import { moveVmDirectory, rewriteDomainPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
+import { moveVmDirectory, rewriteDomainPaths } from './vmManagerRename.js';
 import { refreshVMListCache } from './vmManagerList.js';
+import { redefineVM } from './vmManagerDefine.js';
+import { isShutOff } from './libvirtConstants.js';
+import {
+  nicElement, videoElement, graphicsElement, memballoonElement, guestAgentChannelElement, isGuestAgentChannel,
+  tpmElement, rngElement,
+} from './vmManagerDevices.js';
 
+export async function renameVM(name, newName) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  const domPath = await resolveDomain(name);
+  if (newName === name) return { name };
+  const state = await getDomainState(domPath);
+  if (!isShutOff(state.code)) throw vmError('VM_MUST_BE_OFFLINE', `Stop VM "${name}" before renaming`);
+  validateVMName(newName);
+  if (await domainExists(newName)) throw vmError('VM_EXISTS', `VM "${newName}" already exists`);
+
+  const oldDir = getVMBasePath(name);
+  // Reserve the target name on disk: create its directory exclusively (an
+  // existing path → 409 VM_DIR_EXISTS, atomically). A second rename to the same
+  // name, or a create / restore-as-new racing this one, fails its own exclusive
+  // mkdir instead of merging into this VM's files. The move below replaces the
+  // reserved empty directory.
+  const newDir = await createOwnVMDir(newName);
+  // Drop the reservation when nothing moved into it (rmdir: never removes
+  // files someone else put there).
+  const releaseReservation = () => rmdir(newDir).catch((err) => {
+    connectionState.logger?.warn?.({ err: err.message, dir: newDir }, '[vmManager] Failed to release a rename reservation');
+  });
+  const renameBack = async () => {
+    try {
+      const { iface } = await getDomainObjAndIface(domPath);
+      await iface.Rename(name, 0);
+    } catch (err) {
+      connectionState.logger?.warn?.({ err: err.message, vm: newName }, '[vmManager] Failed to undo a libvirt rename');
+    }
+  };
+
+  const { iface } = await getDomainObjAndIface(domPath);
+  try {
+    await iface.Rename(newName, 0);
+  } catch (err) {
+    await releaseReservation();
+    throw vmError('LIBVIRT_ERROR', `Failed to rename VM "${name}"`, err.message);
+  }
+
+  let dirMoved;
+  try {
+    dirMoved = await moveVmDirectory(oldDir, newDir);
+  } catch (moveErr) {
+    await renameBack();
+    await releaseReservation();
+    throw moveErr;
+  }
+  // No directory to move (a VM with no files of its own): no directory under
+  // the new name either.
+  if (!dirMoved) {
+    await releaseReservation();
+  } else {
+    try {
+      await redefineVM(domPath, (dom) => rewriteDomainPaths(dom, oldDir, newDir) > 0);
+    } catch (err) {
+      try {
+        await moveVmDirectory(newDir, oldDir);
+      } catch (moveErr) {
+        connectionState.logger?.warn?.({ err: moveErr.message, from: newDir, to: oldDir }, '[vmManager] Failed to move a VM directory back');
+      }
+      await renameBack();
+      throw wrapVmError('LIBVIRT_ERROR', 'Failed to update domain XML after rename', err);
+    }
+  }
+  refreshVMListCache();
+  return { name: newName };
+}
+
+/**
+ * Apply a partial configuration change to the VM's saved definition (every
+ * field but its name, which renameVM changes). A VM that is on keeps running
+ * what it started with: when the definition differs from it in anything but
+ * Wisp's metadata, the restart-required flag is set in the same define.
+ * Returns `{ ok, requiresRestart, name }`.
+ */
 export async function updateVMConfig(name, changes) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
-
-  const patch = { ...(changes && typeof changes === 'object' ? changes : {}) };
-
-  let domPath = await resolveDomain(name);
+  const patch = changes && typeof changes === 'object' ? changes : {};
+  const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  const isRunning = state.code === 1 || state.code === 2 || state.code === 3;
-  // Every edit below is persisted with DomainDefineXML, so the baseline is the
-  // inactive (persistent) definition. On a running VM the live XML lacks any
-  // pending-restart edits; defining from it would silently revert them.
-  let xml = await getDomainXML(domPath, { inactive: true });
-  let parsed = parseDomainRaw(xml);
-  let dom = parsed.domain;
-  if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
-  let current = parseVMFromXML(xml);
-  let effectiveName = name;
+  const isOn = !isShutOff(state.code);
+  let requiresRestart = false;
 
-  if (patch.name != null) {
-    const newName = typeof patch.name === 'string' ? patch.name : String(patch.name);
-    const currentName = domainNameFromParsed(dom);
-    if (newName !== currentName) {
-      if (isRunning) {
-        throw vmError('VM_MUST_BE_OFFLINE', `Stop VM "${name}" before renaming`);
-      }
-      validateVMName(newName);
-      if (await domainExists(newName)) throw vmError('VM_EXISTS', `VM "${newName}" already exists`);
+  // The saved (inactive) definition is the baseline: on a VM that is on, the
+  // live XML lacks earlier pending-restart edits, and defining from it would
+  // revert them.
+  await redefineVM(domPath, (dom, { xml, parsed }) => {
+    const current = parseVMFromXML(xml);
+    const baselineSignature = domainDefinitionSignature(parsed);
+    applyConfigChanges(dom, current, patch);
+    requiresRestart = isOn && domainDefinitionSignature(parsed) !== baselineSignature;
+    if (requiresRestart) setWispPendingRestart(dom, new Date().toISOString());
+  }, {
+    defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to update VM "${name}" configuration`, err.message),
+  });
+  /* The list carries the sizing, icon and the restart flag; libvirt's DEFINED
+   * events are unreliable, so refresh it here as create and delete do. */
+  refreshVMListCache();
 
-      // Where do this VM's files actually live? `getVMBasePath(currentName)`
-      // is the *expected* dir, but legacy state from a pre-fix rename can
-      // leave the files at a different path. Read the XML and find the
-      // directory the disks/NVRAM actually reference.
-      const expectedOldDir = getVMBasePath(currentName);
-      const xmlBeforeRename = await getDomainXML(domPath, { inactive: true });
-      const parsedBeforeRename = parseDomainRaw(xmlBeforeRename);
-      const inferredDir = findActualVmDir(parsedBeforeRename?.domain, getVmsPath());
-      // Prefer the expected dir when it both exists and matches inference.
-      // When inference disagrees, trust inference (legacy convergence).
-      // When no path lives under vmsPath at all (CDROM-only VMs), fall back
-      // to whatever exists on disk; if neither exists it's a no-op move.
-      let oldDir;
-      if (inferredDir && inferredDir !== expectedOldDir) {
-        oldDir = inferredDir;
-      } else if (await pathExists(expectedOldDir)) {
-        oldDir = expectedOldDir;
-      } else if (inferredDir) {
-        oldDir = inferredDir;
-      } else {
-        oldDir = expectedOldDir;
-      }
-      // Reserve the target name on disk: create its directory exclusively
-      // (an existing path → 409 VM_DIR_EXISTS, atomically). A second rename
-      // to the same name, or a create / restore-as-new racing this one, now
-      // fails its own exclusive mkdir instead of merging into — or, with
-      // rename(2) onto an empty directory, replacing — this VM's files.
-      // The move below replaces the reserved empty directory.
-      const newDir = await createOwnVMDir(newName);
-      // Drop the reservation when nothing moved into it (rmdir: never removes
-      // files someone else put there).
-      const releaseReservation = () => rmdir(newDir).catch(() => { /* best-effort */ });
-
-      // 1. libvirt-level rename. Updates only the domain `<name>` element.
-      const { iface } = await getDomainObjAndIface(domPath);
-      try {
-        await iface.Rename(newName, 0);
-      } catch (err) {
-        await releaseReservation();
-        throw vmError('LIBVIRT_ERROR', `Failed to rename VM "${effectiveName}"`, err.message);
-      }
-
-      // 2. Move on-disk dir. If this fails, roll back the libvirt rename.
-      let dirMoved = false;
-      try {
-        dirMoved = await moveVmDirectory(oldDir, newDir);
-      } catch (moveErr) {
-        try {
-          const { iface: backIface } = await getDomainObjAndIface(await resolveDomain(newName));
-          await backIface.Rename(currentName, 0);
-        } catch { /* rollback best-effort; leave inconsistent state for the operator to inspect */ }
-        await releaseReservation();
-        throw moveErr;
-      }
-      // No directory to move (CD-ROM-only VM without one): keep the old
-      // layout — no directory under the new name either.
-      if (!dirMoved) await releaseReservation();
-
-      effectiveName = newName;
-      domPath = await resolveDomain(newName);
-      xml = await getDomainXML(domPath, { inactive: true });
-      parsed = parseDomainRaw(xml);
-      dom = parsed.domain;
-      if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
-
-      // 3. Rewrite absolute paths in the domain XML to point at the new dir.
-      //    Always attempt rewrite (using the inferred oldDir) — a successful
-      //    move guarantees old paths are now invalid; even on a no-op move
-      //    (rare CDROM-only case) the rewrite is harmless.
-      if (dirMoved) {
-        const rewritten = rewriteDomainPaths(dom, oldDir, newDir);
-        if (rewritten > 0) {
-          let outXml;
-          try {
-            outXml = buildXml(parsed);
-            await connectionState.connectIface.DomainDefineXML(outXml);
-          } catch (defErr) {
-            // Roll back: move dir back, rename libvirt back.
-            try { await moveVmDirectory(newDir, oldDir); } catch { /* best-effort */ }
-            try {
-              const { iface: backIface } = await getDomainObjAndIface(domPath);
-              await backIface.Rename(currentName, 0);
-            } catch { /* best-effort */ }
-            throw vmError('LIBVIRT_ERROR', 'Failed to update domain XML after rename', defErr.message);
-          }
-          xml = await getDomainXML(domPath, { inactive: true });
-          parsed = parseDomainRaw(xml);
-          dom = parsed.domain;
-        }
-      }
-
-      current = parseVMFromXML(xml);
-    }
-    delete patch.name;
-    if (Object.keys(patch).length === 0) {
-      refreshVMListCache();
-      return { ok: true, requiresRestart: false, name: effectiveName };
+  if (patch.autostart != null) {
+    try {
+      const { props } = await getDomainObjAndIface(domPath);
+      await props.Set('org.libvirt.Domain', 'Autostart', new dbus.Variant('b', patch.autostart));
+    } catch (err) {
+      /* autostart is optional; domain XML update already succeeded */
+      connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to set autostart');
     }
   }
 
-  // A running QEMU never sees a DomainDefineXML: a definition that ends up
-  // differing from this baseline (Wisp's metadata aside) applies only on the
-  // VM's next start.
-  const baselineSignature = domainDefinitionSignature(parsed);
+  return { ok: true, requiresRestart, name };
+}
 
+/** Apply `patch` to the parsed `<domain>`; `current` is its parseVMFromXML reading. */
+function applyConfigChanges(dom, current, patch) {
   if (patch.memoryMiB != null) {
     const kib = patch.memoryMiB * 1024;
     dom.memory = { '@_unit': 'KiB', '#text': String(kib) };
@@ -173,7 +160,7 @@ export async function updateVMConfig(name, changes) {
     }
 
     const existingFeatures = current.cpuFeatures || [];
-    let features = existingFeatures.filter((f) => f.name !== 'vmx' && f.name !== 'svm');
+    const features = existingFeatures.filter((f) => f.name !== 'vmx' && f.name !== 'svm');
     if (newNestedVirt != null) {
       if (newNestedVirt) features.push({ name: 'vmx', policy: 'require' });
     } else if (current.nestedVirt) {
@@ -189,23 +176,6 @@ export async function updateVMConfig(name, changes) {
       topology,
       feature: featureObjs.length ? featureObjs : undefined,
     };
-  }
-
-  if (patch.machineType != null && dom.os?.type) {
-    const typeNode = dom.os.type;
-    if (typeof typeNode === 'object') {
-      typeNode['@_machine'] = patch.machineType;
-    }
-  }
-
-  if (patch.firmware != null) {
-    delete dom.os.loader;
-    delete dom.os.nvram;
-    delete dom.os.firmware;
-    if (dom.os['@_firmware']) delete dom.os['@_firmware'];
-    if (patch.firmware === 'uefi' || patch.firmware === 'uefi-secure') {
-      dom.os['@_firmware'] = 'efi';
-    }
   }
 
   if (patch.bootOrder != null && dom.os) {
@@ -226,94 +196,39 @@ export async function updateVMConfig(name, changes) {
   }
 
   if (patch.nics != null && dom.devices) {
-    dom.devices.interface = patch.nics.map((nic) => {
-      const type = nic.type || 'bridge';
-      const iface = { '@_type': type };
-      if (nic.mac) iface.mac = { '@_address': nic.mac };
-      if (nic.source) {
-        iface.source = type === 'bridge' ? { '@_bridge': nic.source } : { '@_network': nic.source };
-      }
-      if (nic.model) iface.model = { '@_type': nic.model };
-      return iface;
-    });
+    dom.devices.interface = patch.nics.map((nic) => nicElement(nic));
   }
 
   if (patch.videoDriver != null && dom.devices) {
-    dom.devices.video = [{ model: { '@_type': patch.videoDriver } }];
+    dom.devices.video = [videoElement(patch.videoDriver)];
   }
 
   if (patch.graphicsType != null && dom.devices) {
-    dom.devices.graphics = [{ '@_type': patch.graphicsType, '@_port': '-1', '@_autoport': 'yes', '@_listen': '127.0.0.1' }];
+    dom.devices.graphics = [graphicsElement(patch.graphicsType)];
   }
 
   if (patch.memBalloon != null && dom.devices) {
-    dom.devices.memballoon = [{ '@_model': patch.memBalloon ? 'virtio' : 'none' }];
+    dom.devices.memballoon = [memballoonElement(patch.memBalloon)];
   }
 
   if (patch.guestAgent != null && dom.devices) {
-    const channels = (dom.devices.channel || []).filter(
-      (ch) => !(ch.target && String(ch.target['@_name'] || '').includes('guest_agent'))
-    );
-    if (patch.guestAgent) {
-      channels.push({
-        '@_type': 'unix',
-        target: { '@_type': 'virtio', '@_name': 'org.qemu.guest_agent.0' },
-      });
-    }
+    const channels = (dom.devices.channel || []).filter((ch) => !isGuestAgentChannel(ch));
+    if (patch.guestAgent) channels.push(guestAgentChannelElement());
     if (channels.length) dom.devices.channel = channels;
     else delete dom.devices.channel;
   }
 
   if (patch.vtpm != null && dom.devices) {
-    if (patch.vtpm) {
-      dom.devices.tpm = [{ '@_model': 'tpm-tis', backend: { '@_type': 'emulator', '@_version': '2.0' } }];
-    } else {
-      delete dom.devices.tpm;
-    }
+    if (patch.vtpm) dom.devices.tpm = [tpmElement()];
+    else delete dom.devices.tpm;
   }
 
   if (patch.virtioRng != null && dom.devices) {
-    if (patch.virtioRng) {
-      dom.devices.rng = [{ '@_model': 'virtio', backend: { '@_model': 'random', '#text': '/dev/urandom' } }];
-    } else {
-      delete dom.devices.rng;
-    }
+    if (patch.virtioRng) dom.devices.rng = [rngElement()];
+    else delete dom.devices.rng;
   }
 
   if (patch.iconId !== undefined) setWispIcon(dom, patch.iconId || null);
-
-  const requiresRestart = isRunning && domainDefinitionSignature(parsed) !== baselineSignature;
-  if (requiresRestart) setWispPendingRestart(dom, new Date().toISOString());
-
-  let outXml;
-  try {
-    outXml = buildXml(parsed);
-  } catch (err) {
-    throw vmError('CONFIG_ERROR', 'Failed to build domain XML', err.message);
-  }
-
-  try {
-    await connectionState.connectIface.DomainDefineXML(outXml);
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to update VM "${effectiveName}" configuration`, err.message);
-  }
-  /* The list carries the name, sizing, icon and the restart flag; libvirt's
-   * DEFINED events are unreliable, so refresh it here as create and delete do. */
-  refreshVMListCache();
-
-  if (patch.autostart != null) {
-    try {
-      const newPath = await resolveDomain(effectiveName);
-      const { props } = await getDomainObjAndIface(newPath);
-      const variant = new dbus.Variant('b', patch.autostart);
-      await props.Set('org.libvirt.Domain', 'Autostart', variant);
-    } catch (err) {
-      /* autostart is optional; domain XML update already succeeded */
-      connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to set autostart');
-    }
-  }
-
-  return { ok: true, requiresRestart, name: effectiveName };
 }
 
 /**
@@ -325,15 +240,10 @@ export async function updateVMConfig(name, changes) {
 export async function removeVMPref(name, key) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const domPath = await resolveDomain(name);
-  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
-  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
-  if (!removeWispPref(parsed.domain, key)) return { changed: false };
-  try {
-    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to remove the ${key} pref of VM "${name}"`, err.message);
-  }
-  return { changed: true };
+  const changed = await redefineVM(domPath, (dom) => removeWispPref(dom, key), {
+    defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to remove the ${key} pref of VM "${name}"`, err.message),
+  });
+  return { changed };
 }
 
 /**
@@ -348,26 +258,25 @@ export async function removeVMPref(name, key) {
 export async function setMissingVMProfile(name) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const domPath = await resolveDomain(name);
-  const { props } = await getDomainObjAndIface(domPath);
-  let persistent;
+  let profile = null;
   try {
-    persistent = !!unwrapVariant(await props.Get('org.libvirt.Domain', 'Persistent'));
+    const changed = await redefineVM(domPath, (dom) => {
+      const stored = getWispProfile(dom);
+      if (stored) {
+        profile = stored;
+        return false;
+      }
+      profile = profileFromDefinition(dom);
+      setWispProfile(dom, profile);
+      return true;
+    }, {
+      defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to set the profile of VM "${name}"`, err.message),
+    });
+    return { changed, profile };
   } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to read whether VM "${name}" is persistent`, err.message);
+    if (err.code === 'VM_TRANSIENT') return { changed: false, profile: null };
+    throw err;
   }
-  if (!persistent) return { changed: false, profile: null };
-  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true, secure: true }));
-  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
-  const stored = getWispProfile(parsed.domain);
-  if (stored) return { changed: false, profile: stored };
-  const profile = profileFromDefinition(parsed.domain);
-  setWispProfile(parsed.domain, profile);
-  try {
-    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to set the profile of VM "${name}"`, err.message);
-  }
-  return { changed: true, profile };
 }
 
 /**
@@ -418,15 +327,15 @@ export async function setGraphicsListen(name, address) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   if (typeof address !== 'string' || !address) throw vmError('CONFIG_ERROR', 'Listen address must be a non-empty string');
   const domPath = await resolveDomain(name);
-  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
-  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
-  const stale = graphicsListenRefs(parsed.domain).filter((r) => r.address !== address);
-  if (stale.length === 0) return { changed: false, previous: [] };
-  for (const r of stale) r.set(address);
-  try {
-    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to update the graphics listen address of VM "${name}"`, err.message);
-  }
-  return { changed: true, previous: [...new Set(stale.map((r) => r.address))] };
+  let previous = [];
+  const changed = await redefineVM(domPath, (dom) => {
+    const stale = graphicsListenRefs(dom).filter((r) => r.address !== address);
+    if (stale.length === 0) return false;
+    previous = [...new Set(stale.map((r) => r.address))];
+    for (const r of stale) r.set(address);
+    return true;
+  }, {
+    defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to update the graphics listen address of VM "${name}"`, err.message),
+  });
+  return { changed, previous };
 }

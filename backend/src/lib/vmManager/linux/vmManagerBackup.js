@@ -22,7 +22,7 @@ import {
   parseVMFromXML, parseDomainRaw, buildXml,
 } from './vmManagerXml.js';
 import { getVMBasePath, pathUnder, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
-import { isOfflineState } from './libvirtConstants.js';
+import { isShutOff } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
 import {
@@ -237,7 +237,7 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
 
   const path = await resolveDomain(vmName);
   const state = await getDomainState(path);
-  if (!isOfflineState(state.code)) {
+  if (!isShutOff(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${vmName}" must be stopped to create a backup`);
   }
 

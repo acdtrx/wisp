@@ -25,9 +25,9 @@ const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).h
 
 mockModule('./vmManager/index.js', [
   'assertVMNameAvailable', 'createVM', 'assertVMState', 'startVM', 'stopVM', 'forceStopVM', 'rebootVM', 'suspendVM',
-  'resumeVM', 'deleteVM', 'updateVMConfig', 'attachDisk', 'createAndAttachDisk', 'detachDisk', 'resizeDiskBySlot',
-  'updateDiskBus', 'attachISO', 'ejectISO', 'attachUSBDevice', 'detachUSBDevice', 'createBackup', 'listVMs',
-  'isOfflineState', 'planBackupRestore', 'restoreBackup', 'getVMConfig',
+  'resumeVM', 'deleteVM', 'updateVMConfig', 'renameVM', 'attachDisk', 'createAndAttachDisk', 'detachDisk', 'resizeDiskBySlot',
+  'attachISO', 'ejectISO', 'attachUSBDevice', 'detachUSBDevice', 'createBackup', 'listVMs',
+  'isShutOff', 'planBackupRestore', 'restoreBackup', 'getVMConfig',
 ]);
 mockModule('./cloudInit.js', ['generateCloudInit', 'rebuildCloudInitISO', 'updateCloudInit', 'detachCloudInitDisk']);
 mockModule('./paths.js', ['isPathInsideAllowedRoots']);
@@ -53,42 +53,40 @@ function assertUnlocked(...vmNames) {
 beforeEach(() => {
   calls.length = 0;
   for (const key of Object.keys(impl)) delete impl[key];
-  impl.updateVMConfig = async (name, changes) => ({ ok: true, requiresRestart: false, name: changes.name ?? name });
+  impl.updateVMConfig = async (name) => ({ ok: true, requiresRestart: false, name });
+  impl.renameVM = async (_name, newName) => ({ name: newName });
 });
 
 test('a rename sent with other changes renames, then its follow-ups, then the rest under the new name', async () => {
-  await editVmConfig({ name: 'a', changes: { name: 'b', firmware: 'uefi' }, log });
+  await editVmConfig({ name: 'a', changes: { name: 'b', vcpus: 2 }, log });
   assert.deepEqual(calls, [
-    ['updateVMConfig', 'a', { name: 'b' }],
+    ['renameVM', 'a', 'b'],
     ['renameWorkloadAssignment', 'vm', 'a', 'b'],
     ['moveBackupStatus', { type: 'vm', from: 'a', to: 'b' }],
-    ['updateVMConfig', 'b', { firmware: 'uefi' }],
+    ['updateVMConfig', 'b', { vcpus: 2 }],
   ]);
   assertUnlocked('a', 'b');
 });
 
 test('a rename whose other changes fail answers their error, the rename and its follow-ups standing', async () => {
-  impl.updateVMConfig = async (name, changes) => {
-    if (changes.firmware) throw createAppError('LIBVIRT_ERROR', 'Failed to update the firmware of VM "b"');
-    return { ok: true, requiresRestart: false, name: changes.name ?? name };
-  };
+  impl.updateVMConfig = async () => { throw createAppError('LIBVIRT_ERROR', 'Failed to update the configuration of VM "b"'); };
   await assert.rejects(
-    editVmConfig({ name: 'a', changes: { name: 'b', firmware: 'uefi' }, log }),
+    editVmConfig({ name: 'a', changes: { name: 'b', vcpus: 2 }, log }),
     (err) => err.code === 'LIBVIRT_ERROR',
   );
-  assert.deepEqual(names(), ['updateVMConfig', 'renameWorkloadAssignment', 'moveBackupStatus', 'updateVMConfig']);
-  assert.deepEqual(calls.at(-1), ['updateVMConfig', 'b', { firmware: 'uefi' }]);
+  assert.deepEqual(names(), ['renameVM', 'renameWorkloadAssignment', 'moveBackupStatus', 'updateVMConfig']);
+  assert.deepEqual(calls.at(-1), ['updateVMConfig', 'b', { vcpus: 2 }]);
   assertUnlocked('a', 'b');
 });
 
 test('a rename alone is one manager call and its follow-ups', async () => {
   await editVmConfig({ name: 'a', changes: { name: 'b' }, log });
-  assert.deepEqual(names(), ['updateVMConfig', 'renameWorkloadAssignment', 'moveBackupStatus']);
+  assert.deepEqual(names(), ['renameVM', 'renameWorkloadAssignment', 'moveBackupStatus']);
 });
 
 test('an edit without a rename is one manager call under the name, with no follow-ups', async () => {
-  await editVmConfig({ name: 'a', changes: { name: 'a', firmware: 'uefi' }, log });
-  assert.deepEqual(calls, [['updateVMConfig', 'a', { firmware: 'uefi' }]]);
+  await editVmConfig({ name: 'a', changes: { name: 'a', vcpus: 2 }, log });
+  assert.deepEqual(calls, [['updateVMConfig', 'a', { vcpus: 2 }]]);
 });
 
 test('a delete is followed by its follow-ups: the backup status and the section assignment go', async () => {

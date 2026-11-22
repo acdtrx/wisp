@@ -7,32 +7,15 @@ import { promisify } from 'node:util';
 import { open, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError } from './vmManagerConnection.js';
-import { parseDomainRaw, parseVMFromXML, buildXml } from './vmManagerXml.js';
+import { resolveDomain, getDomainState, getDomainXML, vmError } from './vmManagerConnection.js';
+import { redefineVM } from './vmManagerDefine.js';
+import { blockDiskElement, ensureScsiController } from './vmManagerDevices.js';
+import { parseDomainRaw, parseVMFromXML } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
-import { isOfflineState } from './libvirtConstants.js';
+import { isShutOff } from './libvirtConstants.js';
 import { resizeDisk as resizeDiskImage, imageFormatForFile, inspectDiskImage } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
-
-const DISK_BUS_ENUM = ['virtio', 'scsi', 'sata', 'ide'];
-
-/** Ensure a virtio-scsi controller exists when a disk uses bus scsi. */
-function ensureVirtioScsiController(dom) {
-  if (!dom?.devices) return;
-  const controllers = dom.devices.controller;
-  const hasScsi = Array.isArray(controllers)
-    ? controllers.some((c) => c['@_type'] === 'scsi')
-    : controllers && controllers['@_type'] === 'scsi';
-  if (!hasScsi) {
-    const controller = { '@_type': 'scsi', '@_model': 'virtio-scsi', '@_index': '0' };
-    dom.devices.controller = Array.isArray(dom.devices.controller)
-      ? [...dom.devices.controller, controller]
-      : dom.devices.controller
-        ? [dom.devices.controller, controller]
-        : controller;
-  }
-}
 
 /** Return the parsed disk object for the given slot (e.g. 'sdc', 'sde') or null. */
 export function extractDiskSnippet(fullXml, slot) {
@@ -46,57 +29,46 @@ export function extractDiskSnippet(fullXml, slot) {
 /** Block-disk slots a VM may carry (sdc/sdd/sde are the CDROM slots). */
 const DISK_SLOT_ENUM = ['sda', 'sdb'];
 
+/** Disks of the parsed domain, as a list. */
+function diskList(dom) {
+  return Array.isArray(dom.devices.disk) ? dom.devices.disk : dom.devices.disk ? [dom.devices.disk] : [];
+}
+
 /**
- * Validate a block-disk attach target and return the parsed inactive XML to
- * define from. Throws before any side effect: unknown slot (INVALID_REQUEST),
- * running VM (VM_MUST_BE_OFFLINE), slot already used by any device (DISK_SLOT_IN_USE).
+ * Check a block-disk attach target before any side effect: a known slot
+ * (INVALID_REQUEST), a shut-off VM (VM_MUST_BE_OFFLINE) and a free slot
+ * (DISK_SLOT_IN_USE, checked again where the disk is added). Returns the domain
+ * path.
  */
-async function loadDiskAttachTarget(name, slot) {
+async function assertDiskAttachTarget(name, slot) {
   if (!DISK_SLOT_ENUM.includes(slot)) {
     throw vmError('INVALID_REQUEST', `Invalid disk slot: ${slot} (expected ${DISK_SLOT_ENUM.join(' or ')})`);
   }
-
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (!isOfflineState(state.code)) {
+  if (!isShutOff(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to attach disks`);
   }
-
-  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
-  const dom = parsed?.domain;
-  if (!dom?.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
-
-  const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : dom.devices.disk ? [dom.devices.disk] : [];
-  if (disks.some((d) => d.target?.['@_dev'] === slot)) {
-    throw vmError('DISK_SLOT_IN_USE', `Slot ${slot} of VM "${name}" is already in use — detach it first`);
-  }
-  return parsed;
+  assertSlotFree(parseDomainRaw(await getDomainXML(domPath, { inactive: true })).domain, name, slot);
+  return domPath;
 }
 
-async function defineWithNewDisk(parsed, slot, imagePath, bus, format) {
-  const dom = parsed.domain;
-  if (bus === 'scsi') {
-    ensureVirtioScsiController(dom);
+function assertSlotFree(dom, name, slot) {
+  if (!dom?.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
+  if (diskList(dom).some((d) => d.target?.['@_dev'] === slot)) {
+    throw vmError('DISK_SLOT_IN_USE', `Slot ${slot} of VM "${name}" is already in use — detach it first`);
   }
+}
 
-  const newDisk = {
-    '@_type': 'file',
-    '@_device': 'disk',
-    driver: { '@_name': 'qemu', '@_type': format },
-    source: { '@_file': imagePath },
-    target: { '@_dev': slot, '@_bus': bus },
-  };
-  dom.devices.disk = Array.isArray(dom.devices.disk)
-    ? [...dom.devices.disk, newDisk]
-    : dom.devices.disk
-      ? [dom.devices.disk, newDisk]
-      : [newDisk];
-
-  try {
-    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to attach disk to ${slot}`, err.message);
-  }
+/** Add the block disk to the saved definition, the slot checked free under the write queue. */
+async function defineWithNewDisk(domPath, name, slot, imagePath, bus, format) {
+  await redefineVM(domPath, (dom) => {
+    assertSlotFree(dom, name, slot);
+    if (bus === 'scsi') ensureScsiController(dom);
+    dom.devices.disk = [...diskList(dom), blockDiskElement({ slot, bus, path: imagePath, format })];
+  }, {
+    defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to attach disk to ${slot}`, err.message),
+  });
 }
 
 /**
@@ -122,10 +94,10 @@ export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
   /* imagePath is caller-provided absolute (route validated); its content is
      not. The domain opens it as the format its name gives (`<driver type>`),
      and an image that would pull other host files into the VM is refused. */
-  const parsed = await loadDiskAttachTarget(name, slot);
+  const domPath = await assertDiskAttachTarget(name, slot);
   const format = await imageFormatForFile(imagePath);
   await inspectDiskImage(imagePath, { format });
-  await defineWithNewDisk(parsed, slot, imagePath, bus, format);
+  await defineWithNewDisk(domPath, name, slot, imagePath, bus, format);
 }
 
 /**
@@ -133,12 +105,12 @@ export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
  * VM must be stopped and the slot free; all checks run before any file is created.
  */
 export async function createAndAttachDisk(name, slot, sizeGB, bus = 'virtio') {
-  const parsed = await loadDiskAttachTarget(name, slot);
+  const domPath = await assertDiskAttachTarget(name, slot);
   const sizeG = Math.max(1, parseInt(sizeGB, 10) || 32);
   const diskPath = await reserveNewDiskFile(getVMBasePath(name));
   try {
     await execFile('qemu-img', ['create', '-f', 'qcow2', diskPath, `${sizeG}G`], { timeout: 20_000 }); // sparse: seconds at most (CODING-RULES §6)
-    await defineWithNewDisk(parsed, slot, diskPath, bus, 'qcow2');
+    await defineWithNewDisk(domPath, name, slot, diskPath, bus, 'qcow2');
   } catch (err) {
     /* The file is ours (reserved above) and not referenced by the domain — remove it. */
     await unlink(diskPath).catch(() => { /* already gone; nothing else to undo */ });
@@ -149,33 +121,26 @@ export async function createAndAttachDisk(name, slot, sizeGB, bus = 'virtio') {
 export async function detachDisk(name, slot) {
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (!isOfflineState(state.code)) {
+  if (!isShutOff(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to detach disks`);
   }
 
-  const xml = await getDomainXML(domPath, { inactive: true });
-  const parsed = parseDomainRaw(xml);
-  const dom = parsed?.domain;
-  if (!dom?.devices?.disk) throw vmError('DISK_NOT_FOUND', `No disk found at slot ${slot}`);
-
-  const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : [dom.devices.disk];
-  const filtered = disks.filter((d) => !d.target || d.target['@_dev'] !== slot);
-  if (filtered.length === disks.length) {
-    throw vmError('DISK_NOT_FOUND', `No disk found at slot ${slot}`);
-  }
-  dom.devices.disk = filtered.length === 1 ? filtered[0] : filtered;
-
-  try {
-    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to detach disk ${slot}`, err.message);
-  }
+  await redefineVM(domPath, (dom) => {
+    const disks = dom.devices ? diskList(dom) : [];
+    const filtered = disks.filter((d) => !d.target || d.target['@_dev'] !== slot);
+    if (filtered.length === disks.length) {
+      throw vmError('DISK_NOT_FOUND', `No disk found at slot ${slot}`);
+    }
+    dom.devices.disk = filtered;
+  }, {
+    defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to detach disk ${slot}`, err.message),
+  });
 }
 
 export async function resizeDiskBySlot(name, slot, sizeGB) {
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (!isOfflineState(state.code)) {
+  if (!isShutOff(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to resize disks`);
   }
 
@@ -188,51 +153,4 @@ export async function resizeDiskBySlot(name, slot, sizeGB) {
 
   // No <driver type> means raw to libvirt; resize it as that.
   return resizeDiskImage(disk.source, sizeGB, { format: disk.driverType || 'raw' });
-}
-
-/** Update target bus for an existing block disk (VM must be stopped). */
-export async function updateDiskBus(name, slot, bus) {
-  if (!DISK_BUS_ENUM.includes(bus)) {
-    throw vmError('INVALID_REQUEST', `Invalid disk bus: ${bus}`);
-  }
-
-  const domPath = await resolveDomain(name);
-  const state = await getDomainState(domPath);
-  if (!isOfflineState(state.code)) {
-    throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to change disk bus`);
-  }
-
-  const xml = await getDomainXML(domPath, { inactive: true });
-  const parsed = parseDomainRaw(xml);
-  const dom = parsed?.domain;
-  if (!dom?.devices?.disk) {
-    throw vmError('DISK_NOT_FOUND', `No disks in VM "${name}"`);
-  }
-
-  const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : [dom.devices.disk];
-  const disk = disks.find((d) => d.target?.['@_dev'] === slot && d['@_device'] === 'disk');
-  if (!disk) {
-    throw vmError('DISK_NOT_FOUND', `No block disk at slot ${slot}`);
-  }
-
-  const currentBus = disk.target?.['@_bus'] || 'virtio';
-  if (currentBus === bus) {
-    return { ok: true };
-  }
-
-  if (bus === 'scsi') {
-    ensureVirtioScsiController(dom);
-  }
-
-  disk.target = disk.target || {};
-  disk.target['@_dev'] = slot;
-  disk.target['@_bus'] = bus;
-
-  try {
-    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  } catch (err) {
-    throw vmError('LIBVIRT_ERROR', `Failed to update disk bus for ${slot}`, err.message);
-  }
-
-  return { ok: true };
 }

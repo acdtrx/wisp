@@ -10,7 +10,7 @@ import {
   vmError,
   subscribeDomainStopped,
 } from './vmManagerConnection.js';
-import { isOfflineState } from './libvirtConstants.js';
+import { isShutOff, VIR_DOMAIN_STATE_RUNNING, VIR_DOMAIN_STATE_PAUSED } from './libvirtConstants.js';
 import { getCachedVMName } from './vmManagerList.js';
 
 const vmStoppedHandlers = new Set();
@@ -54,14 +54,14 @@ export async function assertVMState(name, what) {
   const path = await resolveDomain(name);
   if (what === 'exists') return;
   const state = await getDomainState(path);
-  if (what === 'start' && state.code === 1) throw vmError('VM_ALREADY_RUNNING', `VM "${name}" is already running`);
-  if (what === 'running' && isOfflineState(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (what === 'start' && state.code === VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_ALREADY_RUNNING', `VM "${name}" is already running`);
+  if (what === 'running' && isShutOff(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 }
 
 export async function startVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code === 1) throw vmError('VM_ALREADY_RUNNING', `VM "${name}" is already running`);
+  if (state.code === VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_ALREADY_RUNNING', `VM "${name}" is already running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {
@@ -75,7 +75,7 @@ export async function startVM(name) {
 export async function stopVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (isOfflineState(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (isShutOff(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {
@@ -88,7 +88,7 @@ export async function stopVM(name) {
 export async function forceStopVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (isOfflineState(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (isShutOff(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {
@@ -103,7 +103,7 @@ export async function forceStopVM(name) {
 export async function rebootVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code !== 1) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (state.code !== VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {
@@ -116,7 +116,7 @@ export async function rebootVM(name) {
 export async function suspendVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code !== 1) throw vmError('VM_NOT_RUNNING', `VM "${name}" must be running to suspend`);
+  if (state.code !== VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_NOT_RUNNING', `VM "${name}" must be running to suspend`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {
@@ -129,7 +129,7 @@ export async function suspendVM(name) {
 export async function resumeVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code !== 3) throw vmError('VM_NOT_PAUSED', `VM "${name}" is not paused`);
+  if (state.code !== VIR_DOMAIN_STATE_PAUSED) throw vmError('VM_NOT_PAUSED', `VM "${name}" is not paused`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {

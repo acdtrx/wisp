@@ -3,7 +3,6 @@
  * XML handled via fast-xml-parser (parse/build), not regex.
  */
 import {
-  connectionState,
   resolveDomain,
   getDomainState,
   getDomainXML,
@@ -11,7 +10,10 @@ import {
   vmError,
 } from './vmManagerConnection.js';
 import { extractDiskSnippet } from './vmManagerDisk.js';
-import { parseDomainRaw, buildDiskXml, buildXml } from './vmManagerXml.js';
+import { buildDiskXml } from './vmManagerXml.js';
+import { redefineVM } from './vmManagerDefine.js';
+import { cdromElement } from './vmManagerDevices.js';
+import { isShutOff } from './libvirtConstants.js';
 
 /**
  * Attach an ISO to a CDROM slot.
@@ -29,7 +31,7 @@ export async function attachISO(name, slot, isoPath, opts = {}) {
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
   const { iface } = await getDomainObjAndIface(domPath);
-  const isRunning = state.code === 1 || state.code === 2;
+  const isOn = !isShutOff(state.code);
 
   const fullXml = await getDomainXML(domPath);
   const disk = extractDiskSnippet(fullXml, slot);
@@ -38,15 +40,8 @@ export async function attachISO(name, slot, isoPath, opts = {}) {
     if (!createIfMissing) {
       throw vmError('DISK_NOT_FOUND', `CDROM slot ${slot} not found in VM "${name}"`);
     }
-    const newDisk = {
-      '@_type': 'file',
-      '@_device': 'cdrom',
-      driver: { '@_name': 'qemu', '@_type': 'raw' },
-      source: { '@_file': isoPath },
-      target: { '@_dev': slot, '@_bus': 'sata' },
-      readonly: {},
-    };
-    if (isRunning) {
+    const newDisk = cdromElement({ slot, path: isoPath });
+    if (isOn) {
       try {
         await iface.AttachDevice(buildDiskXml(newDisk), 3);
       } catch (err) {
@@ -54,23 +49,20 @@ export async function attachISO(name, slot, isoPath, opts = {}) {
       }
       return;
     }
-    const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
-    const dom = parsed?.domain;
-    if (!dom?.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
-    const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : [dom.devices.disk];
-    dom.devices.disk = [...disks, newDisk];
-    try {
-      await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-    } catch (err) {
-      throw vmError('LIBVIRT_ERROR', `Failed to attach ISO to ${slot}`, err.message);
-    }
+    await redefineVM(domPath, (dom) => {
+      if (!dom.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
+      const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : dom.devices.disk ? [dom.devices.disk] : [];
+      dom.devices.disk = [...disks, newDisk];
+    }, {
+      defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to attach ISO to ${slot}`, err.message),
+    });
     return;
   }
 
   disk['@_type'] = 'file';
   disk.source = { '@_file': isoPath };
 
-  const flags = isRunning ? 3 : 2;
+  const flags = isOn ? 3 : 2;
   try {
     await iface.UpdateDevice(buildDiskXml(disk), flags);
   } catch (err) {
@@ -93,7 +85,7 @@ export async function ejectISO(name, slot, opts = {}) {
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
   const { iface } = await getDomainObjAndIface(domPath);
-  const isRunning = state.code === 1 || state.code === 2;
+  const isOn = !isShutOff(state.code);
 
   const fullXml = await getDomainXML(domPath);
   const disk = extractDiskSnippet(fullXml, slot);
@@ -104,25 +96,21 @@ export async function ejectISO(name, slot, opts = {}) {
 
   delete disk.source;
 
-  const flags = isRunning ? 3 : 2;
+  const flags = isOn ? 3 : 2;
   try {
     await iface.UpdateDevice(buildDiskXml(disk), flags);
   } catch (err) {
     throw vmError('LIBVIRT_ERROR', `Failed to eject ${slot}`, err.message);
   }
 
-  if (removeSlot && !isRunning) {
-    const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
-    const dom = parsed?.domain;
-    if (dom?.devices?.disk) {
+  if (removeSlot && !isOn) {
+    await redefineVM(domPath, (dom) => {
+      if (!dom.devices?.disk) return false;
       const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : [dom.devices.disk];
-      const filtered = disks.filter((d) => !d.target || d.target['@_dev'] !== slot);
-      dom.devices.disk = filtered.length === 1 ? filtered[0] : filtered;
-      try {
-        await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-      } catch (err) {
-        throw vmError('LIBVIRT_ERROR', `Failed to remove ${slot}`, err.message);
-      }
-    }
+      dom.devices.disk = disks.filter((d) => !d.target || d.target['@_dev'] !== slot);
+      return true;
+    }, {
+      defineError: (err) => vmError('LIBVIRT_ERROR', `Failed to remove ${slot}`, err.message),
+    });
   }
 }

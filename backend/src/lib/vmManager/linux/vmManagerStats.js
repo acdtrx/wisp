@@ -14,12 +14,7 @@ import {
   detachAgentSubscription,
 } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
-import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
-
-/** Running, blocked or paused: a QEMU process whose figures can be read. */
-function isActiveState(code) {
-  return code === 1 || code === 2 || code === 3;
-}
+import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK, isShutOff } from './libvirtConstants.js';
 import {
   subscribeVMListChange,
   getCachedStaleBinary,
@@ -116,7 +111,7 @@ let pendingAgentList = null;
 let agentPassRunning = false;
 
 async function applyAgentListeners(list) {
-  const running = new Map(list.filter((vm) => vm.stateCode === 1).map((vm) => [vm.domainPath, vm.name]));
+  const running = new Map(list.filter((vm) => !isShutOff(vm.stateCode)).map((vm) => [vm.domainPath, vm.name]));
   for (const path of [...connectionState.agentSubscriptions.keys()]) {
     if (!running.has(path)) detachAgentSubscription(path);
   }
@@ -169,7 +164,7 @@ export async function getVMStats(name) {
   // entirely. The cache is refreshed on every DomainEvent, so a cached non-running
   // state means the SSE tick costs zero DBus calls until the VM actually starts.
   const cachedState = getCachedStateCode(name);
-  if (cachedState !== undefined && !isActiveState(cachedState)) {
+  if (cachedState !== undefined && isShutOff(cachedState)) {
     invalidateGuestInfo(name);
     return offlineStats(cachedState);
   }
@@ -180,7 +175,7 @@ export async function getVMStats(name) {
   const path = getCachedDomainPath(name) ?? await resolveDomain(name);
   const { iface, agentIface } = await getDomainObjAndIface(path);
   const stateCode = cachedState ?? (await iface.GetState(0))[0];
-  if (!isActiveState(stateCode)) {
+  if (isShutOff(stateCode)) {
     invalidateGuestInfo(name);
     return offlineStats(stateCode);
   }

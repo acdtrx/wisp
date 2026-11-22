@@ -7,7 +7,7 @@ import { parseVMFromXML } from '../linux/vmManagerXml.js';
 import { vmError } from '../vmManagerShared.js';
 
 export { parseVMFromXML };
-export { isOfflineState } from '../linux/libvirtConstants.js';
+export { isShutOff } from '../linux/libvirtConstants.js';
 export const IS_DARWIN = true;
 
 export function configure() {
@@ -153,6 +153,10 @@ export async function deleteVM() {
   throw noConn();
 }
 
+export async function renameVM() {
+  throw noConn();
+}
+
 export async function updateVMConfig() {
   throw noConn();
 }
@@ -202,10 +206,6 @@ export async function detachDisk() {
 }
 
 export async function resizeDiskBySlot() {
-  throw noConn();
-}
-
-export async function updateDiskBus() {
   throw noConn();
 }
 

@@ -23,7 +23,7 @@ export async function run(ctx) {
     if (stale.length === 0) continue;
     const kinds = [...new Set(stale.map((l) => (l.graphics || 'graphics').toUpperCase()))].join('/');
     const from = [...new Set(stale.map((l) => l.address))].join(', ');
-    const running = !ctx.vmManager.isOfflineState(vm.stateCode);
+    const running = !ctx.vmManager.isShutOff(vm.stateCode);
     ctx.recordChange(`${vm.name}: ${kinds} listen ${from} → ${LOCALHOST}${running ? ' (restart required)' : ''}`);
     await ctx.vmManager.setGraphicsListen(vm.name, LOCALHOST);
     if (running) await ctx.setVMPendingRestart(vm.name, true);

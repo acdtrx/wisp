@@ -60,12 +60,12 @@ export function sizeProblems(form) {
 
 /* ---- Expert settings ---- */
 
-export const FIRMWARE = [
+const FIRMWARE = [
   { value: 'uefi', label: 'UEFI' },
   { value: 'uefi-secure', label: 'UEFI with Secure Boot' },
   { value: 'bios', label: 'BIOS' },
 ];
-export const MACHINE_TYPES = [
+const MACHINE_TYPES = [
   { value: 'q35', label: 'Q35' },
   { value: 'pc-i440fx', label: 'i440fx' },
 ];
@@ -124,8 +124,6 @@ export function expertForm(config) {
   return {
     bootOrder: config.bootOrder?.length ? [...config.bootOrder] : ['hd'],
     bootMenu: config.bootMenu === true,
-    firmware: config.firmware || 'bios',
-    machineType: machineChoice(config.machineType),
     cpuMode: config.cpuMode || 'host-passthrough',
     nestedVirt: config.nestedVirt === true,
     videoDriver: config.videoModel || 'virtio',
@@ -144,13 +142,23 @@ export function toggledBootDevice(order, dev) {
   return order.length > 1 ? order.filter((d) => d !== dev) : order;
 }
 
+const label = (list, value) => list.find((x) => x.value === value)?.label ?? value;
+
+/** The firmware and the machine type, set when the VM was made and shown only. */
+export function madeWith(config) {
+  return {
+    firmware: label(FIRMWARE, config.firmware || 'bios'),
+    machineType: label(MACHINE_TYPES, machineChoice(config.machineType)),
+  };
+}
+
 /** The settings in one line, as the System group shows them. */
 export function systemSummary(config) {
-  const label = (list, value) => list.find((x) => x.value === value)?.label ?? value;
   const f = expertForm(config);
+  const made = madeWith(config);
   return [
-    label(FIRMWARE, f.firmware),
-    label(MACHINE_TYPES, f.machineType),
+    made.firmware,
+    made.machineType,
     f.cpuMode === 'host-passthrough' ? 'host CPU' : label(CPU_MODELS, f.cpuMode),
     `${label(VIDEO, f.videoDriver)} video`,
     f.guestAgent ? 'guest agent' : null,

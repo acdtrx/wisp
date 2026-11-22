@@ -17,15 +17,15 @@ import {
 } from './vmManagerConnection.js';
 import {
   parseDomainRaw,
-  buildXml,
   getWispPendingRestart,
   setWispPendingRestart,
   domainNameFromParsed,
 } from './vmManagerXml.js';
 import { refreshVMListCache } from './vmManagerList.js';
+import { redefineVM } from './vmManagerDefine.js';
 import { announceVMChange } from './vmManagerChange.js';
 import { getQemuStartTimeMs } from './vmManagerProc.js';
-import { isOfflineState } from './libvirtConstants.js';
+import { isShutOff } from './libvirtConstants.js';
 import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
 
 /**
@@ -35,16 +35,13 @@ import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
  * that one. Returns whether it defined.
  */
 async function writePendingRestart(domPath, since, { expectSince } = {}) {
-  const xml = await getDomainXML(domPath, { inactive: true });
-  const parsed = parseDomainRaw(xml);
-  const dom = parsed.domain;
-  if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
-  const current = getWispPendingRestart(dom)?.since ?? null;
-  if (expectSince !== undefined && current !== expectSince) return false;
-  if (current === since) return false;
-  setWispPendingRestart(dom, since);
-  await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-  return true;
+  return redefineVM(domPath, (dom) => {
+    const current = getWispPendingRestart(dom)?.since ?? null;
+    if (expectSince !== undefined && current !== expectSince) return false;
+    if (current === since) return false;
+    setWispPendingRestart(dom, since);
+    return true;
+  });
 }
 
 /**
@@ -79,7 +76,7 @@ async function clearOutgrownRestartFlag(domPath) {
   const flag = getWispPendingRestart(dom);
   if (!flag) return { vm, result: 'no flag' };
   const { code } = await getDomainState(domPath);
-  const startedAt = isOfflineState(code) ? null : await getQemuStartTimeMs(vm);
+  const startedAt = isShutOff(code) ? null : await getQemuStartTimeMs(vm);
   if (pendingRestartInForce(flag, startedAt)) return { vm, result: 'kept', since: flag.since };
   const cleared = await writePendingRestart(domPath, null, { expectSince: flag.since });
   if (cleared) announceVMChange(vm);

@@ -22,18 +22,18 @@ import {
   resumeVM,
   deleteVM,
   updateVMConfig,
+  renameVM,
   attachDisk,
   createAndAttachDisk,
   detachDisk,
   resizeDiskBySlot,
-  updateDiskBus,
   attachISO,
   ejectISO,
   attachUSBDevice,
   detachUSBDevice,
   createBackup,
   listVMs,
-  isOfflineState,
+  isShutOff,
   planBackupRestore,
   restoreBackup,
   getVMConfig,
@@ -109,7 +109,7 @@ export function startVmBackupJob({ name, destinationIds, log }) {
     check: async () => {
       const found = (await listVMs()).find((v) => v.name === name);
       if (!found) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
-      if (!isOfflineState(found.stateCode)) {
+      if (!isShutOff(found.stateCode)) {
         throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
       }
     },
@@ -237,7 +237,7 @@ export async function editVmConfig({ name, changes, log }) {
   const apply = async () => {
     let current = name;
     if (renameTo) {
-      current = (await updateVMConfig(name, { name: renameTo })).name;
+      current = (await renameVM(name, renameTo)).name;
       await followWorkloadRename({ type: 'vm', from: name, to: current, log });
       if (Object.keys(rest).length === 0) return;
     }
@@ -266,10 +266,6 @@ export function detachVmDisk(name, slot) {
 
 export function resizeVmDisk(name, slot, sizeGB) {
   return withVmOperationLock(name, 'disk change', () => resizeDiskBySlot(name, slot, sizeGB));
-}
-
-export function changeVmDiskBus(name, slot, bus) {
-  return withVmOperationLock(name, 'disk change', () => updateDiskBus(name, slot, bus));
 }
 
 // CD-ROM and USB changes lock in every VM state: a hot-plug on a running VM

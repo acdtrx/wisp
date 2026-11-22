@@ -14,17 +14,20 @@ export const STATE_NAMES = {
   7: 'pmsuspended',
 };
 
+export const VIR_DOMAIN_STATE_RUNNING = 1;
+export const VIR_DOMAIN_STATE_PAUSED = 3;
 export const VIR_DOMAIN_STATE_SHUTOFF = 5;
 
 /**
- * True when the domain is stopped — the precondition of every operation that
- * needs the disks closed (disk attach/detach/resize/bus, backup). Only
- * SHUTOFF qualifies: an inactive domain always reports SHUTOFF, SHUTDOWN (4)
- * means a guest shutdown is still in progress with qemu holding the disks,
- * and NOSTATE (0) / CRASHED (6) / PMSUSPENDED (7) are not a guaranteed-stopped
- * qemu either.
+ * The one test of a VM's state: shut off, or on. Only SHUTOFF is off — the
+ * precondition of every operation that needs the disks closed (disk
+ * attach/detach/resize, backup, rename). Every other state is on: running,
+ * blocked, paused, a guest shutdown in progress (qemu still holds the disks),
+ * crashed, pmsuspended, no state. An edit to a VM that is on applies at its
+ * next start, and a CD or USB change goes to its QEMU live. Exact lifecycle
+ * preconditions (start, suspend, resume) compare named states instead.
  */
-export function isOfflineState(stateCode) {
+export function isShutOff(stateCode) {
   return stateCode === VIR_DOMAIN_STATE_SHUTOFF;
 }
 

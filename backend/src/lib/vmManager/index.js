@@ -44,6 +44,7 @@ export const createVM = impl.createVM;
 export const deleteVM = impl.deleteVM;
 
 export const updateVMConfig = impl.updateVMConfig;
+export const renameVM = impl.renameVM;
 export const setVMPendingRestart = impl.setVMPendingRestart;
 export const getGraphicsListen = impl.getGraphicsListen;
 export const setGraphicsListen = impl.setGraphicsListen;
@@ -58,12 +59,11 @@ export const attachDisk = impl.attachDisk;
 export const createAndAttachDisk = impl.createAndAttachDisk;
 export const detachDisk = impl.detachDisk;
 export const resizeDiskBySlot = impl.resizeDiskBySlot;
-export const updateDiskBus = impl.updateDiskBus;
 
 export const attachISO = impl.attachISO;
 export const ejectISO = impl.ejectISO;
 export const parseVMFromXML = impl.parseVMFromXML;
-export const isOfflineState = impl.isOfflineState;
+export const isShutOff = impl.isShutOff;
 
 export const createBackup = impl.createBackup;
 export const listBackups = impl.listBackups;

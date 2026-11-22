@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 import { changedFields } from '../../hooks/editorValues.js';
 import {
-  expertForm, memoryText, nicsForApi, profileText, sizeForm, sizeProblems, sizeSent, systemSummary, takesFirstBootSetup,
+  expertForm, madeWith, memoryText, nicsForApi, profileText, sizeForm, sizeProblems, sizeSent, systemSummary, takesFirstBootSetup,
   toggledBootDevice, withPreset,
 } from './vmForms.js';
 import { PROFILE_NAMES, VM_PROFILES } from '../../../../backend/src/lib/vmProfiles.js';
@@ -43,9 +43,11 @@ test('memory reads in GB or MB', () => {
   assert.equal(memoryText(512), '512 MB');
 });
 
-test('expert settings: the stored machine version reads as its kind; one change sends that alone', () => {
+test('expert settings: firmware and machine type are shown, never sent; one change sends that alone', () => {
   const form = expertForm(vm);
-  assert.equal(form.machineType, 'q35');
+  assert.equal('machineType' in form, false);
+  assert.equal('firmware' in form, false);
+  assert.deepEqual(madeWith(vm), { firmware: 'UEFI', machineType: 'Q35' });
   assert.equal(form.osType, 'Linux');
   assert.deepEqual(changedFields({ ...form, videoDriver: 'qxl' }, form), { videoDriver: 'qxl' });
   assert.deepEqual(changedFields({ ...form, osType: 'Windows' }, form), { osType: 'Windows' });

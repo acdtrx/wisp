@@ -11,7 +11,7 @@ import GroupCard from '../shared/GroupCard.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import XMLModal from './XMLModal.jsx';
 import {
-  BOOT_DEVICES, CONSOLE, CPU_MODELS, FIRMWARE, MACHINE_TYPES, OPERATING_SYSTEMS, VIDEO, expertForm, profileText, systemSummary,
+  BOOT_DEVICES, CONSOLE, CPU_MODELS, OPERATING_SYSTEMS, VIDEO, expertForm, madeWith, profileText, systemSummary,
   toggledBootDevice,
 } from './vmForms.js';
 
@@ -87,8 +87,11 @@ function ExpertSettings({ config, update, onClose }) {
         <FormCheckbox label="Boot menu" hint="Lets you pick a boot device at start." checked={form.bootMenu} onChange={(e) => setField('bootMenu', e.target.checked)} />
       </Section>
       <Section title="Firmware and machine">
-        <FormField label="Firmware"><RadioPills options={FIRMWARE} value={form.firmware} onChange={(v) => setField('firmware', v)} /></FormField>
-        <FormField label="Machine type"><RadioPills options={MACHINE_TYPES} value={form.machineType} onChange={(v) => setField('machineType', v)} /></FormField>
+        {/* Set when the VM was made: shown, never changed. */}
+        <p className="rounded-md bg-surface px-3 py-2 text-xs text-text-secondary">
+          Firmware: {madeWith(config).firmware} · Machine type: {madeWith(config).machineType}
+          <span className="block text-text-muted">Set when the VM was made.</span>
+        </p>
         <FormField label="CPU model"><RadioPills options={CPU_MODELS} value={form.cpuMode} onChange={(v) => setField('cpuMode', v)} /></FormField>
         <FormCheckbox label="Nested virtualisation" hint="Lets the guest run VMs of its own." checked={form.nestedVirt} onChange={(e) => setField('nestedVirt', e.target.checked)} />
       </Section>

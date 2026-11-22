@@ -19,7 +19,11 @@ import {
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
 import { refreshVMListCache } from './vmManagerList.js';
-import { isOfflineState } from './libvirtConstants.js';
+import { isShutOff } from './libvirtConstants.js';
+import {
+  blockDiskElement, cdromElement, scsiControllerElement, nicElement, graphicsElement, videoElement,
+  memballoonElement, guestAgentChannelElement, tpmElement, rngElement,
+} from './vmManagerDevices.js';
 
 const execFile = promisify(execFileCb);
 
@@ -126,76 +130,33 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
   if (nestedVirt) cpu.feature = [{ '@_policy': 'require', '@_name': 'vmx' }];
 
   const hasScsiController = diskBus === 'scsi' || sdbBus === 'scsi';
-  const controllers = hasScsiController
-    ? [{ '@_type': 'scsi', '@_model': 'virtio-scsi', '@_index': '0' }]
-    : [];
+  const controllers = hasScsiController ? [scsiControllerElement()] : [];
   const disks = [];
-  if (sdaEntry) {
-    disks.push({
-      '@_type': 'file',
-      '@_device': 'disk',
-      driver: { '@_name': 'qemu', '@_type': 'qcow2' },
-      source: { '@_file': sdaEntry.path },
-      target: { '@_dev': 'sda', '@_bus': diskBus },
-    });
-  }
-  if (sdbEntry) {
-    disks.push({
-      '@_type': 'file',
-      '@_device': 'disk',
-      driver: { '@_name': 'qemu', '@_type': 'qcow2' },
-      source: { '@_file': sdbEntry.path },
-      target: { '@_dev': 'sdb', '@_bus': sdbBus },
-    });
-  }
-  disks.push({
-    '@_type': 'file',
-    '@_device': 'cdrom',
-    driver: { '@_name': 'qemu', '@_type': 'raw' },
-    ...(cdrom1Path ? { source: { '@_file': cdrom1Path } } : {}),
-    target: { '@_dev': 'sdc', '@_bus': 'sata' },
-    readonly: {},
-  });
-  disks.push({
-    '@_type': 'file',
-    '@_device': 'cdrom',
-    driver: { '@_name': 'qemu', '@_type': 'raw' },
-    ...(cdrom2Path ? { source: { '@_file': cdrom2Path } } : {}),
-    target: { '@_dev': 'sdd', '@_bus': 'sata' },
-    readonly: {},
-  });
-  if (sdePath) {
-    disks.push({
-      '@_type': 'file',
-      '@_device': 'cdrom',
-      driver: { '@_name': 'qemu', '@_type': 'raw' },
-      source: { '@_file': sdePath },
-      target: { '@_dev': 'sde', '@_bus': 'sata' },
-      readonly: {},
-    });
-  }
+  if (sdaEntry) disks.push(blockDiskElement({ slot: 'sda', bus: diskBus, path: sdaEntry.path, format: 'qcow2' }));
+  if (sdbEntry) disks.push(blockDiskElement({ slot: 'sdb', bus: sdbBus, path: sdbEntry.path, format: 'qcow2' }));
+  disks.push(cdromElement({ slot: 'sdc', path: cdrom1Path }));
+  disks.push(cdromElement({ slot: 'sdd', path: cdrom2Path }));
+  if (sdePath) disks.push(cdromElement({ slot: 'sde', path: sdePath }));
 
-  const ifaces = nics.map((nic) => ({
-    '@_type': nic.type || 'bridge',
-    mac: { '@_address': nic.mac || generateMAC() },
-    source: { '@_bridge': nic.source || defaultBridge },
-    model: { '@_type': nic.model || 'virtio' },
+  const ifaces = nics.map((nic) => nicElement({
+    type: nic.type || 'bridge',
+    source: nic.source || defaultBridge,
+    mac: nic.mac || generateMAC(),
+    model: nic.model || 'virtio',
   }));
 
   const devices = {
     ...(controllers.length ? { controller: controllers } : {}),
     disk: disks,
     interface: ifaces,
-    graphics: [{ '@_type': graphicsType, '@_port': '-1', '@_autoport': 'yes', '@_listen': '127.0.0.1' }],
-    video: [{ model: { '@_type': videoDriver } }],
+    graphics: [graphicsElement(graphicsType)],
+    video: [videoElement(videoDriver)],
     input: [{ '@_type': 'tablet', '@_bus': 'usb' }],
+    memballoon: [memballoonElement(memBalloon)],
   };
-  if (memBalloon) devices.memballoon = [{ '@_model': 'virtio' }];
-  if (guestAgent) {
-    devices.channel = [{ '@_type': 'unix', target: { '@_type': 'virtio', '@_name': 'org.qemu.guest_agent.0' } }];
-  }
-  if (vtpm) devices.tpm = [{ '@_model': 'tpm-tis', backend: { '@_type': 'emulator', '@_version': '2.0' } }];
-  if (virtioRng) devices.rng = [{ '@_model': 'virtio', backend: { '@_model': 'random', '#text': '/dev/urandom' } }];
+  if (guestAgent) devices.channel = [guestAgentChannelElement()];
+  if (vtpm) devices.tpm = [tpmElement()];
+  if (virtioRng) devices.rng = [rngElement()];
 
   const dom = {
     '@_type': 'kvm',
@@ -435,11 +396,11 @@ export async function deleteVM(name, deleteDisks = false) {
   // A VM that cannot be stopped is not deleted: undefining it would leave it
   // running, transient, with its disks removed under it. A Destroy that fails
   // because the guest finished shutting down meanwhile is a stopped VM.
-  if (!isOfflineState(state.code)) {
+  if (!isShutOff(state.code)) {
     try {
       await iface.Destroy(0);
     } catch (err) {
-      if (!isOfflineState((await getDomainState(path)).code)) {
+      if (!isShutOff((await getDomainState(path)).code)) {
         throw vmError('LIBVIRT_ERROR', `Failed to stop VM "${name}" before deleting it`, err.message);
       }
     }

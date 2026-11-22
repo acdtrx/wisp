@@ -2,20 +2,17 @@
  * USB passthrough: list attached, attach, detach.
  */
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
-import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
+import { parseVMFromXML, buildXml } from './vmManagerXml.js';
+import { redefineVM } from './vmManagerDefine.js';
+import { usbHostdevElement } from './vmManagerDevices.js';
+import { isShutOff } from './libvirtConstants.js';
 
 function buildUsbDeviceXml(vendorId, productId) {
-  return buildXml({
-    hostdev: {
-      '@_mode': 'subsystem',
-      '@_type': 'usb',
-      '@_managed': 'yes',
-      source: {
-        vendor: { '@_id': `0x${vendorId}` },
-        product: { '@_id': `0x${productId}` },
-      },
-    },
-  });
+  return buildXml({ hostdev: usbHostdevElement(vendorId, productId) });
+}
+
+function hostdevList(dom) {
+  return Array.isArray(dom.devices.hostdev) ? dom.devices.hostdev : dom.devices.hostdev ? [dom.devices.hostdev] : [];
 }
 
 export async function getVMUSBDevices(name) {
@@ -38,11 +35,11 @@ export async function attachUSBDevice(name, vendorId, productId) {
 
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  const isRunning = state.code === 1 || state.code === 2 || state.code === 3;
+  const isOn = !isShutOff(state.code);
 
   const deviceXml = buildUsbDeviceXml(vendorId, productId);
 
-  if (isRunning) {
+  if (isOn) {
     const { iface } = await getDomainObjAndIface(domPath);
     try {
       await iface.AttachDevice(deviceXml, 3);
@@ -50,26 +47,12 @@ export async function attachUSBDevice(name, vendorId, productId) {
       throw vmError('USB_ATTACH_FAILED', `Failed to attach USB device ${vendorId}:${productId}`, err.message);
     }
   } else {
-    const xml = await getDomainXML(domPath, { inactive: true });
-    const parsed = parseDomainRaw(xml);
-    const dom = parsed.domain;
-    if (!dom?.devices) throw vmError('USB_ATTACH_FAILED', 'Failed to parse domain XML', null);
-    const hostdevs = Array.isArray(dom.devices.hostdev) ? dom.devices.hostdev : dom.devices.hostdev ? [dom.devices.hostdev] : [];
-    hostdevs.push({
-      '@_mode': 'subsystem',
-      '@_type': 'usb',
-      '@_managed': 'yes',
-      source: {
-        vendor: { '@_id': `0x${vendorId}` },
-        product: { '@_id': `0x${productId}` },
-      },
+    await redefineVM(domPath, (dom) => {
+      if (!dom.devices) throw vmError('USB_ATTACH_FAILED', 'Failed to parse domain XML');
+      dom.devices.hostdev = [...hostdevList(dom), usbHostdevElement(vendorId, productId)];
+    }, {
+      defineError: (err) => vmError('USB_ATTACH_FAILED', `Failed to attach USB device ${vendorId}:${productId}`, err.message),
     });
-    dom.devices.hostdev = hostdevs;
-    try {
-      await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-    } catch (err) {
-      throw vmError('USB_ATTACH_FAILED', `Failed to attach USB device ${vendorId}:${productId}`, err.message);
-    }
   }
 }
 
@@ -78,11 +61,11 @@ export async function detachUSBDevice(name, vendorId, productId) {
 
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  const isRunning = state.code === 1 || state.code === 2 || state.code === 3;
+  const isOn = !isShutOff(state.code);
 
   const deviceXml = buildUsbDeviceXml(vendorId, productId);
 
-  if (isRunning) {
+  if (isOn) {
     const { iface } = await getDomainObjAndIface(domPath);
     try {
       await iface.DetachDevice(deviceXml, 3);
@@ -90,28 +73,24 @@ export async function detachUSBDevice(name, vendorId, productId) {
       throw vmError('USB_DETACH_FAILED', `Failed to detach USB device ${vendorId}:${productId}`, err.message);
     }
   } else {
-    const xml = await getDomainXML(domPath, { inactive: true });
-    const parsed = parseDomainRaw(xml);
-    const dom = parsed.domain;
-    if (!dom?.devices) throw vmError('USB_DETACH_FAILED', 'Failed to parse domain XML', null);
-    const hostdevs = Array.isArray(dom.devices.hostdev) ? dom.devices.hostdev : dom.devices.hostdev ? [dom.devices.hostdev] : [];
-    const vid = `0x${vendorId}`.toLowerCase();
-    const pid = `0x${productId}`.toLowerCase();
-    const filtered = hostdevs.filter((hd) => {
-      if (hd['@_type'] !== 'usb') return true;
-      const v = (hd.source?.vendor?.['@_id'] || '').toLowerCase();
-      const p = (hd.source?.product?.['@_id'] || '').toLowerCase();
-      return !(v === vid && p === pid);
+    await redefineVM(domPath, (dom) => {
+      if (!dom.devices) throw vmError('USB_DETACH_FAILED', 'Failed to parse domain XML');
+      const hostdevs = hostdevList(dom);
+      const vid = `0x${vendorId}`.toLowerCase();
+      const pid = `0x${productId}`.toLowerCase();
+      const filtered = hostdevs.filter((hd) => {
+        if (hd['@_type'] !== 'usb') return true;
+        const v = (hd.source?.vendor?.['@_id'] || '').toLowerCase();
+        const p = (hd.source?.product?.['@_id'] || '').toLowerCase();
+        return !(v === vid && p === pid);
+      });
+      if (filtered.length === hostdevs.length) {
+        throw vmError('USB_DETACH_FAILED', `USB device ${vendorId}:${productId} not found on VM "${name}"`);
+      }
+      if (filtered.length) dom.devices.hostdev = filtered;
+      else delete dom.devices.hostdev;
+    }, {
+      defineError: (err) => vmError('USB_DETACH_FAILED', `Failed to detach USB device ${vendorId}:${productId}`, err.message),
     });
-    if (filtered.length === hostdevs.length) {
-      throw vmError('USB_DETACH_FAILED', `USB device ${vendorId}:${productId} not found on VM "${name}"`);
-    }
-    if (filtered.length) dom.devices.hostdev = filtered;
-    else delete dom.devices.hostdev;
-    try {
-      await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
-    } catch (err) {
-      throw vmError('USB_DETACH_FAILED', `Failed to detach USB device ${vendorId}:${productId}`, err.message);
-    }
   }
 }

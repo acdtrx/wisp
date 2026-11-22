@@ -62,10 +62,6 @@ export function resizeDisk(name, slot, sizeGB) {
   return api(`/api/vms/${encodeURIComponent(name)}/disks/${encodeURIComponent(slot)}/resize`, { method: 'POST', body: { sizeGB } });
 }
 
-export function updateDiskBus(name, slot, bus) {
-  return api(`/api/vms/${encodeURIComponent(name)}/disks/${encodeURIComponent(slot)}/bus`, { method: 'POST', body: { bus } });
-}
-
 // CDROM operations
 export function attachISO(name, slot, path) {
   return api(`/api/vms/${encodeURIComponent(name)}/cdrom/${encodeURIComponent(slot)}`, { method: 'POST', body: { path } });

@@ -19,7 +19,7 @@ import { isWispError, wrapVmError } from '../vmManagerShared.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
 import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
-import { STATE_NAMES, isOfflineState } from './libvirtConstants.js';
+import { STATE_NAMES, isShutOff } from './libvirtConstants.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */
 
@@ -71,8 +71,8 @@ async function readDomainSummary(p) {
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse the definition of domain ${p}`);
 
-  const staleBinary = stateCode === 1 ? await isVMBinaryStale(config.name) : false;
-  const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
+  const staleBinary = isShutOff(stateCode) ? false : await isVMBinaryStale(config.name);
+  const startedAt = isShutOff(stateCode) ? null : await getQemuStartTimeMs(config.name);
   const pendingRestart = pendingRestartInForce(config.pendingRestart, startedAt);
 
   return {
@@ -286,7 +286,7 @@ export async function getRunningVMAllocations() {
   let memoryBytes = 0;
   let count = 0;
   for (const vm of list) {
-    if (vm.stateCode !== 1) continue;
+    if (isShutOff(vm.stateCode)) continue;
     vcpus += vm.vcpus;
     memoryBytes += vm.memoryMiB * 1024 * 1024;
     count += 1;
@@ -344,7 +344,7 @@ export async function getVMConfig(name) {
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
 
-  const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
+  const startedAt = isShutOff(stateCode) ? null : await getQemuStartTimeMs(config.name);
   const pendingRestart = pendingRestartInForce(config.pendingRestart, startedAt);
   const disks = await enrichDisksWithSizeGiB(config.disks);
 

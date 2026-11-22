@@ -20,7 +20,6 @@ import {
   createVmDisk,
   detachVmDisk,
   resizeVmDisk,
-  changeVmDiskBus,
   attachVmIso,
   ejectVmIso,
   attachVmUsb,
@@ -363,8 +362,6 @@ export default async function vmsRoutes(fastify) {
           vcpus: { type: 'integer', minimum: 1 },
           cpuMode: { type: 'string' },
           nestedVirt: { type: 'boolean' },
-          machineType: { type: 'string' },
-          firmware: { type: 'string' },
           bootOrder: { type: 'array', items: { type: 'string' } },
           bootMenu: { type: 'boolean' },
           osType: { type: 'string' },
@@ -473,28 +470,6 @@ export default async function vmsRoutes(fastify) {
     handler: async (request, reply) => {
       const { name, slot } = request.params;
       await resizeVmDisk(name, slot, request.body.sizeGB);
-      reply.code(204).send();
-    },
-  });
-
-  // POST /vms/:name/disks/:slot/bus — change block disk target bus (VM stopped)
-  fastify.post('/vms/:name/disks/:slot/bus', {
-    config: { auth: 'admin' },
-    schema: {
-      params: vmParamsSchema(diskSlotParam),
-      body: {
-        type: 'object',
-        required: ['bus'],
-        properties: {
-          bus: { type: 'string', enum: ['virtio', 'scsi', 'sata', 'ide'] },
-        },
-        additionalProperties: false,
-      },
-      response: { 204: noContentSchema },
-    },
-    handler: async (request, reply) => {
-      const { name, slot } = request.params;
-      await changeVmDiskBus(name, slot, request.body.bus);
       reply.code(204).send();
     },
   });
