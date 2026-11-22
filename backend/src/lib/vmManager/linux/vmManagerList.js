@@ -14,6 +14,7 @@ import {
   subscribeCallFailed,
   getDomainXML,
 } from './vmManagerConnection.js';
+import { isWispError, wrapVmError } from '../vmManagerShared.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
 import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
@@ -30,11 +31,20 @@ const listChangeHandlers = new Set();
 
 /**
  * Read every domain's summary from libvirt: the whole list, or it throws —
- * NO_CONNECTION without a connection, the failing call's own error otherwise.
+ * NO_CONNECTION without a connection, LIBVIRT_ERROR with libvirt's own text
+ * when a call fails.
  */
 async function fetchVMListFromLibvirt() {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  try {
+    return await readEveryDomain();
+  } catch (err) {
+    if (isWispError(err)) throw err;
+    throw wrapVmError('LIBVIRT_ERROR', 'Could not read the VM list from libvirt', err);
+  }
+}
 
+async function readEveryDomain() {
   const paths = await connectionState.connectIface.ListDomains(3);
 
   const list = await Promise.all(

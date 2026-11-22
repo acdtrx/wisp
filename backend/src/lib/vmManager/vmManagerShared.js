@@ -14,6 +14,11 @@ export function vmError(code, message, raw) {
   return err;
 }
 
+/** True for an error a Wisp factory built: its code is from the table, its message Wisp's words. */
+export function isWispError(err) {
+  return err?.[WISP_ERROR] === true;
+}
+
 /**
  * The error that says `message` about the failures `inners` — the manager's
  * twin of lib/appErrors.js's wrapAppError (docs/specs/ERROR-HANDLING.md → The
@@ -24,7 +29,7 @@ export function wrapVmError(code, message, ...inners) {
   const messages = [];
   const raws = [];
   for (const inner of inners) {
-    if (inner?.[WISP_ERROR] === true) {
+    if (isWispError(inner)) {
       messages.push(inner.message);
       if (inner.raw) raws.push(inner.raw);
     } else {
