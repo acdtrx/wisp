@@ -138,7 +138,7 @@ export async function runPrivileged(command, args, opts = {}) {
       if (ended) return fail(ended.reason, ended.message);
       if (code === 0) return finish(() => resolve({ stdout, stderr }));
       if (isSudoRefusal(code, stderr)) {
-        return fail('refused', `sudo refused ${command}: no sudoers rule lets the service run it (${RUN_SETUP})`, code);
+        return fail('refused', `sudo refused ${command}: no sudoers rule lets the service run it; ${RUN_SETUP}`, code);
       }
       return fail('failed', `${what} failed (exit ${code})`, code);
     });
