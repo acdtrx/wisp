@@ -63,6 +63,8 @@ export function getHostHardware() {
   };
 }
 
+export async function pingLibvirt() {}
+
 export async function getRunningVMAllocations() {
   return { vcpus: 0, memoryBytes: 0, count: 0 };
 }

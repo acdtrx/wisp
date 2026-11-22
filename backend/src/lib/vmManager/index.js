@@ -15,6 +15,7 @@ export const IS_DARWIN = impl.IS_DARWIN;
 export const getHostInfo = impl.getHostInfo;
 export const getHostHardware = impl.getHostHardware;
 export const getRunningVMAllocations = impl.getRunningVMAllocations;
+export const pingLibvirt = impl.pingLibvirt;
 export const listHostFirmware = impl.listHostFirmware;
 
 export const listVMs = impl.listVMs;

@@ -250,6 +250,23 @@ export function getCachedVMName(domainPath) {
 
 /* ── Public API ─────────────────────────────────────────────────────── */
 
+/**
+ * Ask libvirt one cheap question (its version, through the bounded interface)
+ * so that a libvirtd gone away is noticed: the failed call marks the list
+ * stale, and the next listVMs() reads it and announces the error. It also
+ * makes libvirt-dbus reopen its connection, and subscribe to libvirt's events
+ * again, after libvirtd restarts. Called on the host stats tick, so only while
+ * a client is connected; it never throws.
+ */
+export async function pingLibvirt() {
+  if (!connectionState.connectProps) return;
+  try {
+    await connectionState.connectProps.Get('org.libvirt.Connect', 'LibVersion');
+  } catch {
+    /* the failure already marked the list stale (subscribeCallFailed); the list's read reports it */
+  }
+}
+
 /** The VM list, whole, or the error of the read that could not get it. */
 export async function listVMs() {
   // Without DomainEvents nothing keeps the cache coherent — read libvirt each time.

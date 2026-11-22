@@ -43,6 +43,7 @@ export {
 export {
   listVMs,
   getRunningVMAllocations,
+  pingLibvirt,
   getVMConfig,
   findVMsUsingImage,
   subscribeVMListChange,

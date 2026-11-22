@@ -10,7 +10,7 @@ import {
   isUpdateOperationInProgress,
   getRebootSignal,
 } from './host/index.js';
-import { getRunningVMAllocations, getHostHardware } from './vmManager/index.js';
+import { getRunningVMAllocations, getHostHardware, pingLibvirt } from './vmManager/index.js';
 import { getRunningContainerCount } from './containerManager/index.js';
 import { getCachedStatus as getWispUpdateStatus } from './wispUpdate.js';
 
@@ -29,6 +29,9 @@ async function fromList(read) {
 export async function buildHostStatsPayload() {
   const hardware = getHostHardware();
   const host = getHostStats();
+  // One cheap libvirt question per tick: a libvirtd gone away marks the VM list
+  // stale, so the list read below (and the vms topic) reports it.
+  await pingLibvirt();
   const vms = await fromList(getRunningVMAllocations);
   const runningContainers = await fromList(getRunningContainerCount);
   const reboot = await getRebootSignal();

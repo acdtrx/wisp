@@ -20,6 +20,14 @@ function notFound() {
 const connectionState = {
   watchEvents: true,
   logger: null,
+  // The bounded interface's property read: a failure tells the call-failed subscribers.
+  connectProps: {
+    Get: async () => {
+      if (!libvirt.down) return 12000000;
+      signals.callFailed();
+      throw new Error("Failed to connect socket to '/var/run/libvirt/libvirt-sock'");
+    },
+  },
   connectIface: {
     ListDomains: async () => {
       libvirt.reads += 1;
@@ -63,7 +71,7 @@ mock.module(url('./vmManagerProc.js'), {
   namedExports: { isVMBinaryStale: async () => false, getQemuStartTimeMs: async () => null },
 });
 
-const { listVMs, subscribeVMListChange } = await import('./vmManagerList.js');
+const { listVMs, pingLibvirt, subscribeVMListChange } = await import('./vmManagerList.js');
 
 /** Each announcement the subscribers got: a list's names, or null for an error. */
 const frames = [];
@@ -156,4 +164,34 @@ test('a domain gone between ListDomains and its read is left out, not an error',
     connectionState.connectIface.ListDomains = real;
   }
   assert.deepEqual(frames, [['a']]);
+});
+
+/** One host stats tick: the libvirt question, then the list the stats read. */
+async function statsTick() {
+  await pingLibvirt();
+  try {
+    return await listVMs();
+  } catch {
+    return null;
+  }
+}
+
+test('a healthy stats tick reads no list and announces nothing', async () => {
+  define('a');
+  await statsTick();
+  for (let i = 0; i < 20; i++) await statsTick();
+  assert.equal(libvirt.reads, 1);
+  assert.deepEqual(frames, [['a']]);
+});
+
+test('a stats tick whose libvirt question fails marks the list stale: the same tick reads and announces the error', async () => {
+  define('a');
+  await statsTick();
+  libvirt.down = true;
+  assert.equal(await statsTick(), null);
+  assert.equal(libvirt.reads, 2);
+  assert.deepEqual(frames, [['a'], null]);
+  libvirt.down = false;
+  assert.deepEqual((await statsTick()).map((v) => v.name), ['a']);
+  assert.deepEqual(frames, [['a'], null, ['a']]);
 });

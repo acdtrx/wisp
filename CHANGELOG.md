@@ -71,6 +71,7 @@
 - **A Retry shows its read on its way** ("Retrying…").
 - **noVNC is pinned**, and a failed fetch of it fails the build.
 - **With libvirt or containerd down, the sidebar and the pages say so** — the VM or container list shows its error with a Retry (one line per list) over the list last read, instead of "no workloads" or a guessed state; a VM's or container's page shows its read's error; the Home page and the bridge, image, library-file and mount deletes fail the same way. The top bar shows "—" for the figures that come from the lists.
+- **A stopped or restarted libvirt is noticed** — while a page is open, Wisp asks libvirt one cheap question with each 5 s host figures update, so the VM list shows libvirt gone and back by itself, and VM events resume after a libvirt restart.
 - **A delete is refused when Wisp cannot tell whether the thing is in use** — a library file, an OCI image, a host mount or a bridge, with the read that failed as the reason.
 - **A name check that fails is not "the name is free"** — creating, restoring or renaming a VM while libvirt cannot answer is refused.
 - **A delete says what it could not remove** — a VM whose folder stays ends as failed, naming the folder; a VM that cannot be stopped is not deleted (its disks could be removed under the running VM). A container delete stops at the step that failed, naming it, and can be run again; a network lease it could not release does not stop it, and the delete ends saying so.
