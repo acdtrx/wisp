@@ -13,6 +13,8 @@ import { defaultConfig, parseWispConfigText } from './configSchema.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROJECT_ROOT = resolve(__dirname, '../../..');
+/** The install folder: what an install replaces, all of it but config/. */
+export const INSTALL_ROOT = PROJECT_ROOT;
 const INSTALL_CONFIG_DIR = join(PROJECT_ROOT, 'config');
 
 const CONFIG_PATH = process.env.WISP_CONFIG_PATH || join(INSTALL_CONFIG_DIR, 'wisp-config.json');

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { CONFIG_PATH } from './config.js';
+import { isAbsolute, relative, resolve } from 'node:path';
+import { CONFIG_PATH, INSTALL_ROOT } from './config.js';
 import {
   checkAbsolutePath,
   checkAdvertisedUrl,
@@ -234,6 +235,12 @@ function mergeOidc(cur, u) {
   return merged;
 }
 
+/** Whether `p` is `root` or inside it (both resolved). */
+function isWithin(root, p) {
+  const rel = relative(resolve(root), resolve(p));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
 /**
  * Apply a PATCH /api/settings body. Every sent field must be valid — the same
  * checks the read applies — or the update is refused (422); nothing is coerced
@@ -250,7 +257,11 @@ function buildUpdatedSettings(fromFile, updates) {
     next.serverName = updates.serverName?.trim() || null;
   }
   for (const key of ['vmsPath', 'imagePath', 'backupLocalPath', 'containersPath']) {
-    if (updates[key] !== undefined) next[key] = checkAbsolutePath(updates[key], key);
+    if (updates[key] === undefined) continue;
+    next[key] = checkAbsolutePath(updates[key], key);
+    if (isWithin(INSTALL_ROOT, next[key])) {
+      throw createAppError('INVALID_SETTINGS', `${key} ${next[key]} is in Wisp's install folder ${INSTALL_ROOT}, and an install replaces what that folder holds: pick a folder outside it`);
+    }
   }
   if (updates.backupMountId !== undefined) {
     if (updates.backupMountId === null || updates.backupMountId === '') {

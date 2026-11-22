@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import Fastify from 'fastify';
 
@@ -172,6 +173,16 @@ test('a body that fails its schema answers 400 VALIDATION_FAILED naming the fiel
   assert.equal(res.statusCode, 400);
   assert.equal(res.json().error, 'VALIDATION_FAILED');
   assert.match(res.json().detail, /^body\/updateChannel /);
+});
+
+test('a data path in the install folder is refused at save, naming the folder', async () => {
+  const installRoot = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
+  for (const vmsPath of [installRoot, `${installRoot}/vms`]) {
+    const res = await app.inject({ method: 'PATCH', url: '/api/settings', headers: bearer(ADMIN_TOKEN), payload: { vmsPath } });
+    assert.equal(res.statusCode, 422, vmsPath);
+    assert.equal(res.json().error, 'INVALID_SETTINGS');
+    assert.match(res.json().detail, /is in Wisp's install folder .*, and an install replaces what that folder holds/);
+  }
 });
 
 test('a container PATCH refuses eject, a bridge that is no interface name, and appConfig sent with other keys, naming them', async () => {

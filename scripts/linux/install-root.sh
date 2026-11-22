@@ -152,6 +152,17 @@ fi
 # user: absolute, and missing, empty, or a Wisp install already.
 [[ "$INSTALL_DIR" == /?* && "$INSTALL_DIR" != *//* && "$INSTALL_DIR" != */../* && "$INSTALL_DIR" != */.. ]] \
   || { echo "ERROR: the install directory must be a plain absolute path: $INSTALL_DIR" >&2; exit 1; }
+# Nor where Wisp keeps its data: an install replaces all its folder holds but
+# config/ (scripts/linux/setup/copy.sh), so a folder that is, is inside, or holds
+# /var/lib/wisp or /mnt/wisp would lose the VMs, images, backups or mounts there.
+INSTALL_REAL="$(realpath -m -- "$INSTALL_DIR")"
+for data_dir in /var/lib/wisp /mnt/wisp; do
+  data_real="$(realpath -m -- "$data_dir")"
+  if [[ "$INSTALL_REAL" == "$data_real" || "$INSTALL_REAL" == "$data_real"/* || "$data_real" == "$INSTALL_REAL"/* ]]; then
+    echo "ERROR: the install directory $INSTALL_DIR is, is inside, or holds $data_dir, where Wisp keeps its data; an install replaces what its directory holds. Install elsewhere (the default is /opt/wisp)." >&2
+    exit 1
+  fi
+done
 if [[ -e "$INSTALL_DIR" ]]; then
   if [[ ! -d "$INSTALL_DIR" ]]; then
     echo "ERROR: $INSTALL_DIR exists and is not a directory." >&2; exit 1
