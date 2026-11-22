@@ -6,7 +6,7 @@
  * required, never skipped).
  *
  * A file is a shell script when its first line is a bash or sh shebang, or its
- * name ends in `.sh` (a sourced helper such as backend/scripts/wisp-port.sh has
+ * name ends in `.sh` (a sourced file such as scripts/linux/setup/lib.sh has
  * no shebang). The files are git's: tracked plus untracked-but-not-ignored, so a
  * new script counts before it is committed, and nothing under an ignored
  * directory (node_modules, the vendored noVNC, .claude/worktrees) does.
