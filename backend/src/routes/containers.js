@@ -48,7 +48,7 @@ import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { createAppError } from '../lib/appErrors.js';
 import { openOnPurpose } from '../lib/schemaValidation.js';
-import { containerNameSchema } from '../lib/validation.js';
+import { containerBridgeSchema, containerNameSchema } from '../lib/validation.js';
 import {
   isKnownApp,
   maskContainerConfigSecrets,
@@ -128,7 +128,7 @@ const containerPatchSchema = {
       properties: {
         type: { type: 'string', enum: ['bridge'] },
         mac: { type: 'string' },
-        interface: { type: ['string', 'null'] },
+        interface: containerBridgeSchema,
       },
       additionalProperties: false,
     },

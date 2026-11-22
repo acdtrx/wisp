@@ -16,5 +16,11 @@ export const vmNameSchema = { type: 'string', maxLength: 128, pattern: WORKLOAD_
 
 export const containerNameSchema = { type: 'string', maxLength: 63, pattern: WORKLOAD_NAME_PATTERN };
 
+/**
+ * The host bridge a container joins, or null: a network interface name as the
+ * privileged helpers check it (backend/scripts/wisp-helper-lib.sh, IFACE_RE).
+ */
+export const containerBridgeSchema = { type: ['string', 'null'], pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$' };
+
 /** A container run's id, as the run log files are named (`2026-10-16T18-34-18-915Z`). */
 export const runIdSchema = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z$' };

@@ -174,13 +174,20 @@ test('a body that fails its schema answers 400 VALIDATION_FAILED naming the fiel
   assert.match(res.json().detail, /^body\/updateChannel /);
 });
 
-test('a container PATCH refuses eject, and appConfig sent with other keys, naming them', async () => {
+test('a container PATCH refuses eject, a bridge that is no interface name, and appConfig sent with other keys, naming them', async () => {
   const patch = (payload) => app.inject({
     method: 'PATCH', url: '/api/containers/web', headers: bearer(ADMIN_TOKEN), payload,
   });
   const eject = await patch({ eject: true });
   assert.equal(eject.statusCode, 400);
   assert.deepEqual(eject.json(), { error: 'VALIDATION_FAILED', detail: 'body: unknown key "eject"' });
+
+  for (const bad of ['../../../sys/class/net/br0', '-br0', 'br0 x', 'a-name-of-16-chr']) {
+    const res = await patch({ network: { interface: bad } });
+    assert.equal(res.statusCode, 400, bad);
+    assert.equal(res.json().error, 'VALIDATION_FAILED');
+    assert.match(res.json().detail, /^body\/network\/interface /);
+  }
 
   const mixed = await patch({ appConfig: { hosts: [] }, iconId: 'box', name: 'web2' });
   assert.equal(mixed.statusCode, 400);
