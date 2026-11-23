@@ -168,7 +168,8 @@ Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `ins
 | `/var/lib/wisp/vms/` | `<deploy-user>:libvirt` | `0775` | VM storage |
 | `/var/lib/wisp/backups/` | `<deploy-user>:libvirt` | `0775` | Local backups |
 | `/var/lib/wisp/containers/` | `<deploy-user>:libvirt` | `0775` | Container storage (when created by setup) |
-| `/mnt/wisp/smb/` | `<deploy-user>:libvirt` | `0775` | SMB mount parent |
+| `/var/lib/wisp/updates/` | `<deploy-user>:libvirt` | `0775` | Self-update staging |
+| `/mnt/wisp/` | `<deploy-user>:libvirt` | `0775` | Parent of the mount points |
 
 ### Per-VM directory layout
 
@@ -183,15 +184,7 @@ Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `ins
 
 ### Backup directory layout
 
-```
-<backupPath>/<vm-name>/<timestamp>/
-├── manifest.json
-├── domain.xml
-├── disk0.qcow2.gz
-├── VARS.fd
-├── cloud-init.iso.gz
-└── cloud-init.json
-```
+[BACKUPS.md → Backup Directory Structure](BACKUPS.md#backup-directory-structure).
 
 ## Systemd unit placeholders
 

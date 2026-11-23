@@ -20,13 +20,12 @@ The palette, both themes, typography and the shared list, table and modal patter
 │  280px       │   (flex-1, scrollable)                                        │
 │  fixed       │                                                               │
 │  scrollable  │                                                               │
-│              ├───────────────────────────────────────────────────────────────┤
-│              │  VM STATS BAR (when VM selected)                              │
+│              │                                                               │
 └──────────────┴───────────────────────────────────────────────────────────────┘
 ```
 
 - **Full height:** `flex h-dvh flex-col` (`dvh` so mobile browser chrome doesn't hide the bottom)
-- **Top bar:** Single row, fixed at top
+- **Top bar:** fixed at top; one row at `lg` and up, two below
 - **Below top bar:** `flex flex-1 overflow-hidden`
 - **Left panel:** Fixed width ~280px, full height below top bar, scrollable, `bg-surface-sidebar`
 - **Center panel:** Fills remaining width, `bg-surface`, content scrollable
@@ -48,13 +47,13 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
 - **Safe-area insets keep chrome off the iOS home indicator.** `index.html` sets `viewport-fit=cover`, which is what makes `env(safe-area-inset-*)` report real values; the `pt-safe` / `pb-safe` / `px-safe` utilities (`index.css`) then apply them. This matters most for a bar at the bottom of the screen: launched from the home screen the app renders edge-to-edge, and a horizontally-scrollable strip sitting in the bottom gesture band gets its swipes taken by the iOS app switcher instead of scrolling. Each bar wraps its `h-11` scroll row in a `pb-safe` element that carries the border and card background, so the pills sit above the band and the card colour still paints the indicator strip. Same treatment on the drawer's Organize footer. `px-safe` on the app shell and the drawer keeps them out of the landscape notch; `pt-safe` on the top bar means the shell never slides under the status bar, and the drawer's top offset is written against it. All inert where the insets are `0` (desktop, Android, notch-less phones, and iOS's default opaque status bar).
 - **The VM and container pages are fully manageable on phones**: the same groups in one column, forms as a sheet from the bottom ([UI-VM.md](UI-VM.md), [UI-CONTAINER.md](UI-CONTAINER.md)).
 - **USB devices** — the ID column is hidden below `sm` (Name gets the room), and the bus/device cell shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes instead of repeating the `Bus …`/`Device …` labels.
-- **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
+- **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. A service worker keeps the app shell for a launch with the server unreachable (`docs/ARCHITECTURE.md`, Offline shell); there is no offline use.
 
 ---
 
 ## Top Bar
 
-Single row containing (left to right):
+At `lg` and up, a single row containing (left to right):
 
 1. **Wisp logo/label** + server display name. When other Wisp instances are discovered on the LAN (the `discovery` topic on `/api/events`, see [DISCOVERY.md](DISCOVERY.md)), the server name grows a small chevron (`ChevronDown`) and becomes a dropdown trigger; the menu lists each discovered server (display name, plus the advertised URL's hostname and version muted underneath — the label reflects where the link goes, not the mDNS SRV host) and each row opens that server's URL in a **new tab**. With zero peers the name renders as plain text — no chevron, no button.
 2. **Host stats pills** — CPU, RAM, Disk I/O, Net I/O, **RUNNING** (running VM count and running container count as `monitor · n | box · m`, embedded inline, centered in the remaining width)
@@ -215,12 +214,8 @@ Save. An error of the card's own shows in it, below the header, and can be dismi
 
 ### ConfirmDialog
 
-Modal dialog for destructive actions:
-- Overlay: fixed inset-0, z-50, centered
-- Backdrop: black/30 opacity
-- Content: rounded card with shadow
-- Title, message, optional checkbox, Cancel/Confirm buttons
-- Escape key to close (via `useEscapeKey` hook)
+Modal dialog for destructive actions: title, message, optional checkbox, Cancel/Confirm
+buttons. It is a modal like any other (`docs/FRONTEND-RULES.md`, Modals and dialogs).
 
 ### StatPill
 
@@ -248,16 +243,15 @@ All buttons: disabled state at 40% opacity, not-allowed cursor.
 
 ### Modals
 
-- Overlay: `fixed inset-0 z-50`, the card centred; below `sm` every modal is a sheet from the bottom, full width (settled 2026-11-21)
-- Backdrop: `absolute inset-0 bg-black/30`
-- Content: `relative z-10 rounded-card bg-surface-card shadow-lg`
-- Close via Escape key
+The card is centred; below `sm` every modal is a sheet from the bottom, full width
+(settled 2026-11-21). Backdrop, layer, focus and Escape: `docs/FRONTEND-RULES.md`,
+Modals and dialogs.
 
 ### Tables
 
 Used in Image Library, Backups, and other DataTable-based lists. On **Host** tabs, table views are normally wrapped in **`SectionCard`** (see [FRONTEND-RULES.md](../FRONTEND-RULES.md) §Section shell) so the list sits in the same bordered card as Overview sections.
 
-- Shared chrome from [DataTableChrome.jsx](../../frontend/src/components/shared/DataTableChrome.jsx): **`dataTableInteractiveRowClass`** on body rows that have hover-reveal actions, and **`DataTableRowActions`** for the actions cell (`opacity-0 group-hover:opacity-100`; **`forceVisible`** when editing or loading)
+- Shared chrome from [DataTableChrome.jsx](../../frontend/src/components/shared/DataTableChrome.jsx): **`dataTableInteractiveRowClass`** on body rows that have hover-reveal actions, and **`DataTableRowActions`** for the actions cell (hover-reveal at `lg` and up only, always visible below; **`forceVisible`** when editing or loading)
 - `border-b border-surface-border` between rows (via head/body row classes)
 
 ### Form inputs
@@ -282,7 +276,7 @@ Used in Image Library, Backups, and other DataTable-based lists. On **Host** tab
 - **No VMs in list:** Left panel shows "No virtual machines" and "Click \"+ New VM\" to create one". Center panel shows "Select a VM or create a new one".
 - **Search with no matches:** Left panel shows "No matches for \"…\"" with the search term.
 - **Empty library (VM files):** Message pointing to the **upload** control in the **section** header. **All** (Host Library page): empty when there are neither VM files nor OCI images. **OCI** filter: empty state explains containerd images and that images in use by a container cannot be deleted until those containers are removed or reconfigured.
-- **No backups:** Empty table with message pointing to **Host → Host Mgmt → Backup** for destinations and **VM Overview → Backup** to create backups.
+- **No backups:** a message pointing to the VM and container pages to create the first backup.
 
 ---
 
@@ -291,7 +285,6 @@ Used in Image Library, Backups, and other DataTable-based lists. On **Host** tab
 - Every view that reads has a loading, an empty and an error state (settled 2026-11-20): a loading line or skeleton until its first read answers; its own empty text when the read holds nothing; its read's error, with a Retry when nothing is shown yet, or dismissible above the data already shown, which stays.
 - Async operations show a spinner (`Loader2` icon with `animate-spin`)
 - Action buttons show spinner and disable during the operation
-- Section save buttons show spinner while saving
 - Create VM button shows spinner with progress text
 
 ---
@@ -299,7 +292,7 @@ Used in Image Library, Backups, and other DataTable-based lists. On **Host** tab
 ## Keyboard Shortcuts
 
 - **Escape:** While a VM or container view is open (`/vm/:name/...` or `/container/:name/...`), navigates back to `/host/overview`. Handled inside `VmRoute` / `ContainerRoute`. Does **not** close tabs within the Host panel.
-- **Escape in modals:** Overlays that use `useEscapeKey` and mark their content panel with **`data-wisp-modal-root`** take precedence: the route-level Escape handler skips when that attribute is in the DOM so the overlay closes first. Image Library, USB attach, confirms, etc. follow this pattern.
+- **Escape in modals:** an open modal, popover or drawer takes Escape first: it closes the top layer, and the route-level handler stands down while any layer is open (`docs/FRONTEND-RULES.md`, Modals and dialogs).
 
 ---
 

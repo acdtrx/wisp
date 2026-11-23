@@ -10,7 +10,7 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
 - **KVM is not required** (settled 2026-11-19).
   - A host that can run only containers is still a useful Wisp host. Rejected: refusing a host without `/dev/kvm`.
   - Setup sets up VMs and containers alike on every host, so turning KVM on later needs nothing reinstalled.
-  - On a host without `/dev/kvm` the run succeeds, and setup's last lines say that the host cannot run VMs, why, and how to turn virtualization on (the firmware's setting, or nested virtualization when the host is itself a VM; then a reboot). The installer ends with them too; in the update's log they close setup's part, before the updater's `step:start-service` and `step:done`.
+  - On a host without `/dev/kvm` the run succeeds, and setup's last lines say that the host cannot run VMs, why, and how to turn virtualization on (the firmware's setting, or nested virtualization when the host is itself a VM; then a reboot). The installer ends with them too; in the update's log they close setup's part, before the install's start phase and the updater's `step:done`.
   - Containers need nothing of the host that setup does not install itself on a supported host, so there is no container counterpart, and no host is refused for lacking both.
 - **The network run by netplan**, rendered by systemd-networkd, and an **IPv4 default route**: its interface is the uplink (settled 2026-11-20).
   - A host whose uplink it does not run is refused before anything changes, whether setup makes the bridge or finds one (`UPLINK_NOT_NETPLAN`). On a host Wisp runs on already, a host an earlier release bridged with NetworkManager or systemd-networkd's own files among them, an update then rolls back and a manual upgrade stops: Wisp stays on its release until netplan runs the network (settled 2026-11-20).
@@ -278,7 +278,8 @@ On macOS, the backend starts without connecting to libvirt (dev mode) — VM ope
 ```bash
 # Edit CHANGELOG.md (add a new "## YYYY-MM-DD" section at the top), do NOT commit it.
 ./scripts/release.sh 1.0.6        # bumps versions + retitles CHANGELOG + folds it into a single release commit + tags v1.0.6
-git push && git push origin v1.0.6
+# then push the release commit and the tag to each remote: release.sh prints the commands.
+# The tag on `github` starts the release workflow.
 ```
 
 `release.sh` accepts `CHANGELOG.md` as the only dirty file in the working tree, so the new section lands in the same `release: vX.Y.Z` commit as the version bumps — no separate changelog commit needed.

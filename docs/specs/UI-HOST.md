@@ -156,7 +156,7 @@ Both update cards share the same `UpdateCard` (`frontend/src/components/host/Upd
 
 ### Tab: Backups
 
-Same as the former Backups panel: table of backups with restore/delete; description that backups are created from VM Overview and destinations are configured in Host Mgmt.
+The Backups view described under [Backups Panel](#backups-panel) above.
 
 ### Tab: App Config
 

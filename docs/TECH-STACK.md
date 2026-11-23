@@ -110,8 +110,8 @@
 
 - **Bare-metal systemd** (`wisp.service`, one process for API + SPA) — deliberate
   deviation from a container pipeline: Wisp **is** the platform that pipeline deploys
-  onto, so it runs on the host, not in a container. Self-update from GitHub Releases via
-  `wisp-updater` atomic swap. No Docker anywhere in the project. The flow:
+  onto, so it runs on the host, not in a container. Self-update from GitHub Releases through
+  `wisp-updater`. No Docker anywhere in the project. The flow:
   `PRODUCTION.md`, Deploys.
 
 | Component | Technology | Purpose |
@@ -122,7 +122,7 @@
 | Privileged helpers | `install-helpers.sh` | Setup's helpers step: copies `/usr/local/bin/wisp-*` from `backend/scripts/` where they differ, on every install and update |
 | Packaging | tar.gz (`scripts/stage-release.sh`) | One release-shaped tarball, prebuilt frontend, for releases and dev pushes alike |
 | Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
-| Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the dedicated systemd unit. See [specs/UPDATES.md](specs/UPDATES.md) |
+| Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; the in-app Update button downloads and verifies a release, and the dedicated systemd unit installs it, keeping a way back. See [specs/UPDATES.md](specs/UPDATES.md) |
 | Containerization | None | No Docker. Services run directly on the Linux host. |
 
 ## Dependencies
@@ -218,37 +218,24 @@ Installed by the server setup script:
 | libvirt-clients | CLI tools (virsh, etc.) |
 | libvirt-dbus | DBus interface for libvirt (required for dbus-next communication) |
 | ovmf | UEFI firmware for VMs |
-| swtpm | Software TPM for Windows VMs |
+| swtpm, swtpm-tools | Software TPM for Windows VMs, and `swtpm_setup`, which libvirt runs to make its state |
+| smartmontools | `smartctl`, behind the `wisp-smartctl` helper: disk health |
+| dmidecode | Behind the `wisp-dmidecode` helper: RAM module info |
+| rsync | The updater's copy of the install, and its restore |
+| curl, ca-certificates, gnupg | Setup's own downloads: the apt repos' signing keys and the CNI plugins |
+| nodejs | The runtime, from NodeSource's apt repo |
 | avahi-daemon | mDNS/DNS-SD daemon used for publishing container `.local` hostnames when Local DNS is enabled |
 | cloud-image-utils | `cloud-localds` for cloud-init ISO generation |
 | genisoimage | Fallback ISO generation when `cloud-localds` is unavailable |
 | qemu-utils | `qemu-img` for disk operations (create, convert, resize, info) |
 | hwdata | `pci.ids` and `usb.ids` under `/usr/share/hwdata/`; Host Overview PCI names and USB name fallback (files read by the app; no `lspci`/`lsusb`) |
 | cifs-utils | SMB mount support for network storage mounts |
-| containerd.io | Container runtime (2.0+); managed via gRPC from the backend |
+| containerd.io | Container runtime (2.0+), from Docker's apt repo; managed via gRPC from the backend |
 | unzip | Info-ZIP `unzip` — extracts `.zip` uploads for container directory mounts (`unzip -Z1` + `unzip -d`) |
-| CNI plugins | bridge, dhcp, loopback — container networking (installed to `/opt/cni/bin/`) |
+| CNI plugins | bridge, dhcp, loopback — container networking (downloaded to `/opt/cni/bin/` by setup's CNI step, not from apt) |
 
 #### CLI Tools Used by Backend
 
-These are invoked via `child_process` where no native Node.js alternative exists; the allowlist itself is `CODING-RULES.md` §7:
-
-| Tool | Used for |
-|------|----------|
-| `unzip` | Container directory mount `.zip` extraction (after `unzip -Z1` path validation) |
-| `qemu-img` | Disk creation, copy/convert, resize, info |
-| `cloud-localds` | Cloud-init seed ISO generation (preferred) |
-| `genisoimage` | Cloud-init seed ISO generation (fallback) |
-| `openssl` | Password hashing for cloud-init (`openssl passwd -6`) |
-| `cp` | Fast disk copy with `--reflink=auto` when available; falls back to Node `copyFile` (backup, restore) |
-| `xz` | Decompress HAOS `.qcow2.xz` downloads (`xz -dc`) |
-| `wisp-power` | Host shutdown/reboot (privileged helper; see CONFIGURATION) |
-| `wisp-dmidecode` | RAM module info via `dmidecode` (privileged helper; see HOST-MONITORING) |
-| `wisp-os-update` | OS package update check/upgrade with apt (privileged helper) |
-| `wisp-mount` | SMB + removable-disk mount/unmount/check (privileged helper) |
-| `wisp-smartctl` | Disk SMART summary (`smartctl --json`; privileged helper) |
-| `wisp-bridge` | Managed VLAN bridges via netplan (privileged helper) |
-| `/opt/cni/bin/bridge` | CNI bridge plugin exec for container networking (standard CNI interface) |
-| `/opt/cni/bin/dhcp` | CNI DHCP daemon for container IP assignment |
-| `ip` | Network namespace management (`ip netns add/delete`) for containers |
-| `systemd-notify` | `--ready` once the backend listens: wisp.service is `Type=notify` (skipped without `NOTIFY_SOCKET`) |
+The backend runs a binary only where Node has no practical alternative. The list, and the
+rule for adding to it: `CODING-RULES.md` §7. The privileged helpers and what each does:
+[specs/DEPLOYMENT.md](specs/DEPLOYMENT.md), The helpers.

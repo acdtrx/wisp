@@ -4,7 +4,7 @@ Wisp can update itself in place from GitHub Releases. The full chain is GitHub-o
 
 ## Architecture: who-runs-what
 
-The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type=oneshot`) so the backend that triggers an update is not the process trying to swap itself. The updater lives in its own cgroup, with its own stdio (journald), and the backend's death during `step:stop-services` cannot reach it. This sidesteps the entire class of bash↔node↔sudo↔scope process-tree issues that the v1.0.6–v1.0.10 series struggled with.
+The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type=oneshot`) so the backend that triggers an update is not the process trying to swap itself. The updater lives in its own cgroup, with its own stdio (journald), and the backend's death during `step:stop-service` cannot reach it. This sidesteps the entire class of bash↔node↔sudo↔scope process-tree issues that the v1.0.6–v1.0.10 series struggled with.
 
 ## Pieces
 
@@ -31,7 +31,7 @@ The host stats payload (the `stats` topic on `/api/events`) includes `wispUpdate
 
 ## Privilege model
 
-The deploy user can do exactly one root-side thing:
+For an update the deploy user can do exactly one root-side thing (the helpers' rules, one per helper, are in [DEPLOYMENT.md](DEPLOYMENT.md), The helpers):
 
 ```
 <deploy-user> ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block wisp-updater.service
@@ -212,11 +212,11 @@ State an earlier release wrote — libvirt domain XML, `container.json`, config 
                { "id": "0003-…", "at": "…", "result": "error", "changes": [], "error": "<message>" } ] }
 ```
 
-Beside `wisp-config.json` (it follows `WISP_CONFIG_PATH`, as `wisp-password` does, in development and tests only: an installed Wisp refuses the key — [CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)), mode `0600`, atomic writes (`lib/atomicJson.js`; the backend's boot cleanup sweeps leftovers in that directory), gitignored. One entry per id: rerunning a failed id replaces its `error` entry. Entries for ids a release no longer ships are kept. The updater preserves it on swap (`RSYNC_EXCLUDES`) and restores it on rollback with the rest of `config/` (settled 2026-11-13). Forcing a migration to run again means deleting its entry by hand; the next start runs it.
+Beside `wisp-config.json` (it follows `WISP_CONFIG_PATH`, as `wisp-password` does, in development and tests only: an installed Wisp refuses the key — [CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)), mode `0600`, atomic writes (`lib/atomicJson.js`; the backend's boot cleanup sweeps leftovers in that directory), gitignored. One entry per id: rerunning a failed id replaces its `error` entry. Entries for ids a release no longer ships are kept. An update keeps it, as it keeps all of `config/` (the keep rule), and a rollback restores it with the rest of `config/` (settled 2026-11-13). Forcing a migration to run again means deleting its entry by hand; the next start runs it.
 
 ### Failure and rollback
 
-A failing migration ends the new backend's start, so under the updater `step:start-service` fails within seconds and the updater rolls back (tree, `config/`, host setup). The rollback restores `config/` and the ledger together (settled 2026-11-13): what a migration changed in `config/` is reverted with its ledger entry, and every migration that start ran runs again at the next start of the newer release — safe because migrations are idempotent. What they changed outside `config/` stays, which is why that state must stay backward-compatible: the restored release runs on it. The restored release then migrates at its start, against the restored ledger, and finds nothing pending.
+A failing migration ends the new backend's start, so under the updater the install's start phase fails within seconds and the updater rolls back (tree, `config/`, host setup). The rollback restores `config/` and the ledger together (settled 2026-11-13): what a migration changed in `config/` is reverted with its ledger entry, and every migration that start ran runs again at the next start of the newer release — safe because migrations are idempotent. What they changed outside `config/` stays, which is why that state must stay backward-compatible: the restored release runs on it. The restored release then migrates at its start, against the restored ledger, and finds nothing pending.
 
 The ledger restore lives in `wisp-updater`, so it is dark-shipped (see above): the first update that carries it is still rolled back by the previous updater, which restores `config/` but keeps the ledger. An update from v2.6.0 that fails after `0007` ran therefore restores the old config while the ledger keeps `0007` as `ok`; until that entry is removed by hand, every later update then fails the strict config check and rolls back.
 

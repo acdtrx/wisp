@@ -60,7 +60,7 @@ holds the UI library's rules.
 
 - Keep an error shown to the user visible until the user dismisses it.
   - Applied: an error shows in the one error display (`ErrorBanner`). A command's error
-    stays until the user dismisses it or runs that command again.
+    stays until the user dismisses it or starts another action on the same workload.
   - Applied: a failed read never hides data already shown: it shows above the data and
     can be dismissed. With no data shown, the view is the error, with a Retry. A
     stream's error shows the same way; a dropped connection is a status line, not an
@@ -387,7 +387,7 @@ Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with t
 ### Row state and errors
 
 - **Per-row loading:** Disable or show a spinner on the row (or action) that triggered the request; avoid blocking unrelated rows unless the backend requires it.
-- **Workload busy** (a running job — a backup, a start, a delete, any kind — holds the workload's backend lock, so every mutation would 409): disable the mutating controls rather than letting them fail, with the reason as their `title`; tables reuse their lock note for the same text, and section **Save** buttons take it too. A workload is busy while a running job on the `jobs` topic has it as its `subject`, never by comparing a job's title (settled 2026-11-20); the reason names that job's title.
+- **Workload busy** (a running job — a backup, a start, a delete, any kind — holds the workload's backend lock, so every mutation would 409): disable the mutating controls rather than letting them fail, with the reason as their `title`; tables reuse their lock note for the same text. A workload is busy while a running job on the `jobs` topic has it as its `subject`, never by comparing a job's title (settled 2026-11-20); the reason names that job's title.
 - **Errors:** Prefer row-scoped or action-scoped messages when a single row fails; use section-level error (e.g. `SectionCard` `error`) for load failures or cross-row validation that is not tied to one line.
 
 ### Variants

@@ -183,17 +183,16 @@ source refer to them.
   - Applied — the exec allowlist: `qemu-img`, `cp --reflink=auto` (with a `copyFile`
     fallback), `cloud-localds`/`genisoimage`, `openssl passwd`, `xz`, `tar`, `unzip`
     (`-Z1` listing + extract for container mount zip uploads), `mkfifo` (container exec
-    stdio FIFOs), `ip netns add|delete` (container netns fallback only when the
-    `wisp-netns` helper is absent — works only with the backend as root), the privileged
-    helpers `wisp-os-update`, `wisp-mount`, `wisp-power`, `wisp-dmidecode`,
-    `wisp-smartctl`, `wisp-nvram`, `wisp-netns`, `wisp-cni`, `wisp-bridge`,
-    `systemctl start wisp-updater.service` (via `sudo -n`), `systemd-notify --ready`
-    (the start's readiness, under `Type=notify`; settled 2026-11-18), and CNI plugins
-    under `/opt/cni/bin/`. Build-time only: `git` (noVNC vendoring). macOS dev stubs only:
-    `system_profiler`, `vm_stat`, `sysctl`. Get the user's validation before adding
-    anything else. Register a new privileged `wisp-*` helper in
-    `scripts/linux/setup/install-helpers.sh` and document it per the checklist in
-    [`specs/DEPLOYMENT.md`](specs/DEPLOYMENT.md).
+    stdio FIFOs), `systemd-notify --ready` (the start's readiness, under `Type=notify`;
+    settled 2026-11-18), and, through `sudo -n` only, the privileged helpers
+    (`wisp-os-update`, `wisp-mount`, `wisp-power`, `wisp-dmidecode`, `wisp-smartctl`,
+    `wisp-nvram`, `wisp-netns`, `wisp-cni`, `wisp-bridge`) and
+    `systemctl start wisp-updater.service`. The backend runs no network tool and no CNI
+    plugin itself: the helpers do. Build-time only: `git` (noVNC vendoring). macOS dev
+    stubs only: `system_profiler`, `vm_stat`, `sysctl`. Get the user's validation before
+    adding anything else. A new privileged helper is a file in `backend/scripts/`, which
+    setup installs with its sudo rule ([`specs/DEPLOYMENT.md`](specs/DEPLOYMENT.md), The
+    helpers).
 
 ## 8. Frontend
 

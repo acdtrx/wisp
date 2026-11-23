@@ -14,7 +14,7 @@ Wisp targets homelab users, prosumers, and small-team administrators who need a 
 
 ## Primary Goals
 
-- **Minimal, uncluttered UI** — every screen earns its elements; no visual clutter. Light is the current default look; theming direction (e.g. dark mode) is a backlog matter, not a goal statement (settled 2026-08-11).
+- **Minimal, uncluttered UI** — every screen earns its elements; no visual clutter.
 - **Full VM lifecycle management** — create, start, stop, reboot, suspend, resume, delete, back up, and restore (as a new VM) virtual machines.
 - **Container lifecycle** — create, configure, start, stop, and manage containers on containerd (bridge networking, mounts, logs), including app containers with dedicated configuration UIs.
 - **In-browser consoles** — VNC graphical console for VMs and an interactive shell for containers, with no client software required.

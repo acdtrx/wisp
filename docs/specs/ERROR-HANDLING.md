@@ -466,7 +466,7 @@ some other operation later succeeds).
 
 ### Inline errors
 
-Red error text displayed within a section card. Used for per-section save failures.
+Red error text displayed within a card, below its header. Used for a card's own error: a failed read, or a failed action of that card.
 
 ### Job progress errors
 

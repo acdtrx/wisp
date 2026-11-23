@@ -137,14 +137,14 @@ The Host → Overview tab displays system info retrieved from `GET /api/host` (S
 
 ## OS Updates
 
-OS update check and upgrade are in **Host → Host Mgmt** tab. When `/usr/local/bin/wisp-os-update` is installed (by setup), the app can:
+OS update check and upgrade are in the **Host → Software** tab. When `/usr/local/bin/wisp-os-update` is installed (by setup), the app can:
 
 1. **Check for updates** — runs `wisp-os-update list` (the one read op: it syncs the package database and prints the upgradable packages), returns their count; the count and package list are cached for the SSE `pendingUpdates` badge and the package-list modal
 2. **Install updates** — runs `wisp-os-update upgrade`, performs a full non-interactive upgrade
 
 Uses apt: Wisp hosts run Debian or Ubuntu.
 
-A background hourly check runs automatically; when updates are available, a badge is shown on the Host entry (left panel) and on the Host Mgmt tab. The timestamp of the last successful check is exposed as `updatesLastChecked` in the stats SSE and displayed in the UI as a relative time. The script is invoked via `sudo` (sudoers from setup). If `/usr/local/bin/wisp-os-update` is missing, the feature returns 503.
+A background hourly check runs automatically; when updates are available, a badge is shown on the Host entry (left panel) and on the Software tab. The timestamp of the last successful check is exposed as `updatesLastChecked` in the stats SSE and displayed in the UI as a relative time. The script is invoked via `sudo` (sudoers from setup). If `/usr/local/bin/wisp-os-update` is missing, the feature returns 503.
 
 ## Network Bridges
 
