@@ -275,13 +275,13 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy
   );
 }
 
-export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelect, defaultFilter = 'all' }) {
-  const isPageLike = mode === 'page' || mode === 'embedded';
+export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onSelect, defaultFilter = 'all' }) {
+  const isEmbedded = mode === 'embedded';
   const filterTabs = useMemo(() => {
-    if (isPageLike) return FILTERS_PAGE;
+    if (isEmbedded) return FILTERS_PAGE;
     if (pickerKind === 'container') return FILTERS_PICKER_CONTAINER;
     return FILTERS_PICKER;
-  }, [isPageLike, pickerKind]);
+  }, [isEmbedded, pickerKind]);
   /* The image update check: a job, busy until it ended and the update status and the
    * images, read again after it, have landed. Its progress (the latest `checking` and
    * `skipped` events) shows on the status line; its result names the containers it
@@ -311,10 +311,10 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
    * pulled, updated or deleted — by any tab, a container create or the update check).
    * The files are read whole and filtered here. */
   const needFiles = filter !== 'container';
-  const needImages = filter === 'container' || (isPageLike && filter === 'all');
+  const needImages = filter === 'container' || (isEmbedded && filter === 'all');
   const library = useRecord(needFiles ? RECORD.LIBRARY : null);
   const images = useRecord(needImages ? RECORD.CONTAINER_IMAGES : null);
-  const updateStatusRecord = useRecord(isPageLike ? RECORD.IMAGE_UPDATE_STATUS : null);
+  const updateStatusRecord = useRecord(isEmbedded ? RECORD.IMAGE_UPDATE_STATUS : null);
   const updateStatus = updateStatusRecord.data;
   const files = useMemo(() => {
     const all = needFiles ? library.data ?? NO_ROWS : NO_ROWS;
@@ -373,7 +373,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   }, [mode, pickerKind, filter]);
 
   const mergedAllRows = useMemo(() => {
-    if (!isPageLike || filter !== 'all') return null;
+    if (!isEmbedded || filter !== 'all') return null;
     const merged = [
       ...files.map((f) => ({ kind: 'file', file: f })),
       ...containerImages.map((o) => ({ kind: 'oci', oci: o })),
@@ -384,7 +384,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       return na.localeCompare(nb);
     });
     return merged;
-  }, [isPageLike, filter, files, containerImages]);
+  }, [isEmbedded, filter, files, containerImages]);
 
   /* Done once the list holds the file: it arrives on the `library` cue. */
   const handleUpload = (file) => {
@@ -478,7 +478,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         ))}
       </div>
       <div className="flex items-center gap-1 border-l border-surface-border pl-3">
-        {isPageLike && isOciView && (
+        {isEmbedded && isOciView && (
           <button
             type="button"
             onClick={() => startImageUpdateCheck(null)}
@@ -516,8 +516,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       </div>
     </div>
   );
-
-  const pageGutters = mode === 'page' ? 'px-6 py-5' : 'px-4 py-4';
 
   const sectionCardNode = (
     <Card
@@ -563,10 +561,10 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </div>
           )}
 
-          {isPageLike && isOciView && (
+          {isEmbedded && isOciView && (
             <RecordError record={updateStatusRecord} what="image update status" className="mb-2" />
           )}
-          {isPageLike && isOciView && (
+          {isEmbedded && isOciView && (
             <div className="mb-3 flex items-center justify-between text-xs text-text-muted">
               <span>
                 {check.busy ? (
@@ -593,7 +591,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               )}
             </div>
           )}
-          {isPageLike && isOciView && (
+          {isEmbedded && isOciView && (
             <ErrorBanner className="mb-3" error={check.error} prefix="Update check" onDismiss={check.dismiss} />
           )}
           {loading ? (
@@ -634,7 +632,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               </DataTable>
             </DataTableScroll>
           )
-        ) : isPageLike && filter === 'all' && mergedAllRows ? (
+        ) : isEmbedded && filter === 'all' && mergedAllRows ? (
           mergedAllRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <HardDrive size={32} className="mb-2 text-text-muted" />
@@ -755,7 +753,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           </div>
           {urlCheckResult?.ok && (
             <div className="mb-3 rounded-sm bg-status-running-soft px-3 py-2 text-xs text-status-running">
-              {`OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`}
+              {`OK${urlCheckResult.contentLength != null ? ` — ${formatBytes(urlCheckResult.contentLength)}` : ''}`}
             </div>
           )}
           {/* The server's reason the URL can't be downloaded, or the check's own failure. */}
@@ -814,7 +812,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <div className={`min-h-0 flex-1 overflow-y-auto ${pageGutters}`}>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {sectionCardNode}
       </div>
       {modalNodes}
