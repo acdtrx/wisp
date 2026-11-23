@@ -18,25 +18,17 @@
   caller `lib/containerManager/linux/`), **`fast-xml-parser`** (libvirt domain XML, never
   regex).
 - **Fastify 5.** **Schema validation: JSON Schema with ajv**, the one validator for every
-  route's input and every MCP tool's arguments (`lib/schemaValidation.js`; settled
-  2026-11-20). Two compilers, chosen by request part: JSON bodies (and tool arguments) are
-  not coerced, the querystring and params, which arrive as strings, are coerced to their
-  schema's type; both refuse unknown keys (`removeAdditional: false`,
-  `additionalProperties: false` on every object not marked `openOnPurpose`) and are strict, so a schema ajv
-  cannot read as written — a union type, an unknown keyword — fails at boot. A route that
-  declares no querystring or body takes none, and `npm run check` fails a route without
-  the schemas it needs (the route report). Routes throw, and one error handler answers every
-  failure, validation errors included, with the failure shape and the status the one
-  table of codes gives it (CODING-RULES §5). Route **response schemas are
-  authoritative** for serialized output: add a new response field to the route schema in
-  the same edit, or Fastify strips it, and make a field nullable where the handler can
-  answer `null`, or Fastify turns it into `""`, `0`, `false` or `{}`. A unit test
-  (`routes/responseSchemas.test.js`) puts each route's answers, captured on a host and
-  written by hand for the states a capture misses (`routes/fixtures/responses/`), through
-  the route's own response schema and fails on any field dropped or value changed. Plugins: cors, multipart (streamed uploads),
-  static (serves the SPA + vendored noVNC), websocket (VNC proxy, container shell). CORS
-  allows `localhost:5173` in development only; in production the backend serves its own
-  client, same origin.
+  route's input and every MCP tool's arguments (settled 2026-11-20). JSON bodies and
+  tool arguments are not coerced; the querystring and params, which arrive as strings,
+  are coerced to their schema's type. Unknown keys are refused, and a schema ajv cannot
+  read as written fails at boot. Route **response schemas are authoritative** for
+  serialized output: add a new response field to the route schema in the same edit, or
+  Fastify strips it, and make a field nullable where the handler can answer `null`, or
+  Fastify turns it into `""`, `0`, `false` or `{}`; a unit test puts each route's
+  captured answers through its response schema. One error handler answers every failure
+  (CODING-RULES §5). Plugins: cors (development only: in production the backend serves
+  its own client, same origin), multipart (streamed uploads), static (the SPA and the
+  vendored noVNC), websocket (VNC proxy, container shell).
 - **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
 - **`undici`** for every outbound request, only in the two fetch helpers of `lib/downloads/`, the one home of
   outbound HTTP (no global `fetch` elsewhere in the backend): the SSRF-hardened fetch,
@@ -113,17 +105,16 @@
   onto, so it runs on the host, not in a container. Self-update from GitHub Releases through
   `wisp-updater`. No Docker anywhere in the project. The flow:
   `PRODUCTION.md`, Deploys.
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Process manager | systemd | Single service unit (`wisp.service`) — one Node process serves both API and SPA. |
-| Deployment | scp + SSH (`scripts/push.sh`) | Stages the release-shaped tarball, uploads it to `/tmp` on the server, runs its `install.sh` over SSH |
-| Setup's Python | Python 3 (`scripts/linux/setup/*.py`) | Setup and the installer only, where Node may not be installed yet: as root, but for `install-state.py`, which the answers step also runs as the deploy user (`config.sh`). The network plan's parsers: they read the network's configuration and JSON (netplan's YAML and its parser, networkd's units, `networkctl`'s and `ip`'s JSON, cloud-init's configuration) with a real parser. And two helpers: `dpkg-locked.py`, the packages step's dpkg run holding dpkg's frontend lock as apt does; `install-state.py`, the installer's and the answers step's reading of whether `wisp-config.json` names the server. The standard library, plus netplan's own `netplan` module and PyYAML, which netplan.io installs with it, as it does `python3` itself: the plan runs no Python before it knows netplan is there (DEPLOYMENT.md, Supported hosts; settled 2026-11-20). Not jq or Node: neither is on a fresh host, and Node is what the packages step installs (settled 2026-11-19). |
-| Privileged helpers | `install-helpers.sh` | Setup's helpers step: copies `/usr/local/bin/wisp-*` from `backend/scripts/` where they differ, on every install and update |
-| Packaging | tar.gz (`scripts/stage-release.sh`) | One release-shaped tarball, prebuilt frontend, for releases and dev pushes alike |
-| Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
-| Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; the in-app Update button downloads and verifies a release, and the dedicated systemd unit installs it, keeping a way back. See [specs/UPDATES.md](specs/UPDATES.md) |
-| Containerization | None | No Docker. Services run directly on the Linux host. |
+- **One release-shaped tarball** with a prebuilt frontend, for releases and dev pushes
+  alike: hosts never build. Install and setup: [specs/DEPLOYMENT.md](specs/DEPLOYMENT.md);
+  update and release: [specs/UPDATES.md](specs/UPDATES.md).
+- **Setup's Python** (Python 3, `scripts/linux/setup/*.py`), for setup and the installer
+  only, where Node may not be installed yet (settled 2026-11-19; not jq or Node: neither
+  is on a fresh host). It reads the network's configuration with real parsers (netplan's
+  YAML, networkd's units, `networkctl`'s and `ip`'s JSON, cloud-init's configuration)
+  and holds two small helpers of setup. The standard library, plus netplan's own
+  `netplan` module and PyYAML, which netplan.io installs with `python3` itself: setup
+  runs no Python before it knows netplan is there (settled 2026-11-20).
 
 ## Dependencies
 
