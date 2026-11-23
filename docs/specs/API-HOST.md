@@ -283,6 +283,8 @@ Static/semi-static hardware details for the Host Overview tab. What each part ho
 
 Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `null` if unknown), and `pciAddress` (PCI BDF or `null`) so the UI can associate drives with PCI controllers. Linux disks also include `smart` summary fields: `supported`, `overall` (`healthy` / `warning` / `failing` / `unknown`, or `sleeping` — the disk is spun down and was not woken, so every other field is `null` and `error` is `null`), `temperatureC`, `powerOnHours` (cumulative power-on time, not I/O hours), `criticalWarning`, `lastUpdated`, and `error` (non-null when SMART is unavailable or read fails for that disk). When present: NVMe `percentageUsed` (0–255 per NVM Express; may exceed 100), `availableSpare`, `availableSpareThreshold`; ATA `reallocatedSectors`, `pendingSectors`, `offlineUncorrectableSectors`; `ssdLifePercentRemaining` (0–100, vendor-dependent).
 
+A `network[]` entry's `speedMbps` is `null` when the kernel does not know the link's speed (a virtual interface, a link that is down).
+
 `pciDevices` lists PCI functions; names come from the system PCI ID database (`pci.ids`). `classId` is the first four hex digits of `classCode` (24-bit class code). `system` is `null` when DMI is unavailable (some containers/VMs); otherwise fields are present and may be JSON `null` when not filled by firmware.
 
 ### POST /api/host/power/shutdown · `admin`

@@ -66,9 +66,9 @@
   the root `test` script through rule 6's one allowance in `scripts/check-fences.mjs`
   (settled 2026-11-20). Setup's Python has its unit tests the same way: `unittest`,
   the standard library's runner, over `scripts/linux/setup/*_test.py` beside the code
-  they test (`npm run check`'s `setup-python`). Test files never ship:
-  `scripts/stage-release.sh` leaves out `*.test.js` and `*_test.py` and fails a staged
-  tree or tarball that holds one (settled 2026-11-18; the Python tests 2026-11-20).
+  they test (`npm run check`'s `setup-python`). Test files never ship (settled
+  2026-11-18; the Python tests 2026-11-20): what a release holds is
+  [`specs/UPDATES.md`](specs/UPDATES.md).
   The operation modules' tests (`lib/vmOperations.js`, `lib/containerOperations.js`)
   stand the managers and the stores in with Node's module mocks (`mock.module`), so
   the root `test` script runs with `--experimental-test-module-mocks`: the commands
@@ -125,7 +125,7 @@ Rules: `CODING-RULES.md` §3. Each line: what it is for, and what it saves.
 
 #### Repo root (dev only)
 
-Never on a host: the release tarball and the dev zip carry the root `package.json`
+Never on a host: the release tarball carries the root `package.json`
 alone, and nothing installs the root's packages there.
 
 | Component | Technology | Version | Purpose |

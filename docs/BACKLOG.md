@@ -81,6 +81,13 @@ NetworkManager and plain systemd-networkd, because it is common across distribut
 **Revisit trigger:** a Debian server install refused, or a first distribution beyond
 Debian and Ubuntu.
 
+**The vendored noVNC ships twice.** The backend serves `/vendor/` from
+`frontend/public/vendor`, and Vite also copies all of `public/` into `frontend/dist`, so
+a release holds the same files under `frontend/dist/vendor` too (seen while the release
+became a list, 2026-11-24). One home would be the backend serving `/vendor/` from the
+built tree, or the build leaving `vendor/` out. **Revisit trigger:** the release's size
+matters, or the two copies are found to differ.
+
 ## Networking: addresses, DHCP, mDNS, bridges
 
 **Two containers of the same name on two Wisp hosts get the same address.** The backend
