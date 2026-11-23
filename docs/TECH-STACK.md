@@ -5,7 +5,7 @@
 
 ## Server
 
-- **Node.js 24+ LTS**, ESM only, **plain JavaScript — no TypeScript** (deviation: the
+- **Node.js 26+ LTS** (settled 2026-11-23), ESM only, **plain JavaScript — no TypeScript** (deviation: the
   codebase predates the TypeScript default; a migration would be its own spec-sized
   decision, not a routine upgrade).
 - npm; `npm ci` for reproducible installs, and the lockfile ships with deploys. No
@@ -77,7 +77,8 @@
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
   ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`, and for the frontend
   `no-shadow` and `react-hooks/exhaustive-deps` (settled 2026-11-21: every effect
-  states its dependencies). No style rule. A hand-written scan was rejected: an undefined name needs scope
+  states its dependencies), and one rule of the project's own, in `scripts/eslint-rules/`:
+  a handler that drops its error says why (settled 2026-11-23). No style rule. A hand-written scan was rejected: an undefined name needs scope
   analysis (settled 2026-11-18).
 - **shellcheck**, a development tool installed on the machine (0.11.0; `brew install
   shellcheck`, and the release workflow installs the same version by a pinned
@@ -87,8 +88,8 @@
 - **The other checks are Node scripts** in `scripts/` (`check-imports`, `check-fences`,
   the shell check): dependency-free scans for what ESLint does not see (the fences,
   names across backend files, facade parity, cycles, shell syntax). `check-exports` —
-  an export under `frontend/src` that nothing imports fails it — reads imports and
-  exports from a real parse, through ESLint's `Linter` and a rule of its own (settled
+  an export under `frontend/src` that nothing imports fails it — and the import order
+  held by `check-imports` read imports and exports from a real parse, through ESLint's `Linter` and a rule of its own (settled
   2026-11-21: a hand lexer misreads text as code), and fails on a file that does not
   parse. ESLint
   covers `shared/` too, and holds the wire's names: `no-restricted-syntax` selectors
@@ -137,7 +138,7 @@ alone, and nothing installs the root's packages there.
 
 | Component | Technology | Version | Purpose |
 |-----------|-----------|---------|---------|
-| Runtime | Node.js | 24+ LTS | Server runtime. Optional `config/runtime.env` parsed in-process; `--watch` for dev mode. |
+| Runtime | Node.js | 26+ LTS | Server runtime. Optional `config/runtime.env` parsed in-process; `--watch` for dev mode. |
 | Framework | Fastify | ^5.8 | HTTP server with built-in JSON schema validation, low overhead, plugin system. |
 | Schema validation | ajv | ^8.20 | The validator of every route's input and every MCP tool's arguments: two instances (JSON bodies uncoerced, string parts coerced), strict, unknown keys refused. At Fastify's major (its own compiler bundles ajv 8): one validator for the routes' and the tools' schemas, rather than Fastify's single coercing instance and a hand-written argument check per tool. |
 | CORS | @fastify/cors | ^11.2 | Cross-origin support for development mode only. |

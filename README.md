@@ -61,7 +61,7 @@ This project was initially built with [Cursor](https://cursor.com) and more rece
 - **Linux host**: Debian or Ubuntu with systemd 254 or later; setup refuses any other.
 - **Network**: run by netplan (as on Ubuntu and Debian server installs), with a plain Ethernet uplink on DHCP or a static IPv4 address. Setup makes the bridge (`br0`) that VMs and containers join the LAN through, or uses the one netplan already has on the uplink; it refuses a host whose network another tool runs (NetworkManager, ifupdown, systemd-networkd on its own), and what it cannot bridge (see `docs/specs/DEPLOYMENT.md`).
 - **KVM/QEMU, libvirt, containerd 2.0+** — installed by the project's setup script.
-- **Node.js 24+ LTS**.
+- **Node.js 26+ LTS**.
 
 macOS is supported for backend development (no hypervisor features); production is Linux only.
 

@@ -28,7 +28,7 @@ long prose. Use plain English, not niche or trendy terminology.
 
 ## Project Facts `[PROJECT]`
 
-- Runtime: Node.js 24+ LTS, ESM, plain JavaScript (no TypeScript) — see
+- Runtime: Node.js 26+ LTS, ESM, plain JavaScript (no TypeScript) — see
   `docs/TECH-STACK.md`. Package manager: npm — do not introduce others.
 - Commands — keep this line current. Backend dev
   `cd backend && NODE_ENV=development npm run dev` (→ `127.0.0.1:8080`) · Frontend dev

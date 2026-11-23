@@ -94,6 +94,7 @@ The values live in `frontend/src/index.css`: the light set in `@theme`, the dark
 | `surface-input` | `#ffffff` | `#0b1a18` | Text-input fill |
 | `accent` | `#0fa396` | `#0fa396` | Primary actions, active states; icons and filled buttons only. The same in dark: lifted, white on an accent fill would fall under 3:1 |
 | `accent-hover` | `#0b8578` | `#14b5a7` | Hover for accent elements: darkens in light, lifts in dark |
+| `accent-bright` | `#3ec3d5` | `#3ec3d5` | The far end of the accent gradient (the wisp glyph, a running job's bar); never text or a fill of its own |
 | `accent-soft` | `#dff3f0` | `#0f342f` | Accent background wash (selected rows, active tabs, hover tints) |
 | `accent-text` | `#0a7568` | `#4fd1c0` | Accent as small text: links, active tab labels, badge text |
 | `status-running` | `#21813f` | `#45c97a` | Running, success |

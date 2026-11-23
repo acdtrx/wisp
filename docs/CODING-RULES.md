@@ -86,6 +86,9 @@ source refer to them.
 - Prefer inspecting state up front and choosing the right path once, rather than
   try/catch/retry as control flow.
 - Comment every silent `catch {}` block with why the error is intentionally swallowed.
+  - Applied (settled 2026-11-23): the same holds for `.catch(() => {})` and the second
+    argument of `.then`; a handler that drops its error says why or logs it, and
+    `npm run check` fails otherwise.
 
 ## 6. Async Patterns and Timing
 
@@ -147,10 +150,12 @@ source refer to them.
     other may import, the strict managers and the carved modules included; it imports
     only Node builtins, and holds what all of them need and none should write again:
     the change emitter (`createEmitter`: a handler that throws is logged and the rest
-    run) and the privileged runner (`runPrivileged`: a helper is the one setup installs
+    run), the privileged runner (`runPrivileged`: a helper is the one setup installs
     in `/usr/local/bin`, run through `sudo -n` with a time bound, its failure told
     apart as missing, refused, failed or timed out, and a helper's own exit code as
-    invalid, not found or busy, §12). The fence check holds three rules for it: no
+    invalid, not found or busy, §12) and the atomic write (settled 2026-11-23: a stored
+    record is written to a temporary file beside it and renamed over it, by this one
+    helper). The fence check holds three rules for it: no
     hand-written emitter outside `lib/base/`, no `'sudo'` outside its runner, and no
     `console.` in the backend (a module logs to the logger `configure()` handed it, the
     glue to `lib/log.js`; what runs before a logger exists, or at exit, writes to
@@ -256,6 +261,7 @@ In projects with a web UI: `FRONTEND-RULES.md`.
   cases and return early, reducing nesting depth.
 - Order imports consistently: (1) platform/standard library, (2) third-party packages,
   (3) project modules. Separate groups with a blank line.
+  - Applied (settled 2026-11-23): `npm run check` holds it.
 
 ## 12. Language Rules `[PROJECT]`
 
@@ -343,13 +349,14 @@ checks and the unit tests below for what they cover:
     name one backend file imports from another is exported there, module-relative paths
     land in a directory that exists, and each platform facade's names are exported by
     its `linux/` and `darwin/` sides. The backend has no build step, so nothing else
-    checks an import, and a dynamic one fails only when its code path runs.
+    checks an import, and a dynamic one fails only when its code path runs. It also
+    holds the import order (§11) in every script of the project, read from a parse.
   - `check-fences`: the import fences (§7); `shared/` importing nothing; no import cycle
     in the backend beyond its listed exceptions; and only the backend running the state
     migrations (§16).
   - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules
-    only, and a topic, change kind or job kind written as a string outside
-    `shared/wireNames.js`. Inline ESLint comments are not honoured, and one left in the
+    only, a topic, change kind or job kind written as a string outside
+    `shared/wireNames.js`, and a handler that drops its error without saying why (§5). Inline ESLint comments are not honoured, and one left in the
     code fails the check: an allowance is a reviewed line in `eslint.config.mjs`.
   - the shell check: `bash -n` and `shellcheck` over every shell script. shellcheck is
     required (settled 2026-11-22): the check fails without it. An inline

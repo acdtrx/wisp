@@ -244,7 +244,8 @@ kept over the template's one in-memory bus).
   backup attempt, both sides'; a container's `.local` name) are written once
   (`lib/workloadFollowUps.js`), and every backup runs through one orchestration
   (`lib/workloadBackup.js`). `lib/base/` is the one module every other may import, and
-  imports nothing of Wisp's: the change emitter and the privileged runner
+  imports nothing of Wisp's: the change emitter, the privileged runner and the atomic
+  write
   (CODING-RULES §7, shared homes). The fences between them are CODING-RULES
   §7: one caller per external system, and managers free of Wisp glue. The import graph
   stays acyclic, enforced by a lint (settled 2026-11-15).

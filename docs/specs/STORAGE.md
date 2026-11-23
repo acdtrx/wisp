@@ -57,6 +57,7 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 ```
 
 - `mountedAt` is the device's mount point under `/mnt/wisp` when it has one, else its first (settled 2026-11-12).
+- `sizeBytes` is `null` when the size cannot be read (settled 2026-11-23).
 - `crypto_LUKS`, `linux_raid_member`, `LVM2_member`, `zfs_member` and `swap` are not listed.
 - Devices are read from `/dev/disk/by-uuid/`, sysfs and udev's data files. No `udisks2` or `libudev` dependency.
 
