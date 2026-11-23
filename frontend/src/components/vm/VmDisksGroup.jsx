@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Disc, Eject, HardDrive, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { attachISO, detachDiskFromVM, ejectISO } from '../../api/vms.js';
-import DiskEditorModal from '../sections/DiskEditorModal.jsx';
+import DiskEditorModal from './DiskEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
 import GroupCard from '../shared/GroupCard.jsx';
 import GroupItem from '../shared/GroupItem.jsx';

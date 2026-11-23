@@ -7,9 +7,9 @@ import { removeContainerMount, uploadMountFile, uploadMountZip } from '../../api
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 import { formatBytes } from '../../utils/formatters.js';
-import ContainerMountEditorModal from '../sections/ContainerMountEditorModal.jsx';
-import MountFileEditorModal from '../sections/MountFileEditorModal.jsx';
-import SecretMountContentModal from '../sections/SecretMountContentModal.jsx';
+import ContainerMountEditorModal from './ContainerMountEditorModal.jsx';
+import MountFileEditorModal from './MountFileEditorModal.jsx';
+import SecretMountContentModal from './SecretMountContentModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
 import GroupCard from '../shared/GroupCard.jsx';

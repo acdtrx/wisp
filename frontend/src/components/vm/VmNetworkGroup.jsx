@@ -3,7 +3,7 @@ import { Network, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
-import NicEditorModal from '../sections/NicEditorModal.jsx';
+import NicEditorModal from './NicEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
 import GroupCard from '../shared/GroupCard.jsx';
 import GroupItem from '../shared/GroupItem.jsx';

@@ -135,7 +135,7 @@ export default function OverviewPanel({ name }) {
   const IconComp = getVmIcon(config.iconId || getDefaultIconId(config.profile)).component;
   const notRunning = isRunning ? undefined : 'it is not running';
 
-  const update = (changes) => updateVM(name, changes);
+  const patchVm = (changes) => updateVM(name, changes);
 
   const followRename = (target) => {
     store().followRename(name, target);
@@ -178,7 +178,7 @@ export default function OverviewPanel({ name }) {
     ],
   ];
 
-  const groupProps = { config, busy, act, update };
+  const groupProps = { config, busy, act, update: patchVm };
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -261,7 +261,7 @@ export default function OverviewPanel({ name }) {
                       label="Start with the host"
                       hint="Started when the host boots."
                       checked={config.autostart === true}
-                      onChange={(on) => act.run(() => update({ autostart: on }), { key: 'autostart', about: `Couldn't turn start with the host ${on ? 'on' : 'off'}` })}
+                      onChange={(on) => act.run(() => patchVm({ autostart: on }), { key: 'autostart', about: `Couldn't turn start with the host ${on ? 'on' : 'off'}` })}
                       busy={act.isBusy('autostart')}
                       reason={busy ?? undefined}
                     />
@@ -298,7 +298,7 @@ export default function OverviewPanel({ name }) {
           name={name}
           maxLength={128}
           hint="Letters, digits, dots, dashes and underscores; its disks and page follow it."
-          update={update}
+          update={patchVm}
           onRenamed={followRename}
           onClose={() => setDialog(null)}
         />

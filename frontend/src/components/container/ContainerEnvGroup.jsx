@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react';
 
-import EnvVarEditorModal, { rowsFromEnv } from '../sections/EnvVarEditorModal.jsx';
+import EnvVarEditorModal, { rowsFromEnv } from './EnvVarEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
 import GroupCard from '../shared/GroupCard.jsx';
 import GroupItem from '../shared/GroupItem.jsx';

@@ -54,7 +54,7 @@ function nowClock() {
   return new Date().toLocaleTimeString([], { hour12: false });
 }
 
-export default function ContainerLogsSection({ containerName }) {
+export default function ContainerLogsPanel({ containerName }) {
   /* The runs are a record: read again when the container's state changes (a run
    * starts or ends with it), and on Refresh. */
   const runsRecord = useRecord(RECORD.CONTAINER_RUNS, containerName);

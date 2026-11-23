@@ -27,7 +27,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import RenameDialog from '../shared/RenameDialog.jsx';
 import WorkloadGone from '../shared/WorkloadGone.jsx';
 import { getDefaultContainerIconId, getVmIcon } from '../shared/vmIcons.jsx';
-import ContainerLogsSection from '../sections/ContainerLogsSection.jsx';
+import ContainerLogsPanel from './ContainerLogsPanel.jsx';
 import ContainerAdvancedGroup from './ContainerAdvancedGroup.jsx';
 import ContainerEnvGroup from './ContainerEnvGroup.jsx';
 import ContainerFigures from './ContainerFigures.jsx';
@@ -129,7 +129,7 @@ export default function ContainerOverviewPanel({ name }) {
   const killReason = busyJob?.kind === JOB_KIND.CONTAINER_STOP ? null : busy;
   const backupReason = busy ?? (state === 'pausing' || state === 'unknown' ? 'not while it changes state' : null);
 
-  const update = (changes) => updateContainer(name, changes);
+  const patchContainer = (changes) => updateContainer(name, changes);
 
   /* After a rename, at its ack: the page follows to the new name, if the router still
    * shows this container (the user may have moved on). */
@@ -177,7 +177,7 @@ export default function ContainerOverviewPanel({ name }) {
     ],
   ];
 
-  const groupProps = { config, busy, act, update };
+  const groupProps = { config, busy, act, update: patchContainer };
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -246,7 +246,7 @@ export default function ContainerOverviewPanel({ name }) {
         <RecordGate record={record} what="container" loading={<TabSpinner />}>
           {() => (
             <div className="flex min-h-0 flex-1 flex-col">
-              <ContainerLogsSection containerName={name} />
+              <ContainerLogsPanel containerName={name} />
             </div>
           )}
         </RecordGate>
@@ -317,7 +317,7 @@ export default function ContainerOverviewPanel({ name }) {
           name={name}
           maxLength={63}
           hint="Letters, digits, dots, dashes and underscores; its page, logs and local name follow it."
-          update={update}
+          update={patchContainer}
           onRenamed={followRename}
           onClose={() => setDialog(null)}
         />
