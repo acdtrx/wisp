@@ -55,22 +55,17 @@ The signing secret is the stored scrypt-derived key (64 bytes). Changing the pas
 
 **Sliding 7-day session (settled 2026-10-30).** Tokens and both cookies carry a 7-day lifetime (604800 seconds). The auth hook re-issues them on any cookie-authenticated request once the token is more than an hour old: a fresh JWT plus both cookies with a new `Max-Age`, keeping the existing CSRF value so other tabs' in-flight requests still match. The session therefore lapses only after 7 days with no authenticated request (give or take the hour), and the re-signing cost is paid at most hourly.
 
-There is no separate refresh token — the session cookie is its own refresh credential. A fixed 24-hour lifetime was rejected: it logged the single user out daily while actively using the app. When a route handler sets the cookies itself (change-password, logout), its `Set-Cookie` headers come after the hook's, and browsers apply the last one.
+There is no separate refresh token — the session cookie is its own refresh credential. It is not a fixed lifetime, which would log the single user out while actively using the app. When a route handler sets the cookies itself (change-password, logout), its `Set-Cookie` headers come after the hook's, and browsers apply the last one.
 
 ### Verification
 
-1. Split token into three parts
-2. Decode the header and require `alg === 'HS256'` — any other value (including `none`) is rejected before verification, so a future asymmetric branch can't be tricked via alg-confusion
-3. Recompute HMAC-SHA256 of `header.payload`
-4. Compare signatures using `timingSafeEqual` (constant-time comparison to prevent timing attacks)
-5. Check `exp` claim against current time
-6. Return decoded payload on success, `null` on failure
+The header must carry `alg === 'HS256'` — any other value (including `none`) is rejected before verification, so a future asymmetric branch can't be tricked via alg-confusion. Signatures are compared in constant time, and `exp` is checked against the current time.
 
 ## Route Protection
 
 ### Route access levels
 
-**Rule (settled 2026-10-16):** authorization is a property of each route, not of its URL. Every route declares its level in its own options — `config: { auth: '<level>' }` — and one global `onRequest` hook (`createAuthHook` in `backend/src/lib/auth.js`) enforces only that declaration. The hook never tests the URL, a prefix, or the HTTP method. A route that declares nothing, or an unknown level, is enforced as **`admin`** (fail closed).
+**Rule (settled 2026-10-16):** authorization is a property of each route, not of its URL. Every route declares its level in its own options — `config: { auth: '<level>' }` — and one global `onRequest` hook enforces only that declaration. The hook never tests the URL, a prefix, or the HTTP method. A route that declares nothing, or an unknown level, is enforced as **`admin`** (fail closed).
 
 | Level | Who may call | Used for |
 |-------|--------------|----------|
@@ -84,14 +79,9 @@ CSRF double-submit is a property of cookie auth on state-changing methods, indep
 
 `read` is a deliberate per-route choice, governed by the read-token contract in [MCP.md](MCP.md) § Authentication: a read token must not recover a secret. GETs stay `admin` when their response could carry one — `GET /api/containers/:name/mounts/:mountName/content` (raw file content) — or when they are actions rather than reads: `GET /api/library/check-url` makes an outbound request on demand. The `API-*.md` area files tag every endpoint with its level; `npm run route-access` prints the live table (method, URL, level), exiting non-zero if any route is undeclared.
 
-**Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — are registered through `registerPluginWithPublicRoutes` in `app.js`, which marks the routes the plugin adds while it loads as `public` (pending plugins are flushed first, so nothing else falls in that window).
+**Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — have the routes they add while they load marked `public`, and nothing else falls in that window.
 
 **Unmatched requests.** A request that matches no route runs no handler, so the hook has nothing to authorize and the not-found handler answers: a JSON 404 `ROUTE_NOT_FOUND` for API-looking paths, the SPA shell otherwise (production). Because the decision is the matched route's declaration, percent-encoding cannot change it — `/%61pi/vms` dispatches to `/api/vms` and gets exactly its level.
-
-**Rejected alternatives:**
-- An explicit `requireAuth()` call in each handler — a forgotten call leaves the route open.
-- Protection by plugin registration scope (auth hooks on an encapsulated group of routes) — moving a route between plugins in a refactor silently changes its protection.
-- Any URL or prefix test (the previous `/api` / `/ws` / `/mcp` gate plus a public-route list) — protection then depended on where a route sat in the URL tree, and every encoding or routing subtlety became an auth question.
 
 ### Token extraction
 
@@ -126,15 +116,15 @@ the streams alike. On one:
 A 401 with another code (none is sent today) does not log out. **401 is reserved for "no or
 expired session"** on every route the client calls. A route that rejects the request itself while the session is fine answers with another status (change-password's wrong current password → 422). The login route's 401 for a wrong password is the exception that stays: the login page posts with a bare `fetch`, outside the shared client.
 
-`POST /api/auth/logout` clears both cookies and returns 204. The frontend's `useAuthStore.logout` calls it before broadcasting the multi-tab signal, then the tab lands on **`/login?sso=signedout`** — the marker keeps the login page from auto-redirecting to the SSO provider, which with a live provider session would sign the user straight back in.
+`POST /api/auth/logout` clears both cookies and returns 204. The frontend calls it before broadcasting the multi-tab signal, then the tab lands on **`/login?sso=signedout`** — the marker keeps the login page from auto-redirecting to the SSO provider, which with a live provider session would sign the user straight back in.
 
-**Multi-tab logout.** Logout in one tab calls `broadcastLogout('signedout')`, which writes a `wisp_logout` localStorage entry carrying the reason (`signedout` for a deliberate sign-out, `expired` for a lost session: `AUTH_REQUIRED` or `AUTH_INVALID`). Every other open tab subscribes to the `storage` event and bounces on that key change — to `/login?sso=signedout` for a sign-out (so no tab SSO-signs back in), to plain `/login` for an expired session. A tab already on the login page stays put. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets `AUTH_REQUIRED` and redirects.
+**Multi-tab logout.** Logout in one tab writes a `wisp_logout` localStorage entry carrying the reason (`signedout` for a deliberate sign-out, `expired` for a lost session: `AUTH_REQUIRED` or `AUTH_INVALID`). Every other open tab subscribes to the `storage` event and bounces on that key change — to `/login?sso=signedout` for a sign-out (so no tab SSO-signs back in), to plain `/login` for an expired session. A tab already on the login page stays put. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets `AUTH_REQUIRED` and redirects.
 
-**Password change closes live connections.** `POST /api/auth/change-password` writes the new hash, calls `closeAllSSE()` + `closeAllWebSockets('password changed')`, then re-issues a fresh `wisp_session` and `wisp_csrf` against the new secret so the user who just changed their password isn't immediately bounced. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed.
+**Password change closes live connections.** `POST /api/auth/change-password` writes the new hash, closes every SSE stream and WebSocket, then re-issues a fresh `wisp_session` and `wisp_csrf` against the new secret so the user who just changed their password isn't immediately bounced. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed.
 
 ## API tokens
 
-Scoped bearer tokens let non-interactive clients (coding agents, scripts, future MCP clients) call the REST API without the password + cookie + CSRF dance. Implementation: `backend/src/lib/apiTokens.js` (mint/verify/revoke), bearer branch in the auth hook (`backend/src/lib/auth.js`), management routes in `backend/src/routes/auth.js`, UI in **Host → App Config → API tokens**.
+Scoped bearer tokens let non-interactive clients (coding agents, scripts, future MCP clients) call the REST API without the password + cookie + CSRF dance. They are managed in **Host → App Config → API tokens**.
 
 ### Format and storage
 
@@ -158,36 +148,35 @@ On **`/mcp`** both scopes pass the route (MCP is JSON-RPC over POST, so the meth
 
 - **Consoles** (`/ws/console/:name/vnc`, `/ws/container-console/:name`) — a leaked token can never open a VM VNC session or a container shell.
 - **`/api/auth/*`** (except the `public` login/OIDC routes) — logout, change-password, and token management are interactive concerns. A token can never mint or revoke tokens.
-- **OIDC configuration** (`PATCH /api/settings/oidc`) **(settled 2026-10-16)** — whoever sets the issuer decides who can complete an SSO login, so a token that could repoint it to a provider it controls would mint itself a full browser session (consoles, tokens, password) that outlives the token's revocation. `PATCH /api/settings` refuses an `oidc` key from every caller with **403** `OIDC_SESSION_ONLY`, so the session route is the only write path. Rejected: a token check inside the shared settings handler — access would then depend on the body rather than being a property of the route.
+- **OIDC configuration** (`PATCH /api/settings/oidc`) **(settled 2026-10-16)** — whoever sets the issuer decides who can complete an SSO login, so a token that could repoint it to a provider it controls would mint itself a full browser session (consoles, tokens, password) that outlives the token's revocation. `PATCH /api/settings` refuses an `oidc` key from every caller with **403** `OIDC_SESSION_ONLY`, so the session route is the only write path.
 
 Conversely, **`mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** (`AUTH_REQUIRED`, or `AUTH_INVALID` for an unknown token) with `WWW-Authenticate: Bearer`.
 
 ### Semantics
 
 - Bearer requests **skip the CSRF check** — double-submit defends against ambient cookie credentials, which bearer requests don't carry.
-- Invalid bearer attempts feed the **same per-IP rate-limit window as failed logins** (`backend/src/lib/loginRateLimit.js`), so an attacker can't double their guessing budget by alternating surfaces.
+- Invalid bearer attempts feed the **same per-IP rate-limit window as failed logins**, so an attacker can't double their guessing budget by alternating surfaces.
 - **Password change does not revoke API tokens** — they are independent credentials (rotating the login password must not break agents). Revoke tokens explicitly from the UI or `DELETE /api/auth/tokens/:id`; revocation takes effect on the next request.
-- `request.user` for token-authed requests is `{ via: 'token', tokenId, label, scope }`.
 
 ## WebSocket Authentication
 
 WebSocket connections (VNC + container console) carry the same `wisp_session` cookie that authenticates HTTP requests. The browser sends cookies on the upgrade handshake automatically for same-origin URLs (Wisp's prod deployment serves the frontend and backend from the same origin; dev uses Vite's WS proxy so it's still same-origin from the browser's view).
 
-Both console routes are `session`: the global `onRequest` auth hook validates the cookie before the WebSocket upgrade completes — by the time the route handler runs, `request.user` is set and no per-route token check is needed. The WS routes still enforce an `Origin` header allow-list (`isAllowedWsOrigin`) since CORS does not apply to WebSocket; cross-origin pages are rejected with close code `1008` even if they have a stolen cookie.
+Both console routes are `session`: the global `onRequest` auth hook validates the cookie before the WebSocket upgrade completes. The WS routes still enforce an `Origin` header allow-list since CORS does not apply to WebSocket; cross-origin pages are rejected with close code `1008` even if they have a stolen cookie.
 
 ## Login Rate Limiting
 
-Failed authentication attempts — wrong passwords on `POST /api/auth/login`, wrong current passwords on `POST /api/auth/change-password` *(settled 2026-11-12: a stolen session gets no unlimited guesses)* **and** invalid bearer API tokens — are tracked per source IP in a shared in-memory `Map` (`backend/src/lib/loginRateLimit.js`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429** `RATE_LIMITED`. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
+Failed authentication attempts — wrong passwords on `POST /api/auth/login`, wrong current passwords on `POST /api/auth/change-password` *(settled 2026-11-12: a stolen session gets no unlimited guesses)* **and** invalid bearer API tokens — are tracked per source IP, in memory. The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429** `RATE_LIMITED`. The record is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
-The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1', ...trustedProxies]` — loopback is always trusted, plus any entries from the `trustedProxies` config field. In production the backend serves the SPA itself and browsers connect to it directly, so with no proxy `request.ip` is the real peer address; the loopback allow-list covers an *optional* TLS-terminating reverse proxy (Caddy/nginx) running on the **same host** that can pass `X-Forwarded-For` / `X-Forwarded-Proto` so cookies pick the right `Secure` flag. When the proxy runs on a **different host/container**, add its IP or subnet to `trustedProxies` in `wisp-config.json` (read at boot; see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS). Trust is intentionally narrow: only headers from trusted sources are honored, so an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit — never set `trustProxy: true`.
+The IP is the request's peer address. `X-Forwarded-For` / `X-Forwarded-Proto` are honored only from loopback, which is always trusted, and from the `trustedProxies` entries ([CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS). Trust is intentionally narrow: an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit — never trust every source.
 
 ## OIDC / SSO login
 
 Optional single sign-on via **OpenID Connect** (e.g. [Pocket ID](https://pocket-id.org)). Wisp stays **single-user**: a successful OIDC login is treated exactly like a correct password — it yields the same `wisp_session` / `wisp_csrf` cookies, signed with the same password-derived secret. The password therefore **remains configured and works as a backup**, and OIDC cannot be used without a password on file (the session JWT secret is derived from it).
 
-No third-party OIDC/JWT library is used: discovery, the JWKS and the token exchange are plain HTTP requests, and ID-token signatures are verified with `node:crypto` (`createPublicKey({ format: 'jwk' })`, RS256/ES256). Implementation in `backend/src/lib/oidc.js`; routes in `backend/src/routes/auth.js`.
+No third-party OIDC/JWT library is used: discovery, the JWKS and the token exchange are plain HTTP requests, and ID-token signatures are verified with `node:crypto` (RS256/ES256).
 
-**Requests to the issuer go through the operator fetch (settled 2026-11-20).** The issuer and the endpoints its discovery names are fetched with `lib/downloads`' fetch for an endpoint only the operator sets, not the SSRF guard: private and loopback addresses are allowed, so a provider on the LAN (or on the host) works. That is safe because only a session can set the issuer (§ Denied surfaces). No redirect is followed: a 3xx fails the step like any other non-2xx answer, so the client secret reaches only the token endpoint the discovery named (an issuer that redirects would fail the `iss` check anyway). Each request is bounded at **10 s**, its body included, and its body at **1 MiB**: a discovery document, a JWKS or a token answer is a few KB.
+**Requests to the issuer go through the operator fetch (settled 2026-11-20).** The issuer and the endpoints its discovery names are fetched with the fetch for an endpoint only the operator sets, not the SSRF guard: private and loopback addresses are allowed, so a provider on the LAN (or on the host) works. That is safe because only a session can set the issuer (§ Denied surfaces). No redirect is followed: a 3xx fails the step like any other non-2xx answer, so the client secret reaches only the token endpoint the discovery named (an issuer that redirects would fail the `iss` check anyway). Each request is bounded at **10 s**, its body included, and its body at **1 MiB**: a discovery document, a JWKS or a token answer is a few KB.
 
 **What Wisp trusts the issuer for (settled 2026-11-20).** The configured issuer is the root of SSO's trust: its discovery document names where the client secret is sent (the token endpoint) and whose keys sign the ID token (the JWKS), so whoever answers as the issuer can complete a login. Wisp therefore checks the document before using it: its `issuer` must be the configured one (OIDC Discovery 4.3; a trailing slash aside), and under an `https` issuer each endpoint it names — `authorization_endpoint`, `token_endpoint`, `jwks_uri` — must be `https` too. The endpoints may be on other hosts, as real providers have them; a check fails discovery (`?sso=error`). A plain `http` issuer stays allowed, for a provider on the LAN, but nothing then protects the exchange: anyone on the network path can read the authorization code and the token exchange that carries the client secret, or answer as the issuer — its discovery and its signing keys included — and so log in. Use an `https` issuer wherever that path is not trusted.
 
@@ -204,7 +193,7 @@ Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId
 ### Flow (authorization code + PKCE, confidential client)
 
 1. `GET /api/auth/oidc/login` fetches the provider's `/.well-known/openid-configuration` (cached), generates `state` + `nonce` + a PKCE verifier (held in a short-lived in-memory map, 10-minute TTL, one-time use), and **302**-redirects the browser to the authorization endpoint.
-   The route is public, so the pending map is capped at 1000 entries and a full map **evicts the oldest start** rather than refusing a new one: a flood of abandoned starts can only fail a login whose provider round trip overlaps the flood (the user sees `?sso=error` and retries), never lock SSO out until entries expire. Eviction was chosen over a per-IP rate limit: the shared failed-auth window (`loginRateLimit.js`) would charge every legitimate SSO start against the password-login budget, and a per-IP limit does nothing against a flood from many addresses.
+   The route is public, so the pending map is capped at 1000 entries and a full map **evicts the oldest start** rather than refusing a new one: a flood of abandoned starts can only fail a login whose provider round trip overlaps the flood (the user sees `?sso=error` and retries), never lock SSO out until entries expire.
 2. The `redirect_uri` is `<origin of advertisedUrl>/api/auth/oidc/callback` when the `advertisedUrl` setting is set (see [SETTINGS.md](SETTINGS.md) § LAN Discovery) — the configured browser-facing URL, so no request header can steer it, and the callback (with its session cookies) lands on that origin even if the login started from another one. **Set `advertisedUrl` whenever Wisp sits behind a reverse proxy or is reached under more than one name.** Without it the callback falls back to the request origin, `<scheme>://<Host>/api/auth/oidc/callback`: the scheme comes from `X-Forwarded-Proto` (honored only from `trustedProxies`, see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS — otherwise a TLS proxy on another host yields `http://…` and the provider rejects it), and the Host is what the browser sent. A forged Host can only come from a non-browser client, and the provider rejects the resulting authorization request because OIDC requires redirect URIs to exactly match a registered one. **Register the exact callback URL** as the client's allowed redirect in the provider.
 3. The provider redirects back to `GET /api/auth/oidc/callback` — GET only, like the login route: a `HEAD` on either is no route, so it never consumes a `state` or sets a session ([API-AUTH.md](API-AUTH.md)). Wisp validates and consumes the `state`, exchanges `code` at the token endpoint (client auth chosen from the provider's advertised `token_endpoint_auth_methods_supported` — `client_secret_basic`, else `client_secret_post`), and validates the ID token: **JWKS signature**, `iss`, `aud` contains the client id, `azp` is the client id when there are several audiences or an `azp` is present (OIDC Core 3.1.3.7), `exp` present and not past, `nbf` (both with 60 s skew), and `nonce`.
 4. On success Wisp issues the session cookies and **302**s to `/`.
