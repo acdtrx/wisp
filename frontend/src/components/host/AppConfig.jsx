@@ -13,7 +13,7 @@ import SshKeysSettings from '../settings/SshKeysSettings.jsx';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -32,11 +32,11 @@ export default function AppConfig() {
       {settings.data != null && <RecordError record={settings} what="settings" />}
       <ServerGroup record={settings} />
       <StoragePathsGroup record={settings} />
-      <GroupCard title="Password">
+      <Card title="Password">
         <div className="max-w-md py-1">
           <PasswordChangeForm />
         </div>
-      </GroupCard>
+      </Card>
       <SshKeysSettings />
       <OidcSettings />
       <ApiTokensSettings />
@@ -49,7 +49,7 @@ function ServerGroup({ record }) {
   const [editing, setEditing] = useState(false);
   const act = useCommand();
   return (
-    <GroupCard
+    <Card
       title="This server"
       actions={<GroupAction icon={Pencil} label="Edit the server’s name and URL" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
@@ -104,7 +104,7 @@ function ServerGroup({ record }) {
           </>
         )}
       </RecordGate>
-    </GroupCard>
+    </Card>
   );
 }
 
@@ -112,7 +112,7 @@ function ServerGroup({ record }) {
 function StoragePathsGroup({ record }) {
   const [editing, setEditing] = useState(false);
   return (
-    <GroupCard
+    <Card
       title="Storage paths"
       actions={<GroupAction icon={Pencil} label="Edit the storage paths" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
@@ -150,6 +150,6 @@ function StoragePathsGroup({ record }) {
           </>
         )}
       </RecordGate>
-    </GroupCard>
+    </Card>
   );
 }

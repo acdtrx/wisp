@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { CircuitBoard, Cpu, Gpu, HardDrive, Loader2, MemoryStick, Network, Package, Usb } from 'lucide-react';
-import SectionCard from '../shared/SectionCard.jsx';
+import Card from '../shared/Card.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -373,7 +373,7 @@ export default function HostOverview() {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
       {/* CPU */}
-      <SectionCard title="CPU" titleIcon={<Cpu size={14} strokeWidth={2} />}>
+      <Card title="CPU" icon={<Cpu size={14} strokeWidth={2} />}>
         <RecordError record={hardwareRecord} what="hardware" className="mb-2" />
         <p className="text-sm text-text-secondary mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
           {hardware?.cpu && (
@@ -414,10 +414,10 @@ export default function HostOverview() {
             )}
           </div>
         )}
-      </SectionCard>
+      </Card>
 
       {/* Memory */}
-      <SectionCard title="Memory" titleIcon={<MemoryStick size={14} strokeWidth={2} />}>
+      <Card title="Memory" icon={<MemoryStick size={14} strokeWidth={2} />}>
         <div className="text-sm space-y-2">
           <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Usage</p>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -465,10 +465,10 @@ export default function HostOverview() {
             </>
           )}
         </div>
-      </SectionCard>
+      </Card>
 
       {/* Storage */}
-      <SectionCard title="Storage" titleIcon={<HardDrive size={14} strokeWidth={2} />}>
+      <Card title="Storage" icon={<HardDrive size={14} strokeWidth={2} />}>
         {hardware?.filesystems?.length > 0 && (
           <div>
             <p className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Filesystems</p>
@@ -498,10 +498,10 @@ export default function HostOverview() {
         {hardware && !hardware.filesystems?.length && (
           <p className="text-sm text-text-muted">No local filesystem mounts listed.</p>
         )}
-      </SectionCard>
+      </Card>
 
       {/* Network */}
-      <SectionCard title="Network" titleIcon={<Network size={14} strokeWidth={2} />}>
+      <Card title="Network" icon={<Network size={14} strokeWidth={2} />}>
         {hardware?.network?.length > 0 ? (
           <>
             {/* Phones: two-line stacked rows (name/speed/state, then MAC) — no horizontal scroll */}
@@ -549,12 +549,12 @@ export default function HostOverview() {
         ) : hardwareLoading ? (
           <p className="text-sm text-text-muted">Loading network info…</p>
         ) : null}
-      </SectionCard>
+      </Card>
 
       {/* Software (host info) */}
-      <SectionCard title="Software" titleIcon={<Package size={14} strokeWidth={2} />}>
+      <Card title="Software" icon={<Package size={14} strokeWidth={2} />}>
         <HostSoftwareBlock />
-      </SectionCard>
+      </Card>
 
       {/* Hardware inventory (PCI + DMI) */}
       <HostHardwareInventorySection
@@ -760,7 +760,7 @@ function HostHardwareInventorySection({
   };
 
   return (
-    <SectionCard title="Hardware" titleIcon={<CircuitBoard size={14} strokeWidth={2} />}>
+    <Card title="Hardware" icon={<CircuitBoard size={14} strokeWidth={2} />}>
       {showSummaryLine && (
         <p className="text-sm text-text-secondary mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
           {hasDmiSummary && [system.boardVendor, system.boardName].filter(Boolean).length > 0 && (
@@ -882,7 +882,7 @@ function HostHardwareInventorySection({
           </p>
         )
       )}
-    </SectionCard>
+    </Card>
   );
 }
 

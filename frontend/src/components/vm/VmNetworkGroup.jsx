@@ -5,7 +5,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 import NicEditorModal from './NicEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { nicsForApi } from './vmForms.js';
@@ -43,7 +43,7 @@ export default function VmNetworkGroup({ config, busy, lockReason, act, update }
   );
 
   return (
-    <GroupCard
+    <Card
       title="Network"
       lockReason={lockReason ? 'Stop the VM to change its adapters' : undefined}
       actions={<GroupAction icon={Plus} kindIcon={Network} variant="add" label="Add an adapter" reason={reason} onClick={() => setEditor({ index: null, opened: null })} />}
@@ -78,6 +78,6 @@ export default function VmNetworkGroup({ config, busy, lockReason, act, update }
         onSubmit={submit}
         onClose={() => setEditor(null)}
       />
-    </GroupCard>
+    </Card>
   );
 }

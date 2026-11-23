@@ -5,7 +5,7 @@
 /**
  * -mx-4 cancels the cells' px-4 edge inset so the first/last columns align
  * with the parent card's own padding instead of double-indenting. Every
- * caller sits inside a container with ≥16px horizontal padding (SectionCard
+ * caller sits inside a container with ≥16px horizontal padding (Card
  * body, modal inner card, library card).
  */
 export function DataTableScroll({ className = '', children }) {

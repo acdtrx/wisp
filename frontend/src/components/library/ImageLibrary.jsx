@@ -21,7 +21,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import Modal from '../shared/Modal.jsx';
-import SectionCard from '../shared/SectionCard.jsx';
+import Card from '../shared/Card.jsx';
 import PresetImageDownloadMenu from './PresetImageDownloadMenu.jsx';
 import {
   DataTableScroll,
@@ -520,10 +520,10 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   const pageGutters = mode === 'page' ? 'px-6 py-5' : 'px-4 py-4';
 
   const sectionCardNode = (
-    <SectionCard
+    <Card
       title="Image library"
-      titleIcon={<Images size={14} strokeWidth={2} />}
-      headerAction={libraryHeaderAction}
+      icon={<Images size={14} strokeWidth={2} />}
+      actions={libraryHeaderAction}
       commands={[removal, rename]}
       errorPrefix={(key, command) => (command === rename ? `Couldn't rename ${key}` : `Couldn't delete ${String(key).replace(/^(file|oci):/, '')}`)}
     >
@@ -709,7 +709,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </DataTable>
           </DataTableScroll>
         )}
-    </SectionCard>
+    </Card>
   );
 
   const modalNodes = (

@@ -4,7 +4,7 @@ import { Library, Pencil, Plus, Trash2 } from 'lucide-react';
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormField } from '../../components/shared/FormModalChrome.jsx';
 import GroupAction from '../../components/shared/GroupAction.jsx';
-import GroupCard from '../../components/shared/GroupCard.jsx';
+import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import GroupSwitch from '../../components/shared/GroupSwitch.jsx';
 import RecordError from '../../components/shared/RecordError.jsx';
@@ -59,7 +59,7 @@ export default function JellyfinGroups({ config, busy, act, update }) {
 
   return (
     <>
-      <GroupCard
+      <Card
         title="Libraries"
         actions={<GroupAction icon={Plus} kindIcon={Library} variant="add" label="Add a library" reason={appReason} onClick={() => setEditor({ library: null })} />}
       >
@@ -82,9 +82,9 @@ export default function JellyfinGroups({ config, busy, act, update }) {
             />
           );
         })}
-      </GroupCard>
+      </Card>
 
-      <GroupCard
+      <Card
         title="Published address"
         actions={<GroupAction icon={Pencil} label="Edit the published address" reason={appReason} onClick={() => setEditor({ address: true })} />}
       >
@@ -99,7 +99,7 @@ export default function JellyfinGroups({ config, busy, act, update }) {
             reason={gpuReason}
           />
         </div>
-      </GroupCard>
+      </Card>
 
       {editor && 'library' in editor && (
         <LibraryEditor config={config} libraryKey={editor.library} storage={storage} save={save} onClose={() => setEditor(null)} />

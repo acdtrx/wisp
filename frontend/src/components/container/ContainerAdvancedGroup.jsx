@@ -10,7 +10,7 @@ import { formatCommandLine } from '../../utils/commandLine.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import { advancedForm, advancedProblems, advancedSent } from './containerForms.js';
@@ -36,7 +36,7 @@ export default function ContainerAdvancedGroup({ config, busy, update }) {
     : null;
 
   return (
-    <GroupCard
+    <Card
       title="Advanced"
       actions={<GroupAction icon={Pencil} label="Edit advanced settings" reason={busy} onClick={() => setEditing(true)} />}
     >
@@ -48,7 +48,7 @@ export default function ContainerAdvancedGroup({ config, busy, update }) {
         ]}
       />
       {editing && <AdvancedEditor config={config} update={update} onClose={() => setEditing(false)} />}
-    </GroupCard>
+    </Card>
   );
 }
 

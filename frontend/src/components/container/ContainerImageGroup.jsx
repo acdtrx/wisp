@@ -7,7 +7,7 @@ import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import ContainerImageField from './ContainerImageField.jsx';
 import { imageProblems } from './containerForms.js';
@@ -16,7 +16,7 @@ import { imageProblems } from './containerForms.js';
 export default function ContainerImageGroup({ config, busy, update }) {
   const [editing, setEditing] = useState(false);
   return (
-    <GroupCard
+    <Card
       title="Image"
       actions={<GroupAction icon={Pencil} label="Change image" reason={busy} onClick={() => setEditing(true)} />}
     >
@@ -35,7 +35,7 @@ export default function ContainerImageGroup({ config, busy, update }) {
         ]}
       />
       {editing && <ImageEditor config={config} update={update} onClose={() => setEditing(false)} />}
-    </GroupCard>
+    </Card>
   );
 }
 

@@ -4,7 +4,7 @@ import { Disc, Eject, HardDrive, Pencil, Plus, Trash2 } from 'lucide-react';
 import { attachISO, detachDiskFromVM, ejectISO } from '../../api/vms.js';
 import DiskEditorModal from './DiskEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
 
@@ -40,7 +40,7 @@ export default function VmDisksGroup({ config, busy, lockReason, act }) {
   const insertAbout = (slot) => `Couldn't put the ISO in ${CD_LABEL[slot]}`;
 
   return (
-    <GroupCard
+    <Card
       title="Disks and media"
       lockReason={lockReason ? 'Stop the VM to change its disks; CDs work at any time' : undefined}
       actions={(
@@ -117,6 +117,6 @@ export default function VmDisksGroup({ config, busy, lockReason, act }) {
         }}
         defaultFilter="iso"
       />
-    </GroupCard>
+    </Card>
   );
 }

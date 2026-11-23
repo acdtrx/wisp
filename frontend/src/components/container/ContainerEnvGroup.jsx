@@ -3,7 +3,7 @@ import { Braces, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import EnvVarEditorModal, { rowsFromEnv } from './EnvVarEditorModal.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 
 /**
@@ -21,7 +21,7 @@ export default function ContainerEnvGroup({ config, busy, act, update }) {
   });
 
   return (
-    <GroupCard
+    <Card
       title="Environment"
       actions={(
         <GroupAction icon={Plus} kindIcon={Braces} variant="add" label="Add variable" reason={busy} onClick={() => setEditor({ key: null })} />
@@ -52,6 +52,6 @@ export default function ContainerEnvGroup({ config, busy, act, update }) {
         onSubmit={({ envPatch }) => update({ envPatch })}
         onClose={() => setEditor(null)}
       />
-    </GroupCard>
+    </Card>
   );
 }

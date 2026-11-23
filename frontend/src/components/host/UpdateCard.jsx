@@ -1,5 +1,5 @@
 import { Loader2, RefreshCw, ArrowUpCircle, CheckCircle, Clock } from 'lucide-react';
-import SectionCard from '../shared/SectionCard.jsx';
+import Card from '../shared/Card.jsx';
 import { formatRelativeTime } from '../../utils/formatters.js';
 
 const BTN_BASE =
@@ -34,7 +34,7 @@ export default function UpdateCard({
   const showFooter = status || lastCheckedLabel || autoCheckLabel;
 
   return (
-    <SectionCard title={title} titleIcon={titleIcon} commands={commands} showsError={showsError}>
+    <Card title={title} icon={titleIcon} commands={commands} showsError={showsError}>
       {/* Below lg the description sits above the buttons instead of beside them */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="min-w-0 flex-1 text-sm text-text-secondary">{description}</div>
@@ -102,6 +102,6 @@ export default function UpdateCard({
           </div>
         </div>
       )}
-    </SectionCard>
+    </Card>
   );
 }

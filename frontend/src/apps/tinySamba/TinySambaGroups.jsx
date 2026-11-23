@@ -5,7 +5,7 @@ import ConfirmDialog from '../../components/shared/ConfirmDialog.jsx';
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../../components/shared/FormModalChrome.jsx';
 import GroupAction from '../../components/shared/GroupAction.jsx';
-import GroupCard from '../../components/shared/GroupCard.jsx';
+import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import RecordError from '../../components/shared/RecordError.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
@@ -82,7 +82,7 @@ export default function TinySambaGroups({ config, busy, act, update }) {
 
   return (
     <>
-      <GroupCard
+      <Card
         title="Shares"
         actions={<GroupAction icon={Plus} kindIcon={Folder} variant="add" label="Add a share" reason={appReason} onClick={() => setEditor({ share: null })} />}
       >
@@ -108,9 +108,9 @@ export default function TinySambaGroups({ config, busy, act, update }) {
             />
           );
         })}
-      </GroupCard>
+      </Card>
 
-      <GroupCard
+      <Card
         title="Users"
         actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
       >
@@ -139,9 +139,9 @@ export default function TinySambaGroups({ config, busy, act, update }) {
             />
           );
         })}
-      </GroupCard>
+      </Card>
 
-      <GroupCard
+      <Card
         title="Server"
         actions={<GroupAction icon={Pencil} label="Edit the server" reason={appReason} onClick={() => setEditor({ server: true })} />}
       >
@@ -154,7 +154,7 @@ export default function TinySambaGroups({ config, busy, act, update }) {
             { label: 'Apple extensions', value: server.iconModel === ICON_MODEL_OFF ? 'Off' : 'On' },
           ]}
         />
-      </GroupCard>
+      </Card>
 
       {editor && 'share' in editor && (
         <ShareEditor config={config} shareKey={editor.share} storage={storage} save={save} onClose={() => setEditor(null)} />

@@ -4,7 +4,7 @@ import { Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../../components/shared/FormModalChrome.jsx';
 import GroupAction from '../../components/shared/GroupAction.jsx';
-import GroupCard from '../../components/shared/GroupCard.jsx';
+import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
 import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
@@ -37,7 +37,7 @@ export default function ZotGroups({ config, busy, act, update }) {
 
   return (
     <>
-      <GroupCard
+      <Card
         title="Users"
         actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
       >
@@ -58,16 +58,16 @@ export default function ZotGroups({ config, busy, act, update }) {
             />
           );
         })}
-      </GroupCard>
+      </Card>
 
-      <GroupCard
+      <Card
         title="Address"
         actions={<GroupAction icon={Pencil} label="Edit the address" reason={appReason} onClick={() => setEditor({ address: true })} />}
       >
         <ValueRows rows={[{ label: 'Reached at', value: ac.externalUrl || 'Not set', mono: !!ac.externalUrl }]} />
-      </GroupCard>
+      </Card>
 
-      <GroupCard
+      <Card
         title="Sign-in (SSO)"
         actions={<GroupAction icon={Pencil} label="Edit sign-in" reason={appReason} onClick={() => setEditor({ sso: true })} />}
       >
@@ -79,7 +79,7 @@ export default function ZotGroups({ config, busy, act, update }) {
             { label: 'Redirect URI', value: oidc.enabled ? callbackUrl(ac.externalUrl) : null, mono: true },
           ]}
         />
-      </GroupCard>
+      </Card>
 
       {editor && 'user' in editor && <UserEditor config={config} userKey={editor.user} save={save} onClose={() => setEditor(null)} />}
       {editor?.address && <AddressEditor config={config} save={save} onClose={() => setEditor(null)} />}

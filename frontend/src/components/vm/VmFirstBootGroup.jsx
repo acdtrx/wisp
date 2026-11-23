@@ -10,7 +10,7 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import FormModal from '../shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -40,7 +40,7 @@ export default function VmFirstBootGroup({ config, busy, act }) {
   const loaded = record.data != null;
 
   return (
-    <GroupCard
+    <Card
       title="First boot setup"
       actions={(
         <>
@@ -87,7 +87,7 @@ export default function VmFirstBootGroup({ config, busy, act }) {
         <p>Its settings and stored password are deleted, and its setup disk is taken out of the VM.</p>
         <p className="mt-2 text-xs text-text-muted">The guest keeps what it already applied at its first boot.</p>
       </ConfirmDialog>
-    </GroupCard>
+    </Card>
   );
 }
 

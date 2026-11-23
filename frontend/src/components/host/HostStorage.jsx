@@ -11,7 +11,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 
-import SectionCard from '../shared/SectionCard.jsx';
+import Card from '../shared/Card.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import {
   DataTableScroll,
@@ -91,9 +91,9 @@ export default function HostStorage() {
   );
 
   return (
-    <SectionCard
+    <Card
       title="Storage"
-      titleIcon={<Server size={14} strokeWidth={2} />}
+      icon={<Server size={14} strokeWidth={2} />}
       commands={rowCommands.commands}
       errorPrefix={rowCommands.errorPrefix((id) => (settings?.mounts || []).find((m) => m.id === id)?.label || id)}
     >
@@ -122,7 +122,7 @@ export default function HostStorage() {
           </div>
         )}
       </RecordGate>
-    </SectionCard>
+    </Card>
   );
 }
 

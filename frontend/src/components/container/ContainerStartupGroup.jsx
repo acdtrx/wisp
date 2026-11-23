@@ -7,7 +7,7 @@ import { RECORD } from '../../store/records.js';
 import { backupDestinations } from '../../utils/backupDestinations.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 
@@ -43,7 +43,7 @@ export default function ContainerStartupGroup({ config, busy, backupReason, act,
   });
 
   return (
-    <GroupCard
+    <Card
       title="Start-up and backups"
       actions={<GroupAction icon={Archive} label="Back up now" reason={backupReason} onClick={onBackUp} />}
     >
@@ -66,6 +66,6 @@ export default function ContainerStartupGroup({ config, busy, backupReason, act,
       <div className={`border-t border-surface-border pt-1.5 ${attempt && !attempt.ok ? '[&_dd]:text-status-stopped' : ''}`}>
         <ValueRows rows={[{ label: 'Last backup', value: lastBackupText(attempt, settings) }]} />
       </div>
-    </GroupCard>
+    </Card>
   );
 }

@@ -12,7 +12,7 @@ import { bridgeChoice } from '../shared/bridgeChoice.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -45,7 +45,7 @@ export default function ContainerNetworkGroup({ config, busy, locked, act, updat
   });
 
   return (
-    <GroupCard
+    <Card
       title="Network"
       lockReason={locked ? 'Stop the container to change its bridge or MAC address' : undefined}
       actions={(
@@ -102,7 +102,7 @@ export default function ContainerNetworkGroup({ config, busy, locked, act, updat
       {service !== undefined && (
         <ContainerServiceEditorModal config={config} service={service} onClose={() => setService(undefined)} />
       )}
-    </GroupCard>
+    </Card>
   );
 }
 

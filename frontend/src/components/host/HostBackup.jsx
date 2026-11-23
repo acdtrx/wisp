@@ -7,7 +7,7 @@ import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import SettingsEditor from './SettingsEditor.jsx';
@@ -21,7 +21,7 @@ export default function HostBackup() {
   const record = useRecord(RECORD.SETTINGS);
   const [editing, setEditing] = useState(false);
   return (
-    <GroupCard
+    <Card
       title="Backup"
       actions={<GroupAction icon={Pencil} label="Edit where backups go" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
@@ -72,6 +72,6 @@ export default function HostBackup() {
           );
         }}
       </RecordGate>
-    </GroupCard>
+    </Card>
   );
 }

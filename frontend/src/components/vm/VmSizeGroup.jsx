@@ -7,7 +7,7 @@ import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import {
   CUSTOM_SIZE, SIZE_PRESETS, coresText, memoryText, sizeForm, sizeProblems, sizeSent, withPreset,
@@ -17,7 +17,7 @@ import {
 export default function VmSizeGroup({ config, busy, lockReason, update }) {
   const [editing, setEditing] = useState(false);
   return (
-    <GroupCard
+    <Card
       title="Size"
       lockReason={lockReason ? 'Stop the VM to change its size' : undefined}
       actions={<GroupAction icon={Pencil} label="Change size" reason={busy ?? lockReason} onClick={() => setEditing(true)} />}
@@ -29,7 +29,7 @@ export default function VmSizeGroup({ config, busy, lockReason, update }) {
         ]}
       />
       {editing && <SizeEditor config={config} update={update} onClose={() => setEditing(false)} />}
-    </GroupCard>
+    </Card>
   );
 }
 

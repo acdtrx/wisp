@@ -7,7 +7,7 @@ import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import XMLModal from './XMLModal.jsx';
 import {
@@ -23,7 +23,7 @@ import {
 export default function VmSystemGroup({ config, busy, lockReason, update }) {
   const [open, setOpen] = useState(null);
   return (
-    <GroupCard
+    <Card
       title="System"
       lockReason={lockReason ? 'Stop the VM to change its settings' : undefined}
       actions={(
@@ -39,7 +39,7 @@ export default function VmSystemGroup({ config, busy, lockReason, update }) {
       </p>
       {open === 'expert' && <ExpertSettings config={config} update={update} onClose={() => setOpen(null)} />}
       <XMLModal open={open === 'xml'} vmName={config.name} onClose={() => setOpen(null)} />
-    </GroupCard>
+    </Card>
   );
 }
 

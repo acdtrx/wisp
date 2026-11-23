@@ -18,7 +18,7 @@ import BackupModal from '../shared/BackupModal.jsx';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import MoreMenu from '../shared/MoreMenu.jsx';
@@ -256,7 +256,7 @@ export default function OverviewPanel({ name }) {
                   <VmNetworkGroup {...groupProps} lockReason={lockReason} />
                   {takesFirstBootSetup(config.profile) && <VmFirstBootGroup {...groupProps} />}
                   <VmUsbGroup {...groupProps} />
-                  <GroupCard title="Start-up">
+                  <Card title="Start-up">
                     <GroupSwitch
                       label="Start with the host"
                       hint="Started when the host boots."
@@ -265,7 +265,7 @@ export default function OverviewPanel({ name }) {
                       busy={act.isBusy('autostart')}
                       reason={busy ?? undefined}
                     />
-                  </GroupCard>
+                  </Card>
                   <VmSystemGroup {...groupProps} lockReason={lockReason} />
                 </>
               )}

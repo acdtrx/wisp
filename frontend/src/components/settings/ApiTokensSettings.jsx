@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyRound, Plus, Check, X, Trash2, Copy, Loader2 } from 'lucide-react';
-import SectionCard from '../shared/SectionCard.jsx';
+import Card from '../shared/Card.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import {
   DataTableScroll,
@@ -107,13 +107,13 @@ export default function ApiTokensSettings() {
   );
 
   return (
-    <SectionCard
+    <Card
       title="API tokens"
-      titleIcon={<KeyRound size={14} />}
-      helpText={HELP}
+      icon={<KeyRound size={14} />}
+      help={HELP}
       commands={[create, revoke]}
       errorPrefix={(key, command) => (command === create ? "Couldn't create the token" : `Couldn't revoke ${tokens?.find((t) => t.id === key)?.label ?? 'the token'}`)}
-      headerAction={headerAdd}
+      actions={headerAdd}
     >
       <div className="space-y-4">
         {minted && (
@@ -271,6 +271,6 @@ export default function ApiTokensSettings() {
       >
         Revoke “{deleteTarget?.label}”? Clients using it will stop working immediately.
       </ConfirmDialog>
-    </SectionCard>
+    </Card>
   );
 }

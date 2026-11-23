@@ -10,7 +10,7 @@ import { backupDestinations } from '../../utils/backupDestinations.js';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -27,7 +27,7 @@ export default function HostBackupScheduler() {
   const [editing, setEditing] = useState(false);
   const act = useCommand();
   return (
-    <GroupCard
+    <Card
       title="Scheduled backups"
       actions={<GroupAction icon={Pencil} label="Edit the backup schedule" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
@@ -102,6 +102,6 @@ export default function HostBackupScheduler() {
           );
         }}
       </RecordGate>
-    </GroupCard>
+    </Card>
   );
 }

@@ -4,7 +4,7 @@ import { Eye, EyeOff, Globe, Pencil, Plus, Trash2 } from 'lucide-react';
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../../components/shared/FormModalChrome.jsx';
 import GroupAction from '../../components/shared/GroupAction.jsx';
-import GroupCard from '../../components/shared/GroupCard.jsx';
+import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
 import { APP_CONFIG_COMMAND, appCommandRunning, appRowReason } from '../appConfigRows.js';
@@ -35,7 +35,7 @@ export default function CaddyGroups({ config, busy, act, update }) {
 
   return (
     <>
-      <GroupCard
+      <Card
         title="Sites"
         actions={<GroupAction icon={Plus} kindIcon={Globe} variant="add" label="Add a site" reason={appReason} onClick={() => setEditor({ site: null })} />}
       >
@@ -56,9 +56,9 @@ export default function CaddyGroups({ config, busy, act, update }) {
             />
           );
         })}
-      </GroupCard>
+      </Card>
 
-      <GroupCard
+      <Card
         title="Domain and certificates"
         actions={<GroupAction icon={Pencil} label="Edit the domain and certificates" reason={appReason} onClick={() => setEditor({ domain: true })} />}
       >
@@ -74,7 +74,7 @@ export default function CaddyGroups({ config, busy, act, update }) {
             },
           ]}
         />
-      </GroupCard>
+      </Card>
 
       {editor && 'site' in editor && <SiteEditor config={config} siteKey={editor.site} save={save} onClose={() => setEditor(null)} />}
       {editor?.domain && <DomainEditor config={config} save={save} onClose={() => setEditor(null)} />}

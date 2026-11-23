@@ -8,7 +8,7 @@ import { CONNECTION } from '../../store/streamStore.js';
 import { useUsbStore } from '../../store/usbStore.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -52,7 +52,7 @@ export default function VmUsbGroup({ config, busy, act }) {
   };
 
   return (
-    <GroupCard
+    <Card
       title="USB devices"
       actions={(
         <GroupAction
@@ -106,6 +106,6 @@ export default function VmUsbGroup({ config, busy, act }) {
         isBusy={() => false}
         anyBusy={running}
       />
-    </GroupCard>
+    </Card>
   );
 }

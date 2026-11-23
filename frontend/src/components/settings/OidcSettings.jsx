@@ -11,7 +11,7 @@ import { callbackUrl, oidcForm, oidcProblem, oidcSent, secretOwed, ssoSwitchReas
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -56,7 +56,7 @@ export default function OidcSettings() {
   const act = useCommand();
 
   return (
-    <GroupCard
+    <Card
       title="Single sign-on"
       actions={<GroupAction icon={Pencil} label="Edit the SSO provider" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
@@ -140,6 +140,6 @@ export default function OidcSettings() {
           );
         }}
       </RecordGate>
-    </GroupCard>
+    </Card>
   );
 }

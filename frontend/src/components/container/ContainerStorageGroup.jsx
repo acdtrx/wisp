@@ -12,7 +12,7 @@ import MountFileEditorModal from './MountFileEditorModal.jsx';
 import SecretMountContentModal from './SecretMountContentModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordError from '../shared/RecordError.jsx';
 
@@ -83,7 +83,7 @@ export default function ContainerStorageGroup({ config, busy, act }) {
   );
 
   return (
-    <GroupCard
+    <Card
       title="Storage"
       actions={(
         <div className="flex items-center gap-1">
@@ -191,7 +191,7 @@ export default function ContainerStorageGroup({ config, busy, act }) {
           </>
         )}
       </ConfirmDialog>
-    </GroupCard>
+    </Card>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Loader2, Plus, Trash2, Network } from 'lucide-react';
 
-import SectionCard from '../shared/SectionCard.jsx';
+import Card from '../shared/Card.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -54,11 +54,11 @@ export default function HostNetworkBridges() {
   );
 
   return (
-    <SectionCard
+    <Card
       title="Network bridges"
-      titleIcon={<Network size={14} strokeWidth={2} />}
-      helpText="Bridges are how VMs and containers connect to networks. Add one from the header. The host handles VLAN tagging — guests connect untagged."
-      headerAction={headerAdd}
+      icon={<Network size={14} strokeWidth={2} />}
+      help="Bridges are how VMs and containers connect to networks. Add one from the header. The host handles VLAN tagging — guests connect untagged."
+      actions={headerAdd}
       commands={[remove]}
       errorPrefix={(name) => `Couldn't delete ${name}`}
     >
@@ -126,6 +126,6 @@ export default function HostNetworkBridges() {
         eligibleParents={eligibleParents}
         onClose={() => setCreateOpen(false)}
       />
-    </SectionCard>
+    </Card>
   );
 }

@@ -12,7 +12,7 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 
@@ -46,7 +46,7 @@ export default function SshKeysSettings() {
   const open = (which) => { setNotice(null); setForm(which); };
 
   return (
-    <GroupCard
+    <Card
       title="SSH keys"
       actions={(
         <>
@@ -112,7 +112,7 @@ export default function SshKeysSettings() {
       >
         <p>It leaves Wisp’s list. VMs that have the key keep it.</p>
       </ConfirmDialog>
-    </GroupCard>
+    </Card>
   );
 }
 

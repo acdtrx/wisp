@@ -7,7 +7,7 @@ import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
-import GroupCard from '../shared/GroupCard.jsx';
+import Card from '../shared/Card.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import { RESTART_POLICIES, limitsForm, limitsProblems, limitsSent, restartPolicyText } from './containerForms.js';
@@ -18,7 +18,7 @@ const cores = (n) => `${n} ${Number(n) === 1 ? 'core' : 'cores'}`;
 export default function ContainerLimitsGroup({ config, busy, update }) {
   const [editing, setEditing] = useState(false);
   return (
-    <GroupCard
+    <Card
       title="Limits and restarts"
       actions={<GroupAction icon={Pencil} label="Edit limits and restarts" reason={busy} onClick={() => setEditing(true)} />}
     >
@@ -30,7 +30,7 @@ export default function ContainerLimitsGroup({ config, busy, update }) {
         ]}
       />
       {editing && <LimitsEditor config={config} update={update} onClose={() => setEditing(false)} />}
-    </GroupCard>
+    </Card>
   );
 }
 
