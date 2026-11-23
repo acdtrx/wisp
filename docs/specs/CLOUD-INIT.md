@@ -16,29 +16,27 @@ Cloud-init provides automated VM provisioning: setting hostname, creating users,
 | `installQemuGuestAgent` | boolean | Whether to install `qemu-guest-agent` on first boot (default true) |
 | `installAvahiDaemon` | boolean | Whether to install `avahi-daemon` on first boot (default true): the way a Linux guest gets its `.local` name, which it then announces itself — see below |
 
-**`installAvahiDaemon` is how a guest announces itself** *(settled 2026-11-20)*. Wisp publishes no `.local` name for a VM ([VM-MANAGEMENT.md → Local DNS](VM-MANAGEMENT.md#local-dns-mdns)): a Linux guest gets one by running avahi-daemon, which announces the guest's own hostname (the `hostname` above) on the LAN. So the option stays on by default. A guest made without it installs avahi itself; Windows and macOS guests announce their own names.
+**`installAvahiDaemon` is how a guest announces itself** *(settled 2026-11-20)*. Wisp publishes no `.local` name for a VM ([VM-MANAGEMENT.md → Local DNS](VM-MANAGEMENT.md#local-dns-mdns)): a Linux guest gets one by running avahi-daemon, which announces the guest's own hostname (the `hostname` above) on the LAN. So the option stays on by default.
 
 ## Seed ISO Generation
 
 The seed ISO contains two files:
-- **user-data** — YAML cloud-init configuration (users, SSH keys, packages, etc.). When `installQemuGuestAgent` or `installAvahiDaemon` is enabled, a `packages:` list is added so cloud-init installs those packages on first boot. When `installQemuGuestAgent` is enabled, a `runcmd:` entry also runs `systemctl enable --now qemu-guest-agent` after package install — the unit's `BindsTo=` the virtio-port device, and the device-binding window passes before cloud-init's package install finishes, so the postinst alone leaves the unit disabled-and-stopped (libvirt then never sees the agent connect, even across in-guest reboots).
-- **meta-data** — YAML with instance ID and hostname. The instance ID is **`<vmName>-<sha256(user-data) prefix 12 chars>`**, not just `<vmName>`. cloud-init gates nearly every module (`users`, `set_passwords`, `ssh_authkey_fingerprints`, `runcmd`, `package_update_upgrade_install`, `write_files`, `bootcmd`) on instance ID with frequency `once-per-instance` — a stable instance ID makes every config change a silent no-op on already-booted VMs. Hashing the user-data means an unchanged config preserves the ID (no surprise re-runs), while any edit (password, SSH key, packages, hostname, runcmd) produces a fresh ID and cloud-init re-applies on the next boot. Module re-runs are idempotent for our generated user-data (apt is no-op for already-installed packages, `systemctl enable --now` is idempotent, user creation/password set just rewrites).
+- **user-data** — YAML cloud-init configuration (users, SSH keys, packages, etc.). When `installQemuGuestAgent` or `installAvahiDaemon` is enabled, cloud-init installs that package on first boot. For the guest agent it also enables and starts the unit after the install, because the package's own install leaves it stopped.
+- **meta-data** — YAML with instance ID and hostname. The instance ID is **`<vmName>-<sha256(user-data) prefix 12 chars>`**, not just `<vmName>`: cloud-init runs nearly every module once per instance ID, so an unchanged config keeps the ID (no surprise re-runs), while any edit (password, SSH key, packages, hostname) produces a fresh ID and cloud-init re-applies on the next boot.
 
 ### Password hashing
 
 Passwords are hashed using `openssl passwd -6` (SHA-512 crypt) before being written to the user-data YAML. The plaintext password is never stored on disk; the SHA-512 crypt hash is persisted in `cloud-init.json` as **`passwordHash`** so subsequent saves can re-emit the same hash without re-hashing.
 
-The generated `cloud-init.iso` is `chmod 0600` after creation. It bakes in user-data containing the crypt hash, and the per-VM directory is group-readable (`wisp:libvirt 0775`), so `0600` keeps the credential out of group/other reach. libvirt re-chowns the ISO to its qemu user when the VM starts, so the running guest can still read it.
+Every file holding the hash is `0600`: the generated `cloud-init.iso` (the per-VM directory is group-readable); `cloud-init.json`, set on every save; and the ISO's build inputs, which live in a private temporary directory removed after the build. Backups hold `cloud-init.json` (`0600`) but never the ISO — a backup restore creates the restored JSON `0600` and rebuilds the ISO from it (see [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso)).
 
-Every file holding the hash gets the same treatment: `cloud-init.json` is written `0600` (and chmodded on every save; files written earlier are tightened on update by state migration `0003-cloud-init-json-mode`); the ISO's build inputs live in a `mkdtemp` directory (`0700`, unpredictable name) with `user-data` written `0600`, removed after the build; backups hold `cloud-init.json` (`0600`) but never the ISO — a backup restore chmods the restored JSON to `0600` and rebuilds the ISO from it (see [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso)). Clone copies both files with the source's mode.
+**Placeholder semantics.** The API never returns the plaintext or hash; `password` is exposed to clients as `"set"` (or empty). When a client sends `password` back as `"set"` (what `GET` returns) or `"***"` (the placeholder `cloud-init.json` stores), the backend treats it as **"leave password unchanged"** and re-uses the stored `passwordHash`; an empty `password` means no password. The edit form leaves the field blank ("Leave blank to keep unchanged") and sends `"set"` for a blank field when a password is on file (settled 2026-11-12).
 
-**Placeholder semantics.** The API never returns the plaintext or hash; `password` is exposed to clients as `"set"` (or empty). When a client sends `password` back as `"set"` (what `GET` returns) or `"***"` (the placeholder `cloud-init.json` stores), the backend treats it as **"leave password unchanged"** and re-uses the stored `passwordHash`; an empty `password` means no password. The Overview edit form leaves the field blank ("Leave blank to keep unchanged") and sends `"set"` for a blank field when a password is on file (settled 2026-11-12). Re-hashing the literal placeholder string would silently downgrade the VM password — explicitly avoided.
-
-**Dual emission (`users[].passwd` + `chpasswd`).** cloud-init's `cc_users_groups` module only applies `passwd:` on user *creation* — for an existing user it logs "already exists, skipping" and leaves the password untouched, even when a fresh instance-id forces the module to re-run. The user-data therefore also emits a top-level `chpasswd:` block (cc_set_passwords module) which runs `chpasswd -e` against existing accounts unconditionally. The two are complementary: `users[].passwd` covers the first-boot creation path, `chpasswd` covers every subsequent password edit. `expire: false` is set on `chpasswd` so the user isn't prompted to change the password on first login.
+**A password edit reaches an existing user.** The user-data sets the password both where the user is created and for an account that already exists, so an edit applies on the next boot; the user is not asked to change it at first login.
 
 ### YAML emission
 
-`user-data` and `meta-data` are produced by **js-yaml** (`yaml.dump`), not template literals. Every scalar is automatically quoted/escaped, so user-controlled fields cannot inject sibling YAML keys (e.g. `runcmd:` / `write_files:` / `packages:`). Input fields also have route-level regex constraints as defense in depth:
+`user-data` and `meta-data` are produced by a YAML serializer, not template literals. Every scalar is quoted and escaped, so user-controlled fields cannot inject sibling YAML keys (e.g. `runcmd:` / `write_files:` / `packages:`). Input fields also have route-level constraints as defense in depth:
 
 | Field | Regex / limit |
 |-------|---------------|
@@ -47,50 +45,17 @@ Every file holding the hash gets the same treatment: `cloud-init.json` is writte
 | `password` | `^[^\r\n]*$`, ≤ 256 chars (CR/LF rejected) |
 | `sshKey` | ≤ 16384 chars; split on newlines into individual key entries |
 
-### ISO creation tools
-
-Two tools are supported, in priority order:
-
-1. **`cloud-localds`** (from `cloud-image-utils`) — the preferred tool. Generates a valid cloud-init NoCloud datasource ISO directly from user-data and meta-data files.
-
-2. **`genisoimage`** — fallback when `cloud-localds` is not available. Creates an ISO with volume label `cidata`, Joliet and Rock Ridge extensions: `genisoimage -V cidata -r -J -o <output> <input-dir>/`
-
-Both tools are invoked via `child_process`.
-
 ## Per-VM Storage
 
-Cloud-init files are stored in the VM's directory:
-
-```
-<vmsPath>/<vm-name>/
-├── cloud-init.iso        # The seed ISO attached to sde
-└── cloud-init.json       # The configuration (for later editing/regeneration)
-```
-
-The `cloud-init.json` file stores the configuration fields so the UI can display the current config and support editing/regeneration.
-
-## Disk Slot
-
-Cloud-init uses slot `sde`:
-
-```xml
-<disk type='file' device='cdrom'>
-  <source file='/var/lib/wisp/vms/<name>/cloud-init.iso'/>
-  <target dev='sde' bus='sata'/>
-  <readonly/>
-</disk>
-```
+Cloud-init files are stored in the VM's directory `<vmsPath>/<vm-name>/`: `cloud-init.iso`, the seed ISO attached as the CD-ROM in slot `sde`, and `cloud-init.json`, the configuration, kept for later editing.
 
 ## Operations
 
 ### Create (during VM creation)
 
-When creating a VM with cloud-init **enabled** (`cloudInit.enabled` not `false`; omitted counts as on):
-1. Generate the seed ISO from the provided config
-2. Save the config as `cloud-init.json` (with `enabled: true`)
-3. The VM domain XML includes `sde` pointing to the ISO
+When creating a VM with cloud-init **enabled** (`cloudInit.enabled` not `false`; omitted counts as on), the seed ISO is generated from the provided config, the config is saved as `cloud-init.json` (with `enabled: true`), and the VM's definition has `sde` pointing to the ISO.
 
-Both files are written only **after** the name is known to be free in libvirt and on disk, into the VM directory `createVM` has just created: the route passes `generateCloudInit` to `createVM` as its `populateVMDir` callback. A create whose name belongs to an existing VM or a kept directory is refused (409 `VM_EXISTS` / `VM_DIR_EXISTS`, see [VM-MANAGEMENT.md](VM-MANAGEMENT.md#creation-flow)) before anything is generated, so it can never touch that VM's `cloud-init.iso` / `cloud-init.json`; a create that fails later removes the whole new directory, cloud-init files included.
+Both files are written only **after** the name is known to be free in libvirt and on disk, into the VM directory the create has just made. A create whose name belongs to an existing VM or a kept directory is refused (409 `VM_EXISTS` / `VM_DIR_EXISTS`, see [VM-MANAGEMENT.md](VM-MANAGEMENT.md#creation-flow)) before anything is generated, so it can never touch that VM's `cloud-init.iso` / `cloud-init.json`; a create that fails later removes the whole new directory, cloud-init files included.
 
 When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `cloud-init.json`, and no `sde` in the domain XML.
 
@@ -104,13 +69,13 @@ When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `
 1. Save the new config to `cloud-init.json`
 2. Re-hash the password (if changed)
 3. Regenerate the seed ISO
-4. Attach/update `sde` in the domain XML. A VM made without first boot setup has no `sde` slot: the slot is added to the saved definition, whatever the VM's state, and a VM that is on shows "restart required" (a SATA CD-ROM cannot be hot-plugged, and the seed is read at the next boot). A failed attach fails the save with its error (settled 2026-11-22; before, the failure was swallowed, so turning first boot setup on for a running VM reported success and added nothing).
+4. Attach/update `sde` in the domain XML. A VM made without first boot setup has no `sde` slot: the slot is added to the saved definition, whatever the VM's state, and a VM that is on shows "restart required" (a SATA CD-ROM cannot be hot-plugged, and the seed is read at the next boot). A failed attach fails the save with its error (settled 2026-11-22).
 
 `PUT` with **`enabled: false`** (soft-disable):
 1. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling) — except `password`: a disabled config takes no new password, and the stored hash stays as it was (settled 2026-11-12)
 2. Detach/eject `sde` and delete `cloud-init.iso`
 
-A notice is displayed in the UI: changes take effect on next boot if cloud-init has already run inside the guest.
+An edit takes effect on the guest's next boot.
 
 ### Disable (full removal)
 
@@ -119,17 +84,13 @@ A notice is displayed in the UI: changes take effect on next boot if cloud-init 
 2. Detach `sde` from the domain XML
 3. Delete `cloud-init.iso`
 
-The Cloud-Init section in the UI then shows a way to configure again from scratch.
-
 **The json goes first** (settled 2026-11-16), in soft-disable and in removal: detaching `sde` makes every tab re-read the VM, and that re-read must find the new cloud-init state, not the old "On". Accepted cost: if the detach fails after a removal deleted the json, the VM keeps an ISO with no config behind it; the section offers to configure from scratch, and a new save replaces the ISO. The same for a soft-disable: if its detach fails, the summary shows Off while the ISO stays attached until a soft-disable is saved again (settled 2026-11-16).
 
 ### Regenerate
 
-The server can rebuild the seed ISO from the stored configuration, for use after a manual change to `cloud-init.json`. The page no longer offers it (settled 2026-11-21): saving first boot setup rebuilds the ISO.
+The page offers no Regenerate (settled 2026-11-21): saving first boot setup rebuilds the ISO.
 
-A backup restore (always as a new VM) rebuilds the ISO the same way, from the restored `cloud-init.json` (`rebuildCloudInitISO`, the stored password hash reused); backups don't carry the ISO. See [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso).
-
-The generator unlinks any existing `cloud-init.iso` before invoking `cloud-localds` / `genisoimage`. libvirt's `dynamic_ownership` chowns the file to `libvirt-qemu:kvm` on VM start and only chowns it back on a clean stop, so without the unlink a regenerate after the VM has run (especially after a force-stop or crash) hits `EACCES` trying to truncate a file the wisp user no longer owns. Per-VM directories are `wisp:libvirt 0775`, which grants unlink regardless of file ownership; the freshly created ISO is owned by the wisp user and libvirt re-chowns it on the next start.
+A backup restore (always as a new VM) rebuilds the ISO from the restored `cloud-init.json`, the stored password hash reused; backups don't carry the ISO. See [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso).
 
 ## SSH keys
 
@@ -137,22 +98,11 @@ A VM's first boot setup holds its own copy of its public keys, in `sshKey`, one 
 They are picked from Wisp's list of keys ([SETTINGS.md](SETTINGS.md), SSH keys), where a
 GitHub user's keys are imported too; a key pasted in the setup is added to that list. A
 VM takes at most 16384 characters of keys. The
-setup does not record where a key came from (settled 2026-11-21: `sshKeySource` left the
-stored shape, by migration `0013`).
+setup does not record where a key came from (settled 2026-11-21).
 
 ## Visibility Rules
 
-### By OS type
-
-- **Linux VMs** — Cloud-init section is always visible
-- **By profile** — whether a VM takes first boot setup is its profile's ([VM-MANAGEMENT.md](VM-MANAGEMENT.md), Profiles): only `linux` does. The page shows the group for those VMs only, and the server refuses a setup for the others
-- **HAOS (Home Assistant OS)** — Cloud-init section is hidden during creation
-
-### By disk type (Create VM only)
-
-During VM creation:
-- **Existing Image** disk type — Cloud-init section is visible (cloud images support cloud-init)
-- **New Disk** disk type — Cloud-init section is hidden (bare disks need an OS installation first)
+Whether a VM takes first boot setup is its profile's ([VM-MANAGEMENT.md](VM-MANAGEMENT.md), Profiles): only `linux` does. The page shows the group for those VMs only, and the server refuses a setup for the others.
 
 ### Overview vs. Create
 
