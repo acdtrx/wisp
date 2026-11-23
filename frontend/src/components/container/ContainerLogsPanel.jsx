@@ -11,7 +11,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import IconButton from '../shared/IconButton.jsx';
+import IconButton, { IconLink } from '../shared/IconButton.jsx';
 
 const NO_RUNS = [];
 
@@ -247,15 +247,13 @@ export default function ContainerLogsPanel({ containerName }) {
         <IconButton icon={Eraser} label="Clear viewer" title="Clear viewer (does not touch log files)" size="sm" onClick={onClear} />
         <IconButton icon={MapPin} label="Insert a marker line" size="sm" onClick={onMark} />
         {downloadHref ? (
-          <a
+          <IconLink
             href={downloadHref}
             download={`${containerName}-${selectedRunId}.log`}
-            className="rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
-            title="Download this run's log"
-            aria-label="Download run log"
-          >
-            <Download size={14} aria-hidden />
-          </a>
+            icon={Download}
+            label="Download this run's log"
+            size="sm"
+          />
         ) : null}
         <IconButton
           icon={ArrowDown}

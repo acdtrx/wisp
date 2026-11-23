@@ -68,20 +68,18 @@ function Glyph({ icon: Icon, kindIcon: KindIcon, size, pressed, spin = false }) 
 
 /**
  * A link that only navigates, with an icon button's look (`variant`, `size`): named by
- * `label` on hover and to a screen reader.
+ * `label` on hover and to a screen reader. `to` is a route of the app; `href` is any
+ * other address (a download, another site), with `download`, `target` and `rel` passed on.
  */
-export function IconLink({ to, icon, kindIcon, label, variant = 'plain', size = 'md', className = '', ...rest }) {
-  return (
-    <Link
-      to={to}
-      title={label}
-      aria-label={label}
-      className={`${BASE} ${SIZE[size]} ${COLOURS[variant]}${className ? ` ${className}` : ''}`}
-      {...rest}
-    >
-      <Glyph icon={icon} kindIcon={kindIcon} size={size} />
-    </Link>
-  );
+export function IconLink({ to, href, icon, kindIcon, label, variant = 'plain', size = 'md', className = '', ...rest }) {
+  const props = {
+    title: label,
+    'aria-label': label,
+    className: `${BASE} ${SIZE[size]} ${COLOURS[variant]}${className ? ` ${className}` : ''}`,
+    ...rest,
+  };
+  const glyph = <Glyph icon={icon} kindIcon={kindIcon} size={size} />;
+  return href !== undefined ? <a href={href} {...props}>{glyph}</a> : <Link to={to} {...props}>{glyph}</Link>;
 }
 
 /**

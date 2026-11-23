@@ -7,6 +7,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useDiscoveryStore } from '../../store/discoveryStore.js';
 import Button from '../shared/Button.jsx';
+import MenuItem from '../shared/MenuItem.jsx';
 
 /**
  * Server name in the top bar. When other Wisp servers are discovered on the
@@ -72,21 +73,23 @@ export default function ServerSwitcher() {
           className="z-[60] min-w-56 overflow-y-auto rounded-md border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
         >
           {peers.map((peer) => (
-            <a
+            <MenuItem
               key={peer.host || peer.name}
               role="menuitem"
               href={peer.url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={close}
-              className="flex w-full flex-col px-3 py-2 hover:bg-surface"
-            >
-              <span className="text-sm text-text-primary">{peer.name}</span>
-              <span className="text-[10px] text-text-muted">
-                {peerHostLabel(peer)}
-                {peer.version ? ` · v${peer.version}` : ''}
-              </span>
-            </a>
+              label={(
+                <>
+                  <span className="block truncate">{peer.name}</span>
+                  <span className="block truncate text-[10px] text-text-muted">
+                    {peerHostLabel(peer)}
+                    {peer.version ? ` · v${peer.version}` : ''}
+                  </span>
+                </>
+              )}
+            />
           ))}
         </div>,
         document.body,
