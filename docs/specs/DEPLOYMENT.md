@@ -8,15 +8,14 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
 
 - **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`) with **systemd 254 or newer** (Debian 13, Ubuntu 24.04 and later; read from `systemctl --version`, not from the release number: the unit's restart backoff needs it). Arch Linux is dropped as a host; it stays as a guest.
 - **KVM is not required** (settled 2026-11-19).
-  - A host that can run only containers is still a useful Wisp host. Rejected: refusing a host without `/dev/kvm`.
+  - A host that can run only containers is a Wisp host: none is refused for lacking `/dev/kvm`.
   - Setup sets up VMs and containers alike on every host, so turning KVM on later needs nothing reinstalled.
   - On a host without `/dev/kvm` the run succeeds, and setup's last lines say that the host cannot run VMs, why, and how to turn virtualization on (the firmware's setting, or nested virtualization when the host is itself a VM; then a reboot). The installer ends with them too; in the update's log they close setup's part, before the install's start phase and the updater's `step:done`.
-  - Containers need nothing of the host that setup does not install itself on a supported host, so there is no container counterpart, and no host is refused for lacking both.
 - **The network run by netplan**, rendered by systemd-networkd, and an **IPv4 default route**: its interface is the uplink (settled 2026-11-20).
   - A host whose uplink it does not run is refused before anything changes, whether setup makes the bridge or finds one (`UPLINK_NOT_NETPLAN`). On a host Wisp runs on already, a host an earlier release bridged with NetworkManager or systemd-networkd's own files among them, an update then rolls back and a manual upgrade stops: Wisp stays on its release until netplan runs the network (settled 2026-11-20).
-  - Server installs of both distributions run their network with netplan. ifupdown, which Debian's own installer sets up, is the next tool to support ([BACKLOG.md](../BACKLOG.md)).
+  - ifupdown, which Debian's own installer sets up, is the next tool to support ([BACKLOG.md](../BACKLOG.md)).
   - netplan brings `python3`, which the plan reads the network's configuration with: setup has no prerequisite of its own.
-  - Rejected: making the bridge through NetworkManager and plain systemd-networkd too, which had grown to half of setup and most of its refusals, for hosts Wisp does not target.
+  - The bridge is not made through NetworkManager or plain systemd-networkd too: that had grown to half of setup and most of its refusals.
 - **A bridge on the uplink**, which every VM and container joins. When the uplink already is a bridge, setup uses it and changes nothing in the network. Otherwise setup makes `br0` on it, for one shape of uplink (settled 2026-11-18): **a plain Ethernet interface, on DHCP or with a static address set in netplan, defined on its own**. For any other shape the operator makes the bridge with netplan, and setup then uses it.
 
 **Every refusal names what was found, with its code** (settled 2026-11-19). The codes are in the style of [ERROR-HANDLING.md](ERROR-HANDLING.md)'s, so the row below is found by its code; `npm run check` keeps the codes the scripts print and this table's rows in step.
@@ -102,16 +101,16 @@ The one list of steps the install and every update run, by path from the install
 - The first step, `network-plan`, changes nothing: it works out the plan and makes the refusals above.
 - The steps run without the install lock's descriptor: setup holds the lock, so a process a step leaves behind cannot keep updates locked.
 
-**A stop** (TERM, INT) ends setup within its stop bound, whoever sent it; the bridge step's apply and its undo are never cut short (settled 2026-11-19: each step stops itself, knowing what of its work may be cut short; this replaced setup's TERM to the step's whole session).
+**A stop** (TERM, INT) ends setup within its stop bound, whoever sent it; the bridge step's apply and its undo are never cut short (settled 2026-11-19: each step stops itself, knowing what of its work may be cut short).
 
 Afterwards the host has:
 
-- the packages Wisp uses (Node.js 24 and containerd 2 from their vendors' signed apt repos);
+- the packages Wisp uses (Node.js and containerd 2 from their vendors' signed apt repos; the list: `docs/TECH-STACK.md`);
 - the deploy user in the libvirt, kvm, input and containerd groups;
 - Wisp's directories under `/var/lib/wisp` and `/mnt/wisp`;
 - libvirt with its default NAT network not autostarting;
 - containerd with Wisp's namespace;
-- the CNI plugins and a bridge config for the uplink's bridge, with `cni-dhcp.service`;
+- the CNI plugins, with `cni-dhcp.service`;
 - the container DNS stub (below);
 - avahi with `publish-aaaa-on-ipv4=no`;
 - the privileged `wisp-*` helpers and their sudoers rules;
@@ -150,7 +149,7 @@ Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DN
 - After the step, netplan holds exactly one definition for the uplink, in the operator's file that defined it. It says "port of the bridge", with the uplink's link settings.
 - The address configuration is in the bridge's definition, in the same file, and nowhere else.
 - None of the operator's definitions is left dormant or shadowed, and none of setup's wins by sorting first.
-- Rejected: adding only files of Wisp's own beside the operator's, untouched. Observed on a netplan host: every boot then waited two minutes for netplan's own `wait-online` drop-in, which names the uplink, and the operator's edits to the uplink in netplan applied silently to nothing.
+- Not files of Wisp's own beside the operator's, untouched: the operator's edits to the uplink in netplan would then apply to nothing.
 
 **Only netplan's documented configuration** (settled 2026-11-20).
 
@@ -163,7 +162,7 @@ Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DN
 - Before systemd 257, `networkctl status --json` leaves out the DHCPv4 client identifier the bridge must send. On those hosts (Ubuntu 24.04 has systemd 255) the plan and the bridge's check read it, read only, from systemd-networkd's record of the lease, `/run/systemd/netif/leases/<ifindex>` (`CLIENTID=`). From 257 on they read it from the JSON.
 - Which one is read is chosen by the systemd version (`systemctl --version`, read once with the supported-host check), never by a value missing from the JSON.
 - A lease whose record or `CLIENTID=` is missing is refused (`DHCP_LEASE_RECORD`).
-- Rejected: raising the floor to systemd 257, which drops Ubuntu 24.04; parsing `networkctl status`'s text, which is no more an interface than the record.
+- Not a floor of systemd 257, which drops Ubuntu 24.04; not `networkctl status`'s text, which is no more an interface than the record.
 
 **Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. Within 90 s after the apply the step checks, against what the uplink held (settled 2026-11-20):
 
@@ -204,7 +203,9 @@ The next run of setup then makes the bridge again.
 
 ## Manual upgrade
 
-Run the new release's installer over the install: from its tarball (`tar -xzf wisp-<version>.tar.gz`, `cd wisp`, `./scripts/install.sh <install-dir>`, as the user Wisp runs as) or with `scripts/push.sh`. It asks nothing that the install already has (sudo's password, and the bridge question only on a host that has none), keeps everything in `config/`, runs setup and restarts Wisp; workloads keep running through it. This is also how a host on v2.8.0-beta.1 or older comes to a later release, once ([UPDATES.md](UPDATES.md#an-update-is-an-install-with-a-way-back)). Observed 2026-11-23 on two such hosts: 19 s with nothing asked on one that had a bridge, a running container kept its address; on one without a bridge whose network cloud-init manages, the install refused before any change (`CLOUD_INIT_NETWORK`) with the fix in its message (`echo "network: {config: disabled}" | sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`), then asked the bridge question and took 41 s. There is no "git checkout on the server" path (settled 2026-11-18).
+Run the new release's installer over the install: from its tarball (`tar -xzf wisp-<version>.tar.gz`, `cd wisp`, `./scripts/install.sh <install-dir>`, as the user Wisp runs as) or with `scripts/push.sh`. It asks nothing that the install already has (sudo's password, and the bridge question only on a host that has none), keeps everything in `config/`, runs setup and restarts Wisp; workloads keep running through it. There is no "git checkout on the server" path (settled 2026-11-18).
+
+This is also how a host on v2.8.0-beta.1 or older comes to a later release, once ([UPDATES.md](UPDATES.md#an-update-is-an-install-with-a-way-back)). On such a host without a bridge whose network cloud-init manages, the install refuses before any change (`CLOUD_INIT_NETWORK`) with the fix in its message: `echo "network: {config: disabled}" | sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`, then the install again.
 
 ## Operating Wisp
 
@@ -217,34 +218,7 @@ Run the new release's installer over the install: from its tarball (`tar -xzf wi
 
 ## Systemd Service Unit
 
-A single service unit in `systemd/linux/`:
-
-### `wisp.service`
-
-```ini
-[Unit]
-Description=Wisp
-After=network-online.target libvirtd.service virtqemud.service containerd.service
-Wants=network-online.target
-
-[Service]
-Type=notify
-NotifyAccess=all
-TimeoutStartSec=15min
-User=WISP_USER
-WorkingDirectory=WISP_PATH/backend
-EnvironmentFile=-WISP_PATH/config/runtime.env
-ExecStart=/usr/bin/node src/index.js
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-Restart=on-failure
-RestartSec=5
-RestartSteps=6
-RestartMaxDelaySec=5min
-TimeoutStopSec=15
-
-[Install]
-WantedBy=multi-user.target
-```
+A single service unit, `wisp.service`, rendered by setup from its template in `systemd/linux/`.
 
 `Type=notify`: the start ends when the backend reports itself ready (`systemd-notify --ready`) once it listens, after its state migrations and boot work, or fails when it exits first; `systemctl start` and `restart` wait for that, bounded by `TimeoutStartSec`. A failed start is retried with a delay growing from 5 s to 5 min ([UPDATES.md → Health-gated start](UPDATES.md#health-gated-start)).
 
@@ -252,116 +226,45 @@ WantedBy=multi-user.target
 
 ### SPA serving
 
-In production, the same Node process serves the prebuilt SPA from `frontend/dist/` (and `/vendor/*` from `frontend/public/vendor/` for noVNC). `@fastify/static` is registered after the `/api` and `/ws` route trees; an `onSend` hook adds CSP + `X-Content-Type-Options` + `X-Frame-Options` + `Referrer-Policy` headers; `setNotFoundHandler` returns `dist/index.html` for non-`/api` / non-`/ws` paths so client-side routing survives deep-link refresh. The auth hook bypasses non-API/WS paths so the bundle and login page load without a session — `/api/*` still requires the JWT cookie.
-
-### Placeholder substitution
-
-Setup's `service-unit` step substitutes `WISP_USER` and `WISP_PATH` into `systemd/linux/wisp.service`, installs it as `/etc/systemd/system/wisp.service` and enables it.
+In production, the same Node process serves the prebuilt SPA. A path outside `/api` and `/ws` that is no file answers the SPA's `index.html`, so client-side routing survives deep-link refresh. The bundle and the login page load without a session — `/api/*` still requires it. The security headers: `docs/PRODUCTION.md`.
 
 ## Developer Workflow
 
-### Local development
+Development is local only *(settled 2026-11-12)*: the backend and the Vite dev server run on the same machine, and on macOS the backend runs its stub managers. Manager paths are verified on a Linux host through a dev deploy (`scripts/push.sh`), not by running the dev backend there. The commands: `AGENTS.md`, Project Facts.
 
-Development is local only *(settled 2026-11-12)*: the backend and the Vite dev server run on the same machine, and on macOS the backend runs its stub managers. Manager paths are verified on a Linux host through a dev deploy (`scripts/push.sh`), not by running the dev backend there.
-
-1. Run the backend: `cd backend && NODE_ENV=development npm run dev` (uses `--watch` for auto-reload). In development it listens on **`127.0.0.1`** only (`WISP_PORT`, default 8080); production listens on every interface.
-2. Run the frontend: `cd frontend && npx vite --port 5173`
-3. The Vite dev server at `localhost:5173` proxies `/api` and `/ws` to `127.0.0.1:8080`
-
-Backend enables CORS for `localhost:5173` when `NODE_ENV=development`.
-
-On macOS, the backend starts without connecting to libvirt (dev mode) — VM operations are unavailable but the server starts.
+In development the backend listens on **`127.0.0.1`** only (`WISP_PORT`, default 8080) and enables CORS for `localhost:5173`; production listens on every interface.
 
 ## Releases (maintainers)
 
-
-```bash
-# Edit CHANGELOG.md (add a new "## YYYY-MM-DD" section at the top), do NOT commit it.
-./scripts/release.sh 1.0.6        # bumps versions + retitles CHANGELOG + folds it into a single release commit + tags v1.0.6
-# then push the release commit and the tag to each remote: release.sh prints the commands.
-# The tag on `github` starts the release workflow.
-```
-
-`release.sh` accepts `CHANGELOG.md` as the only dirty file in the working tree, so the new section lands in the same `release: vX.Y.Z` commit as the version bumps — no separate changelog commit needed.
-
-The `v1.0.6` tag triggers `.github/workflows/release.yml`, which runs `npm run check` (a failure stops it before anything is published), builds the frontend, packages `wisp-1.0.6.tar.gz` (with prebuilt `frontend/dist/`) plus a `.sha256`, extracts the matching CHANGELOG section as release notes, and creates the GitHub Release. Tags shaped `v*-*` (e.g. `v1.0.6-rc.1`) are published as prereleases — these are not surfaced by the in-app auto-checker (GitHub's `releases/latest` endpoint excludes prereleases).
+How a release is cut and published: [UPDATES.md → Pieces](UPDATES.md#pieces) and [Tag convention](UPDATES.md#tag-convention).
 
 ## Helper Scripts
 
-### Privileged helpers checklist (maintainers)
-
-When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`sudo -n`**:
-
-0. **Write it in the helpers' dialect** ([CODING-RULES §12](../CODING-RULES.md), Shell), with a test of its refusals in `backend/scripts/test/`.
-1. **Put it in `backend/scripts/`**, executable, with a shebang: the helpers are that folder (every `wisp-*` script there but the updater; the shell check holds the folder to helpers, the updater and the shared file), and setup installs each with its sudoers rule. A package it runs goes in the packages step's list (`scripts/linux/setup/packages.sh`).
-2. **Backend** — call it through the one runner, `runPrivileged(helperPath('wisp-<name>'), args, { timeoutMs })` from `lib/base/` (settled 2026-11-22). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path. The runner tells a failure apart as `missing` (not installed: run setup), `refused` (sudo did not let the service run it), `timed-out`, or by the helper's own exit code `invalid`, `not-found`, `busy` or `failed`; the caller keeps its own error code on the wire. The fence check refuses a `'sudo'` anywhere else.
-3. **Docs** — `docs/specs/DEPLOYMENT.md` (this section), `docs/specs/API-<AREA>.md` / `CONFIGURATION.md` as appropriate; the CLI tools inventory in `docs/TECH-STACK.md`; the **shell-exec allowlist in `docs/CODING-RULES.md` §7**.
-4. **Install / upgrade** — Covered automatically if step 1 is done: setup's `helpers` step runs `install-helpers.sh` on every install and update.
-
 ### The helpers
 
-Every helper is written in one dialect ([CODING-RULES §12](../CODING-RULES.md), Shell;
-settled 2026-11-22): called as `wisp-<name> <subcommand> <arguments in order>`, the answer
-on stdout, an error as one line on stderr, and the same exit codes in all of them (`0`
-done, `64` wrong argument, `2` not there, `75` busy, `1` anything else). Each checks every
-argument before it runs anything, and bounds each command that can hang. The shared parts
-are in `wisp-helper-lib.sh`, installed beside them. Setup's `helpers` step installs them
-all, with one sudo rule each (`<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/<name>`),
-at every install and update.
+Every helper is written in one dialect ([CODING-RULES §12](../CODING-RULES.md), Shell; settled 2026-11-22), with a test of its refusals in `backend/scripts/test/`.
 
-**Setup installs exactly the set** (settled 2026-11-22). Every entry named `wisp-*` in
-`/usr/local/bin` and in `/etc/sudoers.d` is setup's: each run installs this release's
-helpers, the shared file, the updater and their rules, and then removes any other
-`wisp-*` it finds in the two folders, naming each. So a helper a release stops shipping
-goes at the update, with its rule, and a rollback removes what the failed release added
-(from the release after this one: the first rollback goes back to a setup without the
-sweep). The removal comes last, a rule before its file, so a step that fails half way
-has removed nothing. A file of your own with that prefix in those folders is removed
-too. Before, nothing was ever removed but two old helpers on a list that never ended.
+- **The helpers are the folder**: every `wisp-*` script in `backend/scripts/` but the updater, with the shared file `wisp-helper-lib.sh`, which is installed beside them. Setup's `helpers` step installs them all, with one sudo rule each (`<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/<name>`), at every install and update.
+- **The backend calls a helper through the one runner** (settled 2026-11-22; CODING-RULES §7, which lists what the runner tells apart). A helper is only ever **`/usr/local/bin/<name>`**, the path its sudoers rule names, run with `sudo -n` and a time bound. There is no bundled fallback, no env override and no direct run as root: the service never runs as root, and sudo refuses any other path.
 
-**A release is installed by the release before it** (settled 2026-11-22). The updater that applies an update is the one already on the host. From this release on it reads one thing from the new tree: `scripts/linux/install-tree.sh`, with its four arguments and its exit `0` ([UPDATES.md → An update is an install with a way back](UPDATES.md#an-update-is-an-install-with-a-way-back)). That contract stays stable; everything else in a tree may change. Releases up to v2.8.0-beta.1 had an updater that read a list of files from the new tree (the backend's version, a port reader, setup's entry point, the unit template); none of that is kept for them (the user's choice, 2026-11-23), so such a host is updated once by hand ([Manual upgrade](#manual-upgrade)).
+**Setup installs exactly the set** (settled 2026-11-22). Every entry named `wisp-*` in `/usr/local/bin` and in `/etc/sudoers.d` is setup's: each run installs this release's helpers, the shared file, the updater and their rules, and then removes any other `wisp-*` it finds in the two folders, naming each. So a helper a release stops shipping goes at the update, with its rule, and a rollback removes what the failed release added. The removal comes last, a rule before its file, so a step that fails half way has removed nothing. A file of your own with that prefix in those folders is removed too.
+
+**A release is installed by the release before it** (settled 2026-11-22). The updater that applies an update is the one already on the host. It reads one thing from the new tree: `scripts/linux/install-tree.sh`, with its four arguments and its exit `0` ([UPDATES.md → An update is an install with a way back](UPDATES.md#an-update-is-an-install-with-a-way-back)). A host on v2.8.0-beta.1 or older is updated once by hand ([Manual upgrade](#manual-upgrade)).
 
 | Helper | Calls | What it does |
 |--------|-------|--------------|
 | `wisp-os-update` | `list`, `upgrade` | `list`: syncs the package lists and prints `PKG<TAB>name<TAB>from<TAB>to` lines plus `TOTAL <bytes>`. `upgrade`: a full non-interactive upgrade (`dist-upgrade`, keeping changed config files); progress on stderr. A package lock held elsewhere is exit 75. It sets its own environment (`DEBIAN_FRONTEND=noninteractive`, `NEEDRESTART_MODE=a`, `UCF_FORCE_CONFFOLD=1`), because sudo drops the caller's. The contract is [HOST-MONITORING.md → OS updates](HOST-MONITORING.md#os-updates) |
-| `wisp-mount` | `smb-mount <share> <path> <credentials-file\|guest> <owner-only\|shared>`, `smb-check <share> <path> <credentials-file\|guest>`, `disk-mount <uuid> <path> <fstype> <ro\|rw>`, `unmount <path>`, `unmount-lazy <path>`, `rmdir <path>` | Mounts SMB shares and adopted removable drives under `/mnt/wisp/`. Rules: [STORAGE.md → Privileged helper](STORAGE.md#privileged-helper). Needs `cifs-utils` |
+| `wisp-mount` | See STORAGE | Mounts SMB shares and adopted removable drives under `/mnt/wisp/`. Calls and rules: [STORAGE.md → Privileged helper](STORAGE.md#privileged-helper) |
 | `wisp-dmidecode` | (no argument) | The RAM modules (`dmidecode --type 17`) as a JSON array; `[]` only when DMI lists none (a VM, usually) |
 | `wisp-smartctl` | `<disk>` | One disk's SMART data as smartctl's JSON; a disk in standby answers `{"standby":true}` and is not woken |
 | `wisp-power` | `shutdown`, `reboot` | `shutdown -h now` / `shutdown -r now` |
 | `wisp-nvram` | `copy <src> <dst>` | Copies a UEFI variables file (`VARS.fd`), which libvirt keeps readable by its own user only, and gives the copy to the service user. Both paths must be `VARS.fd` under `/var/lib/wisp/` or `/mnt/wisp/`, with no symbolic link on the way; the copy is written beside the target and renamed over it. A `vmsPath` or backup destination outside those folders is not supported |
 | `wisp-netns` | `add <container>`, `delete <container>`, `route-add <container> <ifname> <ipv4>` | The container's network namespace, `/var/run/netns/<container>`, and the on-link route to Wisp's DNS stub inside it |
-| `wisp-cni` | `add <container> <bridge> <mac>`, `del <container> <bridge>` | Runs the CNI `bridge` plugin (with the `dhcp` IPAM) for the container's own namespace. **The helper writes the network config itself** from its checked arguments and fixed settings (settled 2026-11-22): there is no network file on the host any more (`/etc/cni/net.d/10-wisp-bridge.conflist`, which setup now removes), and no caller can name another namespace, plugin or config. The plugin's result is the answer |
+| `wisp-cni` | `add <container> <bridge> <mac>`, `del <container> <bridge>` | Runs the CNI `bridge` plugin (with the `dhcp` IPAM) for the container's own namespace. **The helper writes the network config itself** from its checked arguments and fixed settings (settled 2026-11-22): no caller can name another namespace, plugin or config. The plugin's result is the answer |
 | `wisp-bridge` | `create <base-bridge> <vlan-id>`, `delete <base-bridge> <vlan-id>` | A VLAN bridge on a base bridge, through netplan: writes or removes only its own file in `/etc/netplan` (`91-wisp-vlan__…`) and runs `netplan apply`. The bridge's name, the VLAN interface and the file name are derived from the two arguments. The base must be a bridge, not itself VLAN-tagged, with a member that is not a VLAN |
 
-**When a helper does not work**, the error on the page or in the journal says which of
-four things happened: the helper is not installed, or sudo refused it (both: run setup,
-[Setup](#setup)); it failed, with its own line; or it did not finish within its limit. To
-try one by hand, as the deploy user: `sudo -n /usr/local/bin/wisp-dmidecode` (never
-`wisp-power shutdown` on a host you mean to keep up). For container networking also check
-that `/opt/cni/bin/bridge` and `/opt/cni/bin/dhcp` exist, that `cni-dhcp.service` is
-active, and that the container's bridge is a bridge on the host.
+**When a helper does not work**, the error on the page or in the journal says which of four things happened: the helper is not installed, or sudo refused it (both: run setup, [Setup](#setup)); it failed, with its own line; or it did not finish within its limit. To try one by hand, as the deploy user: `sudo -n /usr/local/bin/wisp-dmidecode` (never `wisp-power shutdown` on a host you mean to keep up). For container networking also check that `/opt/cni/bin/bridge` and `/opt/cni/bin/dhcp` exist, that `cni-dhcp.service` is active, and that the container's bridge is a bridge on the host.
 
-### `wisp-updater` (installed to `/usr/local/bin/`, run via `wisp-updater.service`)
+### `wisp-updater`
 
-Applier for the Wisp self-update pipeline. Not invoked directly — the backend triggers `wisp-updater.service` (a `Type=oneshot` systemd unit) via `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The unit's `WISP_INSTALL_DIR` env var is templated at install time; the staging path is read from `/var/lib/wisp/updates/target` (single line, must start with `/var/lib/wisp/updates/staging-`). See [UPDATES.md](UPDATES.md) for the full pipeline.
-
-| Operation | Description |
-|---------|-------------|
-| `systemctl start --no-block wisp-updater.service` | Stop service → keep a copy of the install at `<install>.prev/` → run the staged tree's own install (`scripts/linux/install-tree.sh`: the copy by the keep rule, setup, the start). Auto-rolls back from `<install>.prev/` on any failure ([UPDATES.md → Rollback](UPDATES.md#rollback)). |
-
-Steps are echoed to journald (`journalctl -u wisp-updater.service`) — Wisp does not capture them since it dies during `step:stop-service`.
-
-### `vendor-novnc.sh`
-
-See [noVNC.md](noVNC.md). Fetches the pinned noVNC release from GitHub and copies `core/` and `vendor/` into the frontend's public directory; the frontend's `npm run build` runs it first.
-
-## Config directory (`config/`)
-
-| File | Tracked | Purpose |
-|------|---------|---------|
-| `runtime.env.example` | Yes | Optional process overrides template |
-| `runtime.env` | No | Optional active overrides |
-| `wisp-config.json.example` | Yes | Application settings template |
-| `wisp-config.json` | No | Settings (UI) |
-| `wisp-password` | No | Scrypt hash for login / JWT secret |
-| `migrations.json` | No | State-migration ledger — which migration ids ran on this host ([UPDATES.md](UPDATES.md#ledger-configmigrationsjson)) |
+Not a helper of the backend's: `wisp-updater.service` runs it ([UPDATES.md](UPDATES.md)). Its steps go to journald (`journalctl -u wisp-updater.service`); Wisp does not capture them, since it stops during the update.
