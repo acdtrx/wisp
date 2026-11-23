@@ -345,7 +345,8 @@ checks and the unit tests below for what they cover:
     its `linux/` and `darwin/` sides. The backend has no build step, so nothing else
     checks an import, and a dynamic one fails only when its code path runs.
   - `check-fences`: the import fences (§7); `shared/` importing nothing; no import cycle
-    in the backend; and only the backend running the state migrations (§16).
+    in the backend beyond its listed exceptions; and only the backend running the state
+    migrations (§16).
   - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules
     only, and a topic, change kind or job kind written as a string outside
     `shared/wireNames.js`. Inline ESLint comments are not honoured, and one left in the
@@ -354,8 +355,9 @@ checks and the unit tests below for what they cover:
     required (settled 2026-11-22): the check fails without it. An inline
     `# shellcheck disable=` fails the check; an allowance is a reviewed line in
     `scripts/check-shell.mjs`. It also holds each script's mode to its use (executable
-    if and only if it starts with a shebang) and the helpers folder to helpers, the
-    updater and their shared file.
+    if and only if it starts with a shebang; a sourced file has none and starts with
+    `# shellcheck shell=bash`) and the helpers folder to helpers, the updater and their
+    shared file.
   - `npm test`: the unit tests, `node --test` over the `*.test.js` files beside the
     modules they test and a migration's in `backend/migrations/test/`, for code with no
     platform behind it: timing, state and stream handling, rules. Platform code is

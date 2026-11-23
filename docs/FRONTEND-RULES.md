@@ -59,7 +59,8 @@ holds the UI library's rules.
 
 - Keep an error shown to the user visible until the user dismisses it.
   - Applied: an error shows in the one error display (`ErrorBanner`). A command's error
-    stays until the user dismisses it or starts another action on the same workload.
+    stays until the user dismisses it or runs that command again. A workload's header
+    actions share one error, cleared when the next of them begins.
   - Applied: a failed read never hides data already shown: it shows above the data and
     can be dismissed. With no data shown, the view is the error, with a Retry. A
     stream's error shows the same way; a dropped connection is a status line, not an
@@ -91,7 +92,7 @@ The values live in `frontend/src/index.css`: the light set in `@theme`, the dark
 | `surface-card` | `#ffffff` | `#142523` | Cards; the lightest surface |
 | `surface-border` | `#dce8e5` | `#28453f` | All borders and dividers |
 | `surface-input` | `#ffffff` | `#0b1a18` | Text-input fill |
-| `accent` | `#0fa396` | `#0fa396` | Primary actions, active states; icons and filled buttons only |
+| `accent` | `#0fa396` | `#0fa396` | Primary actions, active states; icons and filled buttons only. The same in dark: lifted, white on an accent fill would fall under 3:1 |
 | `accent-hover` | `#0b8578` | `#14b5a7` | Hover for accent elements: darkens in light, lifts in dark |
 | `accent-soft` | `#dff3f0` | `#0f342f` | Accent background wash (selected rows, active tabs, hover tints) |
 | `accent-text` | `#0a7568` | `#4fd1c0` | Accent as small text: links, active tab labels, badge text |
@@ -108,12 +109,12 @@ The values live in `frontend/src/index.css`: the light set in `@theme`, the dark
 | `console` | `#1e293b` | `#0b1a18` | The terminal and framebuffer well: dark in both themes ([CONSOLE.md](specs/CONSOLE.md), Viewport) |
 | `console-text` | `#e2e8f0` | `#e8f2ef` | Text in the well |
 
-- **Contrast:** every text and solid status token holds WCAG AA (≥4.5:1) on `surface`, `surface-sidebar`, `surface-card` and `surface-input`, in both themes, and on its own soft wash. Brand `accent` holds the 3:1 a graphic needs. Compute the ratio before lightening a surface or changing a text token.
+- **Contrast:** every text and solid status token holds WCAG AA (≥4.5:1) on `surface`, `surface-sidebar`, `surface-card` and `surface-input`, in both themes. In the dark theme each also holds it on its own soft wash, and brand `accent` holds the 3:1 a graphic needs on every surface. In the light theme `accent-text` holds AA on `accent-soft`, and `accent` holds 3:1 on cards. Compute the ratio before lightening a surface or changing a text token.
 - **Accent on text** is `text-accent-text`, never `text-accent`: plain `accent` is for icons and filled buttons.
 - **Washes:** the `*-soft` tokens are the only background washes (error banners, badges, hover tints, selected rows). No raw Tailwind palette class (`bg-red-50`), no accent or status colour with an opacity as a wash. A tinted border is the solid token with opacity (`border-status-stopped/30`). The dark washes are the status hue mixed about 18% into the canvas, never toward white.
 - **Depth order is the same in both themes:** sidebar deepest, canvas above it, cards lightest, so "raised" always means lighter.
 - **Shadows:** `--shadow-card` and `--shadow-popover` (dropdowns, popovers, modals) are declared on plain `:root` and read through `@utility`, not as `@theme` keys *(settled 2026-08-25)*: a `--shadow-*` theme key is resolved at build time, so its dark override would do nothing.
-- **`color-scheme`** is set on `:root` and flipped under the dark attribute, so native widgets (`<select>` popups, scrollbars, pickers) follow the app's theme, not the OS's.
+- **`color-scheme`** is set on `:root` and flipped under the dark attribute, so native widgets (`<select>` popups, scrollbars, pickers) follow the app's theme, not the OS's. Light states its value too, or an OS in dark mode paints dark widgets into the light theme.
 - **White on a fill:** `text-white` stays on `accent`-filled buttons in both themes. The danger confirm button takes `dark:text-surface` in dark, where white on the lifted red falls under 3:1.
 
 #### Glow — the Dusk light system *(settled 2026-08-25)*
@@ -132,7 +133,7 @@ In the dark theme **a running workload glows**. Three utilities in `index.css` c
 - **Mechanism**: `data-theme="dark"` on `<html>`; `system` and `light` carry no attribute. The dark theme is the token set redefined under that attribute, with no per-component theming. Tailwind's `dark:` variant is pointed at the attribute, for the rare utility that needs more than a token swap.
 - **Persistence is per device**: `localStorage` key `wisp_theme`, not `wisp-config.json`. The theme is per-viewer presentation, not server state. A browser that refuses storage falls back to `system`.
 - **Owner**: `frontend/src/theme.js`, framework-free because the theme is resolved before React exists; the store mirrors it for React and never writes the attribute.
-- **No flash on load**: an inline script in `index.html`'s `<head>` sets the attribute before the first paint. Its sha256 is pinned in `backend/src/app.js` (`THEME_INIT_SCRIPT_HASH`) for the CSP: editing the script means refreshing that constant, or the script is blocked.
+- **No flash on load**: an inline script in `index.html`'s `<head>` sets the attribute before the first paint. It cannot move into the bundle, where a deferred script paints light first. Its sha256 is pinned in `backend/src/app.js` (`THEME_INIT_SCRIPT_HASH`) for the CSP, rather than opening `unsafe-inline`: editing the script means refreshing that constant, or the script is blocked.
 - **`<meta name="theme-color">`** follows the effective theme: the brand teal in light, `surface-card` in dark.
 - **The control** is in the top bar's right cluster, between background jobs and sign out: icon-only, cycling light → dark → system, its `title` and `aria-label` naming the current mode.
 
@@ -197,8 +198,8 @@ Conventions for a page's cards, for repeating rows, and for every modal. The scr
 - **One row, one request.** A save, a delete or another change applies to one row, through a purpose-named operation (add, update or remove one mount), never by replacing the parent array from the client. A route that replaces a whole list by design says so in its API spec.
 - **Add is in the card's header, at the right**: an accent button, icon-only, or `Plus` with a second icon that names the kind of thing added. No "add row" at the bottom of a table; an empty state points at the header control.
 - **Row actions are icon-only** buttons with `title` and `aria-label`. Order: other actions first (mount, test, upload, restore…), then Edit (`Pencil`), then Delete (`Trash2`) last. A commit action (Save, Add, Attach, Confirm) takes the primary style, the others the neutral one.
-- **State is a dot before the label**, not a Status column: green for mounted or present, grey for not, red for missing; its `title` and `aria-label` carry the words. A mount or unmount control shows the state in its own background.
-- **Rows are read-only.** A row is created and edited in a modal form (below), opened by the header's Add and the row's Edit.
+- **State is a dot before the label**, not a Status column: green for mounted, grey for present but not mounted, red for disconnected; its `title` and `aria-label` carry the words. A mount or unmount control shows the state in its own background.
+- **Rows are read-only.** A row with three or more fields, or one that must be editable on a phone, is created and edited in a modal form (below), opened by the header's Add and the row's Edit. A single value (a name) may be typed in place.
 - **On phones**, a row with several actions hides its Actions column below `sm` and shows the same buttons in a strip under the row when the row is tapped, one row at a time.
 
 ### Tables
@@ -222,7 +223,7 @@ Every full-screen overlay goes through the shared `Modal`; never an ad-hoc `fixe
 - The backdrop and the card: centred, and below `sm` a sheet from the bottom (settled 2026-11-21), in a portal on `document.body`; the card is a `role="dialog"` `aria-modal` named by its title.
 - Its layer on the shared stack (settled 2026-11-12): Escape closes only the top layer, Tab stays inside the card, the app root under it is inert, and focus returns to the opener on close. Page-level Escape handlers stand down while a layer is open; a control that uses Escape itself (an inline rename) claims it. The phone drawer and every popover are layers too; a popover goes through the one popover module (portal, viewport clamp, an outside press closes it).
 - An optional header (title, subtitle, X) and an optional footer.
-- **A click on the backdrop closes nothing** (settled 2026-11-12): Escape, the X and Cancel do. A modal cannot be closed while its save or upload runs.
+- **A click on the backdrop closes nothing** (settled 2026-11-12): Escape, the X and Cancel do. Escape and Cancel do nothing while its save or upload runs.
 
 #### Modal form editor
 
