@@ -30,8 +30,9 @@
  *      (CODING-RULES §16): over every file git lists outside docs/ and
  *      Markdown, comments stripped, none outside backend/src names the runner
  *      (lib/stateMigrations.js, lib/stateMigrationLedger.js), and none but the
- *      runner, the checks and the root `test` script (its unit tests in
- *      backend/migrations/test/) reaches for the migrations directory.
+ *      runner, the checks, the release stage (which ships it) and the root
+ *      `test` script (its unit tests in backend/migrations/test/) reaches for
+ *      the migrations directory.
  *
  *   7. Routes take no operation lock (CODING-RULES §7; ARCHITECTURE.md, Repo
  *      layout), checked in the same import scan as rules 1–5: no file under
@@ -436,6 +437,7 @@ const MIGRATIONS_DIR_USERS = new Set([
   'scripts/check-fences.mjs',
   'scripts/check-imports.mjs',
   'package.json', // `npm test` runs backend/migrations/test/, which the runner never loads (a subdirectory)
+  'scripts/stage-release.sh', // ships the directory, without its test/, and fails a tree that lacks it; loads none
 ]);
 const SHELL_SHEBANG = /^#!\s*\S*\/(?:env\s+)?(?:bash|sh)(?:\s|$)/;
 
