@@ -62,7 +62,7 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 
 ## Adopted drives
 
-A detected drive becomes adopted when a mount entry with its UUID is saved (`POST /api/host/mounts`, `type: "disk"`).
+A detected drive becomes adopted when a mount entry with its UUID is saved (`POST /api/host/mounts`, `type: "disk"`). The Detected list holds only drives whose UUID is not in `settings.mounts`, so an adopted drive leaves it. Adopting pre-fills the form from the device: its label, its filesystem, read-only for `ntfs3`, auto-mount on, and the mount path `/mnt/wisp/disk-<first 8 characters of the UUID>`.
 
 - With `autoMount` and the drive present, the save mounts it at once.
 - An adopted drive mounts by itself each time it is inserted.
@@ -92,10 +92,10 @@ A detected drive becomes adopted when a mount entry with its UUID is saved (`POS
 
 - `ext4` / `btrfs`: `nosuid,nodev[,ro]`
 - `vfat` / `exfat` / `ntfs3`: `nosuid,nodev,uid=…,gid=…,umask=0007[,ro]`
-- `ntfs3`: forced `ro`
+- `ntfs3`: forced `ro` (its write support is still maturing)
 - SMB: `rw,nosuid,nodev,credentials=<path>` or `guest`, `uid=…,gid=…`, and `file_mode=0600,dir_mode=0700` only with `owner-only`, which the backend asks for the share configured as the backup mount ([BACKUPS.md § Backup file modes](BACKUPS.md#backup-file-modes))
 
-No `ntfs-3g`: do not install it.
+No `ntfs-3g`: do not install it. The host needs `exfat` in its kernel (since Linux 5.7) and `ntfs3` (since 5.15).
 
 ## Mount table
 
@@ -131,6 +131,6 @@ Routes: the `/api/host/mounts` routes in [API-HOST.md](API-HOST.md) (under Setti
 ## Timeouts
 
 (settled 2026-11-12, CODING-RULES §6.)
-- `qemu-img info` and `resize`: **20 s** (settled 2026-11-13). A convert has no total bound: it is stopped after **10 min** with no progress output, no growth of the destination and no bytes read.
-- `wisp-mount` bounds its own commands, so each ends inside the backend's bound, which sits above the helper's worst case: a disk mount **20 s** of the backend's **40 s**; an SMB mount **20 s** of **50 s**; unmount **60 s** of **75 s**; an SMB check's mount **15 s** and umount **8 s** of **70 s** (settled 2026-11-13, the backend's bounds 2026-11-22). `rmdir`: **15 s**.
+- `qemu-img info` and `resize`: **20 s** (settled 2026-11-13). A convert has no total bound: it is stopped after **10 min** with no progress output, no growth of the destination and no bytes read (the bytes-read probe settled 2026-11-13).
+- `wisp-mount` bounds its own commands, so each ends inside the backend's bound, which sits above the helper's worst case: a disk mount **20 s** of the backend's **40 s**; an SMB mount **20 s** of **50 s**; unmount **60 s** of **75 s**; an SMB check's mount **15 s** and umount **8 s** of **70 s** (the unmount and check bounds settled 2026-11-13; the backend's bounds raised 2026-11-22 to cover every command the helper runs on the way). `rmdir`: **15 s**.
 - Unmount and mount delete run as server jobs (settled 2026-11-13): an unmount's 75 s outlasts a short request.

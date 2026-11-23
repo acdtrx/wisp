@@ -140,4 +140,5 @@ Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `ins
 | `/var/lib/wisp/containers/` | `<deploy-user>:libvirt` | `0775` | Container storage (when created by setup) |
 | `/var/lib/wisp/updates/` | `<deploy-user>:libvirt` | `0775` | Self-update staging |
 | `/mnt/wisp/` | `<deploy-user>:libvirt` | `0775` | Parent of the mount points |
+
 What they hold: `docs/ARCHITECTURE.md` (the folder tree) and [BACKUPS.md → Backup Directory Structure](BACKUPS.md#backup-directory-structure).
