@@ -12,6 +12,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { domainForm, siteForm, siteProblem, withDomain, withSite, withoutSite } from './caddyConfig.js';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
 const removeAbout = (sub) => `Couldn't remove the site ${sub}`;
@@ -88,7 +89,7 @@ function SiteEditor({ config, siteKey, save, onClose }) {
   const command = useCommand();
   const domain = appConfigOf(config).domain;
   const problem = siteProblem(appConfigOf(config), siteKey, form);
-  const blocked = problem ?? (siteKey == null || dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (siteKey == null || dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title={siteKey == null ? 'Add a site' : 'Site'}
@@ -119,7 +120,7 @@ function DomainEditor({ config, save, onClose }) {
       title="Domain and certificates"
       subtitle={config.name}
       save={command}
-      blocked={dirty ? null : 'Nothing changed'}
+      blocked={dirty ? null : NOTHING_CHANGED}
       onClose={onClose}
       size="md"
       onSubmit={() => command.run(() => save(withDomain(appConfigOf(config), form))).then((ok) => { if (ok) onClose(); })}

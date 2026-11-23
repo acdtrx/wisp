@@ -9,6 +9,7 @@ import { RECORD } from '../../store/records.js';
 import FormModal from '../shared/FormModal.jsx';
 import Modal from '../shared/Modal.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const contentText = (data) => (typeof data?.content === 'string' ? data.content : '');
 
@@ -62,7 +63,7 @@ function FileTextEditor({ title, text, containerName, mountName, onClose }) {
       title={title}
       save={save}
       size="3xl"
-      blocked={dirty ? null : 'Nothing changed.'}
+      blocked={dirty ? null : NOTHING_CHANGED}
       onClose={onClose}
       onSubmit={() => save.run(() => putMountFileContent(containerName, mountName, form.text)).then((ok) => { if (ok) onClose(); })}
     >

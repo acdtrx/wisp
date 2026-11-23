@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
@@ -43,7 +43,7 @@ function ImageEditor({ config, update, onClose }) {
   const { form, start, setField, dirty } = useEditor(() => ({ image: config.image || '' }));
   const save = useCommand();
   const problem = Object.values(imageProblems(form))[0] ?? null;
-  const blocked = problem ?? (dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title="Image"

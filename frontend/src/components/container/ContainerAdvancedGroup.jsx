@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -57,7 +57,7 @@ function AdvancedEditor({ config, update, onClose }) {
   const save = useCommand();
   const { record, gpus } = useHostGpus();
   const problems = advancedProblems(form);
-  const blocked = Object.values(problems)[0] ?? (dirty ? null : 'Nothing changed');
+  const blocked = Object.values(problems)[0] ?? (dirty ? null : NOTHING_CHANGED);
   /* A device the config names that the host no longer has stays a choice. */
   const choices = form.gpu && !gpus.some((g) => g.device === form.gpu) ? [...gpus, { device: form.gpu }] : gpus;
 

@@ -18,6 +18,7 @@ import { RECORD } from '../../store/records.js';
 import {
   libraryForm, libraryProblems, withGpu, withLibrary, withoutLibrary, withPublishedUrl,
 } from './jellyfinConfig.js';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
 const removeAbout = (label) => `Couldn't remove the library ${label}`;
@@ -114,7 +115,7 @@ function LibraryEditor({ config, libraryKey, storage, save, onClose }) {
   const { form, setField, dirty } = useEditor(() => libraryForm(opened));
   const command = useCommand();
   const problems = libraryProblems(appConfigOf(config), libraryKey, form);
-  const blocked = Object.values(problems)[0] ?? (libraryKey == null || dirty ? null : 'Nothing changed');
+  const blocked = Object.values(problems)[0] ?? (libraryKey == null || dirty ? null : NOTHING_CHANGED);
   const choices = useMemo(() => (form.sourceId && !storage.some((m) => m.id === form.sourceId)
     ? [...storage, { id: form.sourceId, mountPath: form.sourceId }] : storage), [storage, form.sourceId]);
   return (
@@ -151,7 +152,7 @@ function AddressEditor({ config, save, onClose }) {
       title="Published address"
       subtitle={config.name}
       save={command}
-      blocked={dirty ? null : 'Nothing changed'}
+      blocked={dirty ? null : NOTHING_CHANGED}
       onClose={onClose}
       onSubmit={() => command.run(() => save(withPublishedUrl(appConfigOf(config), form.publishedUrl))).then((ok) => { if (ok) onClose(); })}
     >

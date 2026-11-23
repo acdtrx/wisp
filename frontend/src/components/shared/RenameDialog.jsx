@@ -3,6 +3,7 @@ import { useEditor } from '../../hooks/useEditor.js';
 import { autoFocusField } from '../../lib/focus.js';
 import FormModal from './FormModal.jsx';
 import { FormField } from './FormModalChrome.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 /**
  * Rename a stopped workload: `PATCH { name }` (`update`). At its ack `onRenamed(name)`
@@ -13,7 +14,7 @@ export default function RenameDialog({ name, maxLength, hint, update, onRenamed,
   const { form, setField } = useEditor({ name });
   const save = useCommand();
   const next = form.name.trim();
-  const blocked = next === '' ? 'A name is required' : (next === name ? 'Nothing changed' : null);
+  const blocked = next === '' ? 'A name is required' : (next === name ? NOTHING_CHANGED : null);
   return (
     <FormModal
       title="Rename"

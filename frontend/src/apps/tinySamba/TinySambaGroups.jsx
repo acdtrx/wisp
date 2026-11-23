@@ -20,6 +20,7 @@ import {
   shareForm, shareProblem, sharesOnlyUserReaches, userForm, userProblem, withServer, withShare, withUser, withoutShare,
   withAppleExtensions, withoutUser,
 } from './tinySambaConfig.js';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
 const removeShareAbout = (name) => `Couldn't remove the share ${name}`;
@@ -179,7 +180,7 @@ function ShareEditor({ config, shareKey, storage, save, onClose }) {
   const [confirming, setConfirming] = useState(false);
   const users = (appConfigOf(config).users ?? []).filter(Boolean);
   const problem = shareProblem(appConfigOf(config), shareKey, form);
-  const blocked = problem ?? (shareKey == null || dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (shareKey == null || dirty ? null : NOTHING_CHANGED);
   const choices = form.sourceId && !storage.some((m) => m.id === form.sourceId)
     ? [...storage, { id: form.sourceId, mountPath: form.sourceId }] : storage;
 
@@ -270,7 +271,7 @@ function UserEditor({ config, userKey, save, onClose }) {
   const { form, setField, dirty } = useEditor(() => userForm(opened));
   const command = useCommand();
   const problem = userProblem(appConfigOf(config), userKey, form);
-  const blocked = problem ?? (userKey == null || dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (userKey == null || dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title={userKey == null ? 'Add a user' : 'User'}
@@ -296,7 +297,7 @@ function ServerEditor({ config, save, onClose }) {
   const { form, start, setField, setForm, dirty } = useEditor(() => serverForm(appConfigOf(config)));
   const command = useCommand();
   const problems = serverProblems(form);
-  const blocked = Object.values(problems)[0] ?? (dirty ? null : 'Nothing changed');
+  const blocked = Object.values(problems)[0] ?? (dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title="Server"

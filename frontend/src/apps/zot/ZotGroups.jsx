@@ -14,6 +14,7 @@ import { autoFocusField } from '../../lib/focus.js';
 import {
   USERNAME_CLAIMS, callbackUrl, ssoForm, ssoProblem, userForm, userProblem, withAddress, withSso, withUser, withoutUser,
 } from './zotConfig.js';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
 const removeAbout = (username) => `Couldn't remove ${username}`;
@@ -93,7 +94,7 @@ function UserEditor({ config, userKey, save, onClose }) {
   const { form, setField, dirty } = useEditor(() => userForm(opened));
   const command = useCommand();
   const problem = userProblem(appConfigOf(config), userKey, form);
-  const blocked = problem ?? (userKey == null || dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (userKey == null || dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title={userKey == null ? 'Add a user' : 'User'}
@@ -123,7 +124,7 @@ function AddressEditor({ config, save, onClose }) {
       title="Address"
       subtitle={config.name}
       save={command}
-      blocked={dirty ? null : 'Nothing changed'}
+      blocked={dirty ? null : NOTHING_CHANGED}
       onClose={onClose}
       onSubmit={() => command.run(() => save(withAddress(appConfigOf(config), form.externalUrl))).then((ok) => { if (ok) onClose(); })}
     >
@@ -138,7 +139,7 @@ function SsoEditor({ config, save, onClose }) {
   const { form, setField, dirty } = useEditor(() => ssoForm(appConfigOf(config)));
   const command = useCommand();
   const problem = ssoProblem(appConfigOf(config), form);
-  const blocked = problem ?? (dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (dirty ? null : NOTHING_CHANGED);
   const field = (key, label, props = {}) => (
     <FormField label={label} htmlFor={`zot-sso-${key}`} hint={props.hint}>
       <input

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Code2, SlidersHorizontal } from 'lucide-react';
 
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
@@ -60,7 +60,7 @@ function ExpertSettings({ config, update, onClose }) {
       title="Expert settings"
       subtitle={`${config.name}: ${profileText(config.profile)}`}
       save={save}
-      blocked={dirty ? null : 'Nothing changed'}
+      blocked={dirty ? null : NOTHING_CHANGED}
       onClose={onClose}
       size="lg"
       onSubmit={() => save.run(() => update(changedFields(form, start))).then((ok) => { if (ok) onClose(); })}

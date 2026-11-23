@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
@@ -38,7 +38,7 @@ function LimitsEditor({ config, update, onClose }) {
   const { form, start, setField, dirty } = useEditor(() => limitsForm(config));
   const save = useCommand();
   const problems = limitsProblems(form);
-  const blocked = Object.values(problems)[0] ?? (dirty ? null : 'Nothing changed');
+  const blocked = Object.values(problems)[0] ?? (dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title="Limits and restarts"

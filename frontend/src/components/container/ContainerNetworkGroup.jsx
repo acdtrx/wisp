@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pencil, Plus, Radio, Shuffle, Trash2 } from 'lucide-react';
 
 import { removeContainerService } from '../../api/containers.js';
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -112,7 +112,7 @@ function NetworkEditor({ config, update, onClose }) {
   const bridges = useRecord(RECORD.HOST_BRIDGES);
   const bridgeList = bridges.data ?? NO_BRIDGES;
   const problems = networkProblems(form);
-  const blocked = Object.values(problems)[0] ?? (dirty ? null : 'Nothing changed');
+  const blocked = Object.values(problems)[0] ?? (dirty ? null : NOTHING_CHANGED);
 
   return (
     <FormModal

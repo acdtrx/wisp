@@ -15,6 +15,7 @@ import GroupAction from '../shared/GroupAction.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const NAME_MAX = 64;
 const GITHUB_USER = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
@@ -174,7 +175,7 @@ function RenameKeyForm({ sshKey, onClose }) {
   const { form, setField, dirty } = useEditor({ name: sshKey.name });
   const save = useCommand();
   const name = form.name.trim();
-  const blocked = !name ? 'A key needs a name.' : (!dirty || name === sshKey.name ? 'Nothing changed.' : null);
+  const blocked = !name ? 'A key needs a name.' : (!dirty || name === sshKey.name ? NOTHING_CHANGED : null);
   return (
     <FormModal
       title="Rename the key"

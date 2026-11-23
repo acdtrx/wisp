@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
 import { addContainerService, updateContainerService } from '../../api/containers.js';
-import { rowId } from '../../hooks/editorValues.js';
+import { rowId, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import { KNOWN_SERVICE_TYPES } from '../../lib/mdnsServiceTypes.js';
@@ -27,7 +27,7 @@ export default function ContainerServiceEditorModal({ config, service, onClose }
   const save = useCommand();
   const isNew = service == null;
   const problem = serviceProblem(form, opened.taken);
-  const blocked = problem ?? (isNew || dirty ? null : 'Nothing changed');
+  const blocked = problem ?? (isNew || dirty ? null : NOTHING_CHANGED);
 
   const setTxt = (id, key, value) => setForm((f) => ({ ...f, txt: f.txt.map((r) => (r.id === id ? { ...r, [key]: value } : r)) }));
 
