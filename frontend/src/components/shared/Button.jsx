@@ -76,16 +76,13 @@ function Glyph({ icon: Icon, size, className }) {
   );
 }
 
-/**
- * A link that only navigates, with a text button's look (`variant`, `size`). `to` is a
- * route of the app; `href` is any other address, with `download`, `target` and `rel`
- * passed on.
- */
-export function ButtonLink({ to, href, variant = 'neutral', size = 'sm', className = '', children, ...rest }) {
-  const classes = `${buttonClasses({ variant, size })}${className ? ` ${className}` : ''}`;
-  return href !== undefined
-    ? <a href={href} className={classes} {...rest}>{children}</a>
-    : <Link to={to} className={classes} {...rest}>{children}</Link>;
+/** A link that only navigates, with a text button's look (`variant`, `size`). */
+export function ButtonLink({ to, variant = 'neutral', size = 'sm', className = '', children, ...rest }) {
+  return (
+    <Link to={to} className={`${buttonClasses({ variant, size })}${className ? ` ${className}` : ''}`} {...rest}>
+      {children}
+    </Link>
+  );
 }
 
 /**
