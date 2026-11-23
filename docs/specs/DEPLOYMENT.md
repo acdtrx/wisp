@@ -226,7 +226,7 @@ A single service unit, `wisp.service`, rendered by setup from its template in `s
 
 ### SPA serving
 
-In production, the same Node process serves the prebuilt SPA. A path outside `/api` and `/ws` that is no file answers the SPA's `index.html`, so client-side routing survives deep-link refresh. The bundle and the login page load without a session — `/api/*` still requires it. The security headers: `docs/PRODUCTION.md`.
+In production, the same Node process serves the prebuilt SPA. A path that is no file answers the SPA's `index.html`, so client-side routing survives deep-link refresh; a path under `/api`, `/ws`, `/assets/` or `/vendor/` never does (a missing asset is a 404: [UPDATES.md](UPDATES.md)). The bundle and the login page load without a session — `/api/*` still requires it. The security headers: `docs/PRODUCTION.md`.
 
 ## Developer Workflow
 
