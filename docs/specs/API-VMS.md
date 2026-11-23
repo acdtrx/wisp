@@ -35,7 +35,7 @@ List all VMs with summary info.
 
 - `pendingRestart` is `{ since }` (ISO time the change was saved) while a saved definition change awaits a restart of the VM, else `null` — set by a `PATCH` that changed a running VM's definition (or by a state migration), persisted in the domain's `wisp:prefs` metadata, and dropped once the VM's QEMU process is seen to have started after `since`. A guest reboot keeps the process, so it doesn't clear it. See [VM-MANAGEMENT.md → Restart-required flag](VM-MANAGEMENT.md#restart-required-flag).
 
-- `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
+- `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs.
 - The list payload does **not** carry section assignment. Section info arrives on its own channel, the `sections` topic of `GET /api/events` (see [Sections](API-WORKSPACE.md#sections)) — libvirt/containerd events don't fire on assignment changes, so the list feeds aren't a usable carrier for it.
 - Live updates arrive on the `vms` topic of `GET /api/events` (see [Events stream](API.md#events-stream-sse)): the same array, pushed when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.), when a VM's config is saved (a rename included), or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer.
 
@@ -206,7 +206,7 @@ SSE stream of per-VM statistics. Pushes every 5 seconds.
 
 `guestHostname` and `guestIp` are present only when the guest agent is enabled and the backend successfully queried them.
 
-`staleBinary` is `true` when the VM's qemu process is still using a binary that was replaced on disk (typically after a qemu/libvirt upgrade) — the VM needs to be restarted. Detected from `/proc/<pid>/exe` reporting a ` (deleted)` suffix; PID sourced from `/var/run/libvirt/qemu/<name>.pid`. Always `false` in the stopped payload.
+`staleBinary` is `true` when the VM's qemu process is still using a binary that was replaced on disk (typically after a qemu/libvirt upgrade) — the VM needs to be restarted. Always `false` in the stopped payload.
 
 - **Event data (stopped):** `{ state: "shutoff", active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false }`
 
