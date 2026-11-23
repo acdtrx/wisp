@@ -1,6 +1,6 @@
 # VM Management
 
-This document covers the core VM lifecycle, configuration, creation, and the backend module that interfaces with the hypervisor.
+This document covers the core VM lifecycle, creation, configuration and the conventions of a VM's definition.
 
 ## VM Lifecycle
 
@@ -17,49 +17,43 @@ This document covers the core VM lifecycle, configuration, creation, and the bac
 | crashed | 6 | VM has crashed |
 | pmsuspended | 7 | Power-management suspended |
 
-**Stopped means `shutoff` (5) and nothing else.** Every operation that needs the VM's disks closed — disk attach / detach / resize, rename, backup — accepts only that state and answers **409 `VM_MUST_BE_OFFLINE`** otherwise; `shutdown` (4) is a guest shutdown still in progress with qemu holding the disks. One helper owns the rule (`isShutOff` in `linux/libvirtConstants.js`, on the vmManager facade for routes); Stop and Force stop use the same test for their `VM_NOT_RUNNING` answer. (settled 2026-10-16) It is the only state question: **every other state counts as on** (settled 2026-11-22), paused, shutting down and crashed included, which is the pages' own lock rule (`state !== 'shutoff'`). So a VM that is on gets a CD change applied live, counts in the host's running VM count and allocations, and has "restart required" set by an edit. Start, suspend and resume test the exact state they need (running, paused). Before, "running" was written four ways, and a paused VM got a CD change in its saved definition only.
+**Stopped means `shutoff` (5) and nothing else** (settled 2026-10-16). Every operation that needs the VM's disks closed — disk attach / detach / resize, rename, backup — accepts only that state and answers **409 `VM_MUST_BE_OFFLINE`** otherwise; `shutdown` (4) is a guest shutdown still in progress with qemu holding the disks. Stop and Force stop use the same test for their `VM_NOT_RUNNING` answer. It is the only state question: **every other state counts as on** (settled 2026-11-22), paused, shutting down and crashed included. So a VM that is on gets a CD change applied live, counts in the host's running VM count and allocations, and has "restart required" set by an edit. Start, suspend and resume test the exact state they need (running, paused).
+
+When a VM stops or is undefined, its per-run stats state (the previous CPU / disk / network sample and the uptime start) is cleared, so the next run's first stats tick starts from a fresh baseline.
 
 ### Operations
 
-| Operation | Precondition | DBus Method | Flags | Notes |
-|-----------|-------------|-------------|-------|-------|
-| Start | VM is stopped | `Domain.Create(0)` | 0 | |
-| Stop (graceful) | VM is running | `Domain.Shutdown(0)` | 0 | ACPI shutdown signal |
-| Force stop | VM is running | `Domain.Destroy(0)` | 0 | Immediate power-off |
-| Reboot | VM is running | `Domain.Reboot(0)` | 0 | |
-| Suspend | VM is running | `Domain.Suspend()` | — | Pauses VM execution |
-| Resume | VM is paused | `Domain.Resume()` | — | |
-
-### State change events
-
-The backend listens for `DomainEvent` signals on the libvirt Connect interface. Event codes:
-
-- 0 = defined, 1 = undefined, 2 = started, 3 = suspended, 4 = resumed, 5 = stopped
-
-When a domain stops (event 5) or is undefined (event 1), its per-run stats state — the previous CPU / disk / network sample and the uptime start — is cleared, so the next run's first stats tick starts from a fresh baseline instead of a delta against the last run's counters. Both maps are keyed by the domain object path: it is the only identity a `DomainEvent` carries, and it survives a rename.
+| Operation | Precondition | Notes |
+|-----------|-------------|-------|
+| Start | VM is stopped | |
+| Stop (graceful) | VM is running | ACPI shutdown signal |
+| Force stop | VM is running | Immediate power-off |
+| Reboot | VM is running | |
+| Suspend | VM is running | Pauses VM execution |
+| Resume | VM is paused | |
 
 ### Not supported: snapshots, cloning, restore-in-place
 
-*(settled 2026-10-16)* Wisp has **no VM snapshots** (create / list / revert / delete), **no VM cloning**, and **no VM restore-in-place**; the old `<dest>/<vm>/<ts>` backup layout is gone too ([BACKUPS.md](BACKUPS.md#scope-settled-2026-10-16)). The user didn't use them, and their interactions — snapshot overlays and memory files against rename, backup and restore-in-place; clone and restore-in-place against the operation lock and the per-VM directory — kept producing bugs (the 2026-10-16 audit and re-review). Removing them is "features earn their place" applied backwards. The replacements are manual:
+*(settled 2026-10-16)* Wisp has **no VM snapshots** (create / list / revert / delete), **no VM cloning**, and **no VM restore-in-place** ([BACKUPS.md](BACKUPS.md#scope-settled-2026-10-16)): the user did not use them, and their interactions with rename, backup and the operation lock kept producing bugs. The replacements are manual:
 
-- **Copy a VM** (was clone): back it up, then restore the backup **as a new VM**.
-- **Roll a VM back** (was restore-in-place or snapshot revert): restore the backup as a new VM, check it, then delete the old VM (and rename the new one if the name matters).
+- **Copy a VM**: back it up, then restore the backup **as a new VM**.
+- **Roll a VM back**: restore the backup as a new VM, check it, then delete the old VM (and rename the new one if the name matters).
 
-What stays because it is not snapshot-specific: deleting a VM still succeeds when libvirt holds snapshot metadata made outside Wisp (`virsh snapshot-create…`) — see [Deletion](#deletion) — and backups still flatten disks on a backing chain ([BACKUPS.md](BACKUPS.md#disks-on-a-backing-chain)). Considered for removal in the same pass and **kept**: container rename and multiple backup destinations.
+Deleting a VM still succeeds when libvirt holds snapshot metadata made outside Wisp (`virsh snapshot-create…`) — see [Deletion](#deletion) — and backups still flatten disks on a backing chain ([BACKUPS.md](BACKUPS.md#disks-on-a-backing-chain)).
 
 ## Name validation
 
 A VM name must meet:
 
 - length 1–128
-- regex `^[a-zA-Z0-9][a-zA-Z0-9._-]*$` — must start with a letter or digit (same shape as container names), so `.`, `..` and `.foo` are impossible and the per-VM directory `<vmsPath>/<name>/` is always a child of `vmsPath`, never `vmsPath` itself (settled 2026-10-16: a VM named `.` resolved its per-VM directory to `vmsPath` itself, so removing that directory — delete-with-disks, a failed operation's rollback — would `rm -rf` every VM's files)
+- regex `^[a-zA-Z0-9][a-zA-Z0-9._-]*$` — must start with a letter or digit (same shape as container names), so `.`, `..` and `.foo` are impossible and the per-VM directory `<vmsPath>/<name>/` is always a child of `vmsPath`, never `vmsPath` itself (settled 2026-10-16)
 - rejects `..`, `/`, `\`
 - rejects leading/trailing whitespace instead of trimming it — every caller uses the name verbatim, so a silently-trimmed validation would vouch for a different string than the one used. (UI forms trim their own input before sending.)
 
 It is enforced in two layers:
 
-1. At the boundary, by one schema (`vmNameSchema` in `backend/src/lib/validation.js`; [ERROR-HANDLING.md → Name validation](ERROR-HANDLING.md#name-validation)) wherever a VM name arrives: every `/vms/:name/...` path, `POST /vms` and `PATCH /vms/:name` bodies, the backup routes' names, the VNC WebSocket and the MCP `get_vm` argument — before any background job is created or the manager is called. A name that breaks it answers **400** `VALIDATION_FAILED` (settled 2026-11-20: a schema-shape refusal, no longer 422).
-2. `createVM`, `restoreBackup` (restore as new), and `updateVMConfig` (rename branch) — defense in depth so library callers get the same guarantee: **422** `INVALID_VM_NAME`.
+1. At the boundary, by one schema ([ERROR-HANDLING.md → Name validation](ERROR-HANDLING.md#name-validation)) wherever a VM name arrives: every `/vms/:name/...` path, `POST /vms` and `PATCH /vms/:name` bodies, the backup routes' names, the VNC WebSocket and the MCP `get_vm` argument — before any background job is created or the manager is called. A name that breaks it answers **400** `VALIDATION_FAILED` (settled 2026-11-20).
+2. Inside the manager, for create, restore as new and rename, so library callers get the same guarantee: **422** `INVALID_VM_NAME`.
 
 A domain whose name predates the leading-alphanumeric rule (e.g. `_test`) fails the `:name` check on every route; it must be renamed outside Wisp (e.g. `virsh domrename`) to be managed again.
 
@@ -87,51 +81,45 @@ create and afterwards, for a VM whose profile has none.
 
 ### Creation flow
 
-1. **Validate** — validate parameters; the name must be free **both** in libvirt (`VM_EXISTS`) and on disk: if `<vmsPath>/<name>/` already exists — typically left by *Delete VM, keep disks* — create is refused with **409 `VM_DIR_EXISTS`** (its detail names the directory, redacted to `<path>` like every host path). A new VM never adopts or overwrites files it did not create *(settled 2026-10-16)*; "adopt the kept disks" was rejected as a new feature. The `POST /api/vms` route runs this check (`vmManager.assertVMNameAvailable`) before it starts the job or builds anything, so a conflict is an HTTP 409, not a job error.
-2. **Create VM directory** — `<vmsPath>/<name>/`, exclusively (an existing path is `VM_DIR_EXISTS`, atomically — covers a race with a concurrent create).
-3. **Optional cloud-init** — the route's `populateVMDir` callback builds the seed ISO and `cloud-init.json` into the fresh directory ([CLOUD-INIT.md](CLOUD-INIT.md)); vmManager only wires `sde` to `<dir>/cloud-init.iso`.
-4. **Handle disk(s)** — for each requested block disk (`disk`, then `disk2`, skipping `type: none`), create a new qcow2 or copy/convert an existing image from the library into `disk0.qcow2`, `disk1.qcow2` in order. If both are `none`, no block disk images are created (CD-ROM–only or network-only installs are allowed).
-5. **Optional resize** — resize the copied disk if a target size was specified
-6. **Build domain XML** — build a domain object and serialize with fast-xml-parser (`buildXml`); UEFI loader/nvram paths are set on the object when firmware is available
-7. **Define domain** — `Connect.DomainDefineXML(xml, 0)` registers the VM with libvirt
-8. **Set autostart** — if requested, set autostart via DBus Properties (failure is logged, non-fatal)
-
-Any failure in steps 3–7 removes `<vmsPath>/<name>/` — safe because step 2 proved this request created it — so a failed create leaves nothing behind and a retry starts clean.
-
-Progress is reported via callback for each step, streamed to the frontend via SSE.
+- **The name must be free both in libvirt (`VM_EXISTS`) and on disk.** If `<vmsPath>/<name>/` already exists — typically left by *Delete VM, keep disks* — create is refused with **409 `VM_DIR_EXISTS`** (its detail names the directory, redacted to `<path>` like every host path). A new VM never adopts or overwrites files it did not create *(settled 2026-10-16)*. `POST /api/vms` checks this before it starts the job, so a conflict is an HTTP 409, not a job error.
+- **The VM directory `<vmsPath>/<name>/` is created exclusively**: an existing path is `VM_DIR_EXISTS`, atomically, which covers a race with a concurrent create.
+- **First boot setup**, when asked for, has its seed ISO and `cloud-init.json` built into the fresh directory before the domain is defined ([CLOUD-INIT.md](CLOUD-INIT.md)).
+- **Disks.** For each requested block disk (`disk`, then `disk2`, skipping `type: none`), a new qcow2 is created or a library image is copied in, as `disk0.qcow2`, `disk1.qcow2` in order. If both are `none`, no block disk images are created (CD-ROM–only or network-only installs are allowed).
+- **A failure after the directory is created removes it**, so a failed create leaves nothing behind and a retry starts clean.
+- **Autostart**, if requested, is set after the domain is defined; a failure there is logged and does not fail the create.
+- Progress is reported for each step on the job's stream.
 
 ### Disk provisioning
 
-- **New disk:** Created with `qemu-img create -f qcow2 <path> <size>G`
-- **Adding a disk to an existing VM** (`attachDisk` / `createAndAttachDisk`): the slot must be `sda` or `sdb` (anything else is **422 INVALID_REQUEST**), the VM must be stopped (**409 VM_MUST_BE_OFFLINE**), and the slot must be free in the persistent definition (**409 DISK_SLOT_IN_USE** — detach first). All three checks run before any file is touched. A new disk is created as the lowest-numbered `disk<N>.qcow2` that does not exist yet in the VM directory, reserved with an exclusive create before `qemu-img create` runs, so an existing image (attached, or detached with its file kept) is never overwritten; the file name therefore need not match the slot. If `qemu-img` or the define fails, the reserved file is removed. (settled 2026-10-16)
-- **Existing image:** Checked ([Untrusted images](#untrusted-images)), then copied from the image library to the VM directory using `qemu-img convert -f <format> -O qcow2 -p <src> <dst>`. Progress is parsed from stdout (`-p` flag). The source image is never modified.
-- **Resize:** After copy, `qemu-img resize -f qcow2 <dst> <size>G` if a resize target was specified. Can only grow, not shrink.
+- **New disk:** a qcow2 of the size asked for.
+- **Adding a disk to an existing VM** (settled 2026-10-16): the slot must be `sda` or `sdb` (anything else is **422 INVALID_REQUEST**), the VM must be stopped (**409 VM_MUST_BE_OFFLINE**), and the slot must be free in the persistent definition (**409 DISK_SLOT_IN_USE** — detach first). All three checks run before any file is touched. A new disk is created as the lowest-numbered `disk<N>.qcow2` that does not exist yet in the VM directory, reserved with an exclusive create, so an existing image (attached, or detached with its file kept) is never overwritten; the file name therefore need not match the slot. If creating or defining it fails, the reserved file is removed.
+- **Existing image:** checked ([Untrusted images](#untrusted-images)), then copied from the image library to the VM directory and converted to qcow2. The source image is never modified.
+- **Resize:** after the copy, if a target size was given. Can only grow, not shrink.
 
 ### Untrusted images
 
-*(settled 2026-10-16)* An image's content is not trusted: a qcow2 can name a **backing file** or an **external data file** — any host file (`/etc/shadow`, `/dev/sda`) — and a vmdk descriptor names arbitrary host files as its extents. `qemu-img convert` would merge such a file into the new disk, and libvirt would open it for the guest on attach. So:
+*(settled 2026-10-16)* An image's content is not trusted: a qcow2 can name a **backing file** or an **external data file** — any host file (`/etc/shadow`, `/dev/sda`) — and a vmdk descriptor names arbitrary host files as its extents. So:
 
-- **Every `qemu-img` call names the format** (`-f`) — none lets qemu-img probe it, since probing decides by content (a raw guest disk whose guest wrote a qcow2 header would read as an overlay of a host file of the guest's choosing). A VM's own disk is read as its domain `<driver type>` (none = `raw`, as libvirt reads it): disk sizes in the VM detail (`getDiskInfo`), resize, and the backup's backing-chain read and flatten.
-- **A library or user-supplied image** (create with an existing disk, attach an existing disk) is read as the format its name gives (`imageFormatForFile`, `lib/storage/diskOps.js`): `.qcow2` → qcow2 (the file must start with the qcow2 magic), `.raw` → raw, `.img` → qcow2 when it starts with the qcow2 magic, raw otherwise (`.img` is used for both — Ubuntu cloud images are qcow2 `.img` files; only qcow2 is ever decided by content). Any other extension — `.vmdk`, `.iso`, … — is **422 `DISK_FORMAT_UNSUPPORTED`**: convert it to qcow2 on the host (`qemu-img convert -O qcow2`).
-- **Before converting, attaching or resizing**, `inspectDiskImage` runs `qemu-img info -f <format> --output=json` and refuses (**422 `DISK_IMAGE_UNSAFE`**) a backing file or a qcow2 external data file, and (**422 `DISK_FORMAT_UNSUPPORTED`**) a format other than qcow2/raw. That covers create-from-library (before the copy; the create job fails and leaves no VM directory), attach existing, and resize — a VM disk that is an overlay (a snapshot made outside Wisp) can no longer be resized through Wisp; flatten it first.
+- **Every `qemu-img` call names the format** (`-f`) — none lets qemu-img probe it, since probing decides by content. A VM's own disk is read as its domain `<driver type>` (none = `raw`, as libvirt reads it): disk sizes in the VM detail, resize, and the backup's backing-chain read and flatten.
+- **A library or user-supplied image** (create with an existing disk, attach an existing disk) is read as the format its name gives: `.qcow2` → qcow2 (the file must start with the qcow2 magic), `.raw` → raw, `.img` → qcow2 when it starts with the qcow2 magic, raw otherwise (Ubuntu cloud images are qcow2 `.img` files; only qcow2 is ever decided by content). Any other extension — `.vmdk`, `.iso`, … — is **422 `DISK_FORMAT_UNSUPPORTED`**: convert it to qcow2 on the host (`qemu-img convert -O qcow2`).
+- **Before converting, attaching or resizing**, the image is inspected, and refused with **422 `DISK_IMAGE_UNSAFE`** for a backing file or a qcow2 external data file, and with **422 `DISK_FORMAT_UNSUPPORTED`** for a format other than qcow2/raw. That covers create-from-library (before the copy; the create job fails and leaves no VM directory), attach existing, and resize — a VM disk that is an overlay (a snapshot made outside Wisp) cannot be resized through Wisp; flatten it first.
 - **Attach existing** defines the disk with the format it was checked as (`<driver type='raw'>` for a raw image, `qcow2` for a qcow2).
-
-Rejected: probing with `qemu-img info` and accepting whatever qcow2/raw it reports — a vmdk descriptor's extents are opened by the probe itself; and mapping `.img` to raw — every Ubuntu cloud image is a qcow2 `.img`.
 
 ## Renaming
 
-A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`). The rename (`editVmConfig`, `lib/vmOperations.js`) holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) and the new name's for the whole rename, its follow-ups included, as a container rename does. The rename is a step of its own, as a container's is *(settled 2026-11-20)*: the rename, then its follow-ups (below), then the rest of the patch under the new name — a failure of the rest answers its error, while the rename and its follow-ups stand.
+A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`).
 
-1. Pre-check: VM offline; the new name passes the name rules; no other VM already uses it.
-2. **The source dir is `<vmsPath>/<oldName>/`.** A VM whose files sit in a directory that does not match its name (left by a rename bug fixed long ago) is not repaired any more (settled 2026-11-22, by the ruling of 2026-11-21 that no code reads an older shape): its rename moves nothing and rewrites no path, and the VM keeps working from where its files are.
-3. **Reserve the target name** — create `<vmsPath>/<newName>/` exclusively (`createOwnVMDir`, the same call create and restore-as-new use); an existing path is **409 `VM_DIR_EXISTS`**, atomically. *(settled 2026-10-16)* The old "target dir doesn't exist" check raced: two renames to one name, or a create / restore-as-new of that name, could both pass it, and `rename(2)` onto the other side's still-empty directory replaces it — the create then wrote into, and on failure rolled back (`rm -rf`), the renamed VM's files. With the reservation each contender's own exclusive mkdir decides, so exactly one wins. The rename also holds the target name's lock *(settled 2026-11-20, replacing "rejected: create and restore don't hold a lock under the name they create")*: they do since then, so the lock keeps every other command off the name while the VM moves to it; the reservation stays, as the on-disk check — it refuses a directory that exists without a VM (a kept one) and holds whatever the locks don't see.
-4. **`iface.Rename(newName, 0)`** — libvirt updates the domain's `<name>` element.
-5. **`fs.rename(<vmsPath>/<oldName>, <vmsPath>/<newName>)`** — atomic move on the same filesystem, replacing the empty reserved directory; brings disks, NVRAM and cloud-init artefacts along. On failure, the libvirt rename is rolled back. Whenever nothing moved into the reservation (libvirt refused the rename, the move failed, or the VM has no directory of its own — CD-ROM-only), it is removed with `rmdir`, which never deletes files someone else put there.
-6. **Rewrite domain XML paths** (`vmManagerRename.rewriteDomainPaths`): every `<disk><source file>`, `<os><nvram>`, and `<os><loader>` value that started with `<vmsPath>/<oldName>/` is rewritten to `<vmsPath>/<newName>/…`, then the domain is redefined through `redefineVM` ([Updating config](#updating-config)). On failure here, both the directory move and the libvirt rename are rolled back.
+- **Locks.** The rename holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) and the new name's *(settled 2026-11-20)* for the whole rename, its follow-ups included, as a container rename does.
+- **A step of its own** *(settled 2026-11-20)*: the rename, then its follow-ups (below), then the rest of the patch under the new name — a failure of the rest answers its error, while the rename and its follow-ups stand.
+- **Pre-check:** VM offline; the new name passes the name rules; no other VM already uses it.
+- **The source dir is `<vmsPath>/<oldName>/`.** A VM whose files sit in a directory that does not match its name is not repaired (settled 2026-11-22): its rename moves nothing and rewrites no path, and the VM keeps working from where its files are.
+- **The target name is reserved** by creating `<vmsPath>/<newName>/` exclusively; an existing path is **409 `VM_DIR_EXISTS`**, atomically *(settled 2026-10-16)*. The reservation stays beside the lock: it refuses a directory that exists without a VM (a kept one).
+- **Order:** libvirt renames the domain; the directory moves to the new name, replacing the empty reserved directory and bringing disks, NVRAM and cloud-init artefacts along; every `<disk><source file>`, `<os><nvram>` and `<os><loader>` value under `<vmsPath>/<oldName>/` is rewritten to the new directory and the domain redefined ([Updating config](#updating-config)). A failure at a step rolls back the steps before it.
+- **A reservation nothing moved into** (libvirt refused the rename, the move failed, or the VM has no directory of its own — CD-ROM-only) is removed with `rmdir`, which never deletes files someone else put there.
 
-After step 6, the on-disk layout, libvirt's name, and the domain XML's absolute paths are all consistent under the new name. Backups taken before the rename keep references to the old path in their manifest — this is intentional; restore re-creates the per-VM dir under the **current** name.
+Afterwards the on-disk layout, libvirt's name, and the definition's absolute paths are consistent under the new name. Backups taken before the rename keep the old path in their manifest; restore re-creates the per-VM dir under the **current** name.
 
-**Then the follow-ups** (`lib/workloadFollowUps.js`, a container rename's less its `.local` name; settled 2026-11-20), best-effort — logged when one fails, never failing the rename: the sidebar section assignment moves from `vm:<old>` to `vm:<new>` (a stale assignment the new name kept is dropped; the move reaches clients on the `sections` topic), and the last backup attempt moves to the new name ([BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)).
+**Then the follow-ups** (a container rename's less its `.local` name; settled 2026-11-20), best-effort — logged when one fails, never failing the rename: the sidebar section assignment moves from `vm:<old>` to `vm:<new>` (a stale assignment the new name kept is dropped; the move reaches clients on the `sections` topic), and the last backup attempt moves to the new name ([BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)).
 
 ### Out-of-band renames
 
@@ -139,50 +127,44 @@ Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.)
 
 ## Deletion
 
-1. Force-stop the VM if it is running. A VM that cannot be stopped is not deleted (500 `LIBVIRT_ERROR`): undefining it would leave it running with its disks removed under it. A force stop that fails because the guest finished shutting down meanwhile is a stopped VM, and the delete goes on. A definition that cannot be read fails the delete too: the NVRAM flag of step 2 would be a guess (settled 2026-11-22).
-2. **`Domain.Undefine(flags)`** — always with `VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA`: Wisp makes no snapshots, but a VM can carry libvirt snapshot metadata made outside it (`virsh snapshot-create…`), and a plain undefine refuses such a domain. The flag drops the metadata with the domain; snapshot data inside the disk images (internal qcow2 snapshots, external overlay files in the VM dir) goes or stays with the disks per step 3. Plus, for a VM with NVRAM (UEFI):
-   - `deleteDisks=true` and the NVRAM file lives inside this VM's own dir → `VIR_DOMAIN_UNDEFINE_NVRAM` so libvirt removes its managed NVRAM along with everything else.
-   - All other cases (`deleteDisks=false`, **or** the NVRAM file lives outside the VM's dir — a domain defined outside Wisp) → `VIR_DOMAIN_UNDEFINE_KEEP_NVRAM`. We never let libvirt delete a file that may belong to another VM.
-3. **`deleteDisks=true`** only: `rm -rf <vmsPath>/<name>/`. Disks, NVRAM, cloud-init artifacts — everything goes. A folder that cannot be removed ends the delete as failed with `VM_DELETE_INCOMPLETE`, naming the folder: the VM is gone, and the job says what it left.
-   **`deleteDisks=false`**: the per-VM directory is left **completely untouched**. The operator chose "keep my data"; that means disks, NVRAM, cloud-init.iso, cloud-init.json all stay. The kept directory **blocks the name**: create and restore-as-new under that name are refused with 409 `VM_DIR_EXISTS` rather than writing into it. To reuse a kept disk, move it into the image library and pick it with the **existing disk** option at create (it is copied into the new VM's directory); to reuse the name, remove `<vmsPath>/<name>/` first.
-4. **The follow-ups** (`lib/workloadFollowUps.js`, a container delete's less its `.local` name; settled 2026-11-20), once the domain is gone, with or without its disks: the VM's last backup attempt and its section assignment are removed, so neither lingers nor lands on a later VM of that name.
+1. Force-stop the VM if it is running. A VM that cannot be stopped is not deleted (500 `LIBVIRT_ERROR`): undefining it would leave it running with its disks removed under it. A force stop that fails because the guest finished shutting down meanwhile is a stopped VM, and the delete goes on. A definition that cannot be read fails the delete too (settled 2026-11-22).
+2. Undefine the domain. Libvirt snapshot metadata made outside Wisp (`virsh snapshot-create…`) goes with it; snapshot data inside the disk images or in overlay files goes or stays with the disks per step 3. A UEFI VM's NVRAM file is removed by libvirt only with `deleteDisks=true` and the file inside this VM's own directory; in every other case it is kept: libvirt never deletes a file that may belong to another VM.
+3. **`deleteDisks=true`** only: `<vmsPath>/<name>/` is removed with everything in it (disks, NVRAM, cloud-init artifacts). A folder that cannot be removed ends the delete as failed with `VM_DELETE_INCOMPLETE`, naming the folder: the VM is gone, and the job says what it left.
+   **`deleteDisks=false`**: the per-VM directory is left **completely untouched**. The kept directory **blocks the name**: create and restore-as-new under that name are refused with 409 `VM_DIR_EXISTS` rather than writing into it. To reuse a kept disk, move it into the image library and pick it with the **existing disk** option at create (it is copied into the new VM's directory); to reuse the name, remove `<vmsPath>/<name>/` first.
+4. **The follow-ups** (a container delete's less its `.local` name; settled 2026-11-20), once the domain is gone, with or without its disks: the VM's last backup attempt and its section assignment are removed, so neither lingers nor lands on a later VM of that name.
 
 ## VM Configuration
 
 ### Reading config
 
-`getVMConfig(name)` resolves the domain via DBus, reads its **inactive** (persistent) XML with `GetXMLDesc(2)`, and parses it into a structured object containing: name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, machineType, cpuMode, videoDriver, graphicsType, bootOrder, bootMenu, memBalloon, guestAgent, vtpm, virtioRng, nestedVirt, profile, autostart, iconId, and `pendingRestart`. Each file-backed **disk** (`device: disk`) entry may include **`sizeGiB`** (virtual size via `qemu-img info` when the image is readable). Reading inactive XML ensures saved config edits (e.g. boot menu, firmware, video driver) are reflected immediately on running VMs — `DomainDefineXML` writes there, and active XML on a running VM does not pick up such changes until the next start. The only consumer of active XML in vmManager is `getVNCPort`, which needs the runtime-allocated VNC port.
+The VM list and the VM detail read the **inactive** (persistent) definition, so a saved edit shows at once on a running VM. Only runtime values, such as the VNC port, are read from the live one. The detail's shape: [API-VMS.md](API-VMS.md).
 
 ### Updating config
 
-**One way to change a VM's definition** (settled 2026-11-22). Every change to an existing VM's saved definition goes through one helper, `redefineVM(domainPath, change)` (`linux/vmManagerDefine.js`): config edits, the rename's path rewrite, disk attach and detach, a new CD slot, the CD and USB changes of a VM that is shut off, the console listen address, the restart-required flag and the migrations' metadata writes. Create and restore define a new domain and are the only other `DomainDefineXML` calls. The helper:
+**One way to change a VM's definition** (settled 2026-11-22). Every change to an existing VM's saved definition goes through one path: config edits, the rename's path rewrite, disk attach and detach, a new CD slot, the CD and USB changes of a VM that is shut off, the console listen address, the restart-required flag and the migrations' metadata writes. Create and restore define a new domain and are the only other defines. That path:
 
-- **waits its turn**: writes to one domain run one after another, in a queue keyed by the domain's path (which a rename does not change). A write never refuses for being second, a writer that fails does not hold up the next, and each define is bounded like every libvirt call (30 s). Before, a restart-flag clear set off by a start could write back a definition read before an edit's define, and undo the edit;
-- **reads the inactive definition with the secure flag** (`GetXMLDesc(3)`), so a console password set outside Wisp is written back, not dropped;
+- **waits its turn**: writes to one domain run one after another, in a queue keyed by the domain's path (which a rename does not change). A write never refuses for being second, a writer that fails does not hold up the next, and each define is bounded like every libvirt call (30 s);
+- **reads the inactive definition** — never the live one (settled 2026-10-16): on a running VM the live definition lacks earlier pending-restart edits, so defining from it would revert them. Live state is consulted only for the on/shut off decision;
+- **reads it with the secure flag**, so a console password set outside Wisp is written back, not dropped;
 - **never defines a transient domain** (one started with `virsh create`, with no saved definition): defining it would make it permanent. A change it would need is refused with **409 `VM_TRANSIENT`**; a change that changes nothing is no error. The state migrations' writers skip such a domain and report it as not changed, so a transient domain never fails Wisp's start. Such a VM lists and its page loads; its definition is not Wisp's to change. A CD or USB change on a running one is refused by libvirt itself (500 `LIBVIRT_ERROR`; backlog);
 - defines nothing when the change changes nothing.
 
-Device XML (disk, CD-ROM, NIC, graphics, video, balloon, guest-agent channel, TPM, RNG, USB host device) is built by one module, `linux/vmManagerDevices.js`, used by create and by every edit, so an edit writes an element exactly as create does. Hot-plug calls (`UpdateDevice`, `AttachDevice`, `DetachDevice` on a VM that is on) are not read-change-define and go to libvirt directly.
+Device elements (disk, CD-ROM, NIC, graphics, video, balloon, guest-agent channel, TPM, RNG, USB host device) are built in one place, used by create and by every edit, so an edit writes an element exactly as create does. Hot-plug calls on a VM that is on are not read-change-define and go to libvirt directly.
 
-`updateVMConfig(name, changes)` applies partial configuration changes; a rename is `renameVM(name, newName)`, a call of its own ([Renaming](#renaming)). The update logic:
+A config save applies partial changes. Nothing in it is hot-applied (ISO attach/eject and USB passthrough are the hot-plug paths, via their own endpoints). A rename is a call of its own ([Renaming](#renaming)): it uses libvirt's domain rename, on a VM that is shut off.
 
-1. Reads the **inactive** (persistent) domain XML — never the live XML. Every Overview edit is persisted by redefining the domain, and on a running VM the live XML lacks earlier pending-restart edits, so defining from it would silently revert them (e.g. a pending memory change undone by a later icon edit). Live state is consulted only for the on/shut off decision. (settled 2026-10-16)
-2. Parses it and applies the requested changes. A rename is not one of them: it uses `org.libvirt.Domain.Rename` (same as `virDomainRename`), on a VM that is shut off; editing `<name>` and defining alone fails for many libvirt/QEMU cases.
-3. Redefines the domain through `redefineVM`; nothing in this path is hot-applied (ISO attach/eject and USB passthrough are the hot-plug paths, via their own endpoints).
-4. Returns `{ requiresRestart: true }` when the VM is on and the redefined domain differs from the one it started from in anything but Wisp's `<metadata>` — memory, CPU, OS type, boot order and menu, NICs, video, graphics and every device toggle all count; icon and autostart don't. The test compares the serialized definition (minus `<metadata>`) before and after the patch, so a patch that re-sends current values counts only if it actually rewrites the XML. When it is true the VM's restart-required flag is set in the same define.
+A save returns `{ requiresRestart: true }` when the VM is on and the redefined domain differs from the one it started from in anything but Wisp's `<metadata>` — memory, CPU, OS type, boot order and menu, NICs, video, graphics and every device toggle all count; icon and autostart don't. The test compares the serialized definition (minus `<metadata>`) before and after the patch, so a patch that re-sends current values counts only if it actually rewrites the XML. When it is true the VM's restart-required flag is set in the same define.
 
 ### Restart-required flag
 
 `<wisp:pendingRestart>2026-10-16T10:00:00.000Z</wisp:pendingRestart>` in the VM's `wisp:prefs` (inactive XML) records **when** a change the running QEMU doesn't reflect was saved; absent means no flag. It surfaces as `pendingRestart: { since } | null` on the list and detail payloads (and MCP `get_vm`). Containers carry the same flag (`pendingRestart: { since }` in `container.json`, [CONTAINERS.md](CONTAINERS.md#config-changes-that-need-a-restart)).
 
-**The rule** (settled 2026-10-16): a workload needs a restart iff the flag exists **and** its process has not started since `since`. The start time is the real process's — for a VM the QEMU process: PID from libvirt's pidfile (`/var/run/libvirt/qemu/<name>.pid`), `starttime` from `/proc/<pid>/stat` plus the boot time (`btime`) from `/proc/stat` (`getQemuStartTimeMs` in `vmManagerProc.js`; `btime` is whole seconds, so the result is up to 1 s early — it errs toward keeping the flag). Rejected: diffing the live against the inactive definition at connect (the live XML keeps the flag copied in at start, so a later re-flag looks stale).
+**The rule** (settled 2026-10-16): a workload needs a restart iff the flag exists **and** its process has not started since `since`. The start time is the real process's — for a VM the QEMU process, read from libvirt's pidfile and `/proc` (to the whole second, so it errs toward keeping the flag).
 
-- **Set** by `updateVMConfig` (step 4 above) with `since = now`, by `attachISO` when it adds a CD slot to a VM that is on (in the same define), and by `setVMPendingRestart(name, value)` — `true` writes `since = now` (a later change moves it forward), `false` removes it; returns `{ changed }`. It is the vmManager export for code that changes a definition outside `updateVMConfig` (state migrations), and redefines only the flag: the inactive XML is parsed, the one child set or removed, the rest rebuilt verbatim. Setting the flag is a `<metadata>` change, so it never counts as a restart-needing change itself.
-- **Reported** by every read — the VM list and `getVMConfig` apply the rule and report `null` for a flag the running QEMU started after. Reads never write.
-- **Cleared at the start** *(settled 2026-11-12)*: one vmManager mechanism drops a flag the QEMU started after from the definition (conditional on it still holding that `since`), triggered by libvirt's STARTED `DomainEvent` for that VM and, for every VM, by each (re)connect — which catches VMs started while Wisp was not connected (host-boot autostart). libvirt has written the new QEMU's pidfile by the time it sends STARTED. Wired only with event watching, so the start's state migrations never clear a flag. No other path clears it. Clearing on the STARTED event alone was rejected for missing starts made while Wisp is not connected; the connect pass closes that gap. Clearing on every read was replaced: a read must not write (`CODING-RULES.md` §16).
-- **Kept** while the VM is stopped, while the same QEMU keeps running (a guest-side reboot keeps the process, so the flag correctly stays — stop and start applies it), and when the start time can't be read (pidfile missing or unreadable): never cleared on a guess.
-
-The same rule binds every vmManager path that calls `DomainDefineXML` on an existing domain (disk attach/detach, a new CD slot, the shut-off branches of ISO and USB attach/detach): the definition is built from the inactive XML, by `redefineVM`. `UpdateDevice` / `AttachDevice` calls with the LIVE flag may use the live device element.
+- **Set** by a config save that needs it (above) with `since = now`, by a CD slot added to a VM that is on (in the same define), and by the manager's own setter for code that changes a definition outside a config save (state migrations): setting writes `since = now` (a later change moves it forward), clearing removes it. Setting the flag is a `<metadata>` change, so it never counts as a restart-needing change itself.
+- **Reported** by every read — the VM list and the detail apply the rule and report `null` for a flag the running QEMU started after. Reads never write.
+- **Cleared at the start** *(settled 2026-11-12)*: a flag the QEMU started after is dropped from the definition (conditional on it still holding that `since`), triggered by libvirt's started event for that VM and, for every VM, by each (re)connect — which catches VMs started while Wisp was not connected (host-boot autostart). Wired only with event watching, so the start's state migrations never clear a flag. No other path clears it.
+- **Kept** while the VM is stopped, while the same QEMU keeps running (a guest-side reboot keeps the process, so the flag correctly stays — stop and start applies it), and when the start time can't be read: never cleared on a guess.
 
 ### Live vs. offline changes
 
@@ -220,18 +202,7 @@ CPU count is always expressed as a full topology block. Never use `<vcpu>N</vcpu
 
 ### Dual CDROM slots
 
-Every VM defines two CDROM slots (`sdc` and `sdd`) at creation, even if empty:
-
-```xml
-<disk type='file' device='cdrom'>
-  <target dev='sdc' bus='sata'/>
-  <readonly/>
-</disk>
-```
-
-When an ISO is attached, the `<source file='...'/>` element is added. When ejected, the `<source>` is removed. These slots are never removed from the XML — only their content changes.
-
-ISO attach/eject uses `Domain.UpdateDevice(xmlString, 3)` (flags: LIVE=1 + CONFIG=2 = 3).
+Every VM defines two SATA CDROM slots (`sdc` and `sdd`) at creation, even if empty. Attaching an ISO adds the slot's `<source file>`, ejecting removes it; the slots themselves are never removed. On a VM that is on, attach and eject apply live and to the saved definition.
 
 ### Disk slot convention
 
@@ -245,54 +216,26 @@ ISO attach/eject uses `Domain.UpdateDevice(xmlString, 3)` (flags: LIVE=1 + CONFI
 
 ### UEFI firmware
 
-UEFI VMs include loader and NVRAM in the XML:
-
-```xml
-<os>
-  <type arch='x86_64' machine='pc-q35-*'>hvm</type>
-  <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
-  <nvram>/var/lib/wisp/vms/<name>/VARS.fd</nvram>
-</os>
-```
-
-The NVRAM file is copied from the system template at VM creation. Available firmware paths are detected by scanning known locations (varies by Linux distribution) and cached at startup.
-
-For UEFI with Secure Boot, a different firmware file is used (typically `OVMF_CODE_4M.secboot.fd`).
+A UEFI VM's definition names the firmware loader and its own NVRAM file, `<vmsPath>/<name>/VARS.fd`, which is copied from the system template at VM creation. UEFI with Secure Boot uses the Secure Boot firmware file.
 
 ### Windows optimizations
 
-Windows VMs (the `windows-11` profile, or `osType: Windows` set in Expert settings) include additional XML blocks:
-
-- **Hyper-V enlightenments:** `<hyperv>` block with relaxed, vapic, spinlocks, vpindex, runtime, synic, stimer, reset, frequencies, reenlightenment, tlbflush, ipi
-- **Clock adjustments:** Windows-specific clock configuration with hypervclock timer
-- **vTPM:** Software TPM for Windows 11 compatibility
-
-These are applied at creation and preserved on all subsequent config updates.
+Windows VMs (the `windows-11` profile, or `osType: Windows` set in Expert settings) get Hyper-V enlightenments, a Windows clock configuration and a vTPM. These are applied at creation and preserved on all subsequent config updates.
 
 ### Network
 
-Each NIC is defined as:
+Each NIC is a bridge interface with a model and a MAC. MAC addresses are generated with the `52:54:00` prefix (QEMU's locally-administered range) followed by 3 random bytes.
 
-```xml
-<interface type='bridge'>
-  <source bridge='br0'/>
-  <model type='virtio'/>
-  <mac address='52:54:00:xx:xx:xx'/>
-</interface>
-```
-
-MAC addresses are generated with the `52:54:00` prefix (QEMU's locally-administered range) followed by 3 random bytes.
-
-VM NIC VLAN tagging via `<vlan>` is not used. The Advanced Network VLAN field is shown but disabled, and VM NIC updates clear VLAN values in persisted config; use a VLAN-specific bridge (for example `br0-vlan22`, created from Host → Host Mgmt → Network Bridges) instead.
+VM NIC VLAN tagging via `<vlan>` is not used; use a VLAN-specific bridge (for example `br0-vlan22`, created from Host → Host Mgmt → Network Bridges) instead.
 
 ### Additional devices
 
-- **USB tablet input:** Included by default for better mouse tracking in VNC
-- **Graphics:** one `<graphics type='vnc|spice' port='-1' autoport='yes' listen='127.0.0.1'/>`, written by create and by a Graphics edit (which replaces the element). Localhost only *(settled 2026-10-16)*: QEMU's VNC has no password, so the only way in is Wisp's authenticated console proxy, which connects to `127.0.0.1` ([CONSOLE.md](CONSOLE.md)); `0.0.0.0` exposed every VM's keyboard and screen to the LAN. Clone and restore copy the source/backup `<graphics>` verbatim. VMs defined before this change are brought to `127.0.0.1` by state migration `0002-vnc-listen-localhost` on update (attribute and `<listen type='address'>` child of the saved definition; a running VM gets the restart-required flag) — see [UPDATES.md § State migrations](UPDATES.md#state-migrations). Restoring a backup taken before that update brings back the backup's `0.0.0.0` (backups are outside the migration's reach). Rejected: rewriting `listen` at clone/restore — it would override a deliberate `virsh edit`, and app code doesn't carry legacy-shape handling (CODING-RULES.md §16).
-- **Memory balloon:** Optional, enabled by default
-- **Guest agent channel:** virtio-serial channel for qemu-guest-agent
-- **VirtIO RNG:** `/dev/urandom` entropy source
-- **vTPM:** Software TPM via swtpm (required for Windows 11)
+- **USB tablet input:** included by default, for pointer tracking in the console.
+- **Graphics:** one `<graphics type='vnc|spice' port='-1' autoport='yes' listen='127.0.0.1'/>`, written by create and by a Graphics edit (which replaces the element). Localhost only *(settled 2026-10-16)*: QEMU's VNC has no password, so the only way in is Wisp's authenticated console proxy, which connects to `127.0.0.1` ([CONSOLE.md](CONSOLE.md)). A restore copies the backup's `<graphics>` as it is.
+
+### Exact values
+
+The definition's parser keeps every text node and attribute as the exact string libvirt wrote (settled 2026-10-16): a definition is changed and written back, so a coerced value would be rewritten on the way (a VM named `007` came back as `7`). A reader that needs a number converts it explicitly.
 
 ### Wisp metadata (`wisp:prefs`)
 
@@ -300,156 +243,32 @@ Wisp app-level VM metadata is stored in domain XML metadata under the `https://w
 
 - `icon` — workload icon id for the UI
 - `pendingRestart` — ISO time the change awaiting a restart was saved; omitted otherwise (see [Restart-required flag](#restart-required-flag))
-- `profile` — what the VM runs (`linux`, `windows-11`, `other`): written at create, and by migration `0012` for the VMs that predate it
+- `profile` — what the VM runs (`linux`, `windows-11`, `other`), written at create
 
-Each writer sets or removes only its own children of the existing `wisp:prefs` element, so one pref never drops another. The backend writes and reads children with the `wisp:` prefix (`wisp:icon`, `wisp:pendingRestart`) to match what libvirt returns after its own XML round-trip. `DomainDefineXML` writes to the **inactive** (persistent) config, while `GetXMLDesc(0)` returns the **active** (live) XML for running VMs — which does not reflect changes (metadata or otherwise) until restart. Both the VM list and the detail view (`getVMConfig`) read inactive XML so saved edits show immediately; runtime fields like the live VNC port have their own dedicated active-XML readers (`getVNCPort`).
+Each writer sets or removes only its own children of the existing `wisp:prefs` element, so one pref never drops another. Children carry the `wisp:` prefix (`wisp:icon`, `wisp:pendingRestart`), as libvirt returns them.
 
 ## Local DNS (mDNS)
 
-**Wisp publishes no `.local` name for a VM** *(settled 2026-11-20, replacing the VM's Local DNS setting)*. A VM is a full machine and announces itself: cloud-init installs `avahi-daemon` in a Linux guest by default ([CLOUD-INIT.md](CLOUD-INIT.md)), and Windows and macOS guests announce their own names. A name Wisp published from the host for the same machine fought the guest's own announcement — the user had to turn Wisp's off to use avahi in the guest, and rarely needed it otherwise — and it took the guest agent for the name and the address, a reconciler and a periodic probe. So the setting, its controls and the code behind it went, with nothing kept "off by default". Containers keep theirs: a container has no daemon of its own to announce it ([CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)).
+**Wisp publishes no `.local` name for a VM** *(settled 2026-11-20)*: a name published from the host fought the guest's own announcement. A VM is a full machine and announces itself: cloud-init installs `avahi-daemon` in a Linux guest by default ([CLOUD-INIT.md](CLOUD-INIT.md)), and Windows and macOS guests announce their own names. Containers keep theirs ([CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)).
 
 - A container resolves a VM's name through the DNS forwarder as it resolves any other name on the LAN, through the host's avahi, when the guest announces it.
-- A VM that had the setting on stopped being published at the update. The state migration `0011-vm-local-dns-pref` removes the `wisp:localDns` pref an earlier release stored from every VM defined when it runs ([UPDATES.md → Shipped migrations](UPDATES.md#shipped-migrations)). A definition that brings it back later — a restore from an older backup, a domain defined by hand from an old dump — keeps it, unread: no code reads the pref.
-- A VM's stop still triggers the stuck-probe recovery that container names rely on, since its tap goes away with it: `vmManager.subscribeVMStopped`, wired in `lib/mdnsProbeRecovery.js` ([CONTAINERS.md → Publishing](CONTAINERS.md#publishing-avahi-daemon-via-dbus), Stuck-probe recovery).
+- A VM's stop still triggers the stuck-probe recovery that container names rely on, since its tap goes away with it ([CONTAINERS.md → Publishing](CONTAINERS.md#publishing-avahi-daemon-via-dbus), Stuck-probe recovery).
 
-### Guest agent state surfacing
+### Guest agent state
 
-`getVMStats()` derives `guestAgent.connected` from whether `InterfaceAddresses` or `GetHostname` produced a value during the current poll. The flag is `undefined` when the domain XML has no guest_agent channel configured (so the UI hides the pill entirely). The probe is cached per-VM with a 30 s TTL (`GUEST_INFO_TTL_MS`) — the per-VM stats SSE ticks every 5 s but only one in six ticks hits qemu-ga; the rest read from cache. The cache is invalidated on three boundaries: cached state turns non-running (stop/start cycles re-fetch on the next running tick), libvirt `AgentEvent` fires (subscribed in `vmManagerStats.js` so a fresh qemu-ga connect/disconnect collapses lag from up to 30 s to one stats tick — important for first-boot VMs that install qemu-ga via cloud-init), and TTL expiry covers the rest (DHCP renewals, in-guest hostname changes, missed signals). libvirt-dbus emits `AgentEvent` on each domain's own object, so `vmManagerStats.js` attaches a listener to every running VM and detaches it when the VM leaves the running set, in step with the VM list.
+A VM's stats carry `guestAgent.connected`: whether the guest agent answered. The flag is `undefined` when the VM has no guest agent channel, and the UI then hides the pill.
 
-## Backend Module Structure
+## Connection and the VM list
 
-The VM management backend is organized as a **platform facade** plus implementations:
-
-- **`backend/src/lib/vmManager/index.js`** — facade. At load time it imports either `vmManager/linux/index.js` (libvirt over DBus) or `vmManager/darwin/index.js` (dev stub: no libvirt). Routes import only this module.
-- **`backend/src/lib/vmManager/vmManagerShared.js`** — pure helpers shared by both platforms (`vmError`, `unwrapVariant`, `unwrapDict`, `formatVersion`, `generateMAC`); no DBus.
-
-### Linux: `backend/src/lib/vmManager/linux/vmManagerConnection.js`
-
-- DBus system bus connection to `org.libvirt` at `/org/libvirt/QEMU`
-- Connection state management (bus, connectIface, connectProps)
-- Automatic reconnection when the system-bus connection fails: exponential backoff from 2 s, doubling to a 30 s cap, one pending retry at a time; each failed attempt is logged and the loop keeps going until libvirt is back (a scheduling timer, not a race mask — see the timing rules in `docs/CODING-RULES.md` §6). A failed connect — refused bus socket or libvirt-dbus unreachable — rejects rather than hanging or crashing. A failed connect at boot enters the same backoff loop *(settled 2026-11-12)*, so VMs appear once libvirt is up, without a backend restart; until then VM operations report the missing connection. Only with event watching: the start's state migrations (`watchEvents: false`) connect once, and a failure there is their warning.
-- Domain lookup by name (`DomainLookupByName`)
-- Domain object paths are `/org/libvirt/domains/<uuid>` (UUIDs from `ListDomains`). `getDomainObjAndIface(path)` caches the proxy in `connectionState.domainProxyCache` and skips the per-call DBus Introspect; the cache is cleared on bus disconnect and on `VIR_DOMAIN_EVENT_UNDEFINED`. No proxy reference is stashed elsewhere or kept across reconnects.
-- Domain state retrieval (`GetState`)
-- Domain XML retrieval (`GetXMLDesc`)
-- DomainEvent signal listener for state change tracking, fanned out to subscribers via `subscribeDomainChange(handler)` (used by `vmManagerList` for cache refresh)
-- Per-domain `AgentEvent` (qemu-ga lifecycle) subscription helpers: `attachAgentSubscription(path, name)` / `detachAgentSubscription(path)`. Handlers register via `subscribeAgentEvent((vmName, { state, reason, domainPath }))` — `state=1` is connected, `state=0` is disconnected. Note: libvirt's C constant is `VIR_DOMAIN_EVENT_ID_AGENT_LIFECYCLE`, but libvirt-dbus surfaces it as the `AgentEvent` signal on the per-domain `org.libvirt.Domain` interface. These helpers are linux-internal.
-
-### macOS: `backend/src/lib/vmManager/darwin/index.js`
-
-- No DBus; `connect()` logs a dev-mode warning; VM APIs throw `NO_CONNECTION` or return empty lists where appropriate (same behavior as the former `IS_DARWIN` branches).
-
-### `vmManagerXml.js` (under `vmManager/linux/`)
-
-XML parsing and building utilities using fast-xml-parser. Handles the conversion between libvirt XML and the structured config objects used by the rest of the application.
-
-The shared parser keeps every text node and attribute as the exact string libvirt wrote (`parseTagValue: false`, `parseAttributeValue: false`). Parsed domains are mutated and rebuilt for `DomainDefineXML`, so value coercion would rewrite them on the round-trip — a VM named `007` or `01` came back as `7` / `1` and could no longer be looked up, a disk `<serial>0x1f</serial>` became `31`, a 16-digit `<wwn>` lost its leading zero. Readers that need a number convert explicitly: memory, vCPU count, CPU topology, VNC port. (settled 2026-10-16)
-
-### `vmManagerHost.js` (under `vmManager/linux/`)
-
-- Host info (hostname, versions, uptime, kernel, primary IP)
-- Host hardware (CPU cores, total memory)
-- Network bridge enumeration
-- UEFI firmware path discovery
-- USB device listing via sysfs (`host/linux/usbMonitor.js`, exposed via `host/index.js`; see [USB.md](USB.md))
-
-### vmManagerList.js
-
-- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `createVM` and `deleteVM` also call `refreshVMListCache()` directly after the libvirt mutation succeeds — libvirt-dbus DEFINED events have proven unreliable enough that new VMs would otherwise miss the LeftBar until a manual page refresh; the explicit refresh is a deterministic local trigger (mirrors `containerManager`'s `subscribeContainerConfigWrite`), idempotent against the event-driven path. `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is dropped on disconnect, and marked stale by any libvirt call that fails: the next `listVMs()` then reads libvirt again. A failed call tells nobody by itself; the list tells its subscribers only when its answer changes, a list or an error (settled 2026-11-22: announcing every failure made the subscribers read again, without end, while libvirt was down). A domain that goes away between `ListDomains` and its own read is left out, not an error. Each cached entry holds: `name`, `uuid`, `domainPath`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `profile`, `iconId`, `pendingRestart`, `startedAt`, `guestAgent`, `staleBinary`. `startedAt` is the QEMU process start time (epoch ms, null when stopped or unreadable), read from `/proc` on every refresh: it drives the restart-required rule and the stats `uptime`, both correct across Wisp restarts (the in-memory first-tick time is only the fallback when `/proc` can't tell). Setting the restart-required flag and every `updateVMConfig` save (a rename included) also call `refreshVMListCache()`, so the `vms` topic carries the change without waiting on a DEFINED event.
-- `listVMs()` — returns the cached VM list (sub-millisecond), or reads libvirt when none is cached or the cache is stale. It returns every VM or throws (`NO_CONNECTION`, `LIBVIRT_ERROR` with libvirt's text): a list that could not be read is never an empty list (settled 2026-11-22). Connected with `watchEvents: false` (the start's state migrations) there is no cache: every call queries libvirt and returns every VM or throws (`NO_CONNECTION`, `LIBVIRT_ERROR` naming the unreadable domains) — [UPDATES.md → Runner](UPDATES.md#runner).
-- `getRunningVMAllocations()` — sums `vcpus` and `memoryMiB` across cached entries with `stateCode === 1` (running). Powers the host stats SSE allocation totals from the same cache as `listVMs()`, and throws as it does.
-- `pingLibvirt()` — one cheap libvirt call (its version), made on each host stats tick: a failure marks the list stale, so a stopped libvirtd is noticed while a tab is open ([HOST-MONITORING.md](HOST-MONITORING.md)). It never throws.
-- `getVMConfig(name)` — full VM configuration parsed from XML
-- `getCachedVcpus(name)` — reads cached vCPU count; used by `getVMStats` for CPU% computation without a per-tick `GetXMLDesc`
-- `getCachedGuestAgent(name)` — reads whether the qemu guest agent is configured in the domain XML; used by `getVMStats` to gate `InterfaceAddresses` / `GetHostname` calls
-- `getCachedStateCode(name)` — reads the libvirt state code from the cached list; used by `getVMStats` to fast-path non-running VMs to a zero-DBus tick
-- `getCachedDomainPath(name)` — returns the libvirt-dbus domain path captured during cache population; used by `getVMStats` to skip `DomainLookupByName` on the hot path
-- `getCachedStaleBinary(name)` — reads the `staleBinary` flag from the cached list; used by `getVMStats` to avoid per-tick `/proc` syscalls
-- `subscribeVMListChange(handler)` — subscribe to cache-refresh events. Used by the `/api/events` route to push the `vms` topic to clients without a polling timer. Returns an unsubscribe function.
-- `subscribeVMChange(handler)` — `(name)` after each successful write to a VM's definition or devices (config, disks, CD-ROM, USB, graphics, the restart flag); no replay. The `/api/events` route turns it into `changes { kind: "vm", id }` ([API.md](API.md)).
-
-### vmManagerLifecycle.js
-
-Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM`, `suspendVM`, `resumeVM`. Each resolves the domain by name, gets the domain interface, and calls the appropriate DBus method.
-
-### vmManagerProc.js
-
-- `getQemuStartTimeMs(name)` — wall-clock start time (epoch ms) of the VM's qemu process: pidfile → `/proc/<pid>/stat` `starttime` + `/proc/stat` `btime` (both world-readable). `null` on any error. Read once per list cache refresh (`startedAt`).
-- `isVMBinaryStale(name)` — returns `true` when the VM's qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt upgrade). Reads the libvirt pidfile at `/var/run/libvirt/qemu/<name>.pid`, then checks whether `/proc/<pid>/exe` ends with ` (deleted)`. Returns `false` on any error (missing pidfile, dead pid, EACCES). Computed once per VM list cache refresh and read via `getCachedStaleBinary` from both list and stats payloads.
-- `watchQemuBinaries(onChange)` — sets up `fs.watch` on directories where `qemu-system-*` binaries can live (`/usr/bin`, `/usr/local/bin`, `/usr/libexec`) and calls `onChange` whenever any matching basename changes. Used at vmManager connect to wire qemu upgrades into `fireDomainChange`, so `staleBinary` updates are event-driven (no polling). Returns a cleanup function called on disconnect.
-
-### vmManagerCreate.js
-
-- `createVM(spec, callbacks)` — full creation flow, with the profile's settings
-- `deleteVM(name, deleteDisks)` — destruction flow
-- `getWindowsFeatures()`, `getWindowsClock()`, `getLinuxFeatures()` — return fast-xml-parser-compatible objects for features and clock blocks
-
-### vmManagerConfig.js
-
-- `updateVMConfig(name, changes)` — partial config updates with live/offline awareness
-
-### vmManagerPendingRestart.js
-
-- `setVMPendingRestart(name, value)` — set (`since = now`) or clear the restart-required flag in the inactive XML; returns `{ changed }`
-- `pendingRestartInForce(pendingRestart, startedAt)` — the restart-required rule, pure; called by the list refresh and `getVMConfig`
-- Clears outgrown flags on the STARTED `DomainEvent` (`subscribeDomainStarted`) and on each (re)connect (`subscribeConnected`); see [Restart-required flag](#restart-required-flag)
-
-### vmManagerDisk.js
-
-- `attachDisk(name, slot, path, bus)` — attach a disk image to a free `sda`/`sdb` slot; VM stopped; the image is checked and defined with its format ([Untrusted images](#untrusted-images))
-- `createAndAttachDisk(name, slot, sizeGB, bus)` — create a new qcow2 under a not-yet-used `disk<N>.qcow2` name and attach it; same checks as `attachDisk`, run first
-- `detachDisk(name, slot)` — detach a disk from a slot
-- `resizeDiskBySlot(name, slot, sizeGB)` — resize a disk (read as its `<driver type>`; refused with a backing file — [Untrusted images](#untrusted-images))
-- `extractDiskSnippet(name, slot)` — extract disk XML for UpdateDevice calls
-
-### vmManagerIso.js
-
-- `attachISO(name, slot, isoPath)` — attach ISO to CDROM slot (hot-plug capable)
-- `ejectISO(name, slot)` — eject ISO from CDROM slot (hot-unplug capable)
+- **Reconnect.** When the system-bus connection to libvirt fails, Wisp reconnects with exponential backoff from 2 s, doubling to a 30 s cap, one pending retry at a time, until libvirt is back; each failed attempt is logged. A failed connect at boot enters the same loop *(settled 2026-11-12)*, so VMs appear once libvirt is up, without a backend restart; until then VM operations report the missing connection. Only with event watching: the start's state migrations connect once, and a failure there is their warning.
+- **The VM list is cached**, refreshed on libvirt's domain events, on every change Wisp makes to a VM, and when a `qemu-system-*` binary is replaced on disk. Any libvirt call that fails marks it stale: the next read asks libvirt again. The list tells its subscribers only when its answer changes, a list or an error (settled 2026-11-22). A domain that goes away between the listing and its own read is left out, not an error.
+- **A list read returns every VM or throws** (`NO_CONNECTION`, `LIBVIRT_ERROR` with libvirt's text): a list that could not be read is never an empty list (settled 2026-11-22). For the start's state migrations there is no cache: every call queries libvirt, and returns every VM or throws ([UPDATES.md → Runner](UPDATES.md#runner)).
+- **A stopped libvirtd is noticed while a tab is open**: each host stats tick asks libvirt one cheap question, and a failure marks the list stale ([HOST-MONITORING.md](HOST-MONITORING.md)).
+- **A write to a VM's definition or devices** (config, disks, CD-ROM, USB, graphics, the restart flag) is announced as `changes { kind: "vm", id }` ([API.md](API.md)).
 
 ### Allowed paths for attach / create
 
-Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.sourcePath` and `cdrom1Path`/`cdrom2Path` at create time) is asserted to resolve under either the image library (`imagePath`) or this VM's own per-VM directory (`getVMBasePath(name)`). Paths outside those roots return **422 PATH_NOT_ALLOWED**. The check follows symlinks as QEMU's open will *(settled 2026-11-12)*: the path is resolved — asynchronously, so a stale network mount can't freeze the backend — with the kernel's `realpath` (its deepest existing ancestor, plus the not-yet-created rest), and so are the two roots (`vmsPath` may itself be a symlink) — a symlink in the image library that points outside it, and `..` traversal, are rejected. libvirt would otherwise happily open arbitrary host files (e.g. `/etc/shadow`) as block / CDROM devices for QEMU.
-
-### vmManagerUsb.js
-
-- `getVMUSBDevices(name)` — list USB devices attached to a VM
-- `attachUSBDevice(name, vendorId, productId)` — attach (hot-plug when running)
-- `detachUSBDevice(name, vendorId, productId)` — detach (hot-unplug when running)
-
-### vmManagerBackup.js
-
-- `createBackup(name, destPath, callbacks)` — full VM backup; a disk on a backing chain (shared base image, or a snapshot overlay made outside Wisp) is flattened into a standalone qcow2 (see [BACKUPS.md](BACKUPS.md#disks-on-a-backing-chain))
-- `listBackups(destinations, vmNameFilter)` — scan destinations for backups (`<dest>/vms/<vm>/<ts>/`)
-- `resolveVmBackupDir(root, vmName, timestamp)` — the backup's directory, or `BACKUP_NOT_FOUND`
-- `restoreBackup(backupPath, newVmName, { populateVMDir, isExternalSourceAllowed })` — restore as a new VM; rewrites paths under the backed-up VM directory using `manifest.vmBasePath` (see [BACKUPS.md](BACKUPS.md)), then validates the domain and payload as untrusted input (`vmManagerRestoreCheck.js`, [BACKUPS.md § Archive validation (VM backups)](BACKUPS.md#archive-validation-vm-backups)); `populateVMDir` lets the caller write files the backup doesn't hold (the cloud-init ISO) before define; `isExternalSourceAllowed(path)` is the caller's policy for CD-ROM sources outside the new VM directory (none → refused)
-- `deleteBackup(backupPath, allowedRoots)` — delete with safety check
-- `tightenVMBackupFileModes(roots)` (`vmManagerBackupModes.js`) — make existing backups owner-only (directory `0700`, files `0600`); pure filesystem work, exported by the macOS stub too; used by state migration `0006-vm-backup-file-modes` (see [BACKUPS.md § Backup file modes](BACKUPS.md#backup-file-modes))
-
-### vmManagerStats.js
-
-- `getVMStats(name)` — per-VM CPU, memory, disk I/O, net I/O, uptime (from the cached QEMU `startedAt`)
-- `getVMXML(name)` — raw domain XML string
-- `getVNCPort(name)` — parse VNC port from domain XML graphics element
-
-### vmManagerCloudInit.js
-
-- `generateCloudInit(name, config)` — generate seed ISO
-- `attachCloudInitDisk(name)` — attach ISO to sde
-- `detachCloudInitDisk(name)` — detach sde, delete ISO and config
-- `getCloudInitConfig(name)` — read stored config
-- `updateCloudInit(name, config)` — save config, regenerate ISO, attach
-
-## DBus Object Paths
-
-| Object Path | Interface | Purpose |
-|-------------|-----------|---------|
-| `/org/libvirt/QEMU` | `org.libvirt.Connect` | Domain enumeration, host info, define domain, events |
-| `/org/libvirt/QEMU` | `org.freedesktop.DBus.Properties` | Read connect properties (LibVersion, etc.) |
-| `/org/libvirt/domains/<uuid>` | `org.libvirt.Domain` | Per-VM lifecycle, config, stats, devices |
-| `/org/libvirt/domains/<uuid>` | `org.freedesktop.DBus.Properties` | Read domain properties (autostart, etc.) |
-
-Domain object paths follow the pattern `/org/libvirt/domains/<uuid>` where UUIDs are obtained from `ListDomains`. Per-domain proxy objects are cached in `connectionState.domainProxyCache` (path → `{ iface, props }`) so `getDomainObjAndIface(path)` skips the DBus `Introspect` round-trip on hot paths like the per-VM stats SSE. The cache is cleared on bus disconnect/error and the entry for a given path is dropped on `VIR_DOMAIN_EVENT_UNDEFINED`, so a redefined VM with the same path gets a fresh proxy. Do not stash proxy references in module-level state outside this cache.
+Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.sourcePath` and `cdrom1Path`/`cdrom2Path` at create time) must resolve under either the image library (`imagePath`) or this VM's own per-VM directory. Paths outside those roots return **422 PATH_NOT_ALLOWED**: libvirt would otherwise open arbitrary host files (e.g. `/etc/shadow`) as block / CDROM devices for QEMU. The check follows symlinks as QEMU's open will *(settled 2026-11-12)*: the path is resolved — asynchronously, so a stale network mount can't freeze the backend — with the kernel's `realpath` (its deepest existing ancestor, plus the not-yet-created rest), and so are the two roots (`vmsPath` may itself be a symlink) — a symlink in the image library that points outside it, and `..` traversal, are rejected.
 
 ## Timeouts
 
