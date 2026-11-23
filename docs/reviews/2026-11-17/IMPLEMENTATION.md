@@ -413,37 +413,86 @@ ifupdown host; a learned IPv6 address from a real DHCPv6 server or router advert
 
 ### 8. Docs and the rule sweep
 
-Each item is the user's call and is brought as a decision when the phase is reached.
+Done 2026-11-23, merged to `main` from `anchor/docs-and-rule-sweep`, as one feature in
+six milestones, each reviewed once.
 
-- Cut the sections of the specs that mirror code (O-2); this replaces the backlog's
-  "Split CONTAINERS.md and UI.md by area", which would move them unchanged.
-- One home per fact (O-3); the 12 contradictions (O-4); `DEPLOYMENT.md` (P-8); README,
-  screenshots, `web/`, the 2026-04-28 plans (O-6).
-- Asked by the user on 2026-11-22, to be done here, before the next release is cut:
-  `README.md` brought up to date, and all seven screenshots in `screenshots/` taken again
-  (the VM, container and host pages changed with the view, edit, act redesign).
-- Sweep the rule sections never swept (§1, §2, §5, §10, §11, §15, §16; FRONTEND-RULES
-  Design, Files, UI patterns) against the result.
-- Check each of the seven rules written as met (X-8) is now met.
-- Close by re-counting the audit's measures.
+- **Facts first.** The 12 contradictions between docs settled by the code; `web/` and
+  the review folders `2026-04-28`, `2026-10-16` and `2026-11-12` removed; the backlog
+  under ten headings.
+- **The specs hold contracts** and dated decisions: module lists, script walks, copies,
+  history and reasoning cut, a pointer where a fact has another home. Specs 786 KB to
+  606 KB; the first read (the seven header files) 131.5 KB to 105.5 KB; the largest
+  spec, CONTAINERS, 137.8 KB to 85.8 KB. Five reviewers compared old against new; what
+  they found missing (about 45 small contracts, nine rules my own trim had changed) was
+  restored.
+- **The code the sweep found**: one byte formatter, one relative time, one memory
+  formatter, one card, one page gutter, one shell for a form in a modal;
+  `components/sections/` gone; every stored record written atomically by one helper in
+  `lib/base/`; a job kind missing from the subject table stops the start; colours are
+  tokens. Two new checks: the import order (`check-imports`) and a handler that drops
+  its error without saying why (ESLint, the project's own rule: 122 fixed, the real
+  drops now logged). The runtime is Node 26.
+- **Buttons are primitives**: five, with a check that refuses a raw button outside
+  them; 168 raw buttons and 63 `GroupAction` calls converted; navigation is links.
+- **The release** ships what a host runs, from a list (478 files; no `docs/`, agents'
+  instructions, development scripts, tests or fixtures); the README rewritten and
+  every claim checked; seven pictures from a made-up demo host.
+
+Chosen by the user: delete all three old review folders; a release holds only what a
+host runs; the pictures from a demo host, without the Home page; Node 26; a decision is
+recorded as a fact with its reasoning in the commit (the shared template's rule, taken
+now; the rest of the newer template is a backlog entry); JavaScript may read a
+breakpoint only for the sidebar; a second host mount on a path is refused, on add, on
+edit and at start, with no migration; a Jellyfin section in CUSTOM-APPS; the rule docs
+as trimmed; the README with a Developing section.
+
+Observed on throwaway VMs on the test host: a fresh install from the staged tarball on
+Node 26; the hand update from the `v2.8.0-beta.1` tree (Node 24 to 26, the seven
+pending migrations run, `docs/` gone, settings kept, a running container left
+running); an update through the updater; an update made to fail at the start, rolled
+back with every file's checksum as before.
+
+Not run: the release workflow on GitHub; an update downloaded from a release; an OS
+upgrade; a restore of a backup made before profiles. Not reached, and left in the
+backlog: the source checks still read code with a hand lexer (only the import order
+moved to a parse); the Home Assistant OS download; the vendored noVNC is in a release
+twice; detected drives list a disc Wisp cannot adopt; the Caddy app needs an image the
+user must build; AGENTS is behind the shared template in how work is run. Left as it
+is: the secret mount's "secret, not set" wording, which no rule names any more.
 
 ## Targets
 
-| Measure | Now | After |
+Counted again at the close (2026-11-23).
+
+| Measure | Audit | Target | At the close |
+|---|---|---|---|
+| Ways a route answers an error | 4 | 1 | 1 |
+| Ways a job is started / job stores / progress routes | 2 / 6 / 7 | 1 / 1 / 1 | 1 / 1 / 1 |
+| Body schemas, `containers.js` commands | 1 of 9 | 9 of 9 | 9 of 9 |
+| Response schemas | 78 of 132 | all | all 126 JSON routes |
+| Silent steps in a new job command | 6 of 12 | 1 or 0 | about 1: a missed change cue (a kind left out of the subject table now stops the start) |
+| Import cycles | 5 | 0, checked | 0, checked |
+| Hand-written change emitters | 33 | one helper per fence | 0: one helper, fenced |
+| Ways to call a privileged helper | 6 | 1 | 1 |
+| "Read XML, change, define" written out | 13 | 1, locked | 1, locked |
+| Silent catches in `host` | 41 | 0 | 0 without a stated reason, in the backend, the frontend and `shared/`: a check holds it |
+| Hand-written "read and follow" in the client | 14 | 1 hook | 0 outside the two stores |
+| Distinct button class strings | 91 | primitives only | primitives only: no raw button outside them, checked |
+| Rules written as met that are not | 7 | 0 | 0 |
+
+| Size | Audit | At the close |
 |---|---|---|
-| Ways a route answers an error | 4 | 1 |
-| Ways a job is started / job stores / progress routes | 2 / 6 / 7 | 1 / 1 / 1 |
-| Body schemas, `containers.js` commands | 1 of 9 | 9 of 9 |
-| Response schemas | 78 of 132 | all |
-| Silent steps in a new job command | 6 of 12 | 1 or 0 |
-| Import cycles | 5 | 0, checked |
-| Hand-written change emitters | 33 | one helper per fence |
-| Ways to call a privileged helper | 6 | 1 |
-| "Read XML, change, define" written out | 13 | 1, locked |
-| Silent catches in `host` | 41 | 0 |
-| Hand-written "read and follow" in the client | 14 | 1 hook |
-| Distinct button class strings | 91 | primitives only |
-| Rules written as met that are not | 7 | 0 |
+| Backend lines (protos excluded) | 39.4k | 45.4k (40.6k without tests) |
+| Frontend lines | 26.4k | 25.1k |
+| Shell and helpers | 5.4k | 9.0k (the checks included) |
+| Code files | 357 | 514 (433 without tests) |
+| Docs | 13.4k lines | 9.3k lines (15.1k before this phase) |
+| First read (the seven header files) | 113 KB | 105.5 KB |
+| Largest spec | 129 KB | 85.8 KB (CONTAINERS) |
+| Backlog entries | 58 | 74 |
+| Frontend main chunk | 357 kB (90 gzip) | 294 kB (85 gzip), plus a 299 kB vendor chunk (94 gzip) |
+
+`main` is about 680 commits ahead of the audit's commit, none pushed.
 
 ## Not in this plan
 
