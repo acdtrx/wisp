@@ -19,7 +19,7 @@ function recorded(names) {
   }]));
 }
 
-const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).href, { namedExports: recorded(names) });
+const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).href, { exports: recorded(names) });
 
 mockModule('./containerManager/index.js', [
   'getContainerDir', 'assertContainerState', 'assertContainerNameAvailable', 'listContainers', 'getContainerConfig',

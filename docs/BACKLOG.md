@@ -513,11 +513,6 @@ milestone 4 run, 2026-11-21). ESLint's core rules have none for JSX, and no Reac
 is installed (`eslint-plugin-react`'s `jsx-no-duplicate-props` would be one, a new dev
 dependency). **Revisit trigger:** another duplicate prop found in review or as a bug.
 
-**The test module mocks use `namedExports`, deprecated after Node 24.** Ten test files
-mock modules with `mock.module(…, { namedExports })`, which later Node releases replace
-with `exports` (found 2026-11-20). **Revisit trigger:** the move to Node 26 (the docs and
-rule sweep, milestone 3), which resolves it.
-
 **The source checks read code with a hand lexer.** `check-imports.mjs`, `check-fences.mjs`
 and `check-error-messages.mjs` find imports, calls and strings through `scripts/sourceScan.mjs`,
 which strips comments by hand: a `/*` or a lone backtick in JSX text, a regex after `i++ /`,

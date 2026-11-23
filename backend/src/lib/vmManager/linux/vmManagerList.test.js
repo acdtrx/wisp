@@ -39,7 +39,7 @@ const connectionState = {
 
 const url = (path) => new URL(path, import.meta.url).href;
 mock.module(url('./vmManagerConnection.js'), {
-  namedExports: {
+  exports: {
     connectionState,
     vmError,
     unwrapVariant: (v) => v,
@@ -65,10 +65,10 @@ mock.module(url('./vmManagerConnection.js'), {
     subscribeCallFailed: (h) => { signals.callFailed = h; return () => {}; },
   },
 });
-mock.module(url('../../storage/index.js'), { namedExports: { getDiskInfo: async () => ({ virtualSize: 0 }) } });
-mock.module(url('./vmManagerXml.js'), { namedExports: { parseVMFromXML: (xml) => JSON.parse(xml) } });
+mock.module(url('../../storage/index.js'), { exports: { getDiskInfo: async () => ({ virtualSize: 0 }) } });
+mock.module(url('./vmManagerXml.js'), { exports: { parseVMFromXML: (xml) => JSON.parse(xml) } });
 mock.module(url('./vmManagerProc.js'), {
-  namedExports: { isVMBinaryStale: async () => false, getQemuStartTimeMs: async () => null },
+  exports: { isVMBinaryStale: async () => false, getQemuStartTimeMs: async () => null },
 });
 
 const { listVMs, pingLibvirt, subscribeVMListChange } = await import('./vmManagerList.js');

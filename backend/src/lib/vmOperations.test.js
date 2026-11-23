@@ -21,7 +21,7 @@ function recorded(names) {
   }]));
 }
 
-const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).href, { namedExports: recorded(names) });
+const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).href, { exports: recorded(names) });
 
 mockModule('./vmManager/index.js', [
   'assertVMNameAvailable', 'createVM', 'assertVMState', 'startVM', 'stopVM', 'forceStopVM', 'rebootVM', 'suspendVM',

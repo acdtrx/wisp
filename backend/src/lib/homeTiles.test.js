@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 const TARGETS = ['web:80', 'webhost:81', 'webhost.local:82', '192.0.2.10:83', 'web.local:84', 'proxy:85'];
 
-const mockModule = (path, namedExports) => mock.module(new URL(path, import.meta.url).href, { namedExports });
+const mockModule = (path, exports) => mock.module(new URL(path, import.meta.url).href, { exports });
 mockModule('./containerApps/index.js', {
   getAppModule: () => ({
     getPublishedLinks: () => TARGETS.map((target, i) => ({ url: `https://t${i}.example.test`, target })),

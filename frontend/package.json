@@ -2,6 +2,9 @@
   "name": "wisp-frontend",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "vite",
     "build": "bash ../scripts/vendor-novnc.sh && vite build && node scripts/check-chunk-cycles.js && node scripts/generate-sw-precache.js",

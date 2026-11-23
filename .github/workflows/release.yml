@@ -17,10 +17,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Node 24
+      - name: Set up Node 26
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '26'
 
       - name: Derive version + assert package.json matches
         id: ver

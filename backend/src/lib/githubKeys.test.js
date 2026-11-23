@@ -13,7 +13,7 @@ const requests = [];
 let answer;
 
 mock.module(new URL('./downloads/index.js', import.meta.url).href, {
-  namedExports: {
+  exports: {
     ssrfSafeFetch: async (url, init) => {
       requests.push({ url, init });
       return answer();

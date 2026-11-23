@@ -41,10 +41,10 @@ class RecordingAgent extends undici.Agent {
   }
 }
 
-mock.module('undici', { namedExports: { ...undici, Agent: RecordingAgent } });
+mock.module('undici', { exports: { ...undici, Agent: RecordingAgent } });
 mock.module('node:dns/promises', {
   // TEST-NET-3: a public address as far as the guard is concerned.
-  namedExports: { lookup: async () => [{ address: '203.0.113.7', family: 4 }] },
+  exports: { lookup: async () => [{ address: '203.0.113.7', family: 4 }] },
 });
 
 const { ssrfSafeFetch } = await import('./downloadFromUrl.js');

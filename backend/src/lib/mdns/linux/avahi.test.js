@@ -52,10 +52,10 @@ class FakeBus extends EventEmitter {
 }
 
 mock.module('dbus-next', {
-  defaultExport: { systemBus: () => new FakeBus(), Message: class { constructor(fields) { Object.assign(this, fields); } } },
+  exports: { default: { systemBus: () => new FakeBus(), Message: class { constructor(fields) { Object.assign(this, fields); } } } },
 });
 mock.module(new URL('./forwarder.js', import.meta.url).href, {
-  namedExports: { startForwarder: async () => {}, stopForwarder: async () => {} },
+  exports: { startForwarder: async () => {}, stopForwarder: async () => {} },
 });
 mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 

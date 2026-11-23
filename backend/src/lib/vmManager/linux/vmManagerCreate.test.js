@@ -22,7 +22,7 @@ const iface = {
 
 const url = (path) => new URL(path, import.meta.url).href;
 mock.module(url('./vmManagerConnection.js'), {
-  namedExports: {
+  exports: {
     connectionState: { vmStartTimes: new Map(), prevVMStats: new Map(), logger: null },
     vmError,
     generateMAC: () => '52:54:00:00:00:01',
@@ -38,13 +38,13 @@ mock.module(url('./vmManagerConnection.js'), {
   },
 });
 mock.module(url('../../storage/index.js'), {
-  namedExports: {
+  exports: {
     resizeDisk: async () => {}, copyAndConvert: async () => {}, getDiskInfo: async () => ({}),
     imageFormatForFile: async () => 'qcow2', inspectDiskImage: async () => {},
   },
 });
-mock.module(url('../../networking/index.js'), { namedExports: { getDefaultBridge: async () => 'br0' } });
-mock.module(url('./vmManagerList.js'), { namedExports: { refreshVMListCache: () => {} } });
+mock.module(url('../../networking/index.js'), { exports: { getDefaultBridge: async () => 'br0' } });
+mock.module(url('./vmManagerList.js'), { exports: { refreshVMListCache: () => {} } });
 
 const { setVmManagerPaths } = await import('./vmManagerPaths.js');
 const { deleteVM } = await import('./vmManagerCreate.js');

@@ -21,7 +21,7 @@ const signals = {};
 
 const url = (path) => new URL(path, import.meta.url).href;
 mock.module(url('./containerManagerConnection.js'), {
-  namedExports: {
+  exports: {
     containerError,
     wrapContainerError,
     containerState: { connected: true, watchEvents: true, clients: {}, logger: null, containerStartTimes: new Map() },
@@ -34,9 +34,9 @@ mock.module(url('./containerManagerConnection.js'), {
     NAMESPACE: 'wisp',
   },
 });
-mock.module(url('./containerPaths.js'), { namedExports: { getContainersPath: () => root } });
+mock.module(url('./containerPaths.js'), { exports: { getContainersPath: () => root } });
 mock.module(url('./containerManagerLifecycle.js'), {
-  namedExports: {
+  exports: {
     getTaskState: async (name) => {
       containerd.lookups += 1;
       if (containerd.down) throw containerError('NO_CONTAINERD', 'containerd is not reachable');
@@ -46,12 +46,12 @@ mock.module(url('./containerManagerLifecycle.js'), {
     containerTaskStatusToUi: (task) => task.status.toLowerCase(),
   },
 });
-mock.module(url('./procUptime.js'), { namedExports: { processUptimeMsFromProc: async () => null } });
-mock.module(url('./containerManagerPendingRestart.js'), { namedExports: { pendingRestartInForce: async () => null } });
-mock.module(url('../../mdns/index.js'), { namedExports: { getRegisteredHostname: () => null } });
-mock.module(url('./containerManagerImageMeta.js'), { namedExports: { readLibraryDigestMap: async () => new Map() } });
+mock.module(url('./procUptime.js'), { exports: { processUptimeMsFromProc: async () => null } });
+mock.module(url('./containerManagerPendingRestart.js'), { exports: { pendingRestartInForce: async () => null } });
+mock.module(url('../../mdns/index.js'), { exports: { getRegisteredHostname: () => null } });
+mock.module(url('./containerManagerImageMeta.js'), { exports: { readLibraryDigestMap: async () => new Map() } });
 mock.module(url('./containerManagerConfigIo.js'), {
-  namedExports: {
+  exports: {
     readContainerConfig: async (name) => {
       try {
         return JSON.parse(await (await import('node:fs/promises')).readFile(join(root, name, 'container.json'), 'utf8'));
@@ -64,7 +64,7 @@ mock.module(url('./containerManagerConfigIo.js'), {
   },
 });
 mock.module(url('./containerManagerRestartPolicy.js'), {
-  namedExports: {
+  exports: {
     handleTaskExitEvent: () => {},
     getScheduledRestart: () => null,
     subscribeScheduledRestartChange: () => () => {},

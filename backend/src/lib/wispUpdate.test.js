@@ -16,16 +16,16 @@ import { createAppError } from './appErrors.js';
 let answer;
 
 mock.module(new URL('./downloads/index.js', import.meta.url).href, {
-  namedExports: {
+  exports: {
     ssrfSafeFetch: async (_url, init) => answer(init),
     writeResponseToFile: async () => 0,
   },
 });
 mock.module(new URL('./settings.js', import.meta.url).href, {
-  namedExports: { getSettings: async () => ({ updateChannel: 'stable' }) },
+  exports: { getSettings: async () => ({ updateChannel: 'stable' }) },
 });
 mock.module(new URL('./storage/index.js', import.meta.url).href, {
-  namedExports: { createStallWatchdog() {}, stallMinutes() {}, killProcessGroup() {} },
+  exports: { createStallWatchdog() {}, stallMinutes() {}, killProcessGroup() {} },
 });
 
 const { checkForUpdate, getCachedStatus, checkStagedVersion } = await import('./wispUpdate.js');
