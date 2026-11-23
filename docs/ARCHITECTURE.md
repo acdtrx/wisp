@@ -157,8 +157,8 @@ kept over the template's one in-memory bus).
   - The macOS stubs never fire.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` calls each
   manager's `configure()` with its paths and callbacks (`resolveMount`,
-  `tryAcquireOperationLock`) before any route registers. **One logger** (settled
-  2026-11-22): the start's logger is the only one. Every fenced module (the managers, `host`, `mdns`, `networking`,
+  `tryAcquireOperationLock`) before any route registers. **One logger**
+  (settled 2026-11-22): the start's logger is the only one. Every fenced module (the managers, `host`, `mdns`, `networking`,
   `storage`) gets it the same way, `configure({ logger })`, never by importing one or
   at connect; the glue reads it from `lib/log.js`, which the start sets first. No code
   writes to `console`. The start's state migrations

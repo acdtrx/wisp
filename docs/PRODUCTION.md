@@ -36,16 +36,13 @@ What a project facing real users or a network adds to the rules.
   active debugging (`AGENTS.md`, Deployability).
 - Cut **releases** with `scripts/release.sh` (version bumps, changelog fold, `v*` tag);
   pushing the tag to `github` runs the workflow that builds the release tarball.
-- **Self-update is a first-class path**: `wisp-updater` keeps a copy of the install, installs
-  a GitHub release over it, runs setup — the same steps the install runs, the backend's
-  dependencies and the systemd unit among them — starts Wisp, which runs its state
-  migrations as it starts, waits until it is ready (`Type=notify`), and rolls the whole tree back when a step fails
-  ([`specs/UPDATES.md`](specs/UPDATES.md)).
+- **Self-update is a first-class path**: an update is the new release's own install,
+  with a way back ([`specs/UPDATES.md`](specs/UPDATES.md)).
 - **A change that touches the install layout, persisted state, privileged helpers or the
-  systemd templates keeps the updater's contract.** The recurring traps: a persisted file
-  inside the install tree lives in `config/`, which an install and an update never delete or overwrite; a new privileged `wisp-*`
-  helper is a file in `backend/scripts/`, which setup installs with its sudo rule, and
-  one a release stops shipping is removed at the update; the `wisp.service` template is re-applied from the repo on every
-  update; only committed files ship in the release tarball.
+  systemd templates keeps the updater's contract.** The recurring traps: a file a host
+  must keep lives in `config/` or outside the install folder, because everything else
+  there is replaced (the keep rule, UPDATES); a privileged helper is a file in
+  `backend/scripts/`, installed and removed by setup; the unit templates are applied
+  again on every update; only committed files ship in the release tarball.
 - Run **dev deploys** through `scripts/push.sh`: it stages the release-shaped tarball,
   uploads it and runs its installer over SSH ([`specs/DEPLOYMENT.md`](specs/DEPLOYMENT.md)).
