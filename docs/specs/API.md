@@ -1,6 +1,6 @@
 # API Reference
 
-All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket), plus `/mcp`. This file holds the contracts every route shares: access levels, errors, command responses, background jobs, the events stream, MCP and the WebSockets. The routes themselves are documented by area (split 2026-11-15, so a reader loads only the area it works on):
+All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket), plus `/mcp`. This file holds the contracts every route shares: access levels, errors, command responses, background jobs, the events stream, MCP and the WebSockets. The routes themselves are documented by area:
 
 - [API-AUTH.md](API-AUTH.md) — login, logout, password change, API tokens, OIDC
 - [API-HOST.md](API-HOST.md) — host inventory and stats, OS and Wisp updates, power, network bridges, host storage, settings, discovery
@@ -10,7 +10,7 @@ All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket), plus `/mcp`. 
 - [API-LIBRARY.md](API-LIBRARY.md) — the image library
 - [API-WORKSPACE.md](API-WORKSPACE.md) — sidebar sections and the home page
 
-Every endpoint heading carries its **access level** — declared on the route itself (`config: { auth }`) and enforced by one hook; see [AUTH.md](AUTH.md) § Route access levels:
+Every endpoint heading carries its **access level** — declared on the route itself and enforced by one hook; see [AUTH.md](AUTH.md) § Route access levels:
 
 | Level | Who may call |
 |-------|--------------|
@@ -77,9 +77,9 @@ In-memory job registry (server process only; no persistence across restart) (set
 
 Newest first. `subject` is `null` for a job on no workload. `title` is computed on the server (e.g. `Create <name>`, `Backup <name>`; for a library download its URL's origin and path — no userinfo, query or fragment — truncated). A finished job is listed until it expires (below). The same list is the [`jobs` topic](#get-apievents--read) of the events stream, pushed on every change.
 
-**Job store contract** (`lib/jobs/`, every kind):
+**Job store contract** (every kind):
 
-- **Retention:** a finished (completed, failed or cancelled) job stays fetchable — listed here, its progress SSE replaying to the terminal event — for **5 minutes after it finished**, however long it ran; then it is removed (404 on its progress SSE). The sweep re-arms for the next expiry while finished jobs remain.
+- **Retention:** a finished (completed, failed or cancelled) job stays fetchable — listed here, its progress SSE replaying to the terminal event — for **5 minutes after it finished**, however long it ran; then it is removed (404 on its progress SSE).
 - **Progress events** keep `step`, with `percent` and `detail` where they apply, plus each kind's own fields (`currentFile`, `destinationId`, `ref`, …).
 - **Progress volume:** byte-driven progress (backup gzip / tar streams, library downloads, `qemu-img convert`) is emitted once per integer percent change — at most ~101 events per stream, whatever the size.
 - **Replay to a late or reconnecting stream:** live subscribers get every event, but the store keeps only the latest of consecutive events with the same `step` (progress ticks of one step replace each other). A stream that connects mid-job receives one event per step transition — the latest progress of each, plus milestones such as `destination-done` — then the live tail.
@@ -105,7 +105,7 @@ The progress SSE of every job (the job store contract above).
 
 ### GET /api/events · `read`
 
-The single always-on Server-Sent Events stream. Multiplexes every feed the UI needs continuously as `{ "topic": <name>, "data": <payload> }` frames over one connection — browsers cap plain-HTTP/1.1 connections at 6 per origin and each open SSE stream holds one, so dedicated per-topic streams exhausted the pool on direct `http://host:8080` access and queued all further requests indefinitely (behind an HTTP/2 proxy the cap never applies). Scoped streams (per-entity stats, container logs, host disks/usb, job progress) remain separate endpoints: they are transient and bounded well below the cap.
+The single always-on Server-Sent Events stream. Multiplexes every feed the UI needs continuously as `{ "topic": <name>, "data": <payload> }` frames over one connection, not a stream per topic: browsers cap plain-HTTP/1.1 connections at 6 per origin and each open SSE stream holds one. Scoped streams (per-entity stats, container logs, host disks/usb, job progress) remain separate endpoints: they are transient and bounded well below the cap.
 
 Every topic sends a snapshot frame on connect (and after every client reconnect), then pushes on its own cadence. A topic that fails to gather sends the error body `{ error, detail }` as its `data`; the stream stays up and the other topics keep flowing.
 
@@ -200,11 +200,9 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
 ```
 
 - `runningContainers` is the count of containers in the running state (0 on non-Linux dev hosts). It is `null` when the container list could not be read (containerd down), as `runningVMs`, `cpu.allocated` and `memory.allocatedGB` are when the VM list could not (libvirt down): a figure is never a guessed 0.
-- `cpuTemp` and `cpuPowerWatts` are `null` when unavailable (e.g. non-Intel, VM, or no thermal/powercap sysfs).
-- `cpuTemp` is selected from the best CPU-relevant sensor (package/core sensors preferred over generic ACPI/platform sensors).
-- `cpuTempThresholds` contains thresholds for the selected primary CPU sensor as `{ maxC, critC }` (or `null` when unavailable).
-- `thermalZones` contains readable thermal sensors as `{ type, label, tempC, maxC, critC }`; empty array when unavailable. If both sysfs sources expose the same sensor type, `thermal_zone` is preferred and duplicate `hwmon` entry is omitted.
-- `loadAvg` is [1min, 5min, 15min] from /proc/loadavg.
+- `cpuTemp` and `cpuPowerWatts` are `null` when unavailable (e.g. non-Intel, VM, or no thermal/powercap sysfs); `cpuTempThresholds` is `null` when unavailable; `thermalZones` is an empty array when unavailable.
+- `loadAvg` is [1min, 5min, 15min].
+- What each figure measures: [HOST-MONITORING.md](HOST-MONITORING.md), Host Stats.
 - `pendingUpdates` is the count of upgradable packages from the background hourly check (or 0 if check unavailable).
 - `updatesLastChecked` is an ISO 8601 timestamp of the last successful update check (background or manual), or `null` if no check has completed since the backend started.
 - `rebootRequired` is `true` when the host has a pending reboot. `rebootReasons` is a list of short tags (the package names that asked for the reboot).
@@ -227,12 +225,7 @@ Model Context Protocol endpoint (streamable HTTP, stateless, JSON-RPC 2.0) expos
 VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC server on localhost.
 
 - **Auth:** `session` — `wisp_session` cookie on the upgrade handshake (sent automatically same-origin); bearer API tokens get 403. `Origin` allow-list enforced.
-- **Protocol:** Binary frames — bidirectional TCP-to-WebSocket bridge
-- **Connection flow:**
-  1. Global auth hook validates the session cookie, and the route's schema the VM name, before the upgrade completes
-  2. Read VNC port from domain XML
-  3. Open TCP connection to `127.0.0.1:<port>`
-  4. Pipe data bidirectionally between WebSocket and TCP socket
+- **Protocol:** Binary frames — bidirectional TCP-to-WebSocket bridge ([CONSOLE.md](CONSOLE.md))
 - **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token), `400` `VALIDATION_FAILED` (a VM name that breaks the name rules)
 - **Close codes:**
   - `1008` — Origin not allowed, or all consoles closed after a password change
@@ -241,18 +234,13 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
 
 ### WS /ws/container-console/:name · `session`
 
-Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with a PTY (`/bin/sh`); I/O is bridged over WebSocket.
+Interactive shell (`/bin/sh` on a PTY) in a **running** container; I/O is bridged over WebSocket. When the socket closes, the shell's process is killed.
 
 - **Auth:** `session` — `wisp_session` cookie on the upgrade handshake (same as VNC console); bearer API tokens get 403
 - **Query:** `cols` and `rows` (optional integers 1–4096, defaults 80×24) — initial PTY size; client may send further resize messages after connect
 - **Protocol:**
   - **Binary frames** — terminal input (client → server) and output (server → client)
   - **Text frames** — JSON control only: `{ "type": "resize", "cols": number, "rows": number }` (client → server)
-- **Connection flow:**
-  1. Global auth hook validates the session cookie, and the route's schema the container name and the PTY size, before the upgrade completes
-  2. Ensure the container task is running; create a unique exec session with named pipes + `Tasks.Exec` / `Tasks.Start`
-  3. Bridge WebSocket ↔ FIFO streams; forward `resize` to `Tasks.ResizePty`
-  4. On close, kill the exec process and remove temp FIFO directory
 - **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token), `400` `VALIDATION_FAILED` (a container name that breaks the name rules, a PTY size out of range)
 - **Close codes:**
   - `1000` — the shell exited (exec stdout ended); reason `session ended`
