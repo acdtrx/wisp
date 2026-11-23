@@ -62,7 +62,7 @@ function assertLibraryFilename(name, what = 'Filename') {
 }
 
 async function exists(path) {
-  return access(path).then(() => true, () => false);
+  return access(path).then(() => true, () => false /* a path access refuses is not there for this check */);
 }
 
 /** The library file `name`, which must exist; its absolute path. */

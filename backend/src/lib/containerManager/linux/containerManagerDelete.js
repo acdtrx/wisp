@@ -48,7 +48,7 @@ async function removeContainerFolder(name, deleteFiles) {
 }
 
 function pathExists(path) {
-  return access(path).then(() => true, () => false);
+  return access(path).then(() => true, () => false /* a path access refuses is not there for this check */);
 }
 
 /** containerd's answer for an object that is not there: for a delete, already done. */

@@ -310,7 +310,7 @@ async function createGroup() {
   } catch (err) {
     // A late answer still creates the group: free it when its path arrives.
     if (err.code === 'AVAHI_TIMEOUT') {
-      pending.then((latePath) => freeAvahiPath(latePath, AVAHI_GROUP_IFACE), () => { /* never created */ });
+      pending.then((latePath) => freeAvahiPath(latePath, AVAHI_GROUP_IFACE), () => { /* the call failed late: nothing was created, so nothing to free */ });
     }
     throw err;
   }
@@ -903,7 +903,7 @@ async function onBrowseItemNew(record, iface, proto, name, domain) {
       } catch (err) {
         // A late answer still creates the resolver: free it when its path arrives.
         if (err.code === 'AVAHI_TIMEOUT') {
-          creating.then((latePath) => freeAvahiPath(latePath, AVAHI_RESOLVER_IFACE), () => { /* never created */ });
+          creating.then((latePath) => freeAvahiPath(latePath, AVAHI_RESOLVER_IFACE), () => { /* the call failed late: nothing was created, so nothing to free */ });
         }
         throw err;
       }
@@ -967,7 +967,7 @@ async function startBrowse(record) {
       } catch (err) {
         // A late answer still creates the browser: free it when its path arrives.
         if (err.code === 'AVAHI_TIMEOUT') {
-          creating.then((latePath) => freeAvahiPath(latePath, AVAHI_BROWSER_IFACE), () => { /* never created */ });
+          creating.then((latePath) => freeAvahiPath(latePath, AVAHI_BROWSER_IFACE), () => { /* the call failed late: nothing was created, so nothing to free */ });
         }
         throw err;
       }

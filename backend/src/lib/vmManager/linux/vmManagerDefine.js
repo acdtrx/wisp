@@ -18,7 +18,7 @@ const writeQueues = new Map();
 function inWriteQueue(domPath, write) {
   const before = writeQueues.get(domPath) ?? Promise.resolve();
   const run = before.then(() => write());
-  const tail = run.then(() => {}, () => {});
+  const tail = run.then(() => {}, () => { /* the rejection is the caller's (run), not the queue's */ });
   writeQueues.set(domPath, tail);
   tail.then(() => { if (writeQueues.get(domPath) === tail) writeQueues.delete(domPath); });
   return run;

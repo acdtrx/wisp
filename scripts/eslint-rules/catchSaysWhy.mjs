@@ -1,8 +1,8 @@
 /**
  * `wisp/catch-says-why`: a catch that drops its error says why (CODING-RULES §5).
  *
- * A `catch` clause, or a function written inline as a promise's `.catch(…)`
- * handler, handles its error when it reads the error's binding or throws.
+ * A `catch` clause, or a function written inline as a promise's rejection
+ * handler (`.catch(fn)`, or `.then(onOk, fn)`'s second argument), handles its error when it reads the error's binding or throws.
  * Otherwise it drops the error, and it must carry a comment, inside the handler
  * or on the line of its `catch`, that gives the reason. A comment that is only
  * a word for "dropped" is no reason: one with fewer than three words once
@@ -71,8 +71,10 @@ export default {
       },
       CallExpression(node) {
         const { callee } = node;
-        if (callee.type !== 'MemberExpression' || callee.computed || callee.property.name !== 'catch') return;
-        const [handler] = node.arguments;
+        if (callee.type !== 'MemberExpression' || callee.computed) return;
+        const name = callee.property.name;
+        if (name !== 'catch' && name !== 'then') return;
+        const handler = node.arguments[name === 'catch' ? 0 : 1];
         if (!handler || !/^(?:Arrow)?FunctionExpression$/.test(handler.type)) return;
         judge(handler, handler.params[0], handler, handler.body, callee.property.loc.start.line);
       },
