@@ -17,7 +17,7 @@ A top bar fixed at the top; below it a left panel (about 280px wide, scrollable)
 
 The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait tablets):
 
-- **Tailwind classes only** *(settled 2026-08-25)*: express every breakpoint as a class; no JavaScript reads the viewport size (the container console's `ResizeObserver` fits the terminal to its element, which is not viewport detection).
+- **Layout is Tailwind classes** *(settled 2026-08-25, widened 2026-11-23)*: express every breakpoint as a class. JavaScript reads a breakpoint only for behaviour a class cannot express; today that is the sidebar alone, which is a layer (Escape, focus, the page under it inert) only while it is a drawer. The container console's `ResizeObserver` fits the terminal to its element, which is not viewport detection.
 - **Left panel becomes an off-canvas drawer** below the top bar's first row (full-width on phones, 280px from `sm`) over a backdrop, toggled by a hamburger button that appears leftmost in the top bar. It closes on backdrop tap, Escape, and any route change.
 - **Top bar splits into two rows** — first row: hamburger + brand + server name on the left, jobs + sign-out on the right; second row: the host stats pills full-width (left-aligned, horizontally scrollable). At `lg`+ it's the single centered-stats row.
 - **Row actions are always visible** — the desktop hover-reveal only applies at `lg`+; touch devices see the lifecycle/table actions directly, with larger hit targets.

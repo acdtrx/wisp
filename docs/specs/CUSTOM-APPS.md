@@ -212,6 +212,38 @@ The redirect URI to register with the provider is `<externalUrl>/zot/auth/callba
 
 ---
 
+## App: Jellyfin
+
+**ID:** `jellyfin`
+**Default image:** `jellyfin/jellyfin:latest` (custom image allowed)
+**Registry flags:** none. It does not run as root: its Local folders are owned by the container's user, and the GPU comes through the container's devices ([CONTAINERS.md](CONTAINERS.md#devices-entry)). No service is seeded: Jellyfin announces itself by its own discovery.
+
+### appConfig Schema
+
+```json
+{
+  "libraries": [
+    { "label": "movies", "sourceId": "<storage mount id>", "subPath": "films" }
+  ],
+  "gpuEnabled": false,
+  "publishedUrl": "http://<container>.local:8096"
+}
+```
+
+- `libraries[]` — the media folders. `label` is the folder's name under `/media`: one path segment, no leading dot, unique, and not `config` or `cache`. `sourceId` names a configured storage mount ([STORAGE.md](STORAGE.md)); one that names none is refused. `subPath` is an optional folder inside it, relative, with no `..`.
+- `gpuEnabled` — share the host's GPU with the container. Wisp picks the first supported one (Intel or AMD); with none on the host the save is refused. Hardware acceleration itself is turned on in Jellyfin's own admin pages. On a host with several GPUs, choosing one means ejecting the app and editing the container's devices.
+- `publishedUrl` — the address Jellyfin gives its clients, and the app's link on the Home page. A new container starts with `http://<container>.local:8096`.
+- There are no secrets. Every refusal above is 422 `INVALID_APP_CONFIG`.
+
+### Derived Config
+
+- **Mounts:** `config` → `/config` and `cache` → `/cache`, folders kept with the container; each library → `/media/<label>`, from its storage mount and sub-path. All writable.
+- **Env:** `JELLYFIN_PublishedServerUrl`, when `publishedUrl` is set.
+- **Devices:** the GPU when `gpuEnabled`, none otherwise: each save replaces the container's devices.
+- **No live reload:** a change to the libraries, the GPU or the published address needs a restart.
+
+---
+
 ## App: Tiny Samba
 
 **ID:** `tiny-samba`

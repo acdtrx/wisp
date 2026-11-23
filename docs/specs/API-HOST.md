@@ -399,14 +399,14 @@ Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMoun
 
 - **201:** `{ id }` — the new mount's id; the mount arrives on the stream (`settings` and `host-mounts`)
 - **400:** `VALIDATION_FAILED` — a missing `type` or `mountPath`, a `type` other than `smb` / `disk`, a value of the wrong type, or an unknown key
-- **409:** `MOUNT_DUPLICATE` — id already exists
+- **409:** `MOUNT_DUPLICATE` — the id, or the mount path, is another mount's
 - **422:** `MOUNT_INVALID` — missing/invalid fields, among them a `share` that is not `//host/share[/folder]` after backslashes and trailing slashes are tidied ([STORAGE.md](STORAGE.md)); `POST /api/host/mounts/check` answers the same for such a share
 
 ### PATCH /api/host/mounts/:id · `admin`
 
 Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). An omitted or empty `password` preserves the stored password. `type` and `uuid` cannot be changed after creation.
 
-- **204:** saved; announced like `POST /api/host/mounts` | **404:** `MOUNT_NOT_FOUND`
+- **204:** saved; announced like `POST /api/host/mounts` | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_DUPLICATE` — the new mount path is another mount's
 
 ### DELETE /api/host/mounts/:id · `admin`
 
