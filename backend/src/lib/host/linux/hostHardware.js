@@ -262,8 +262,9 @@ export function getNetworkAdapters() {
       const speedPath = `/sys/class/net/${name}/speed`;
       const speedRaw = readFile(speedPath);
       if (speedRaw) {
-        const n = parseInt(speedRaw.trim(), 10);
-        if (Number.isInteger(n)) speedMbps = n;
+        // A link whose speed the kernel does not know (virtio, a bridge) reads -1.
+        const n = Number(speedRaw.trim());
+        if (Number.isInteger(n) && n > 0) speedMbps = n;
       }
 
       let state = 'unknown';
