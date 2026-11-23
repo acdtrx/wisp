@@ -28,7 +28,7 @@ Host system information.
 }
 ```
 
-On macOS, `GET /api/host` also runs `system_profiler -json SPSoftwareDataType` and, when it succeeds, fills `osRelease` (`prettyName` from `os_version` with the last trailing parenthetical removed — typically the build number; `id` `macos`, `versionId` from the semver in the raw string), and may refresh `kernel` (`kernel_version`) and `hostname` (`local_host_name`). If profiler fails, `osRelease` stays `null` (no `/etc/os-release`). `libvirtVersion` and `qemuVersion` are typically `null` when libvirt is not connected.
+`osRelease` is `null` on macOS (development) when the system profiler fails (there is no `/etc/os-release`). `libvirtVersion` and `qemuVersion` are typically `null` when libvirt is not connected.
 
 ### GET /api/host/bridges · `read`
 
@@ -62,7 +62,7 @@ List Wisp-managed VLAN bridge definitions and eligible parent bridges.
 
 ### POST /api/host/network-bridges · `admin`
 
-Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` helper.
+Create a managed VLAN bridge.
 
 - **Body:** `{ "baseBridge": "br0", "vlanId": 10 }`
 - **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
@@ -111,7 +111,7 @@ NVIDIA GPUs (vendor `0x10de`) are filtered out of the response — exposing them
 
 ### GET /api/host/usb · `read`
 
-List all USB devices on the host (snapshot from sysfs; same data as the initial SSE message on `/api/host/usb/stream`).
+List all USB devices on the host (snapshot; same data as the initial SSE message on `/api/host/usb/stream`).
 
 - **200:**
 
@@ -137,7 +137,7 @@ Server-Sent Events stream of the host USB device list.
 
 ### GET /api/host/disks · `read`
 
-List host block devices (removable + fixed) with mount state. Snapshot from `lsblk` cache; same data as the initial SSE message on `/api/host/disks/stream`.
+List host block devices (removable + fixed) with mount state. A snapshot; same data as the initial SSE message on `/api/host/disks/stream` ([STORAGE.md](STORAGE.md), Detected drives).
 
 - **200:**
 
@@ -162,12 +162,12 @@ List host block devices (removable + fixed) with mount state. Snapshot from `lsb
 Server-Sent Events stream of the host block-device list.
 
 - Sends an immediate `data:` line with a JSON array of devices (same shape as `GET /api/host/disks`).
-- Sends another `data:` line whenever the diskMonitor detects a change (insertion / removal / partition rescan).
+- Sends another `data:` line whenever a device changes (insertion / removal / partition rescan).
 - **200:** `text/event-stream` (persistent connection)
 
 ### POST /api/host/updates/check · `admin`
 
-Check for OS package updates. Uses an `apt-get -s upgrade` dry-run (excludes phased-only packages). Requires `/usr/local/bin/wisp-os-update` (installed by server setup). The one route that starts the check (settled 2026-11-20). One **shared** run ([API.md → Background jobs](API.md#background-jobs)): a start while a check runs, from this route, MCP or the hourly check, answers the running job's `{ jobId, kind, title, subject }` (the same `jobId`).
+Check for OS package updates ([HOST-MONITORING.md](HOST-MONITORING.md#os-updates)). The one route that starts the check (settled 2026-11-20). One **shared** run ([API.md → Background jobs](API.md#background-jobs)): a start while a check runs, from this route, MCP or the hourly check, answers the running job's `{ jobId, kind, title, subject }` (the same `jobId`).
 
 - **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ count: number }`; the package list is then read from `GET /api/host/updates/packages`
 - **409:** `UPDATE_BUSY` — an OS upgrade is running
@@ -175,7 +175,7 @@ Check for OS package updates. Uses an `apt-get -s upgrade` dry-run (excludes pha
 
 ### GET /api/host/updates/packages · `read`
 
-What the last [check](#post-apihostupdatescheck--admin) (or upgrade) found: the structured list of upgradable packages plus an estimated total download size, harvested by the check from `apt-get -s upgrade`'s `Inst …` lines and its `Need to get …` summary. It only reads: it starts no job (settled 2026-11-20 — a read token can no longer start one).
+What the last [check](#post-apihostupdatescheck--admin) (or upgrade) found: the structured list of upgradable packages plus an estimated total download size. It only reads: it starts no job (settled 2026-11-20 — a read token can no longer start one).
 
 - **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number, checkedAt: string | null }` — `checkedAt` is the ISO 8601 time of the check the list comes from; before any check `{ packages: [], downloadBytes: 0, checkedAt: null }`
 
@@ -202,7 +202,7 @@ Force an immediate self-update check. Which release is considered follows `updat
 
 ### POST /api/updates/install · `admin`
 
-A [job](API.md#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), writes the staging path to `/var/lib/wisp/updates/target`, reports `{ step: "restarting" }`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and ends with `done`, result `{ targetVersion }`. The job's stream may end before `done` as the backend stops. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` (or `force=true`; any other value is **400** `VALIDATION_FAILED`) overrides the active-jobs guard.
+A [job](API.md#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), reports `{ step: "restarting" }`, hands over to the updater and ends with `done`, result `{ targetVersion }`. The job's stream may end before `done`, because the updater stops the backend; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion` ([UPDATES.md](UPDATES.md)). `?force=1` (or `force=true`; any other value is **400** `VALIDATION_FAILED`) overrides the active-jobs guard.
 
 - **202:** `{ jobId, kind, title, subject }` — a job on `GET /api/jobs/:jobId/progress`
 - **409:** `UPDATE_NOT_AVAILABLE` — no update available; `UPDATE_JOBS_ACTIVE` — other jobs that must finish are running (the update checks, which may be cut, do not count) and `force=1` was not supplied; or `UPDATE_INSTALL_IN_PROGRESS` — an install is already in flight (not bypassed by `force`)
@@ -210,7 +210,7 @@ A [job](API.md#job-routes): downloads + verifies + extracts the new release tarb
 
 ### GET /api/host/hardware · `read`
 
-Static/semi-static hardware details for the Host Overview tab. On Linux: `/proc`, `/sys`, system `pci.ids` (when installed), and optional privileged helpers `wisp-dmidecode` (RAM) and `wisp-smartctl` (disk SMART summary). On macOS (dev): `/usr/sbin/system_profiler -json` (several `SP*` data types) plus `fs.statfsSync` and `os.networkInterfaces`; synthetic PCI addresses for sorting; if profiler fails, OS-only fallback. See [HOST-MONITORING.md](HOST-MONITORING.md).
+Static/semi-static hardware details for the Host Overview tab. What each part holds and leaves out: [HOST-MONITORING.md](HOST-MONITORING.md), Host Hardware Endpoint. On macOS (dev) PCI addresses are synthetic, for sorting.
 
 - **200:**
 
@@ -279,17 +279,15 @@ Static/semi-static hardware details for the Host Overview tab. On Linux: `/proc`
 }
 ```
 
-`memory` is `null`, with `memoryError` holding the reason, when the RAM modules could not be read (the helper missing, refused or failing); `[]` means DMI lists none, and `memoryError` is then `null`. `cpu` is null only when the host reports no logical CPUs (unusual). On macOS Tier A, `cpu.coreTypes`, `mhz`, and `cacheKb` are always `null`. `cpu.coreTypes` is `null` on Linux when hybrid core groups are unavailable; when present, `performance` and `efficiency` list logical CPU IDs from Linux sysfs (`/sys/devices/cpu_core/cpus` and `/sys/devices/cpu_atom/cpus`). `memory` is from dmidecode via `wisp-dmidecode` (installed to `/usr/local/bin` and sudoers by setup, or override `WISP_DMIDECODE_SCRIPT`); empty array if the helper is missing, sudo denies, or DMI has no modules. Each element may include `formFactor`, `manufacturer`, and `voltage` (string, human-readable; `voltage` prefers Configured Voltage, else min–max from SMBIOS); fields are JSON `null` when absent.
+`memory` is `null`, with `memoryError` holding the reason, when the RAM modules could not be read (the helper missing, refused or failing); `[]` means DMI lists none, and `memoryError` is then `null`. `cpu` is null only when the host reports no logical CPUs (unusual). On macOS Tier A, `cpu.coreTypes`, `mhz`, and `cacheKb` are always `null`. `cpu.coreTypes` is `null` on Linux when hybrid core groups are unavailable; when present, `performance` and `efficiency` list logical CPU IDs. Each `memory` element may include `formFactor`, `manufacturer`, and `voltage` (string, human-readable; `voltage` prefers Configured Voltage, else min–max from SMBIOS); fields are JSON `null` when absent.
 
-Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `null` if unknown) from `/sys/block/<name>/queue/rotational`, and `pciAddress` (PCI BDF or `null`) derived from the block device’s sysfs path so the UI can associate drives with PCI controllers. Linux disks also include `smart` summary fields from `wisp-smartctl` (`smartctl --json -a`): `supported`, `overall` (`healthy` / `warning` / `failing` / `unknown`, or `sleeping` — the disk is spun down and was not woken, so every other field is `null` and `error` is `null`), `temperatureC`, `powerOnHours` (cumulative power-on time, not I/O hours), `criticalWarning`, `lastUpdated`, and `error` (non-null when SMART is unavailable or read fails for that disk). When present: NVMe `percentageUsed` (0–255 per NVM Express; may exceed 100), `availableSpare`, `availableSpareThreshold`; ATA `reallocatedSectors`, `pendingSectors`, `offlineUncorrectableSectors` (from SMART attributes 5 / 197 / 198); `ssdLifePercentRemaining` (0–100, vendor-dependent, from attributes 231 / 202 / 233 when the normalized `value` is in range).
+Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `null` if unknown), and `pciAddress` (PCI BDF or `null`) so the UI can associate drives with PCI controllers. Linux disks also include `smart` summary fields: `supported`, `overall` (`healthy` / `warning` / `failing` / `unknown`, or `sleeping` — the disk is spun down and was not woken, so every other field is `null` and `error` is `null`), `temperatureC`, `powerOnHours` (cumulative power-on time, not I/O hours), `criticalWarning`, `lastUpdated`, and `error` (non-null when SMART is unavailable or read fails for that disk). When present: NVMe `percentageUsed` (0–255 per NVM Express; may exceed 100), `availableSpare`, `availableSpareThreshold`; ATA `reallocatedSectors`, `pendingSectors`, `offlineUncorrectableSectors`; `ssdLifePercentRemaining` (0–100, vendor-dependent).
 
-`pciDevices` lists PCI functions from sysfs; names come from the system PCI ID database (`pci.ids`). `classId` is the first four hex digits of `classCode` (24-bit class code). `system` is `null` when `/sys/class/dmi/id` is unavailable (some containers/VMs); otherwise fields are present and may be JSON `null` when not filled by firmware.
-
-**Implementation:** `GET /api/host/hardware` uses a Fastify response schema (`backend/src/routes/host.js`). New fields must be listed in that schema (for example `cpu.coreTypes` or fields in `memory.items.properties`) or response serialization strips them.
+`pciDevices` lists PCI functions; names come from the system PCI ID database (`pci.ids`). `classId` is the first four hex digits of `classCode` (24-bit class code). `system` is `null` when DMI is unavailable (some containers/VMs); otherwise fields are present and may be JSON `null` when not filled by firmware.
 
 ### POST /api/host/power/shutdown · `admin`
 
-Shut down the host. Requires `wisp-power` at `/usr/local/bin` and its sudoers rule, both installed by setup.
+Shut down the host. Requires the `wisp-power` helper.
 
 - **204:** the shutdown was started
 - **503:** `POWER_UNAVAILABLE` — power script not configured or privilege error
@@ -345,7 +343,7 @@ Get application settings.
 }
 ```
 
-The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are never returned — each SMB mount carries `hasPassword` (boolean) instead, same as `GET /api/host/mounts`. The **OIDC client secret is never returned** — GET exposes `oidc.hasClientSecret` (boolean) only.
+Mounts are written through the row-scoped `/api/host/mounts` routes below. SMB passwords are never returned — each SMB mount carries `hasPassword` (boolean) instead, same as `GET /api/host/mounts`. The **OIDC client secret is never returned** — GET exposes `oidc.hasClientSecret` (boolean) only.
 
 ### PATCH /api/settings · `admin`
 
@@ -358,7 +356,7 @@ Update settings. Partial update — only include fields to change.
 - **`oidc`:** Refused for every caller with **403** `OIDC_SESSION_ONLY` — use `PATCH /api/settings/oidc`, which API tokens cannot reach.
 - **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
 - **`updateChannel`:** `"stable"` | `"beta"` — which releases self-update offers this host. No side effect: the next update check (hourly, or `POST /api/updates/check`) reads it. See [UPDATES.md → Update channels](UPDATES.md#update-channels).
-- **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
+- **`containersPath`:** Optional; container storage root (exposed for scripts — the App Config UI does not edit it).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
 - **SSH keys:** Not available via PATCH /api/settings. Use the `/api/settings/ssh-keys` routes below.
 
@@ -393,7 +391,7 @@ Update the OIDC / SSO configuration. Session-only: an API token of either scope 
 
 List configured mounts (SMB + disk). SMB passwords are never returned; SMB entries carry `hasPassword` (boolean).
 
-- **200:** Array of mount objects — see [CONFIGURATION.md](CONFIGURATION.md) for field shape.
+- **200:** Array of mount objects — see [STORAGE.md](STORAGE.md), Data model, for the field shape.
 
 ### POST /api/host/mounts · `admin`
 
