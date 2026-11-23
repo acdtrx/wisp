@@ -22,7 +22,7 @@ Cloud-init provides automated VM provisioning: setting hostname, creating users,
 
 The seed ISO contains two files:
 - **user-data** — YAML cloud-init configuration (users, SSH keys, packages, etc.). When `installQemuGuestAgent` or `installAvahiDaemon` is enabled, cloud-init installs that package on first boot. For the guest agent it also enables and starts the unit after the install, because the package's own install leaves it stopped.
-- **meta-data** — YAML with instance ID and hostname. The instance ID is **`<vmName>-<sha256(user-data) prefix 12 chars>`**, not just `<vmName>`: cloud-init runs nearly every module once per instance ID, so an unchanged config keeps the ID (no surprise re-runs), while any edit (password, SSH key, packages, hostname) produces a fresh ID and cloud-init re-applies on the next boot.
+- **meta-data** — YAML with instance ID and hostname. The instance ID is **`<vmName>-<sha256(user-data) prefix 12 chars>`**, not just `<vmName>`: cloud-init runs nearly every module once per instance ID, so an unchanged config keeps the ID (no surprise re-runs), while any edit (password, SSH key, packages, hostname) produces a fresh ID and cloud-init re-applies on the next boot. The generated user-data must stay safe to run again, since every edit runs it again.
 
 ### Password hashing
 
@@ -75,7 +75,7 @@ When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `
 1. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling) — except `password`: a disabled config takes no new password, and the stored hash stays as it was (settled 2026-11-12)
 2. Detach/eject `sde` and delete `cloud-init.iso`
 
-An edit takes effect on the guest's next boot.
+An edit takes effect on the guest's next boot, and the form says so: "A guest that has booted already applies a changed setup at its next boot."
 
 ### Disable (full removal)
 

@@ -126,7 +126,7 @@ Runs once at backend start and is awaited before the HTTP server listens, so the
 
 ## API and error codes
 
-Routes: [API-HOST.md](API-HOST.md), Storage / Mounts. Codes: [ERROR-HANDLING.md](ERROR-HANDLING.md).
+Routes: the `/api/host/mounts` routes in [API-HOST.md](API-HOST.md) (under Settings). Codes: [ERROR-HANDLING.md](ERROR-HANDLING.md).
 
 ## Timeouts
 

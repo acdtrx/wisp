@@ -231,7 +231,7 @@ A failing migration ends the new backend's start, so under the updater the insta
 The migrations are the files in `backend/migrations/`; each names what it brings up to date in its `description`. What a reader of the other specs needs to know of them:
 
 - `0007-repair-config-and-records` repairs what older releases wrote, so the strict readers accept it: retired keys in `runtime.env` and `wisp-config.json`, mounts outside `/mnt/wisp/`, old `container.json` shapes, backup manifests without an `origin` ([CONFIGURATION.md → Strict reading](CONFIGURATION.md#strict-reading)).
-- The migrations over backups (`0005`, `0006`, `0007`) cover the backup roots the backend lists when they run: an unmounted backup mount is skipped with a warning.
+- The migrations over backups (`0005`, `0006`, `0007`) cover the backup roots the backend lists when they run: an unmounted backup mount is skipped with a warning. Backups on a mount that was skipped by `0005` and `0006` keep their modes until `chmod -R go-rwx <root>/containers <root>/vms` is run by hand.
 - `0009-backup-status-error-code`: in a failed backup attempt record the key `error` always holds a code ([BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)). The file and the ledger are in the rollback's snapshot (`config/`), so a rollback reverts both.
 - The ids skip `0010`, which an unreleased migration used and dev hosts' ledgers still record.
 - `0012-vm-profile` (settled 2026-11-21): every VM without a profile gets one, from what its saved definition holds: `windows-11` with Hyper-V features, else `linux`. A domain that is not persistent is left without one.

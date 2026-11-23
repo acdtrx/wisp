@@ -127,7 +127,7 @@ Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.)
 
 ## Deletion
 
-1. Force-stop the VM if it is running. A VM that cannot be stopped is not deleted (500 `LIBVIRT_ERROR`): undefining it would leave it running with its disks removed under it. A force stop that fails because the guest finished shutting down meanwhile is a stopped VM, and the delete goes on. A definition that cannot be read fails the delete too (settled 2026-11-22).
+1. Force-stop the VM if it is running. A VM that cannot be stopped is not deleted (500 `LIBVIRT_ERROR`): undefining it would leave it running with its disks removed under it. A force stop that fails because the guest finished shutting down meanwhile is a stopped VM, and the delete goes on. A definition that cannot be read fails the delete too (settled 2026-11-22): the choice to keep or remove its NVRAM would be a guess.
 2. Undefine the domain. Libvirt snapshot metadata made outside Wisp (`virsh snapshot-create…`) goes with it; snapshot data inside the disk images or in overlay files goes or stays with the disks per step 3. A UEFI VM's NVRAM file is removed by libvirt only with `deleteDisks=true` and the file inside this VM's own directory; in every other case it is kept: libvirt never deletes a file that may belong to another VM.
 3. **`deleteDisks=true`** only: `<vmsPath>/<name>/` is removed with everything in it (disks, NVRAM, cloud-init artifacts). A folder that cannot be removed ends the delete as failed with `VM_DELETE_INCOMPLETE`, naming the folder: the VM is gone, and the job says what it left.
    **`deleteDisks=false`**: the per-VM directory is left **completely untouched**. The kept directory **blocks the name**: create and restore-as-new under that name are refused with 409 `VM_DIR_EXISTS` rather than writing into it. To reuse a kept disk, move it into the image library and pick it with the **existing disk** option at create (it is copied into the new VM's directory); to reuse the name, remove `<vmsPath>/<name>/` first.
@@ -231,7 +231,7 @@ VM NIC VLAN tagging via `<vlan>` is not used; use a VLAN-specific bridge (for ex
 ### Additional devices
 
 - **USB tablet input:** included by default, for pointer tracking in the console.
-- **Graphics:** one `<graphics type='vnc|spice' port='-1' autoport='yes' listen='127.0.0.1'/>`, written by create and by a Graphics edit (which replaces the element). Localhost only *(settled 2026-10-16)*: QEMU's VNC has no password, so the only way in is Wisp's authenticated console proxy, which connects to `127.0.0.1` ([CONSOLE.md](CONSOLE.md)). A restore copies the backup's `<graphics>` as it is.
+- **Graphics:** one `<graphics type='vnc|spice' port='-1' autoport='yes' listen='127.0.0.1'/>`, written by create and by a Graphics edit (which replaces the element). Localhost only *(settled 2026-10-16)*: QEMU's VNC has no password, so the only way in is Wisp's authenticated console proxy, which connects to `127.0.0.1` ([CONSOLE.md](CONSOLE.md)). A restore copies the backup's `<graphics>` as it is (rewriting `listen` would override a deliberate `virsh edit`).
 
 ### Exact values
 
@@ -256,7 +256,7 @@ Each writer sets or removes only its own children of the existing `wisp:prefs` e
 
 ### Guest agent state
 
-A VM's stats carry `guestAgent.connected`: whether the guest agent answered. The flag is `undefined` when the VM has no guest agent channel, and the UI then hides the pill.
+A VM's stats carry `guestAgent.connected`: whether the guest agent answered. The flag is `undefined` when the VM has no guest agent channel, and the UI then hides the pill. The agent's answer (the flag, the guest's address and host name) is refreshed at most every 30 s, and at once when the agent connects or disconnects or the VM stops running.
 
 ## Connection and the VM list
 
