@@ -5,6 +5,7 @@
  * is an error: every effect states its dependencies honestly, and one that cannot is
  * rewritten (the form hook owns what the sections' effects used to keep by hand).
  *
+ * A raw `<button>` outside the button primitives is refused (RAW_BUTTON below).
  * `wisp/catch-says-why` (scripts/eslint-rules/) refuses a catch that drops its error
  * without a comment that says why.
  *
@@ -77,6 +78,21 @@ const WIRE_NAME_SELECTORS = [
   ].map((selector) => ({ selector, message: 'A topic or change kind is written once: use TOPIC or CHANGE_KIND (shared/wireNames.js).' }))),
 ];
 
+/**
+ * A button is one of the primitives (docs/FRONTEND-RULES.md, Design): no raw `<button>`
+ * in the frontend outside the files that implement them, listed below. A link that
+ * only navigates is a `<Link>` (Tab, ButtonLink, IconLink).
+ */
+const RAW_BUTTON = {
+  selector: 'JSXOpeningElement[name.name="button"]',
+  message: 'A button is a primitive: use Button, IconButton, MenuItem, Tab or RadioPills (components/shared/).',
+};
+const BUTTON_PRIMITIVES = [
+  'frontend/src/components/shared/Button.jsx',
+  'frontend/src/components/shared/IconButton.jsx',
+  'frontend/src/components/shared/MenuItem.jsx',
+];
+
 const correctness = {
   'no-undef': 'error',
   'no-unused-vars': ['error', { ignoreRestSiblings: true }],
@@ -133,10 +149,16 @@ export default [
      * reads the row's value where the hook's was meant. */
     rules: {
       ...correctness,
+      'no-restricted-syntax': ['error', ...WIRE_NAME_SELECTORS, RAW_BUTTON],
       'no-shadow': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
     },
+  },
+  {
+    // The button primitives are the one place a raw <button> is written.
+    files: BUTTON_PRIMITIVES,
+    rules: { 'no-restricted-syntax': ['error', ...WIRE_NAME_SELECTORS] },
   },
   {
     // The unit tests and their browser stand-ins run under Node.
