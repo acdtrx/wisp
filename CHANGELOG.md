@@ -11,7 +11,7 @@
 
 ### Bug Fixes
 - **A failure Wisp used to drop silently is logged** — a cleanup that left a folder behind, an unreadable backup folder, a rollback step that failed, a config the mDNS publisher could not read; the journal now says so.
-- **A host mount on a path another mount already has is refused** (409 `MOUNT_DUPLICATE`), when it is added and when an edit moves it there.
+- **One path holds one host mount** — adding a mount, or moving one, onto another mount's path is refused (409 `MOUNT_DUPLICATE`), and a settings file that holds two mounts on one path stops Wisp's start, naming both.
 - **The password, a backup's manifest and a container run's record are written atomically** — a crash mid-write no longer leaves a truncated file.
 
 ## 2026-11-22
