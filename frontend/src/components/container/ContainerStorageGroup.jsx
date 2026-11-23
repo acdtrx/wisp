@@ -6,7 +6,7 @@ import {
 import { removeContainerMount, uploadMountFile, uploadMountZip } from '../../api/containers.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
-import { formatBytes } from '../../utils/formatters.js';
+import { formatBytes, formatMemory } from '../../utils/formatters.js';
 import ContainerMountEditorModal from './ContainerMountEditorModal.jsx';
 import MountFileEditorModal from './MountFileEditorModal.jsx';
 import SecretMountContentModal from './SecretMountContentModal.jsx';
@@ -45,7 +45,7 @@ export default function ContainerStorageGroup({ config, busy, act }) {
   const mountedById = useMemo(() => new Map((status.data ?? []).map((s) => [s.id, !!s.mounted])), [status.data]);
 
   const sizeOf = (m) => {
-    if (m.type === 'tmpfs') return `${m.sizeMiB ?? 64} MiB`;
+    if (m.type === 'tmpfs') return formatMemory(m.sizeMiB ?? 64);
     if (m.secret) return m.sizeBytes != null ? formatBytes(m.sizeBytes) : null;
     if (usage.data == null) return usage.status === 'loading' ? '…' : null;
     const u = usageByName.get(m.name);

@@ -46,7 +46,7 @@ export function limitsProblems(form) {
   const problems = {};
   if (!blank(form.cpuLimit) && !isPositive(form.cpuLimit)) problems.cpuLimit = 'A CPU limit is a number of cores above 0.';
   if (!blank(form.memoryLimitMiB) && !isWholePositive(form.memoryLimitMiB)) {
-    problems.memoryLimitMiB = 'A memory limit is a whole number of MiB above 0.';
+    problems.memoryLimitMiB = 'A memory limit is a whole number of MB above 0.';
   }
   return problems;
 }

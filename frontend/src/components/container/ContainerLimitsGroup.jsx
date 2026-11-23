@@ -10,6 +10,7 @@ import GroupAction from '../shared/GroupAction.jsx';
 import Card from '../shared/Card.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
+import { formatMemory } from '../../utils/formatters.js';
 import { RESTART_POLICIES, limitsForm, limitsProblems, limitsSent, restartPolicyText } from './containerForms.js';
 
 const cores = (n) => `${n} ${Number(n) === 1 ? 'core' : 'cores'}`;
@@ -25,7 +26,7 @@ export default function ContainerLimitsGroup({ config, busy, update }) {
       <ValueRows
         rows={[
           { label: 'CPU limit', value: config.cpuLimit == null ? 'None' : cores(config.cpuLimit) },
-          { label: 'Memory limit', value: config.memoryLimitMiB == null ? 'None' : `${config.memoryLimitMiB} MiB` },
+          { label: 'Memory limit', value: config.memoryLimitMiB == null ? 'None' : formatMemory(config.memoryLimitMiB) },
           { label: 'Restart', value: restartPolicyText(config.restartPolicy) },
         ]}
       />
@@ -61,7 +62,7 @@ function LimitsEditor({ config, update, onClose }) {
             className="input-field"
           />
         </FormField>
-        <FormField label="Memory limit (MiB)" htmlFor="container-memory" hint={problems.memoryLimitMiB ?? 'Empty: no limit.'}>
+        <FormField label="Memory limit (MB)" htmlFor="container-memory" hint={problems.memoryLimitMiB ?? 'Empty: no limit.'}>
           <input
             id="container-memory"
             type="text"

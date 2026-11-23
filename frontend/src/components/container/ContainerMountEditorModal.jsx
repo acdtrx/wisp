@@ -164,7 +164,7 @@ function mountProblems(form, others) {
   else if (!containerPath.startsWith('/')) problems.containerPath = 'Container path must be absolute (start with /).';
   else if (others.some((m) => m.containerPath === containerPath)) problems.containerPath = `Duplicate container path: ${containerPath}`;
   if (isTmpfs && !isValidTmpfsSize(form.sizeMiB)) {
-    problems.sizeMiB = `Tmpfs size must be a whole number between 1 and ${TMPFS_MAX_SIZE_MIB} MiB.`;
+    problems.sizeMiB = `Tmpfs size must be a whole number between 1 and ${TMPFS_MAX_SIZE_MIB} MB.`;
   }
   if (!isTmpfs && form.sourceId && !isValidSubPath(form.subPath)) {
     problems.subPath = 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
@@ -279,7 +279,7 @@ function ContainerMountEditor({
         <FormField
           label="Size"
           htmlFor="mount-editor-size"
-          hint={sizeError || `In-memory cap in MiB (1–${TMPFS_MAX_SIZE_MIB}).`}
+          hint={sizeError || `In-memory cap in MB (1–${TMPFS_MAX_SIZE_MIB}).`}
         >
           <div className="flex items-center gap-2">
             <input
@@ -291,9 +291,9 @@ function ContainerMountEditor({
               value={form.sizeMiB}
               onChange={(e) => setDigits('sizeMiB', e.target.value, 4)}
               className="input-field w-24 text-right font-mono"
-              aria-label="Tmpfs size in MiB"
+              aria-label="Tmpfs size in MB"
             />
-            <span className="text-xs text-text-muted">MiB</span>
+            <span className="text-xs text-text-muted">MB</span>
           </div>
         </FormField>
       )}
