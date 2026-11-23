@@ -10,6 +10,9 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
+import {
+  DataTable, DataTableScroll, DataTableTd, DataTableTh, dataTableBodyRowClass, dataTableHeadRowClass,
+} from '../shared/DataTableChrome.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
 
@@ -211,24 +214,26 @@ function PackagesDialog({ onClose, onRefresh, refresh }) {
         {(found) => (found.packages.length === 0 ? (
           <p className="text-xs text-text-muted">No upgradable packages.</p>
         ) : (
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-surface-card text-left text-text-muted">
-              <tr>
-                <th className="py-1.5 pr-3 font-medium">Package</th>
-                <th className="py-1.5 pr-3 font-medium">From</th>
-                <th className="py-1.5 font-medium">To</th>
-              </tr>
-            </thead>
-            <tbody className="text-text-secondary">
-              {found.packages.map((p) => (
-                <tr key={p.name} className="border-t border-surface-border">
-                  <td className="py-1 pr-3 font-mono text-text-primary">{p.name}</td>
-                  <td className="py-1 pr-3 font-mono text-text-muted">{p.from || '—'}</td>
-                  <td className="py-1 font-mono">{p.to}</td>
+          <DataTableScroll>
+            <DataTable>
+              <thead className="sticky top-0 bg-surface-card">
+                <tr className={dataTableHeadRowClass}>
+                  <DataTableTh dense>Package</DataTableTh>
+                  <DataTableTh dense>From</DataTableTh>
+                  <DataTableTh dense>To</DataTableTh>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {found.packages.map((p) => (
+                  <tr key={p.name} className={dataTableBodyRowClass}>
+                    <DataTableTd dense className="font-mono text-xs text-text-primary">{p.name}</DataTableTd>
+                    <DataTableTd dense className="font-mono text-xs text-text-muted">{p.from || '—'}</DataTableTd>
+                    <DataTableTd dense className="font-mono text-xs">{p.to}</DataTableTd>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          </DataTableScroll>
         ))}
       </RecordGate>
     </UpdateDetailsModal>

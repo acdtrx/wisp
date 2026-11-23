@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Server,
   HardDrive,
+  HardDriveDownload,
 } from 'lucide-react';
 
 import Card from '../shared/Card.jsx';
@@ -24,6 +25,7 @@ import {
   DataTableTd,
   dataTableEmptyCellClass,
   rowActionIconBtn,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
@@ -559,16 +561,17 @@ function RemovableDrivesSection({
                           type="button"
                           onClick={() => openAdopt(d)}
                           disabled={!supported || mountedElsewhere}
-                          className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none ${supported && !mountedElsewhere ? 'bg-accent text-white hover:bg-accent-hover' : 'border border-surface-border bg-surface text-text-muted'}`}
+                          className={rowActionIconBtnPrimary}
                           title={
                             !supported
                               ? `Filesystem ${d.fsType || 'unknown'} not supported`
                               : mountedElsewhere
                                 ? `Already mounted at ${d.mountedAt}`
-                                : 'Adopt drive — configure mount settings'
+                                : 'Adopt drive'
                           }
+                          aria-label="Adopt drive"
                         >
-                          Adopt
+                          <HardDriveDownload size={14} aria-hidden />
                         </button>
                       </DataTableTd>
                     </tr>

@@ -68,7 +68,7 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
                     type="button"
                     onClick={() => pick(group.id)}
                     disabled={busy || isCurrent}
-                    className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-100 ${
+                    className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 ${
                       isCurrent ? 'text-text-muted' : 'text-text-primary hover:bg-surface'
                     }`}
                   >
@@ -83,7 +83,7 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
                 type="button"
                 onClick={pickNew}
                 disabled={busy}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors duration-100 hover:bg-surface hover:text-accent-text disabled:opacity-40"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors duration-150 hover:bg-surface hover:text-accent-text disabled:opacity-40"
               >
                 <FolderPlus size={12} className="shrink-0" aria-hidden />
                 <span>New group…</span>

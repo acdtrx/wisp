@@ -81,7 +81,7 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
                         onClick={() => { onSelect(icon.id); onClose(); }}
                         className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 transition-colors duration-150 ${
                           isSelected
-                            ? 'bg-accent/10 border border-accent/30 text-accent'
+                            ? 'bg-accent-soft border border-accent/30 text-accent'
                             : 'border border-transparent hover:bg-surface text-text-secondary hover:text-text-primary'
                         }`}
                       >

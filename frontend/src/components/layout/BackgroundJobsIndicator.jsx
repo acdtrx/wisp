@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ListTodo } from 'lucide-react';
+import { ListTodo, X } from 'lucide-react';
 import { runningJobs, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
@@ -29,7 +29,7 @@ function JobProgressBar({ percent, status }) {
 
   return (
     <div
-      className="mt-2 overflow-hidden rounded-full bg-surface-border/90 p-[2px] shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)]"
+      className="mt-2 overflow-hidden rounded-full bg-surface-border/90 p-[2px] inset-shadow-xs"
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
@@ -40,7 +40,7 @@ function JobProgressBar({ percent, status }) {
           className={`h-full rounded-full transition-[width] duration-500 ease-out ${
             isDone
               ? 'bg-status-running shadow-xs'
-              : 'bg-linear-to-r from-accent to-[#3ec3d5] shadow-[0_1px_2px_rgba(15,163,150,0.35)]'
+              : 'bg-linear-to-r from-accent to-accent-bright shadow-xs shadow-accent/35'
           }`}
           style={{ width: `${p}%` }}
         />
@@ -141,9 +141,11 @@ export default function BackgroundJobsIndicator() {
                     <button
                       type="button"
                       onClick={() => dismissJob(row.jobId)}
-                      className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface hover:text-text-secondary"
+                      className="shrink-0 rounded-sm p-1 text-text-muted hover:bg-surface hover:text-text-secondary transition-colors duration-150"
+                      title="Dismiss"
+                      aria-label="Dismiss"
                     >
-                      Dismiss
+                      <X size={13} aria-hidden />
                     </button>
                   )}
                 </div>

@@ -29,6 +29,9 @@
      surface including accent-soft. Icons and filled buttons keep the brand
      accent (graphics need only 3:1). */
   --color-accent-text: #0a7568;
+  /* The bright end of the brand gradient (the Wisp glyph, the job progress bar):
+     a graphic, never text, the same in both themes. */
+  --color-accent-bright: #3ec3d5;
 
   /* Text-input well. White in light (identical to a card), a well *below* the
      card in dark — the light theme's `bg-white` inputs cannot flip on their own. */
@@ -134,6 +137,7 @@
   --color-accent-hover: #14b5a7;
   --color-accent-soft: #0f342f;
   --color-accent-text: #4fd1c0;
+  --color-accent-bright: #3ec3d5;
 
   --color-status-running: #45c97a;
   --color-status-warning: #e0a63a;

@@ -223,7 +223,7 @@ function SectionBlock({ section, items, organizeMode, onDropWorkload, autoEdit, 
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`transition-colors duration-100 ${dragOver ? 'bg-accent/5' : ''}`}
+      className={`transition-colors duration-150 ${dragOver ? 'bg-accent-soft' : ''}`}
     >
       <SectionHeader
         section={section}
@@ -288,9 +288,9 @@ function CreateSectionGhost({ onCreateAndAssign }) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`mx-3 my-2 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed py-4 text-[11px] transition-colors duration-100 ${
+      className={`mx-3 my-2 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed py-4 text-[11px] transition-colors duration-150 ${
         dragOver
-          ? 'border-accent bg-accent/5 text-accent-text'
+          ? 'border-accent bg-accent-soft text-accent-text'
           : 'border-surface-border text-text-muted'
       }`}
     >

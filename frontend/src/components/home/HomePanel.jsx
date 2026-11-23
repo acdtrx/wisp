@@ -116,15 +116,13 @@ export default function HomePanel() {
           <div className="flex items-center gap-2">
             {editing && (
               <>
-                <button type="button" onClick={() => setAddLinkOpen(true)} className={headerBtn}>
+                <button type="button" onClick={() => setAddLinkOpen(true)} className={headerBtn} title="Add link" aria-label="Add link">
                   <Plus size={13} aria-hidden />
                   <LinkIcon size={13} aria-hidden />
-                  <span>Add link</span>
                 </button>
-                <button type="button" onClick={handleAddGroup} disabled={groupsBusy} className={headerBtn}>
+                <button type="button" onClick={handleAddGroup} disabled={groupsBusy} className={headerBtn} title="Add group" aria-label="Add group">
                   <Plus size={13} aria-hidden />
                   <FolderPlus size={13} aria-hidden />
-                  <span>Add group</span>
                 </button>
               </>
             )}

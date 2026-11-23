@@ -287,7 +287,7 @@ export default function ContainerLogsPanel({ containerName }) {
             if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
           }}
           className={`rounded-md p-2 lg:p-1.5 transition-colors duration-150 ${
-            autoScroll ? 'text-accent bg-accent/10' : 'text-text-muted hover:text-text-secondary'
+            autoScroll ? 'text-accent bg-accent-soft' : 'text-text-muted hover:text-text-secondary'
           }`}
           title="Auto-scroll"
           aria-label="Auto-scroll"
