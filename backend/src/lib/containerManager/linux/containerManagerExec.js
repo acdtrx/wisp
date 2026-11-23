@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto';
 
 import {
   containerError,
+  containerState,
   getClient,
   callUnary,
   packAny,
@@ -296,7 +297,11 @@ export async function execCommandInContainer(name, args, opts = {}) {
     }
     try { await callUnary(getClient('tasks'), 'deleteProcess', { containerId: name, execId }); } catch { /* may already be deleted, or never started */ }
     for (const reader of readers) reader.destroy();
-    try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch (err) {
+      containerState.logger?.warn?.({ err, dir: tmpDir }, 'Could not remove an exec session folder');
+    }
   };
 
   try {

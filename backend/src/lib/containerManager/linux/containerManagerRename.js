@@ -11,7 +11,7 @@
  */
 import { rename, access } from 'node:fs/promises';
 
-import { containerError, getClient, callUnary } from './containerManagerConnection.js';
+import { containerError, containerState, getClient, callUnary } from './containerManagerConnection.js';
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { getTaskState, cleanupTask } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartState.js';
@@ -170,7 +170,11 @@ export async function renameContainer(oldName, newName) {
     await rename(getContainerDir(oldName), getContainerDir(newNameTrim));
   } catch (err) {
     /* Roll back the containerd state: drop the new container, recreate old. */
-    try { await callUnary(getClient('containers'), 'delete', { id: newNameTrim }); } catch { /* best effort */ }
+    try {
+      await callUnary(getClient('containers'), 'delete', { id: newNameTrim });
+    } catch (rollbackErr) {
+      containerState.logger?.warn?.({ err: rollbackErr, container: newNameTrim }, 'Rename rollback: could not delete the new containerd record');
+    }
     try {
       await callUnary(getClient('containers'), 'create', {
         container: {
@@ -183,7 +187,9 @@ export async function renameContainer(oldName, newName) {
           labels: oldRecord.labels || { 'wisp.managed': 'true' },
         },
       });
-    } catch { /* best effort */ }
+    } catch (rollbackErr) {
+      containerState.logger?.warn?.({ err: rollbackErr, container: oldName }, 'Rename rollback: could not recreate the old containerd record');
+    }
     throw containerError(
       'CONTAINERD_ERROR',
       `Failed to move container directory for "${oldName}" → "${newNameTrim}"`,
@@ -201,7 +207,11 @@ export async function renameContainer(oldName, newName) {
    * SRV/TXT services are managed by containerManager — clean them defensively
    * in case a previous stop crashed mid-flight. The A record under oldName is
    * Wisp glue's to withdraw, after this returns. */
-  try { await deregisterServicesForContainer(oldName); } catch { /* best effort */ }
+  try {
+    await deregisterServicesForContainer(oldName);
+  } catch (err) {
+    containerState.logger?.warn?.({ err, container: oldName }, 'Rename: could not withdraw the services announced under the old name');
+  }
   await bestEffortTeardownOldNetwork(oldName, config.network);
 
   return { name: newNameTrim };

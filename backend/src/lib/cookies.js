@@ -24,7 +24,7 @@ export function parseCookieHeader(header) {
     try {
       out[name] = decodeURIComponent(value);
     } catch {
-      out[name] = value;
+      out[name] = value; // a malformed escape is kept as sent: the cookie's reader refuses what it cannot use
     }
   }
   return out;

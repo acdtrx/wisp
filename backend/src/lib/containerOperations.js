@@ -469,7 +469,9 @@ export function startContainerZipExtractJob({ name, mountName, stage, log }) {
         await extractMountZip(plan);
         return { name, mount: mountName };
       } finally {
-        await unlink(stagingPath).catch(() => { /* already gone */ });
+        await unlink(stagingPath).catch((err) => {
+          if (err.code !== 'ENOENT') log.warn({ err, file: stagingPath }, 'Could not remove a zip upload\'s staging file');
+        });
       }
     },
   });

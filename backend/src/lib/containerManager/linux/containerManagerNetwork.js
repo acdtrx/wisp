@@ -285,7 +285,7 @@ export async function resolveContainerResolvConf(bridgeInterface = null) {
     await access(upstream);
     return upstream;
   } catch {
-    return '/etc/resolv.conf';
+    return '/etc/resolv.conf'; // no systemd-resolved upstream file: the host's own resolv.conf is the one
   }
 }
 

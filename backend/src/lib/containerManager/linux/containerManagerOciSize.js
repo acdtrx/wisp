@@ -70,6 +70,6 @@ export async function compressedBlobSizeForImageName(imageName) {
     if (!Number.isFinite(total) || total <= 0) return null;
     return total;
   } catch {
-    return null;
+    return null; // the size is shown only: unknown (null) when the content store cannot tell it
   }
 }

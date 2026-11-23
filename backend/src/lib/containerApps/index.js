@@ -25,6 +25,7 @@ import {
   execCommandInContainer,
 } from '../containerManager/index.js';
 import { createAppError } from '../appErrors.js';
+import { log } from '../log.js';
 
 import {
   APP_REGISTRY,
@@ -285,7 +286,11 @@ export async function createAppContainer(spec, onStep) {
       }
     } catch (err) {
       // Roll back partially-configured container so the user can retry cleanly.
-      try { await deleteContainer(spec.name); } catch { /* best-effort rollback */ }
+      try {
+        await deleteContainer(spec.name);
+      } catch (rollbackErr) {
+        log().warn({ err: rollbackErr, container: spec.name }, 'Could not remove a half-made app container after its setup failed');
+      }
       throw err;
     }
   }

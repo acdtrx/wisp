@@ -26,7 +26,7 @@ function takeSessionNotice() {
     sessionStorage.removeItem(LOGIN_NOTICE_KEY);
     return notice;
   } catch {
-    return null;
+    return null; // a browser that refuses storage has no notice to show
   }
 }
 

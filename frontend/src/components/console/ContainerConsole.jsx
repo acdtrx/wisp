@@ -92,18 +92,14 @@ export default function ContainerConsole({
   const teardownWs = useCallback(() => {
     const ws = wsRef.current;
     wsRef.current = null;
-    if (ws) {
-      try {
-        ws.close();
-      } catch { /* already closing */ }
-    }
+    if (ws) ws.close();
   }, []);
 
   const disposeTerminal = useCallback(() => {
     if (!termRef.current) return false;
     try {
       termRef.current.dispose();
-    } catch { /* already disposed */ }
+    } catch { /* xterm refuses a second dispose: the terminal is gone either way */ }
     termRef.current = null;
     fitAddonRef.current = null;
     return true;
@@ -219,7 +215,7 @@ export default function ContainerConsole({
           if (t && wsRef.current?.readyState === WebSocket.OPEN) {
             sendResize(wsRef.current, t.cols, t.rows);
           }
-        } catch { /* ignore */ }
+        } catch { /* fit throws while the terminal has no size (a hidden tab); the next resize fits it */ }
         onConnectRef.current?.();
       });
 
@@ -241,9 +237,7 @@ export default function ContainerConsole({
       });
 
       ws.addEventListener('close', (e) => {
-        try {
-          resizeObserver.disconnect();
-        } catch { /* ignore */ }
+        resizeObserver.disconnect();
         if (session !== sessionRef.current) return;
         wsRef.current = null;
         connectedRef.current = false;

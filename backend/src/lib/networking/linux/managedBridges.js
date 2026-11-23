@@ -62,7 +62,7 @@ async function interfaceExists(iface) {
     await access(`/sys/class/net/${iface}`);
     return true;
   } catch {
-    return false;
+    return false; // no sysfs entry is no such interface
   }
 }
 
@@ -71,7 +71,7 @@ async function bridgeExists(iface) {
     await access(`/sys/class/net/${iface}/bridge`);
     return true;
   } catch {
-    return false;
+    return false; // no bridge folder in sysfs is no bridge
   }
 }
 
@@ -81,7 +81,7 @@ async function isVlanInterface(iface) {
     const lines = content.split('\n');
     return lines.some((line) => line.startsWith(`${iface} |`));
   } catch {
-    return false;
+    return false; // no VLAN table (the 8021q module not loaded) is no VLAN interface
   }
 }
 
@@ -96,7 +96,7 @@ async function bridgeHasNonVlanMember(bridgeName) {
     }
     return false;
   } catch {
-    return false;
+    return false; // a bridge whose members cannot be read is not counted as having one
   }
 }
 
@@ -129,7 +129,7 @@ async function listManagedBridgeMeta() {
   try {
     entries = await readdir(NETPLAN_DIR);
   } catch {
-    return [];
+    return []; // no netplan folder holds no bridge Wisp made
   }
   const out = [];
   for (const file of entries) {

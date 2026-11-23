@@ -27,6 +27,13 @@ import { log } from '../log.js';
  *  replay: a cue to list the library again. */
 const libraryChange = createEmitter('library: change', log);
 
+/** A failed upload's partial file is removed; one that stays is said in the journal. */
+async function removePartialUpload(path) {
+  await unlink(path).catch((err) => {
+    if (err.code !== 'ENOENT') log().warn({ err, file: path }, 'Could not remove a failed upload\'s partial file');
+  });
+}
+
 export const subscribeLibraryChange = libraryChange.subscribe;
 
 function announceLibraryChange() {
@@ -145,7 +152,7 @@ export async function saveLibraryUpload(uploadName, file) {
     try {
       await pipeline(file, handle.createWriteStream());
     } catch (err) {
-      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      await removePartialUpload(destPath);
       // The multipart file limit ends the stream with its own error.
       if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
         throw createAppError('UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
@@ -154,7 +161,7 @@ export async function saveLibraryUpload(uploadName, file) {
       throw wrapAppError('LIBRARY_IO_FAILED', `Failed to save the upload "${filename}"`, err);
     }
     if (file.truncated) {
-      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      await removePartialUpload(destPath);
       throw createAppError('UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
     }
   } finally {

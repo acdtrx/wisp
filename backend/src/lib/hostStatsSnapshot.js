@@ -22,7 +22,7 @@ async function fromList(read) {
   try {
     return await read();
   } catch {
-    return null;
+    return null; // the list's own topic carries its error (above)
   }
 }
 

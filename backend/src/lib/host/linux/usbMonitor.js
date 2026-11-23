@@ -197,7 +197,7 @@ function closeAllWatchers() {
     try {
       w.close();
     } catch {
-      /* already closed */
+      /* a watcher that already closed refuses a second close: closed either way */
     }
   }
   watchers.length = 0;

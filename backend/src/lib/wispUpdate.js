@@ -212,7 +212,7 @@ async function fetchGithubJson(url, signal) {
   }
   if (res.status === 404) return null;
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
+    const body = await res.text().catch(() => '' /* the status is the error; the body only adds detail */);
     throw checkFailure(`GitHub API ${res.status}`, `GitHub API returned ${res.status}`, body.slice(0, 200));
   }
   let data;

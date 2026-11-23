@@ -14,7 +14,7 @@
  */
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { writeFile, readFile, unlink, mkdir, mkdtemp, rmdir, access, chmod, constants } from 'node:fs/promises';
+import { writeFile, readFile, unlink, mkdir, mkdtemp, rm, access, chmod, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -224,15 +224,9 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
 
     return { isoPath, passwordHash: resolvedPasswordHash };
   } finally {
-    // Clean up temp dir; ignore errors if already removed
-    await unlink(join(tmpDir, 'meta-data')).catch(() => {
-      /* temp cleanup */
-    });
-    await unlink(join(tmpDir, 'user-data')).catch(() => {
-      /* temp cleanup */
-    });
-    await rmdir(tmpDir).catch(() => {
-      /* temp cleanup */
+    // The staging folder holds user-data (the password hash): a leftover is logged.
+    await rm(tmpDir, { recursive: true, force: true }).catch((err) => {
+      log().warn({ err, dir: tmpDir }, 'Could not remove the cloud-init staging folder');
     });
   }
 }

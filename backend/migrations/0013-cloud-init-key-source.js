@@ -44,8 +44,8 @@ export async function run(ctx) {
     let config;
     try {
       config = JSON.parse(raw);
-    } catch {
-      ctx.log.warn({ file }, '0013: cloud-init.json is not JSON; left alone');
+    } catch (err) {
+      ctx.log.warn({ file, err: err.message }, '0013: cloud-init.json is not JSON; left alone');
       continue;
     }
     if (!config || typeof config !== 'object' || Array.isArray(config) || !('sshKeySource' in config)) continue;

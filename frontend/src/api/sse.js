@@ -66,7 +66,7 @@ function isWispErrorBody(body) {
  * @returns {Promise<{ err: import('./errors.js').ApiError, end: 'session' | 'refused' | 'retry' }>}
  */
 async function failedAnswer(res) {
-  const body = await res.json().catch(() => null);
+  const body = await res.json().catch(() => null /* no JSON body: not Wisp's answer, retried below */);
   const err = errorFromBody(body, res.status);
   if (!isWispErrorBody(body)) return { err, end: 'retry' };
   if (isSessionLost(err)) return { err, end: 'session' };

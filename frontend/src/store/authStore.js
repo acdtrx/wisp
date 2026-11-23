@@ -21,7 +21,7 @@ export const useAuthStore = create((set) => ({
       });
 
       if (!res.ok) {
-        throw errorFromBody(await res.json().catch(() => null), res.status);
+        throw errorFromBody(await res.json().catch(() => null /* no JSON body: the error is made from the status */), res.status);
       }
 
       // Cookies are now set by the response (HttpOnly session + CSRF).

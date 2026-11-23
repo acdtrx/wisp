@@ -316,7 +316,7 @@ export function validTileUrl(raw) {
   try {
     parsed = new URL(trimmed);
   } catch {
-    return null;
+    return null; // not a URL: null is this reader's "no valid value"
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
   return trimmed;

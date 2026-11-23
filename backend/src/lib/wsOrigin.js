@@ -40,7 +40,7 @@ export function isAllowedWsOrigin(req) {
   try {
     parsedHost = new URL(origin).host;
   } catch {
-    return false;
+    return false; // an Origin that is no URL is not this origin
   }
   return parsedHost === host;
 }

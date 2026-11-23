@@ -33,7 +33,7 @@ export async function readImageMeta() {
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
-    return {};
+    return {}; // no meta file yet, or one cut short: no meta, written whole by the next pull
   }
 }
 

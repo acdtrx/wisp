@@ -86,7 +86,7 @@ test("the subject's lock is held for the run and released before the terminal ev
       acquireVmOperationLock('a2', 'start')();
       freeOnDone = true;
     } catch {
-      freeOnDone = false;
+      freeOnDone = false; // the busy refusal is what this test looks for
     }
   });
   registerJobStream(jobId, stream);

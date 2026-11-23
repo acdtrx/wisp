@@ -48,8 +48,8 @@ export async function run(ctx) {
   let status;
   try {
     status = JSON.parse(text);
-  } catch {
-    ctx.log.warn({ path }, 'backup-status.json is not JSON — left for the backend to replace');
+  } catch (err) {
+    ctx.log.warn({ path, err: err.message }, 'backup-status.json is not JSON — left for the backend to replace');
     return;
   }
   if (!isPlainObject(status)) {

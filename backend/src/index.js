@@ -255,11 +255,11 @@ async function shutdown(signal) {
   await cancelInterruptibleJobs();
   closeAllSSE();
   if (unsubscribeMountHotplug) {
-    try { unsubscribeMountHotplug(); } catch { /* no-op */ }
+    try { unsubscribeMountHotplug(); } catch (err) { app.log.warn({ err }, 'Stopping the mount hotplug watch failed'); }
     unsubscribeMountHotplug = null;
   }
   if (stopMountRetry) {
-    try { stopMountRetry(); } catch { /* no-op */ }
+    try { stopMountRetry(); } catch (err) { app.log.warn({ err }, 'Stopping the mount retry failed'); }
     stopMountRetry = null;
   }
   stopUsbMonitor();

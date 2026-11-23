@@ -89,7 +89,7 @@ function routePath(request) {
   try {
     return decodeURIComponent(raw);
   } catch {
-    return raw;
+    return raw; // a malformed escape is logged as the client sent it
   }
 }
 

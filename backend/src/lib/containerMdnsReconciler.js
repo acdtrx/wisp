@@ -51,7 +51,8 @@ async function readLocalDns(name) {
   try {
     const cfg = await getContainerConfig(name);
     return cfg?.localDns === true;
-  } catch {
+  } catch (err) {
+    log().warn({ err: err?.message || err, container: name }, '[containerMdns] could not read the config: Local DNS taken as off');
     return false;
   }
 }
@@ -113,7 +114,10 @@ export function publishContainer(name) {
   return enqueue(name, async () => {
     let config;
     try { config = await getContainerConfig(name); }
-    catch { return; }
+    catch (err) {
+      log().warn({ err: err?.message || err, container: name }, '[containerMdns] could not read the config: name not published');
+      return;
+    }
     if (config?.localDns !== true || config.state !== 'running') return;
     const ip = config.network?.ip;
     const ip6 = config.network?.ip6;

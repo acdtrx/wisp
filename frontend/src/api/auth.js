@@ -17,7 +17,7 @@ export async function getOidcStatus({ signal } = {}) {
     if (!res.ok) return { enabled: false };
     return await res.json();
   } catch {
-    return { enabled: false };
+    return { enabled: false }; // the password login stands either way: only the SSO button is not offered
   }
 }
 

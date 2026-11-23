@@ -118,7 +118,7 @@ export default async function settingsRoutes(fastify) {
         body.discoveryEnabled !== undefined ||
         body.advertisedUrl !== undefined
       ) {
-        refreshWispAnnouncement().catch(() => {});
+        refreshWispAnnouncement().catch(() => { /* it logs its own failure and never rejects */ });
       }
       reply.code(204).send();
     },

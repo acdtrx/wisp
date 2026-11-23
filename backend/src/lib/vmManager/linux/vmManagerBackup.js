@@ -485,7 +485,8 @@ export async function listBackups(destinations, vmName = null) {
     let timestamps;
     try {
       timestamps = await readdir(vmDirPath, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      if (err.code !== 'ENOENT') connectionState.logger?.warn?.({ err: err.message, dir: vmDirPath }, '[vmManager] Could not read a VM\'s backup folder: its backups are not listed');
       return;
     }
     for (const tsEnt of timestamps) {

@@ -110,7 +110,7 @@ async function repairWispConfig(ctx) {
   try {
     data = JSON.parse(raw);
   } catch {
-    return;
+    return; // a config that is not JSON is the strict config check's to refuse, at the start after this
   }
   if (!isPlainObject(data)) return;
   let changed = false;
@@ -131,7 +131,7 @@ async function repairWispConfig(ctx) {
         try {
           checkMountPath(m.mountPath);
         } catch {
-          outside = true;
+          outside = true; // the refusal is the answer: this mount's path is outside the allowed roots
         }
       }
       if (!outside) {

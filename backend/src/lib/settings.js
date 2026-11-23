@@ -313,7 +313,7 @@ async function writeSettingsUnderLock(mutate) {
   });
   // Keep the chain alive past rejections — a throwing mutate (validation) must
   // fail its own caller only, not poison every subsequent settings write.
-  writeLock = run.catch(() => {});
+  writeLock = run.catch(() => { /* the rejection is the caller's (run), not the chain's */ });
   return run;
 }
 

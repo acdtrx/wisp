@@ -587,7 +587,7 @@ export async function startForwarder(logger = null, { lookups, hostInterface = n
 }
 
 export async function stopForwarder() {
-  if (state.udp) { try { state.udp.close(); } catch { /* ignore */ } state.udp = null; }
+  if (state.udp) { try { state.udp.close(); } catch { /* a socket that already closed refuses a second close */ } state.udp = null; }
   if (state.tcp) {
     await new Promise((resolve) => {
       state.tcp.close(() => resolve());

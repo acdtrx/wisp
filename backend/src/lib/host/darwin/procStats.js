@@ -132,7 +132,7 @@ function parseSwapusage() {
     }
     return { swapTotalBytes, swapUsedBytes };
   } catch {
-    return { swapTotalBytes: 0, swapUsedBytes: 0 };
+    return { swapTotalBytes: 0, swapUsedBytes: 0 }; // the macOS dev stub: no swap figure is shown as none
   }
 }
 

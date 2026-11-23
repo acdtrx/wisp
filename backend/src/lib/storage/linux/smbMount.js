@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
 import { isMountPoint } from '../mountTable.js';
 import { runWispMount } from './wispMountHelper.js';
+import { storageLogger } from '../storageLog.js';
 
 /*
  * Each ends after the helper's own worst case (docs/specs/STORAGE.md,
@@ -75,6 +76,13 @@ async function credentialsArg({ username, password }) {
   return { credentials: file, dir };
 }
 
+/** The credentials folder holds the share's password: a leftover is said in the journal. */
+async function removeCredentialsDir(dir) {
+  await rm(dir, { recursive: true, force: true }).catch((err) => {
+    storageLogger()?.warn?.({ err, dir }, 'Could not remove an SMB credentials folder');
+  });
+}
+
 /** A failed helper run as SMB_MOUNT_UNAVAILABLE, the helper's error line as the cause, credentials masked. */
 function helperFailure(message, err) {
   if (err?.code === UNAVAILABLE) return err;
@@ -118,8 +126,7 @@ async function _mountSMB(share, mountPath, { username, password, ownerOnly } = {
   } catch (err) {
     throw helperFailure(`Failed to mount ${share}`, err);
   } finally {
-    /* Best-effort: the folder may be gone already */
-    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    if (dir) await removeCredentialsDir(dir);
   }
 }
 
@@ -144,8 +151,7 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   } catch (err) {
     throw helperFailure(`Could not connect to ${trimmedShare}`, err);
   } finally {
-    /* Best-effort: the folder may be gone already */
-    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    if (dir) await removeCredentialsDir(dir);
   }
 }
 

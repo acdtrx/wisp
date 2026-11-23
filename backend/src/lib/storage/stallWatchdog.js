@@ -12,7 +12,7 @@ import { readFile, stat } from 'node:fs/promises';
 function combineProbes(probe) {
   if (!probe) return null;
   if (!Array.isArray(probe)) return probe;
-  return async () => (await Promise.all(probe.map((p) => p().catch(() => undefined)))).join(':');
+  return async () => (await Promise.all(probe.map((p) => p().catch(() => undefined /* a probe that fails reads as no progress */)))).join(':');
 }
 
 export function createStallWatchdog({ stallMs, onStall, probe: probes }) {
@@ -26,7 +26,7 @@ export function createStallWatchdog({ stallMs, onStall, probe: probes }) {
     checking = true;
     try {
       if (probe) {
-        const value = await probe().catch(() => undefined);
+        const value = await probe().catch(() => undefined /* a probe that fails reads as no progress */);
         if (value !== undefined && value !== lastProbe) {
           lastProbe = value;
           last = Date.now();
@@ -81,7 +81,7 @@ export function killProcessGroup(child) {
   try {
     process.kill(-child.pid, 'SIGKILL');
   } catch {
-    child.kill('SIGKILL');
+    child.kill('SIGKILL'); // no group of its own (or it already ended): the child alone
   }
 }
 

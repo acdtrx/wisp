@@ -281,7 +281,7 @@ function startEventsStream() {
 
 function stopEventsStream() {
   if (!eventsStream) return;
-  try { eventsStream.cancel(); } catch { /* already cancelled */ }
+  try { eventsStream.cancel(); } catch { /* a stream that already ended refuses the cancel: it is ended either way */ }
   eventsStream = null;
 }
 

@@ -14,7 +14,7 @@ import { readFile, readdir, mkdir, stat, open, unlink } from 'node:fs/promises';
 import { watch, createReadStream } from 'node:fs';
 
 import { writeJsonAtomic } from '../../base/index.js';
-import { containerError } from './containerManagerConnection.js';
+import { containerError, containerState } from './containerManagerConnection.js';
 import {
   getContainerRunsDir, getRunLogPath, getRunMetaPath, RUN_ID_REGEX,
 } from './containerPaths.js';
@@ -36,7 +36,7 @@ async function readRunMeta(name, runId) {
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
-    return null;
+    return null; // a run without readable metadata is listed with none (the caller's null)
   }
 }
 
@@ -65,14 +65,20 @@ async function listRunIds(name) {
   return [...ids].sort(); // lexicographic == chronological for this format
 }
 
+/** A run file prune could not remove stays on disk: said in the journal, the prune goes on. */
+function logPruneFailure(err, name, runId) {
+  if (err.code === 'ENOENT') return;
+  containerState.logger?.warn?.({ err, container: name, runId }, 'Could not remove an old run file');
+}
+
 /** Prune runs beyond RUN_RETENTION (oldest first). */
 async function pruneOldRuns(name) {
   const all = await listRunIds(name);
   if (all.length <= RUN_RETENTION) return;
   const toDelete = all.slice(0, all.length - RUN_RETENTION);
   await Promise.all(toDelete.flatMap((id) => [
-    unlink(getRunLogPath(name, id)).catch(() => {}),
-    unlink(getRunMetaPath(name, id)).catch(() => {}),
+    unlink(getRunLogPath(name, id)).catch((err) => logPruneFailure(err, name, id)),
+    unlink(getRunMetaPath(name, id)).catch((err) => logPruneFailure(err, name, id)),
   ]));
 }
 

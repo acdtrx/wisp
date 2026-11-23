@@ -83,6 +83,16 @@ function backupTimestamp() {
   return new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
 }
 
+/**
+ * Remove a directory a failed or finished step leaves behind. A failure is
+ * logged, not thrown: the step's own outcome is what the caller sees.
+ */
+async function removeLeftoverDir(dir) {
+  await rm(dir, { recursive: true, force: true }).catch((err) => {
+    containerState.logger?.warn?.({ err, dir }, 'Could not remove a leftover backup or restore directory');
+  });
+}
+
 async function dirTotalBytes(dirPath) {
   let total = 0;
   async function walk(p) {
@@ -90,7 +100,7 @@ async function dirTotalBytes(dirPath) {
     try {
       entries = await readdir(p, { withFileTypes: true });
     } catch {
-      return;
+      return; // the total is the progress bar's estimate: what cannot be read is not counted
     }
     for (const e of entries) {
       const full = join(p, e.name);
@@ -100,7 +110,7 @@ async function dirTotalBytes(dirPath) {
         try {
           const s = await stat(full);
           total += s.size;
-        } catch { /* ignore unreadable file */ }
+        } catch { /* the total is the progress bar's estimate: what cannot be read is not counted */ }
       }
     }
   }
@@ -324,7 +334,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
   } catch (err) {
     /* Don't leave an empty/partial backup dir behind (it would be skipped by
      * listings but still consume disk). */
-    await rm(backupDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(backupDir);
     throw err;
   }
 
@@ -347,7 +357,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
     await writeJsonAtomic(join(backupDir, 'manifest.json'), manifest, { mode: BACKUP_FILE_MODE });
   } catch (err) {
     /* Without its manifest the directory is no backup (listings skip it) — remove it. */
-    await rm(backupDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(backupDir);
     throw err;
   }
 
@@ -390,7 +400,8 @@ export async function listContainerBackups(destinations, containerName = null) {
       let timestamps;
       try {
         timestamps = await readdir(cPath, { withFileTypes: true });
-      } catch {
+      } catch (err) {
+        if (err.code !== 'ENOENT') containerState.logger?.warn?.({ err, dir: cPath }, 'Could not read a container\'s backup folder: its backups are not listed');
         continue;
       }
       for (const ts of timestamps) {
@@ -478,7 +489,7 @@ export async function deleteContainerBackup(backupPath, allowedRoots) {
     throw containerError('BACKUP_INVALID', 'Cannot resolve backup path', err.message);
   }
   const resolvedRoots = await Promise.all(roots.map((r) =>
-    realpath(r.replace(/\/+$/, '') || r).catch(() => null)));
+    realpath(r.replace(/\/+$/, '') || r).catch(() => null /* a destination that does not resolve (unmounted) holds no backup */)));
 
   const underRoot = resolvedRoots.some((r) => r && (resolvedBackup === r || resolvedBackup.startsWith(`${r}/`)));
   if (!underRoot) {
@@ -534,7 +545,7 @@ async function extractArchiveToStaging(archivePath) {
   try {
     await untarGzipTo(archivePath, stagingDir);
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_RESTORE_FAILED', 'Failed to extract backup', err.message);
   }
 
@@ -547,7 +558,7 @@ async function extractArchiveToStaging(archivePath) {
     }
     extractedTop = dirs[0].name;
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_INVALID', 'Unexpected archive layout', err.message);
   }
   // The archive carries the source directory's mode, which may be wider
@@ -555,7 +566,7 @@ async function extractArchiveToStaging(archivePath) {
   try {
     await chmod(join(stagingDir, extractedTop), CONTAINER_DIR_MODE);
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_RESTORE_FAILED', "Failed to set the restored directory's mode", err.message);
   }
   return { stagingDir, extractedTop };
@@ -613,7 +624,10 @@ async function ensureImageAndDigest(name, config) {
       config.imagePulledAt = new Date().toISOString();
       await writeContainerConfig(name, config);
     }
-  } catch { /* best-effort digest refresh */ }
+  } catch (err) {
+    /* The restore stands without it: the digest is what the update check compares. */
+    containerState.logger?.warn?.({ err, container: name }, 'Could not record the image digest after a restore');
+  }
 }
 
 /**
@@ -677,10 +691,10 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
   try {
     await rename(join(stagingDir, extractedTop), finalDir);
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_RESTORE_FAILED', `Failed to place the restored directory of container "${newNameTrim}"`, err.message);
   }
-  await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+  await removeLeftoverDir(stagingDir);
 
   /* Rewrite container.json with the new name and a fresh MAC. */
   let config;
@@ -688,13 +702,13 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
     config = await readContainerConfigFile(join(finalDir, 'container.json'), newNameTrim);
   } catch (err) {
     /* Roll back the directory placement so the user can retry cleanly. */
-    await rm(finalDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(finalDir);
     throw containerError('BACKUP_INVALID', 'Backup container.json missing or invalid', err.message);
   }
   try {
     validateRestoredConfig(config);
   } catch (err) {
-    await rm(finalDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(finalDir);
     throw err;
   }
   config.name = newNameTrim;
@@ -711,7 +725,7 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
   try {
     await ensureImageAndDigest(newNameTrim, config);
   } catch (err) {
-    await rm(finalDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(finalDir);
     throw err;
   }
 
@@ -720,7 +734,7 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
   } catch (err) {
     /* Container record creation failed — clean up the directory so the
      * user can retry with a different name. */
-    await rm(finalDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(finalDir);
     throw containerError(
       'BACKUP_RESTORE_FAILED',
       `Failed to register restored container "${newNameTrim}" in containerd`,
@@ -790,7 +804,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
   emit('extracting', { percent: 10, currentFile: 'Extracting archive' });
   const { stagingDir, extractedTop } = await extractArchiveToStaging(archivePath);
   if (extractedTop !== name) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_INVALID', `Archive top-level directory "${extractedTop}" does not match container "${name}"`);
   }
 
@@ -799,13 +813,13 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
   try {
     config = await readContainerConfigFile(join(stagingDir, extractedTop, 'container.json'), name);
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_INVALID', 'Backup container.json missing or invalid', err.message);
   }
   try {
     validateRestoredConfig(config);
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw err;
   }
   config.name = name;
@@ -819,7 +833,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
   try {
     await rename(finalDir, oldDir);
   } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_RESTORE_FAILED', `Failed to move the current directory of container "${name}" aside`, err.message);
   }
   try {
@@ -828,11 +842,11 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     await rename(oldDir, finalDir).catch(() => {
       /* rollback failed too — oldDir still holds the pre-restore data for manual recovery */
     });
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    await removeLeftoverDir(stagingDir);
     throw containerError('BACKUP_RESTORE_FAILED', `Failed to place the restored directory of container "${name}"`, err.message);
   }
-  await rm(oldDir, { recursive: true, force: true }).catch(() => {});
-  await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+  await removeLeftoverDir(oldDir);
+  await removeLeftoverDir(stagingDir);
 
   /* Write-through so config normalization and the config-write notification
    * fire (list caches, UI refresh). */

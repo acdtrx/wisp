@@ -24,7 +24,7 @@ export function readCsrfToken() {
     try {
       return decodeURIComponent(raw);
     } catch {
-      return raw;
+      return raw; // a malformed escape is sent as it is: the server refuses a token that does not match
     }
   }
   return null;
@@ -155,7 +155,7 @@ export async function api(path, options = {}) {
   }
 
   if (!res.ok) {
-    const data = await res.json().catch(() => null);
+    const data = await res.json().catch(() => null /* no JSON body: errorFromBody makes the error from the status */);
     if (deadline.aborted && !callerSignal?.aborted) throw timeoutError(timeoutMs);
     const err = errorFromBody(data, res.status);
     if (isSessionLost(err)) leaveForLogin(err);

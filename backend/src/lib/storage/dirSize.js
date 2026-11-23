@@ -39,7 +39,7 @@ export async function measurePathSize(absPath, { deadline } = {}) {
     try {
       entries = await readdir(path);
     } catch {
-      partial = true;
+      partial = true; // the answer says it is partial: what could not be read is not counted
       return;
     }
     // Sequential on purpose: unbounded fan-out can exhaust fds on huge trees.

@@ -215,7 +215,7 @@ function SectionBlock({ section, items, organizeMode, onDropWorkload, autoEdit, 
     try {
       const { type, name } = JSON.parse(raw);
       if (type && name) onDropWorkload({ type, name });
-    } catch { /* malformed payload — ignore */ }
+    } catch { /* a drag from outside Wisp carries no workload: nothing is dropped */ }
   };
 
   return (
@@ -280,7 +280,7 @@ function CreateSectionGhost({ onCreateAndAssign }) {
     try {
       const { type, name } = JSON.parse(raw);
       if (type && name) onCreateAndAssign({ type, name });
-    } catch { /* ignore malformed payload */ }
+    } catch { /* a drag from outside Wisp carries no workload: nothing is dropped */ }
   };
 
   return (

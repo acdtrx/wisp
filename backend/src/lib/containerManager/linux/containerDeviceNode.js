@@ -89,7 +89,7 @@ export async function getRenderGid() {
   try {
     text = await readFile('/etc/group', 'utf8');
   } catch {
-    return null;
+    return null; // no group file is no render or video group: the device is added without a group
   }
   const map = new Map();
   for (const line of text.split('\n')) {

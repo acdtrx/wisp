@@ -97,7 +97,7 @@ let announceChain = Promise.resolve();
 function applyAnnouncementState() {
   const run = announceChain.then(reconcileAnnouncement);
   // Keep the chain alive past rejections; each caller awaits its own run.
-  announceChain = run.catch(() => {});
+  announceChain = run.catch(() => { /* the rejection is the caller's (run), not the chain's */ });
   return run;
 }
 

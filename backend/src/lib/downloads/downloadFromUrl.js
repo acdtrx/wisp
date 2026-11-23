@@ -187,8 +187,7 @@ export function isAllowedUrl(urlStr) {
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
     return true;
   } catch {
-    /* malformed URL */
-    return false;
+    return false; // a malformed URL is not an allowed one
   }
 }
 

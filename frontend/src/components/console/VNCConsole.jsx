@@ -108,7 +108,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
 
   const teardownRfb = useCallback(() => {
     if (rfbRef.current) {
-      try { rfbRef.current.disconnect(); } catch { /* already disconnecting */ }
+      try { rfbRef.current.disconnect(); } catch { /* noVNC refuses a disconnect while one is under way: it ends either way */ }
       rfbRef.current = null;
     }
   }, []);

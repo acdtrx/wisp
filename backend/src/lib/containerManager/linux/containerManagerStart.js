@@ -164,10 +164,16 @@ export async function startExistingContainer(name) {
   try {
     lease = await setupNetwork(name, config.network);
   } catch (err) {
-    try { await teardownNetwork(name, config.network); } catch { /* best-effort */ }
+    try {
+      await teardownNetwork(name, config.network);
+    } catch (cleanupErr) {
+      containerState.logger?.warn?.({ err: cleanupErr, container: name }, 'After a failed network setup, its teardown failed too');
+    }
     try {
       await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
-    } catch { /* best-effort */ }
+    } catch (cleanupErr) {
+      containerState.logger?.warn?.({ err: cleanupErr, container: name }, 'After a failed network setup, the snapshot could not be removed');
+    }
     throw wrapContainerError('CONTAINER_NETWORK_SETUP_FAILED', `Network setup failed for "${name}"`, err);
   }
 

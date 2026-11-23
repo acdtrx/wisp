@@ -178,7 +178,7 @@ function onBusError(bus, err) {
   state.watchInstalled = false;
   state.browseDispatchInstalled = false;
   forgetAvahiState();
-  try { bus.disconnect(); } catch { /* already closed */ }
+  try { bus.disconnect(); } catch { /* a bus that errored may refuse the disconnect: it is gone either way */ }
   scheduleReopen();
 }
 
@@ -270,7 +270,8 @@ async function ensureServer() {
     const obj = await bounded(bus.getProxyObject(AVAHI_BUS_NAME, AVAHI_SERVER_PATH), 'server introspection');
     state.server = obj.getInterface(AVAHI_SERVER_IFACE);
     return state.server;
-  } catch {
+  } catch (err) {
+    state.logger?.warn?.({ err: err?.message || err }, '[mdns] avahi server not reachable; its callers do nothing until it is');
     state.server = null;
     return null;
   }
@@ -523,7 +524,7 @@ export async function disconnect() {
   /* Cleared first so onBusError ignores anything this bus emits while closing. */
   state.bus = null;
   if (bus) {
-    try { bus.disconnect(); } catch { /* best effort */ }
+    try { bus.disconnect(); } catch { /* closing a bus that already failed may throw: it is closed either way */ }
   }
   state.server = null;
   state.hostFqdn = null;
@@ -1111,7 +1112,7 @@ export async function resolveLocalName(name, family = 'any') {
     if (!address) return null;
     return { address, family: aprotocol === AVAHI_PROTO_INET6 ? 'inet6' : 'inet' };
   } catch {
-    return null;
+    return null; // avahi refuses a name it cannot resolve: the caller's "not found"
   }
 }
 
@@ -1128,6 +1129,6 @@ export async function resolveLocalAddress(ip) {
     // [interface, protocol, aprotocol, address, name, flags]
     return out[4] || null;
   } catch {
-    return null;
+    return null; // avahi refuses an address it cannot resolve: the caller's "not found"
   }
 }

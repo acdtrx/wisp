@@ -47,7 +47,7 @@ function canonicalUrl(raw) {
   try {
     parsed = new URL(raw.trim());
   } catch {
-    return null;
+    return null; // not a URL: no tile link (the caller's null)
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
   parsed.hash = '';
@@ -67,7 +67,7 @@ function targetHostname(target) {
   try {
     return new URL(withScheme).hostname || null;
   } catch {
-    return null;
+    return null; // a target that is no URL names no host (the caller's null)
   }
 }
 

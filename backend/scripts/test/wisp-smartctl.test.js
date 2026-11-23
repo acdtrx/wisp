@@ -24,7 +24,7 @@ const disk = ['sda', 'vda', 'nvme0n1', 'disk0', 'loop0'].find((name) => {
   try {
     return statSync(`/dev/${name}`).isBlockDevice();
   } catch {
-    return false;
+    return false; // a name this machine does not have is not its disk
   }
 });
 

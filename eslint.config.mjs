@@ -5,6 +5,9 @@
  * is an error: every effect states its dependencies honestly, and one that cannot is
  * rewritten (the form hook owns what the sections' effects used to keep by hand).
  *
+ * `wisp/catch-says-why` (scripts/eslint-rules/) refuses a catch that drops its error
+ * without a comment that says why.
+ *
  * Inline config (`eslint-disable`, `/* global *\/`, `/* eslint … *\/`) is not
  * honoured, and `npm run lint` fails on the warning it leaves: an allowance, if
  * one is ever needed, is a reviewed line here, like the lists of the other checks.
@@ -12,6 +15,7 @@
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 
+import catchSaysWhy from './scripts/eslint-rules/catchSaysWhy.mjs';
 import { CHANGE_KIND, JOB_KIND, TOPIC } from './shared/wireNames.js';
 
 /**
@@ -78,7 +82,11 @@ const correctness = {
   'no-unused-vars': ['error', { ignoreRestSiblings: true }],
   'no-dupe-keys': 'error',
   'no-restricted-syntax': ['error', ...WIRE_NAME_SELECTORS],
+  'wisp/catch-says-why': 'error',
 };
+
+/** The project's own rules (scripts/eslint-rules/). */
+const wisp = { rules: { 'catch-says-why': catchSaysWhy } };
 
 /**
  * Browser globals that are everyday variable names: a bare use is far more often
@@ -97,6 +105,7 @@ export default [
   { ignores: ['**/node_modules/**', '**/dist/**'] },
   {
     linterOptions: { noInlineConfig: true },
+    plugins: { wisp },
   },
   {
     // ESM only: the CommonJS names (`require`, `__dirname`) are not globals here.

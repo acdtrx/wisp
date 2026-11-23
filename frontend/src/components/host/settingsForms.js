@@ -27,6 +27,7 @@ function urlProblem(value, what) {
   try {
     parsed = new URL(url);
   } catch {
+    // The refusal is the answer: this problem is shown beside the field.
     return `The ${what} is a full URL: http://… or https://…`;
   }
   return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? null : `The ${what} starts with http:// or https://`;
@@ -138,6 +139,6 @@ export function callbackUrl(advertisedUrl, origin) {
   try {
     return new URL('/api/auth/oidc/callback', advertisedUrl || origin).href;
   } catch {
-    return `${origin}/api/auth/oidc/callback`;
+    return `${origin}/api/auth/oidc/callback`; // an advertised URL that is no URL: the page's own origin (above)
   }
 }

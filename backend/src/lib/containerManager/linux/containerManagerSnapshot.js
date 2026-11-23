@@ -74,6 +74,6 @@ export async function getSnapshotMounts(name) {
     });
     return snapshotMountsForTask(res.mounts || []);
   } catch {
-    return null;
+    return null; // no snapshot under this key yet: null is "make one" to the caller
   }
 }

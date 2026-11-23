@@ -67,7 +67,7 @@ function readSysfsFile(path) {
   try {
     return readFileSync(path, 'utf8').trim();
   } catch {
-    return '';
+    return ''; // an attribute the device does not have reads as empty, as sysfs leaves it
   }
 }
 
@@ -81,7 +81,7 @@ function parseUdevData(path) {
   try {
     text = readFileSync(path, 'utf8');
   } catch {
-    return out;
+    return out; // a device udev has no record for has no properties
   }
   for (const line of text.split('\n')) {
     if (!line.startsWith('E:')) continue;
@@ -127,7 +127,7 @@ function resolveUuidTarget(uuid) {
   try {
     link = readlinkSync(join(BY_UUID_DIR, uuid));
   } catch {
-    return null;
+    return null; // the link went away between the listing and this read: no device
   }
   const partName = basename(link);
   if (!partName) return null;
@@ -147,7 +147,7 @@ function parentDiskName(partName) {
     if (!parent || parent === 'block') return null;
     return parent;
   } catch {
-    return null;
+    return null; // not in sysfs: no parent disk known (the caller's null)
   }
 }
 
@@ -166,7 +166,7 @@ function enumerateDisks() {
   try {
     uuids = readdirSync(BY_UUID_DIR);
   } catch {
-    return out;
+    return out; // no by-uuid folder (no filesystem with a UUID attached) is no disk
   }
   const mountsByDevice = readMountsByDevice();
 
@@ -248,7 +248,7 @@ function closeWatcher() {
     try {
       uuidWatcher.close();
     } catch {
-      /* already closed */
+      /* a watcher that already closed refuses a second close: closed either way */
     }
     uuidWatcher = null;
   }

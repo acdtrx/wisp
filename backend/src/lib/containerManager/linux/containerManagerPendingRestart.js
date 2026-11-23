@@ -21,7 +21,7 @@ function normalisedList(list, normalize) {
   try {
     return normalize(raw);
   } catch {
-    return raw;
+    return raw; // a stored list today's checks refuse is compared as it is (above)
   }
 }
 

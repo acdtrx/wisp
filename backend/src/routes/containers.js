@@ -679,7 +679,7 @@ export default async function containerRoutes(fastify) {
       const handle = streamContainerRunLogs(name, runId, history.offset, (line) => {
         try {
           reply.raw.write(`data: ${JSON.stringify({ type: 'line', line })}\n\n`);
-        } catch { /* client disconnected */ }
+        } catch { /* the client disconnected: onSSEClose stops the tail */ }
       });
 
       onSSEClose(reply, () => handle.stop());

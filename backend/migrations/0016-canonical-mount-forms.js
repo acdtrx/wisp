@@ -33,7 +33,7 @@ function inForm(check, value) {
   try {
     return check(value);
   } catch {
-    return null;
+    return null; // the check's refusal means only "not in form", which null says
   }
 }
 

@@ -66,7 +66,7 @@ export async function isVMBinaryStale(name) {
     const target = await readlink(`/proc/${pid}/exe`);
     return target.endsWith(' (deleted)');
   } catch {
-    return false;
+    return false; // the process ended between the pid read and this one: nothing is stale
   }
 }
 
@@ -90,7 +90,7 @@ export function watchQemuBinaries(onChange) {
   }
   return () => {
     for (const w of watchers) {
-      try { w.close(); } catch { /* already closed */ }
+      try { w.close(); } catch { /* a watcher that already closed refuses a second close */ }
     }
   };
 }

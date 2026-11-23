@@ -199,6 +199,7 @@ export default function WispUpdateSection() {
          * post-rollback. We can't reliably tell, so just keep polling until
          * the hard cap. */
       } catch {
+        // Expected while the backend restarts (above): counted, not shown.
         consecutiveFailures++;
         if (consecutiveFailures >= SLOW_AFTER_FAILED_POLLS) {
           setInstallSlow(true);

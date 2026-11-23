@@ -433,7 +433,7 @@ export async function attachAgentSubscription(domainPath, vmName) {
 export function detachAgentSubscription(domainPath) {
   const entry = connectionState.agentSubscriptions.get(domainPath);
   if (!entry) return;
-  try { entry.iface.removeListener('AgentEvent', entry.listener); } catch { /* best effort */ }
+  try { entry.iface.removeListener('AgentEvent', entry.listener); } catch { /* an interface whose bus is gone refuses the removal: the listener went with it */ }
   connectionState.agentSubscriptions.delete(domainPath);
 }
 

@@ -22,7 +22,7 @@ function peerHostLabel(peer) {
   try {
     return new URL(peer.url).hostname;
   } catch {
-    return peer.host;
+    return peer.host; // an advertised URL that is no URL: the SRV host (above)
   }
 }
 export default function ServerSwitcher() {

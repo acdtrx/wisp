@@ -29,7 +29,7 @@ function parseResizeControl(buf) {
       return { cols: Math.floor(o.cols), rows: Math.floor(o.rows) };
     }
   } catch {
-    /* not JSON */
+    /* not JSON: terminal input, not a control message */
   }
   return null;
 }

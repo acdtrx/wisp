@@ -116,7 +116,7 @@ export async function pullImage(imageRef, onStep) {
 function openProgressStream(onEvent) {
   const id = `wisp-pull-${randomBytes(8).toString('hex')}`;
   const stream = callBidi(getClient('streaming'), 'stream');
-  const close = () => { try { stream.cancel(); } catch { /* already closed */ } };
+  const close = () => { try { stream.cancel(); } catch { /* a stream that already ended refuses the cancel: it is ended either way */ } };
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       close();

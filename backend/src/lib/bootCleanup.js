@@ -23,7 +23,8 @@ async function sweepDir(dir, log, { keep = new Set() } = {}) {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (err.code !== 'ENOENT') log?.warn?.({ err, dir }, 'Could not read a directory to remove orphan temp files');
     return 0;
   }
   let removed = 0;
@@ -48,7 +49,8 @@ export async function cleanPartialJsonArtifacts(log) {
   let settings;
   try {
     settings = await getSettings();
-  } catch {
+  } catch (err) {
+    log?.warn?.({ err }, 'Could not read the settings: the VM and container directories keep their orphan temp files');
     return;
   }
 
@@ -71,7 +73,8 @@ export async function cleanPartialJsonArtifacts(log) {
   let entries;
   try {
     entries = await readdir(containersPath, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (err.code !== 'ENOENT') log?.warn?.({ err, dir: containersPath }, 'Could not read the containers directory to remove orphan temp files');
     return;
   }
   for (const entry of entries) {

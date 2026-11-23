@@ -172,7 +172,7 @@ async function statsTick() {
   try {
     return await listVMs();
   } catch {
-    return null;
+    return null; // as the stats do: a failed list is no figure
   }
 }
 
