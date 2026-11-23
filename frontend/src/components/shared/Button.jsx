@@ -40,7 +40,7 @@ const CHOICE = {
   segment: (on, size) => `rounded-md ${size === 'xs' ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs'} ${on
     ? 'bg-surface-card text-text-primary shadow-xs'
     : 'text-text-muted hoverable:hover:text-text-secondary'}`,
-  card: (on) => `min-w-0 flex-col items-start! whitespace-normal! rounded-md border px-2.5 py-2 text-left ${on
+  card: (on) => `min-w-0 flex-col items-start! gap-0! whitespace-normal! rounded-md border px-2.5 py-2 text-left ${on
     ? 'border-accent bg-accent-soft text-accent-text'
     : 'border-surface-border text-text-secondary hoverable:hover:bg-surface'}`,
 };
