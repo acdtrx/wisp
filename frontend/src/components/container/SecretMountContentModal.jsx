@@ -1,20 +1,12 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import {
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormField, formModalNeutralBtn } from '../shared/FormModalChrome.jsx';
 import { putMountFileContent } from '../../api/containers.js';
 import { formatBytes } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
-import CommandErrors from '../shared/CommandErrors.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
-
-const FORM_ID = 'secret-mount-content-form';
+import FormModal from '../shared/FormModal.jsx';
 
 /**
  * Write-only editor for a secret file mount (see docs/FRONTEND-RULES.md — the
@@ -27,7 +19,7 @@ export default function SecretMountContentModal(props) {
   return props.open ? <SecretMountContentEditor {...props} /> : null;
 }
 
-function SecretMountContentEditor({ open, containerName, mount, onClose }) {
+function SecretMountContentEditor({ containerName, mount, onClose }) {
   /* Write-only: the stored content is never read, so the text is an input to the
    * replace command, its own state, starting empty. */
   const [text, setText] = useState('');
@@ -42,74 +34,53 @@ function SecretMountContentEditor({ open, containerName, mount, onClose }) {
   );
 
   const isSet = !!mount?.isSet;
-  const canSave = text !== '' && !save.busy;
   const status = isSet
     ? `Set${Number.isFinite(mount?.sizeBytes) ? ` · ${formatBytes(mount.sizeBytes)}` : ''} — the current content is never shown.`
     : 'Not set — the file is empty.';
 
   return (
     <>
-      <Modal
-        open={open}
-        onClose={onClose}
+      <FormModal
         title="Replace secret file"
         subtitle={mount ? `${mount.name} · ${containerName}` : containerName}
         size="md"
-        height="cap"
-        /* A nested confirm is the top layer — Escape must close only it. */
-        closeOnEscape={!save.busy}
-        footer={(
-          <>
-            {isSet && (
-              <div className="mr-auto">
-                <button
-                  type="button"
-                  onClick={() => setConfirmClear(true)}
-                  disabled={save.busy}
-                  className={`${formModalNeutralBtn} hover:text-status-stopped hover:bg-status-stopped-soft`}
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-            <button type="button" onClick={onClose} disabled={save.busy} className={formModalNeutralBtn}>
-              Cancel
-            </button>
-            <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-              {save.busy && <Loader2 size={14} className="animate-spin" aria-hidden />}
-              Save
-            </button>
-          </>
+        save={save}
+        blocked={text === '' ? 'Paste the new content.' : null}
+        onSubmit={() => writeContent(text, 'replace')}
+        errorPrefix={(key) => (key === 'clear' ? "Couldn't clear the secret" : undefined)}
+        onClose={onClose}
+        footerStart={isSet && (
+          <button
+            type="button"
+            onClick={() => setConfirmClear(true)}
+            disabled={save.busy}
+            className={`${formModalNeutralBtn} hover:text-status-stopped hover:bg-status-stopped-soft`}
+          >
+            Clear
+          </button>
         )}
       >
-        <form
-          id={FORM_ID}
-          onSubmit={(e) => { e.preventDefault(); if (canSave) writeContent(text, 'replace'); }}
-          className="space-y-3"
+        <p className="rounded-md border border-surface-border bg-surface px-3 py-2 text-xs text-text-secondary">
+          {status}
+        </p>
+        <FormField
+          label="New content"
+          htmlFor="secret-mount-content"
+          hint="Saving replaces the whole file. To upload a file instead, use the row's Upload action."
         >
-          <p className="rounded-md border border-surface-border bg-surface px-3 py-2 text-xs text-text-secondary">
-            {status}
-          </p>
-          <FormField
-            label="New content"
-            htmlFor="secret-mount-content"
-            hint="Saving replaces the whole file. To upload a file instead, use the row's Upload action."
-          >
-            <textarea
-              id="secret-mount-content"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Paste the new content"
-              ref={autoFocusField}
-              autoComplete="off"
-              spellCheck={false}
-              rows={8}
-              className="input-field min-h-32 w-full resize-y font-mono text-xs leading-relaxed"
-            />
-          </FormField>
-          <CommandErrors className="mt-3" commands={[save]} prefix={(key) => (key === 'clear' ? "Couldn't clear the secret" : undefined)} />
-        </form>
-      </Modal>
+          <textarea
+            id="secret-mount-content"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Paste the new content"
+            ref={autoFocusField}
+            autoComplete="off"
+            spellCheck={false}
+            rows={8}
+            className="input-field min-h-32 w-full resize-y font-mono text-xs leading-relaxed"
+          />
+        </FormField>
+      </FormModal>
 
       <ConfirmDialog
         open={confirmClear}

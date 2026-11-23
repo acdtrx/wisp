@@ -1,9 +1,8 @@
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { changedSent } from './settingsForms.js';
-
-const NOTHING = 'Nothing changed.';
 
 /**
  * A settings group's form (docs/specs/SETTINGS.md): it starts from the settings as they
@@ -17,7 +16,7 @@ export default function SettingsEditor({ title, subtitle, initial, sent, problem
   const save = useCommand();
   const changed = changedSent(sent, form, start);
   const why = problem?.(form) ?? null;
-  const blocked = why ?? (Object.keys(changed).length === 0 ? NOTHING : null);
+  const blocked = why ?? (Object.keys(changed).length === 0 ? NOTHING_CHANGED : null);
   return (
     <FormModal
       title={title}

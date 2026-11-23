@@ -17,3 +17,6 @@ export function changedFields(values, saved) {
 let lastRow = 0;
 /** A row's identity in a form (its React key). */
 export const rowId = () => `row-${++lastRow}`;
+
+/** Why an edit's Save is off when nothing in the form differs from what it opened with. */
+export const NOTHING_CHANGED = 'Nothing changed.';

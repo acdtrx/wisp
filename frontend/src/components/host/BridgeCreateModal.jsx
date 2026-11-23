@@ -1,18 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
-import {
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import FormModal from '../shared/FormModal.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import { createManagedNetworkBridge } from '../../api/host.js';
 import { useCommand } from '../../hooks/useCommand.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { autoFocusField } from '../../lib/focus.js';
-
-const FORM_ID = 'bridge-create-form';
 
 /**
  * Modal form editor for creating one managed VLAN bridge (see
@@ -24,7 +16,7 @@ export default function BridgeCreateModal(props) {
   return props.open ? <BridgeCreateEditor {...props} /> : null;
 }
 
-function BridgeCreateEditor({ open, eligibleParents, onClose }) {
+function BridgeCreateEditor({ eligibleParents, onClose }) {
   /* The create's input: the dialog's own values (it edits no saved record). */
   const [input, setInput] = useState({ baseBridge: '', vlanId: '' });
   const setField = (key, value) => setInput((v) => ({ ...v, [key]: value }));
@@ -55,72 +47,56 @@ function BridgeCreateEditor({ open, eligibleParents, onClose }) {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
+    <FormModal
       title="Add VLAN bridge"
       subtitle="The host handles VLAN tagging — guests connect untagged."
-      size="sm"
-      height="cap"
-      closeOnEscape={!submitting}
-      footer={(
-        <>
-          <button type="button" onClick={onClose} disabled={submitting} className={formModalNeutralBtn}>
-            Cancel
-          </button>
-          <button type="submit" form={FORM_ID} disabled={!canCreate} className={formModalPrimaryBtn}>
-            {submitting && <Loader2 size={14} className="animate-spin" aria-hidden />}
-            Create
-          </button>
-        </>
-      )}
+      saveLabel="Create"
+      save={create}
+      blocked={parents.length === 0 ? 'No eligible parent bridge.' : bridgePreview ? null : 'Set a VLAN ID from 1 to 4094.'}
+      onSubmit={handleCreate}
+      onClose={onClose}
     >
       {parents.length === 0 ? (
         <p className="text-xs text-text-muted">
           No eligible parent bridges. Create a plain bridge on the host first.
         </p>
       ) : (
-        <form
-          id={FORM_ID}
-          onSubmit={(e) => { e.preventDefault(); handleCreate(); }}
-          className="space-y-3"
+        <>
+      <FormField label="Parent bridge" htmlFor="bridge-create-parent">
+        <select
+          id="bridge-create-parent"
+          value={baseBridge}
+          onChange={(e) => setField('baseBridge', e.target.value)}
+          className="input-field"
         >
-          <FormField label="Parent bridge" htmlFor="bridge-create-parent">
-            <select
-              id="bridge-create-parent"
-              value={baseBridge}
-              onChange={(e) => setField('baseBridge', e.target.value)}
-              className="input-field"
-            >
-              {parents.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </FormField>
-          <FormField
-            label="VLAN Id"
-            htmlFor="bridge-create-vlan"
-            hint="1–4094"
-          >
-            <input
-              id="bridge-create-vlan"
-              type="number"
-              min="1"
-              max="4094"
-              value={vlanId}
-              onChange={(e) => setField('vlanId', e.target.value)}
-              placeholder="10"
-              ref={autoFocusField}
-              className="input-field"
-            />
-          </FormField>
-          <p className="text-xs text-text-muted">
-            Bridge name:{' '}
-            <span className="font-mono text-text-secondary">{bridgePreview || '—'}</span>
-          </p>
-          <ErrorBanner className="mt-3" error={create.error} onDismiss={create.dismiss} />
-        </form>
+          {parents.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+      </FormField>
+      <FormField
+        label="VLAN Id"
+        htmlFor="bridge-create-vlan"
+        hint="1–4094"
+      >
+        <input
+          id="bridge-create-vlan"
+          type="number"
+          min="1"
+          max="4094"
+          value={vlanId}
+          onChange={(e) => setField('vlanId', e.target.value)}
+          placeholder="10"
+          ref={autoFocusField}
+          className="input-field"
+        />
+      </FormField>
+      <p className="text-xs text-text-muted">
+        Bridge name:{' '}
+        <span className="font-mono text-text-secondary">{bridgePreview || '—'}</span>
+      </p>
+        </>
       )}
-    </Modal>
+    </FormModal>
   );
 }

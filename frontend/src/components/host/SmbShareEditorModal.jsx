@@ -1,21 +1,15 @@
 import { useState } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
-import {
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormField, formModalNeutralBtn } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
-import { changedFields } from '../../hooks/editorValues.js';
-
-const FORM_ID = 'smb-share-editor-form';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
+import FormModal from '../shared/FormModal.jsx';
 
 function emptyForm() {
   const id = randomId();
@@ -70,7 +64,7 @@ export default function SmbShareEditorModal(props) {
   return props.open ? <SmbShareEditor {...props} /> : null;
 }
 
-function SmbShareEditor({ open, share = null, onClose, onSaved }) {
+function SmbShareEditor({ share = null, onClose, onSaved }) {
   /* The share as the editor opened: it never reads the settings again. */
   const [stored] = useState(share);
   const isEdit = stored != null;
@@ -124,111 +118,88 @@ function SmbShareEditor({ open, share = null, onClose, onSaved }) {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
+    <FormModal
       title={isEdit ? 'Edit SMB share' : 'Add SMB share'}
       subtitle={isEdit ? stored?.share || stored?.label || shareId : 'Network mount over SMB/CIFS'}
       size="md"
-      height="cap"
-      closeOnEscape={!saving}
-      footer={(
+      save={save}
+      blocked={blocked ?? (isEdit && !dirty ? NOTHING_CHANGED : null)}
+      onSubmit={handleSave}
+      onClose={onClose}
+      footerStart={(
         <>
-          <div className="mr-auto flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCheck}
-              disabled={checking || saving}
-              className={formModalNeutralBtn}
-            >
-              {checking
-                ? <Loader2 size={14} className="animate-spin" aria-hidden />
-                : <ShieldCheck size={14} aria-hidden />}
-              Test connection
-            </button>
-            {testPassed && <span className="text-status-running">Connection OK</span>}
-          </div>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
-            Cancel
+          <button type="button" onClick={handleCheck} disabled={checking || saving} className={formModalNeutralBtn}>
+            {checking ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
+            Test connection
           </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
-            Save
-          </button>
+          {testPassed && <span className="text-status-running">Connection OK</span>}
         </>
       )}
     >
-            <form
-        id={FORM_ID}
-        onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        className="space-y-3"
+      <FormField label="Label" htmlFor="smb-editor-label">
+        <input
+          id="smb-editor-label"
+          type="text"
+          value={form.label}
+          onChange={setField('label')}
+          placeholder="media-nas"
+          ref={autoFocusField}
+          className="input-field"
+        />
+      </FormField>
+      <FormField label="Share" htmlFor="smb-editor-share">
+        <input
+          id="smb-editor-share"
+          type="text"
+          value={form.share}
+          onChange={setField('share')}
+          placeholder="//server/share"
+          className="input-field font-mono"
+        />
+      </FormField>
+      <FormField
+        label="Mount path"
+        htmlFor="smb-editor-path"
+        hint={problems.mountPath ?? null}
       >
-        <FormField label="Label" htmlFor="smb-editor-label">
+        <input
+          id="smb-editor-path"
+          type="text"
+          value={form.mountPath}
+          onChange={setField('mountPath')}
+          placeholder="/mnt/wisp/smb"
+          className="input-field font-mono"
+        />
+      </FormField>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Username" htmlFor="smb-editor-user">
           <input
-            id="smb-editor-label"
+            id="smb-editor-user"
             type="text"
-            value={form.label}
-            onChange={setField('label')}
-            placeholder="media-nas"
-            ref={autoFocusField}
+            value={form.username}
+            onChange={setField('username')}
+            placeholder="Optional"
+            autoComplete="off"
             className="input-field"
           />
         </FormField>
-        <FormField label="Share" htmlFor="smb-editor-share">
-          <input
-            id="smb-editor-share"
-            type="text"
-            value={form.share}
-            onChange={setField('share')}
-            placeholder="//server/share"
-            className="input-field font-mono"
-          />
-        </FormField>
         <FormField
-          label="Mount path"
-          htmlFor="smb-editor-path"
-          hint={problems.mountPath ?? null}
+          label="Password"
+          htmlFor="smb-editor-password"
+          hint={hasStoredPassword ? 'Leave empty to keep the saved password.' : null}
         >
           <input
-            id="smb-editor-path"
-            type="text"
-            value={form.mountPath}
-            onChange={setField('mountPath')}
-            placeholder="/mnt/wisp/smb"
-            className="input-field font-mono"
+            id="smb-editor-password"
+            type="password"
+            value={form.password}
+            onChange={setField('password')}
+            placeholder={hasStoredPassword ? '••••' : 'Optional'}
+            autoComplete="new-password"
+            className="input-field"
           />
         </FormField>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Username" htmlFor="smb-editor-user">
-            <input
-              id="smb-editor-user"
-              type="text"
-              value={form.username}
-              onChange={setField('username')}
-              placeholder="Optional"
-              autoComplete="off"
-              className="input-field"
-            />
-          </FormField>
-          <FormField
-            label="Password"
-            htmlFor="smb-editor-password"
-            hint={hasStoredPassword ? 'Leave empty to keep the saved password.' : null}
-          >
-            <input
-              id="smb-editor-password"
-              type="password"
-              value={form.password}
-              onChange={setField('password')}
-              placeholder={hasStoredPassword ? '••••' : 'Optional'}
-              autoComplete="new-password"
-              className="input-field"
-            />
-          </FormField>
-        </div>
-        <ErrorBanner className="mt-3" error={test.error} prefix="Connection test" onDismiss={test.dismiss} />
-        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
-      </form>
-    </Modal>
+      </div>
+      <ErrorBanner className="mt-3" error={test.error} prefix="Connection test" onDismiss={test.dismiss} />
+    </FormModal>
   );
 }

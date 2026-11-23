@@ -1,21 +1,12 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
-import {
-  FormCheckbox,
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
 import { addContainerMount, updateContainerMount } from '../../api/containers.js';
 import { autoFocusField } from '../../lib/focus.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
-import { changedFields } from '../../hooks/editorValues.js';
-
-const FORM_ID = 'container-mount-editor-form';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
+import FormModal from '../shared/FormModal.jsx';
 
 const TMPFS_DEFAULT_SIZE_MIB = 64;
 const TMPFS_MAX_SIZE_MIB = 2048;
@@ -184,7 +175,6 @@ function mountProblems(form, others) {
 }
 
 function ContainerMountEditor({
-  open,
   containerName,
   mount = null,
   mounts = [],
@@ -244,181 +234,162 @@ function ContainerMountEditor({
   const sourceMissing = !!form.sourceId && !storageMounts.some((m) => m.id === form.sourceId);
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
+    <FormModal
       title={isEdit ? 'Edit mount' : meta.addTitle}
       subtitle={isEdit ? `${mountName} · ${containerName}` : meta.subtitle}
       size="md"
-      height="cap"
-      closeOnEscape={!saving}
-      footer={(
-        <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
-            Cancel
-          </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
-            {isEdit ? 'Save' : 'Add'}
-          </button>
-        </>
-      )}
+      saveLabel={isEdit ? 'Save' : 'Add'}
+      save={save}
+      blocked={blocked ?? (isEdit && !dirty ? NOTHING_CHANGED : null)}
+      onSubmit={handleSave}
+      onClose={onClose}
     >
+      <FormField label="Container path" htmlFor="mount-editor-path" hint={pathError}>
+        <input
+          id="mount-editor-path"
+          type="text"
+          value={form.containerPath}
+          onChange={(e) => setField('containerPath', e.target.value)}
+          placeholder="/path/in/container"
+          ref={!isEdit ? autoFocusField : undefined}
+          autoComplete="off"
+          spellCheck={false}
+          className="input-field font-mono"
+        />
+      </FormField>
 
-      <form
-        id={FORM_ID}
-        onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        className="space-y-3"
+      <FormField
+        label="Mount name"
+        htmlFor="mount-editor-name"
+        hint={nameError || 'Storage key — names the mount and its host-side data directory.'}
       >
-        <FormField label="Container path" htmlFor="mount-editor-path" hint={pathError}>
-          <input
-            id="mount-editor-path"
-            type="text"
-            value={form.containerPath}
-            onChange={(e) => setField('containerPath', e.target.value)}
-            placeholder="/path/in/container"
-            ref={!isEdit ? autoFocusField : undefined}
-            autoComplete="off"
-            spellCheck={false}
-            className="input-field font-mono"
-          />
-        </FormField>
+        <input
+          id="mount-editor-name"
+          type="text"
+          value={form.name}
+          onChange={(e) => setField('name', e.target.value)}
+          placeholder="storage key"
+          autoComplete="off"
+          spellCheck={false}
+          className="input-field font-mono"
+        />
+      </FormField>
 
+      {isTmpfs && (
         <FormField
-          label="Mount name"
-          htmlFor="mount-editor-name"
-          hint={nameError || 'Storage key — names the mount and its host-side data directory.'}
+          label="Size"
+          htmlFor="mount-editor-size"
+          hint={sizeError || `In-memory cap in MiB (1–${TMPFS_MAX_SIZE_MIB}).`}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              id="mount-editor-size"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              value={form.sizeMiB}
+              onChange={(e) => setDigits('sizeMiB', e.target.value, 4)}
+              className="input-field w-24 text-right font-mono"
+              aria-label="Tmpfs size in MiB"
+            />
+            <span className="text-xs text-text-muted">MiB</span>
+          </div>
+        </FormField>
+      )}
+
+      {form.type === 'directory' && (
+        <FormField
+          label="Source"
+          htmlFor="mount-editor-source"
+          hint={sourceMissing ? 'The referenced storage mount no longer exists.' : null}
+        >
+          <select
+            id="mount-editor-source"
+            value={form.sourceId || ''}
+            onChange={(e) => setSource(e.target.value || null)}
+            className="input-field"
+          >
+            <option value="">Local (container data dir)</option>
+            {storageMounts.map((sm) => (
+              <option key={sm.id} value={sm.id}>
+                {(sm.label && sm.label.trim()) || sm.mountPath}
+              </option>
+            ))}
+            {sourceMissing && <option value={form.sourceId}>{form.sourceId} (missing)</option>}
+          </select>
+        </FormField>
+      )}
+
+      {form.type === 'directory' && !!form.sourceId && (
+        <FormField
+          label="Sub-path"
+          htmlFor="mount-editor-subpath"
+          hint={subPathError || 'Relative to the storage mount root; empty mounts the root.'}
         >
           <input
-            id="mount-editor-name"
+            id="mount-editor-subpath"
             type="text"
-            value={form.name}
-            onChange={(e) => setField('name', e.target.value)}
-            placeholder="storage key"
+            value={form.subPath || ''}
+            onChange={(e) => setField('subPath', e.target.value)}
+            placeholder="(empty = mount root)"
             autoComplete="off"
             spellCheck={false}
             className="input-field font-mono"
           />
         </FormField>
+      )}
 
-        {isTmpfs && (
-          <FormField
-            label="Size"
-            htmlFor="mount-editor-size"
-            hint={sizeError || `In-memory cap in MiB (1–${TMPFS_MAX_SIZE_MIB}).`}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                id="mount-editor-size"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={4}
-                value={form.sizeMiB}
-                onChange={(e) => setDigits('sizeMiB', e.target.value, 4)}
-                className="input-field w-24 text-right font-mono"
-                aria-label="Tmpfs size in MiB"
-              />
-              <span className="text-xs text-text-muted">MiB</span>
-            </div>
-          </FormField>
-        )}
+      {!isTmpfs && (
+        <FormCheckbox
+          label="Read-only"
+          hint="Mount without write access inside the container."
+          checked={form.readonly}
+          onChange={(e) => setField('readonly', e.target.checked)}
+        />
+      )}
 
-        {form.type === 'directory' && (
-          <FormField
-            label="Source"
-            htmlFor="mount-editor-source"
-            hint={sourceMissing ? 'The referenced storage mount no longer exists.' : null}
-          >
-            <select
-              id="mount-editor-source"
-              value={form.sourceId || ''}
-              onChange={(e) => setSource(e.target.value || null)}
-              className="input-field"
-            >
-              <option value="">Local (container data dir)</option>
-              {storageMounts.map((sm) => (
-                <option key={sm.id} value={sm.id}>
-                  {(sm.label && sm.label.trim()) || sm.mountPath}
-                </option>
-              ))}
-              {sourceMissing && <option value={form.sourceId}>{form.sourceId} (missing)</option>}
-            </select>
-          </FormField>
-        )}
+      {form.type === 'file' && (
+        <FormCheckbox
+          label="Secret"
+          hint={isEdit && start.secret
+            ? 'Unchecking empties the stored file — upload or paste the content again afterwards.'
+            : 'Content becomes write-only — it can be replaced or cleared, never read back.'}
+          checked={form.secret}
+          onChange={(e) => setField('secret', e.target.checked)}
+        />
+      )}
 
-        {form.type === 'directory' && !!form.sourceId && (
-          <FormField
-            label="Sub-path"
-            htmlFor="mount-editor-subpath"
-            hint={subPathError || 'Relative to the storage mount root; empty mounts the root.'}
-          >
+      {showOwnerIds && (
+        <FormField
+          label="Owner uid:gid"
+          hint={ownerError || 'In-container UID:GID mapped to the host deploy user (size:1 idmap). 0:0 disables it.'}
+        >
+          <div className="flex items-center gap-2">
             <input
-              id="mount-editor-subpath"
               type="text"
-              value={form.subPath || ''}
-              onChange={(e) => setField('subPath', e.target.value)}
-              placeholder="(empty = mount root)"
-              autoComplete="off"
-              spellCheck={false}
-              className="input-field font-mono"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={5}
+              value={form.containerOwnerUid}
+              onChange={(e) => setDigits('containerOwnerUid', e.target.value, 5)}
+              className="input-field w-24 text-right font-mono"
+              aria-label="Owner UID inside container"
             />
-          </FormField>
-        )}
-
-        {!isTmpfs && (
-          <FormCheckbox
-            label="Read-only"
-            hint="Mount without write access inside the container."
-            checked={form.readonly}
-            onChange={(e) => setField('readonly', e.target.checked)}
-          />
-        )}
-
-        {form.type === 'file' && (
-          <FormCheckbox
-            label="Secret"
-            hint={isEdit && start.secret
-              ? 'Unchecking empties the stored file — upload or paste the content again afterwards.'
-              : 'Content becomes write-only — it can be replaced or cleared, never read back.'}
-            checked={form.secret}
-            onChange={(e) => setField('secret', e.target.checked)}
-          />
-        )}
-
-        {showOwnerIds && (
-          <FormField
-            label="Owner uid:gid"
-            hint={ownerError || 'In-container UID:GID mapped to the host deploy user (size:1 idmap). 0:0 disables it.'}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={5}
-                value={form.containerOwnerUid}
-                onChange={(e) => setDigits('containerOwnerUid', e.target.value, 5)}
-                className="input-field w-24 text-right font-mono"
-                aria-label="Owner UID inside container"
-              />
-              <span className="text-text-muted">:</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={5}
-                value={form.containerOwnerGid}
-                onChange={(e) => setDigits('containerOwnerGid', e.target.value, 5)}
-                className="input-field w-24 text-right font-mono"
-                aria-label="Owner GID inside container"
-              />
-            </div>
-          </FormField>
-        )}
-
-        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
-      </form>
-    </Modal>
+            <span className="text-text-muted">:</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={5}
+              value={form.containerOwnerGid}
+              onChange={(e) => setDigits('containerOwnerGid', e.target.value, 5)}
+              className="input-field w-24 text-right font-mono"
+              aria-label="Owner GID inside container"
+            />
+          </div>
+        </FormField>
+      )}
+    </FormModal>
   );
 }

@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { Loader2 } from 'lucide-react';
 
-import ErrorBanner from './ErrorBanner.jsx';
+import CommandErrors from './CommandErrors.jsx';
 import Modal from './Modal.jsx';
 import { formModalNeutralBtn, formModalPrimaryBtn } from './FormModalChrome.jsx';
 
@@ -12,9 +12,11 @@ import { formModalNeutralBtn, formModalPrimaryBtn } from './FormModalChrome.jsx'
  * bottom of the form, which stays open. `blocked` says why Save is off (a problem with
  * the values, or nothing changed); `onSubmit` runs on Save and on Enter. While Save
  * runs the form cannot be closed (Cancel, Escape or the X), so its failure shows.
+ * A save run under keys (one form, two writes) shows one banner per failed key,
+ * `errorPrefix(key)` naming it. `footerStart` holds a secondary action, at the left.
  */
 export default function FormModal({
-  title, subtitle, saveLabel = 'Save', save, blocked, onSubmit, onClose, size = 'sm', footerStart, children,
+  title, subtitle, saveLabel = 'Save', save, blocked, onSubmit, onClose, size = 'sm', footerStart, errorPrefix, children,
 }) {
   const formId = useId();
   const saving = save.busy;
@@ -30,7 +32,7 @@ export default function FormModal({
       closeOnEscape={!saving}
       footer={(
         <>
-          {footerStart && <div className="mr-auto flex items-center gap-2">{footerStart}</div>}
+          {footerStart && <div className="mr-auto flex min-w-0 items-center gap-2">{footerStart}</div>}
           <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
             Cancel
           </button>
@@ -50,7 +52,7 @@ export default function FormModal({
         }}
       >
         {children}
-        <ErrorBanner error={save.error} onDismiss={save.dismiss} />
+        <CommandErrors commands={[save]} prefix={errorPrefix} />
       </form>
     </Modal>
   );

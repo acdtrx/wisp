@@ -1,20 +1,13 @@
 import { useState } from 'react';
-import { Check, Copy, Dices, Loader2 } from 'lucide-react';
+import { Check, Copy, Dices } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import {
-  FormCheckbox,
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
 import { autoFocusField } from '../../lib/focus.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
-
-const FORM_ID = 'env-var-editor-form';
+import FormModal from '../shared/FormModal.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const sideBtn =
   'flex h-[34px] shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary hover:bg-surface-sidebar transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -110,7 +103,7 @@ function envProblems(form, otherKeys, creating) {
   return problems;
 }
 
-function EnvVarEditor({ open, env, rowKey: openedKey, onSubmit, onClose }) {
+function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
   /* The variable and the other variables' keys, as the editor opened. */
   const [opened] = useState(() => {
     const rows = rowsFromEnv(env);
@@ -182,81 +175,62 @@ function EnvVarEditor({ open, env, rowKey: openedKey, onSubmit, onClose }) {
 
   return (
     <>
-      <Modal
-        open={open}
-        onClose={onClose}
+      <FormModal
         title={isEdit ? 'Edit variable' : 'Add variable'}
         subtitle={isEdit ? rowKey : 'Container environment variable'}
         size="md"
-        height="cap"
-        /* A nested confirm is the top layer — Escape must close only it. */
-        closeOnEscape={!saving}
-        footer={(
-          <>
-            <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
-              Cancel
-            </button>
-            <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-              {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
-              Save
-            </button>
-          </>
-        )}
+        save={save}
+        blocked={blocked ?? (isEdit && !dirty ? NOTHING_CHANGED : null)}
+        onSubmit={handleSave}
+        onClose={onClose}
       >
-        <form
-          id={FORM_ID}
-          onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-          className="space-y-3"
-        >
-          <FormField label="Key" htmlFor="env-editor-key" hint={keyHint}>
-            <input
-              id="env-editor-key"
-              type="text"
-              value={form.key}
-              onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
-              placeholder="KEY"
-              ref={!isEdit ? autoFocusField : undefined}
-              autoComplete="off"
-              spellCheck={false}
-              className="input-field font-mono"
-            />
-          </FormField>
-          <FormField label="Value" htmlFor="env-editor-value" hint={valueHint}>
-            <div className="flex items-center gap-2">
-              <input
-                id="env-editor-value"
-                type={form.secret ? 'password' : 'text'}
-                value={form.value}
-                onChange={(e) => setForm((f) => ({ ...f, value: e.target.value, valueTouched: true }))}
-                placeholder={form.secret && isEdit && row?.isSet ? 'Enter new value to replace' : 'value'}
-                autoComplete={form.secret ? 'new-password' : 'off'}
-                spellCheck={false}
-                className="input-field min-w-0 flex-1 font-mono"
-              />
-              {form.secret && (
-                <button
-                  type="button"
-                  onClick={requestGenerate}
-                  className={sideBtn}
-                  title="Generate random value"
-                  aria-label="Generate random value"
-                >
-                  <Dices size={14} aria-hidden />
-                </button>
-              )}
-            </div>
-          </FormField>
-          <FormCheckbox
-            label="Secret"
-            hint={isEdit && row?.secret
-              ? 'Unchecking clears the stored value — enter a new one above.'
-              : 'Hidden from the UI after saving — the value can be overwritten but never read back.'}
-            checked={form.secret}
-            onChange={(e) => setForm((f) => ({ ...f, secret: e.target.checked }))}
+        <FormField label="Key" htmlFor="env-editor-key" hint={keyHint}>
+          <input
+            id="env-editor-key"
+            type="text"
+            value={form.key}
+            onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+            placeholder="KEY"
+            ref={!isEdit ? autoFocusField : undefined}
+            autoComplete="off"
+            spellCheck={false}
+            className="input-field font-mono"
           />
-          <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
-        </form>
-      </Modal>
+        </FormField>
+        <FormField label="Value" htmlFor="env-editor-value" hint={valueHint}>
+          <div className="flex items-center gap-2">
+            <input
+              id="env-editor-value"
+              type={form.secret ? 'password' : 'text'}
+              value={form.value}
+              onChange={(e) => setForm((f) => ({ ...f, value: e.target.value, valueTouched: true }))}
+              placeholder={form.secret && isEdit && row?.isSet ? 'Enter new value to replace' : 'value'}
+              autoComplete={form.secret ? 'new-password' : 'off'}
+              spellCheck={false}
+              className="input-field min-w-0 flex-1 font-mono"
+            />
+            {form.secret && (
+              <button
+                type="button"
+                onClick={requestGenerate}
+                className={sideBtn}
+                title="Generate random value"
+                aria-label="Generate random value"
+              >
+                <Dices size={14} aria-hidden />
+              </button>
+            )}
+          </div>
+        </FormField>
+        <FormCheckbox
+          label="Secret"
+          hint={isEdit && row?.secret
+            ? 'Unchecking clears the stored value — enter a new one above.'
+            : 'Hidden from the UI after saving — the value can be overwritten but never read back.'}
+          checked={form.secret}
+          onChange={(e) => setForm((f) => ({ ...f, secret: e.target.checked }))}
+        />
+      </FormModal>
 
       <ConfirmDialog
         open={!!pendingGenerate}

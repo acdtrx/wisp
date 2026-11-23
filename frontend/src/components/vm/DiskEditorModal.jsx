@@ -1,13 +1,7 @@
 import RadioPills from '../shared/RadioPills.jsx';
-import { Loader2 } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
 import RecordError from '../shared/RecordError.jsx';
-import {
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import {
   attachDiskToVM,
   createDiskOnVM,
@@ -17,11 +11,10 @@ import { formatBytes } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
-
-const FORM_ID = 'disk-editor-form';
+import FormModal from '../shared/FormModal.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const DISK_BUS_OPTIONS = [
   { value: 'virtio', label: 'VirtIO' },
@@ -122,7 +115,6 @@ function diskProblems(form) {
 }
 
 function DiskEditor({
-  open,
   vmName,
   slot,
   editing,
@@ -190,96 +182,78 @@ function DiskEditor({
   );
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
+    <FormModal
       title={isEdit ? 'Edit disk' : 'Add disk'}
       subtitle={`${slot} · ${vmName}`}
       size="md"
-      height="cap"
-      closeOnEscape={!saving}
-      footer={(
-        <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
-            Cancel
-          </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
-            {isEdit ? 'Save' : isAttach ? 'Attach' : 'Create'}
-          </button>
-        </>
-      )}
+      saveLabel={isEdit ? 'Save' : isAttach ? 'Attach' : 'Create'}
+      save={save}
+      blocked={blocked ?? (isEdit && !dirty ? NOTHING_CHANGED : null)}
+      onSubmit={handleSave}
+      onClose={onClose}
     >
-      <form
-        id={FORM_ID}
-        onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        className="space-y-3"
-      >
-        {!isEdit && (
-          <FormField label="Source">
-            <AddModePills
-              value={form.mode}
-              onChange={(v) => setField('mode', v)}
+      {!isEdit && (
+        <FormField label="Source">
+          <AddModePills
+            value={form.mode}
+            onChange={(v) => setField('mode', v)}
+          />
+        </FormField>
+      )}
+
+      {isAttach && (
+        <FormField
+          label="Image"
+          htmlFor="disk-editor-image"
+          hint={imageError || 'Disk images from the library; the original file is attached as-is.'}
+        >
+          <LibraryDiskSelect value={form.imagePath} onChange={(value) => setField('imagePath', value)} />
+        </FormField>
+      )}
+
+      {isAttach ? (
+        <FormField
+          label="Resize after attach"
+          htmlFor="disk-editor-resize"
+          hint={resizeError || 'Optional — leave empty to keep the image size. Disks can only grow.'}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              id="disk-editor-resize"
+              type="number"
+              min={1}
+              step={1}
+              value={form.resizeGB}
+              onChange={(e) => setField('resizeGB', e.target.value)}
+              placeholder="optional"
+              className="input-field w-28 text-right font-mono"
             />
-          </FormField>
-        )}
+            <span className="text-xs text-text-muted">GB</span>
+          </div>
+        </FormField>
+      ) : (
+        <FormField
+          label="Size"
+          htmlFor="disk-editor-size"
+          hint={sizeError || (isEdit ? 'Disks can only grow — shrinking is not supported.' : null)}
+        >
+          <div className="flex items-center gap-2">
+            <input
+              id="disk-editor-size"
+              type="number"
+              min={1}
+              step={1}
+              value={form.sizeGB}
+              onChange={(e) => setField('sizeGB', e.target.value)}
+              ref={!isEdit ? autoFocusField : undefined}
+              className="input-field w-28 text-right font-mono"
+            />
+            <span className="text-xs text-text-muted">GB</span>
+          </div>
+        </FormField>
+      )}
 
-        {isAttach && (
-          <FormField
-            label="Image"
-            htmlFor="disk-editor-image"
-            hint={imageError || 'Disk images from the library; the original file is attached as-is.'}
-          >
-            <LibraryDiskSelect value={form.imagePath} onChange={(value) => setField('imagePath', value)} />
-          </FormField>
-        )}
-
-        {isAttach ? (
-          <FormField
-            label="Resize after attach"
-            htmlFor="disk-editor-resize"
-            hint={resizeError || 'Optional — leave empty to keep the image size. Disks can only grow.'}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                id="disk-editor-resize"
-                type="number"
-                min={1}
-                step={1}
-                value={form.resizeGB}
-                onChange={(e) => setField('resizeGB', e.target.value)}
-                placeholder="optional"
-                className="input-field w-28 text-right font-mono"
-              />
-              <span className="text-xs text-text-muted">GB</span>
-            </div>
-          </FormField>
-        ) : (
-          <FormField
-            label="Size"
-            htmlFor="disk-editor-size"
-            hint={sizeError || (isEdit ? 'Disks can only grow — shrinking is not supported.' : null)}
-          >
-            <div className="flex items-center gap-2">
-              <input
-                id="disk-editor-size"
-                type="number"
-                min={1}
-                step={1}
-                value={form.sizeGB}
-                onChange={(e) => setField('sizeGB', e.target.value)}
-                ref={!isEdit ? autoFocusField : undefined}
-                className="input-field w-28 text-right font-mono"
-              />
-              <span className="text-xs text-text-muted">GB</span>
-            </div>
-          </FormField>
-        )}
-
-        {busField}
-
-        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
-      </form>
-    </Modal>
+      {busField}
+    </FormModal>
   );
 }

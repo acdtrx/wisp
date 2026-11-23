@@ -1,19 +1,13 @@
-import { AlertTriangle, Loader2, Shuffle } from 'lucide-react';
+import { AlertTriangle, Shuffle } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
-import {
-  FormField,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import NicModelPills from './NicModelPills.jsx';
 import { randomMac } from '../../utils/randomMac.js';
 import { autoFocusField } from '../../lib/focus.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
-
-const FORM_ID = 'nic-editor-form';
+import FormModal from '../shared/FormModal.jsx';
+import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const sideBtn =
   'flex h-[34px] shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary hover:bg-surface-sidebar transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -38,7 +32,7 @@ export default function NicEditorModal(props) {
   return props.open ? <NicEditor {...props} /> : null;
 }
 
-function NicEditor({ open, index, opened, bridges = [], onSubmit, onClose }) {
+function NicEditor({ index, opened, bridges = [], onSubmit, onClose }) {
   const isEdit = opened != null;
   const { form, start, dirty, setField } = useEditor(() => formFromNic(opened, bridges));
   const save = useCommand();
@@ -56,89 +50,71 @@ function NicEditor({ open, index, opened, bridges = [], onSubmit, onClose }) {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
+    <FormModal
       title={isEdit ? 'Edit network interface' : 'Add network interface'}
       subtitle={`net${index} · bridged`}
       size="md"
-      height="cap"
-      closeOnEscape={!saving}
-      footer={(
-        <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
-            Cancel
-          </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
-            Save
-          </button>
-        </>
-      )}
+      save={save}
+      blocked={isEdit && !dirty ? NOTHING_CHANGED : null}
+      onSubmit={handleSave}
+      onClose={onClose}
     >
-      <form
-        id={FORM_ID}
-        onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        className="space-y-3"
-      >
-        <FormField label="Bridge" htmlFor="nic-editor-bridge">
-          <select
-            id="nic-editor-bridge"
-            value={form.source}
-            onChange={(e) => setField('source', e.target.value)}
-            ref={!isEdit ? autoFocusField : undefined}
-            className="input-field"
-          >
-            {!form.source && <option value="">Select…</option>}
-            {bridges.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-            {form.source && !bridges.includes(form.source) && (
-              <option value={form.source}>{form.source}</option>
-            )}
-          </select>
-        </FormField>
-        <FormField label="Model">
-          <NicModelPills
-            value={form.model}
-            onChange={(v) => setField('model', v)}
-          />
-        </FormField>
-        <FormField
-          label="MAC address"
-          htmlFor="nic-editor-mac"
-          hint={macBreaksCloudInit ? (
-            <span className="inline-flex items-center gap-1 text-status-warning">
-              <AlertTriangle size={12} aria-hidden />
-              If this VM uses cloud-init, re-save cloud-init after changing the MAC.
-            </span>
-          ) : null}
+      <FormField label="Bridge" htmlFor="nic-editor-bridge">
+        <select
+          id="nic-editor-bridge"
+          value={form.source}
+          onChange={(e) => setField('source', e.target.value)}
+          ref={!isEdit ? autoFocusField : undefined}
+          className="input-field"
         >
-          <div className="flex items-center gap-2">
-            <input
-              id="nic-editor-mac"
-              type="text"
-              value={form.mac}
-              onChange={(e) => setField('mac', e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="input-field min-w-0 flex-1 font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => setField('mac', randomMac())}
-              className={sideBtn}
-              title="Randomize MAC"
-              aria-label="Randomize MAC"
-            >
-              <Shuffle size={14} aria-hidden />
-            </button>
-          </div>
-        </FormField>
-        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
-      </form>
-    </Modal>
+          {!form.source && <option value="">Select…</option>}
+          {bridges.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+          {form.source && !bridges.includes(form.source) && (
+            <option value={form.source}>{form.source}</option>
+          )}
+        </select>
+      </FormField>
+      <FormField label="Model">
+        <NicModelPills
+          value={form.model}
+          onChange={(v) => setField('model', v)}
+        />
+      </FormField>
+      <FormField
+        label="MAC address"
+        htmlFor="nic-editor-mac"
+        hint={macBreaksCloudInit ? (
+          <span className="inline-flex items-center gap-1 text-status-warning">
+            <AlertTriangle size={12} aria-hidden />
+            If this VM uses cloud-init, re-save cloud-init after changing the MAC.
+          </span>
+        ) : null}
+      >
+        <div className="flex items-center gap-2">
+          <input
+            id="nic-editor-mac"
+            type="text"
+            value={form.mac}
+            onChange={(e) => setField('mac', e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            className="input-field min-w-0 flex-1 font-mono"
+          />
+          <button
+            type="button"
+            onClick={() => setField('mac', randomMac())}
+            className={sideBtn}
+            title="Randomize MAC"
+            aria-label="Randomize MAC"
+          >
+            <Shuffle size={14} aria-hidden />
+          </button>
+        </div>
+      </FormField>
+    </FormModal>
   );
 }

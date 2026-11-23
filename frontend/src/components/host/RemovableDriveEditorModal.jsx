@@ -1,23 +1,14 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
 
-import Modal from '../shared/Modal.jsx';
-import {
-  FormField,
-  FormCheckbox,
-  formModalNeutralBtn,
-  formModalPrimaryBtn,
-} from '../shared/FormModalChrome.jsx';
+import { FormField, FormCheckbox } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
-import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { shortUuid } from '../../utils/formatters.js';
-
-const FORM_ID = 'removable-drive-editor-form';
+import FormModal from '../shared/FormModal.jsx';
 
 export const SUPPORTED_FSTYPES = ['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3'];
 
@@ -75,7 +66,7 @@ export default function RemovableDriveEditorModal(props) {
   return props.open ? <RemovableDriveEditor {...props} /> : null;
 }
 
-function RemovableDriveEditor({ open, drive: openedDrive = null, adoptDisk, onClose }) {
+function RemovableDriveEditor({ drive: openedDrive = null, adoptDisk, onClose }) {
   /* The drive as the editor opened: it never reads the settings again. */
   const [drive] = useState(openedDrive);
   const isEdit = drive != null;
@@ -112,83 +103,66 @@ function RemovableDriveEditor({ open, drive: openedDrive = null, adoptDisk, onCl
     : null;
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
+    <FormModal
       title={isEdit ? 'Edit drive' : 'Adopt drive'}
       subtitle={isEdit ? drive?.label || shortUuid(drive?.uuid) || driveId : `${adoptDeviceName} · ${adoptDisk?.devPath || ''}`}
       size="md"
-      height="cap"
-      closeOnEscape={!saving}
-      footer={(
-        <>
-          <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>
-            Cancel
-          </button>
-          <button type="submit" form={FORM_ID} disabled={!canSave} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-            {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}
-            {isEdit ? 'Save' : 'Adopt'}
-          </button>
-        </>
-      )}
+      saveLabel={isEdit ? 'Save' : 'Adopt'}
+      save={save}
+      blocked={blocked ?? (isEdit && !dirty ? NOTHING_CHANGED : null)}
+      onSubmit={handleSave}
+      onClose={onClose}
     >
-      <form
-        id={FORM_ID}
-        onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        className="space-y-3"
+      <div className="grid grid-cols-2 gap-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
+        <div>
+          <span className="block text-text-muted">UUID</span>
+          <span className="font-mono" title={form.uuid}>{shortUuid(form.uuid) || '—'}</span>
+        </div>
+        <div>
+          <span className="block text-text-muted">Filesystem</span>
+          <span className="font-mono">{form.fsType || '—'}</span>
+        </div>
+      </div>
+      <FormField label="Label" htmlFor="drive-editor-label">
+        <input
+          id="drive-editor-label"
+          type="text"
+          value={form.label}
+          onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+          placeholder="backup-drive"
+          ref={autoFocusField}
+          className="input-field"
+        />
+      </FormField>
+      <FormField
+        label="Mount path"
+        htmlFor="drive-editor-path"
+        hint={problems.mountPath ?? null}
       >
-        <div className="grid grid-cols-2 gap-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
-          <div>
-            <span className="block text-text-muted">UUID</span>
-            <span className="font-mono" title={form.uuid}>{shortUuid(form.uuid) || '—'}</span>
-          </div>
-          <div>
-            <span className="block text-text-muted">Filesystem</span>
-            <span className="font-mono">{form.fsType || '—'}</span>
-          </div>
-        </div>
-        <FormField label="Label" htmlFor="drive-editor-label">
-          <input
-            id="drive-editor-label"
-            type="text"
-            value={form.label}
-            onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-            placeholder="backup-drive"
-            ref={autoFocusField}
-            className="input-field"
-          />
-        </FormField>
-        <FormField
-          label="Mount path"
-          htmlFor="drive-editor-path"
-          hint={problems.mountPath ?? null}
-        >
-          <input
-            id="drive-editor-path"
-            type="text"
-            value={form.mountPath}
-            onChange={(e) => setForm((f) => ({ ...f, mountPath: e.target.value }))}
-            placeholder="/mnt/wisp/drive"
-            className="input-field font-mono"
-          />
-        </FormField>
-        <div className="grid gap-3 pt-1 sm:grid-cols-2">
-          <FormCheckbox
-            label="Read-only"
-            hint={form.fsType === 'ntfs3' ? 'NTFS mounts are always read-only.' : 'Mount without write access.'}
-            checked={form.readOnly}
-            onChange={(e) => setForm((f) => ({ ...f, readOnly: e.target.checked }))}
-            disabled={form.fsType === 'ntfs3'}
-          />
-          <FormCheckbox
-            label="Auto-mount"
-            hint="Mount automatically when the drive is inserted."
-            checked={form.autoMount}
-            onChange={(e) => setForm((f) => ({ ...f, autoMount: e.target.checked }))}
-          />
-        </div>
-        <ErrorBanner className="mt-3" error={save.error} onDismiss={save.dismiss} />
-      </form>
-    </Modal>
+        <input
+          id="drive-editor-path"
+          type="text"
+          value={form.mountPath}
+          onChange={(e) => setForm((f) => ({ ...f, mountPath: e.target.value }))}
+          placeholder="/mnt/wisp/drive"
+          className="input-field font-mono"
+        />
+      </FormField>
+      <div className="grid gap-3 pt-1 sm:grid-cols-2">
+        <FormCheckbox
+          label="Read-only"
+          hint={form.fsType === 'ntfs3' ? 'NTFS mounts are always read-only.' : 'Mount without write access.'}
+          checked={form.readOnly}
+          onChange={(e) => setForm((f) => ({ ...f, readOnly: e.target.checked }))}
+          disabled={form.fsType === 'ntfs3'}
+        />
+        <FormCheckbox
+          label="Auto-mount"
+          hint="Mount automatically when the drive is inserted."
+          checked={form.autoMount}
+          onChange={(e) => setForm((f) => ({ ...f, autoMount: e.target.checked }))}
+        />
+      </div>
+    </FormModal>
   );
 }
