@@ -16,7 +16,7 @@ List all containers (summary).
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 
-Live updates arrive on the `containers` topic of `GET /api/events` (see [Events stream](API.md#events-stream-sse)): the same array, pushed when containerd emits a relevant event (`tasks/start`, `tasks/exit`, `tasks/delete`, `containers/create`, `containers/update`, `containers/delete`, etc.), when a `container.json` is written by wisp, or when an image-update check completes. No polling timer.
+Live updates arrive on the `containers` topic of `GET /api/events` (see [Events stream](API.md#events-stream-sse)): the same array, pushed when a container's task or definition changes in containerd, when a `container.json` is written by wisp, or when an image-update check completes. No polling timer.
 
 ### POST /api/containers · `admin`
 
@@ -34,7 +34,7 @@ On create, the server writes defaults in `container.json` (empty `mounts`, bridg
 
 Progress events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created", ... }`, then `done` or `error`.
 
-The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case the backend skips ref normalization and the Transfer pull entirely, so the sequence is `validating` → `using-local` → `creating` → `created` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `created` → `done`.
+The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case nothing is normalized or pulled, so the sequence is `validating` → `using-local` → `creating` → `created` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `created` → `done`.
 
 `created` (`{ step, name, imageDigest }`) means the containerd definition exists; it is not terminal — an app container still writes its config files after it, and a failure there rolls the container back and ends the job with `error`. The terminal `{ step: "done", result: { name } }` comes only from job completion.
 
@@ -66,7 +66,7 @@ Remove an image from containerd. Query parameter **`ref`** (required): the image
 
 Start an image update check in the background. **Body:** `{ ref?: string }` — when `ref` is omitted (or empty) a bulk check runs over every image in the library; when `ref` is given, only that image is checked.
 
-For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the image-meta sidecar and the container list (pushed on the `containers` SSE topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` start the same job kind (`container-image-update-check`). See CONTAINERS.md → *Image updates*.
+For each image, the current top-level digest is recorded, the image is pulled again (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the container list (pushed on the `containers` topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` start the same job kind (`container-image-update-check`). See CONTAINERS.md → *Image updates*.
 
 **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`. **Shared** ([API.md → Background jobs](API.md#background-jobs)), by scope: a start joins a running check that covers what it asks — a single-image check joins a running all-images check or a check of the same image — and answers that job's ack; an all-images check never joins a single-image one and starts its own. Checks take turns: a run waits for the one before it, so two never pull the same image at once.
 
@@ -98,7 +98,7 @@ Secret **file mounts** in **`mounts`** (a stored `secret: true`, or declared sec
 
 ### GET /api/containers/:name/mounts/usage · `read`
 
-Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): each mount's bind source — Local `files/<name>` dir or storage `mountPath/subPath` — is sized as the sum of file byte lengths (stdlib walk, symlinks not followed). Can take seconds for large data directories.
+Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): each mount's bind source — Local `files/<name>` dir or storage `mountPath/subPath` — is sized as the sum of file byte lengths (symlinks not followed). Can take seconds for large data directories.
 
 **200:** `{ name, mounts: [{ name, containerPath, type, source, hostPath, sizeBytes, partial }] }`
 
@@ -114,7 +114,7 @@ Partially update container config.
 
 **Body:** Any subset of the fields below — `name`, `image`, `command` (an argv array or `null`), `cpuLimit` (cores > 0, or `null`), `memoryLimitMiB` (an integer ≥ 1, or `null`), `restartPolicy`, `autostart`, `autoBackup`, `runAsRoot`, `localDns`, `iconId`, `network`, `envPatch`, `mounts`, `mountRenames`, `devices`, `appConfig`. Any other key — `env`, `services`, `eject`, and the server-owned fields (`uuid`, `createdAt`, `state`, `imageDigest`, `imagePulledAt`, `updateAvailable`, `pendingRestart`, `metadata`) — is **400** `VALIDATION_FAILED` naming it (settled 2026-11-20: unknown keys refused). Environment variables change through **`envPatch`** only (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`autoBackup`:** boolean — include this container in the daily scheduled backup (no restart needed). **`restartPolicy`:** `never` | `on-failure` | `unless-stopped` | `always`, anything else → **400** `VALIDATION_FAILED`; applies to the next exit, no restart needed (CONTAINERS.md → [Restart policy](CONTAINERS.md#restart-policy)). **`image`:** non-empty string (trimmed): an empty one is **400** `VALIDATION_FAILED`, one of whitespace only **422** `INVALID_CONTAINER_IMAGE_REF`; stored exactly as create stores it — the literal name when containerd holds an image by that name, else Docker-normalized (`nginx:1.27` → `docker.io/library/nginx:1.27`; CONTAINERS.md → *Image Management*). A changed image on a running container sets its `pendingRestart` flag. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
 
-**`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create; invalid → **400** `VALIDATION_FAILED`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. containerd unreachable → **503** `NO_CONTAINERD`, and nothing is renamed. The rename runs first, with its follow-ups, then any other fields in the body apply to the renamed container: when they fail, the answer is their error and the rename stands. The name in effect is the one sent (validation refuses anything it would change), so the client that renamed follows from its request; the change is announced under the new name, and other clients follow the container's `uuid` in the `containers` list. URL paths and SSE channels under the old name stop responding immediately — clients re-subscribe under the new name. The on-disk container directory and the containerd container record are renamed in lockstep; the (ephemeral) rootfs snapshot is dropped and re-prepared on next start. See CONTAINERS.md → [Rename](../specs/CONTAINERS.md#rename).
+**`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create; invalid → **400** `VALIDATION_FAILED`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. containerd unreachable → **503** `NO_CONTAINERD`, and nothing is renamed. The rename runs first, with its follow-ups, then any other fields in the body apply to the renamed container: when they fail, the answer is their error and the rename stands. The name in effect is the one sent (validation refuses anything it would change), so the client that renamed follows from its request; the change is announced under the new name, and other clients follow the container's `uuid` in the `containers` list. URL paths and SSE channels under the old name stop responding immediately — clients re-subscribe under the new name. See CONTAINERS.md → [Rename](CONTAINERS.md#rename).
 
 **`envPatch`:** Delta applied to the container's environment variables. Keyed by env var name:
 
@@ -129,7 +129,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`mountRenames`:** Optional, only together with `mounts`: `{ "<oldName>": "<newName>" }` marks entries of the new list as renamed current mounts, so Local data moves from `files/<old>` to `files/<new>` instead of being deleted with the old row. Rules and errors: [CONTAINERS.md § Mount entry](CONTAINERS.md#mount-entry). Local mounts dropped from `mounts` without a rename have their data deleted.
 
-**`devices`:** Replaces the entire devices array. Each element: `{ type: "gpu", device }` (a missing or other key, or another `type`, is **400** `VALIDATION_FAILED`). v1 caps the array at one entry; `device` must match `^/dev/dri/renderD\d+$`. Invalid shape → **422** `INVALID_CONTAINER_DEVICES`. Always requires a task restart on running containers. The configured device must exist and be a character device at start; otherwise the container fails to start with **503** `CONTAINER_DEVICE_MISSING`. See CONTAINERS.md → [Devices entry](../specs/CONTAINERS.md#devices-entry) for details.
+**`devices`:** Replaces the entire devices array. Each element: `{ type: "gpu", device }` (a missing or other key, or another `type`, is **400** `VALIDATION_FAILED`). v1 caps the array at one entry; `device` must match `^/dev/dri/renderD\d+$`. Invalid shape → **422** `INVALID_CONTAINER_DEVICES`. Always requires a task restart on running containers. The configured device must exist and be a character device at start; otherwise the container fails to start with **503** `CONTAINER_DEVICE_MISSING`. See CONTAINERS.md → [Devices entry](CONTAINERS.md#devices-entry) for details.
 
 **`services`:** Not editable via PATCH — refused as an unknown key (**400** `VALIDATION_FAILED`). Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
 
@@ -182,7 +182,7 @@ Kill a container (SIGKILL). Same scheduled-restart handling as Stop. While a sto
 SSE stream for per-container stats.
 
 - **Query:** `?intervalMs=` (an integer, default **3000**, min **2000**, max **60000**; outside the range **400** `VALIDATION_FAILED`, no longer clamped) — push interval in milliseconds for sampled metrics (CPU, memory, uptime).
-- **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid, mdnsHostname, ip }` (and related fields from `getContainerStats`).
+- **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid, mdnsHostname, ip }`.
 - `mdnsHostname` (registered `<hostname>.local`, or `null`) and `ip` (CNI-assigned address, or `null`) are re-read from the live container config on every tick. Both only exist once the container is *running*, so they cannot ride the `GET /api/containers/:name` snapshot the client takes when it selects a workload — clients must read them from this stream, exactly as the VM stats stream carries `mdnsHostname`/`guestIp`.
 - **Errors:** `{ error, detail }` (same shape as other SSE error payloads); an error without a code arrives as `INTERNAL_ERROR`.
 
@@ -234,7 +234,7 @@ The file part is streamed as it arrives — for a **file** mount into a temp fil
 
 **400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | `UPLOAD_NO_FILE` if no file part. **404:** `CONTAINER_NOT_FOUND` — container not found. **413:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
 
-(settled 2026-10-16: the file part is consumed while iterating, never held across later parts. busboy finishes a body only after every file stream has been read to its end, and `@fastify/multipart` ≥ 10.1 ends the parts iterator only when busboy finishes — holding the part to check for a second file hung every upload; on 10.0 it hung only once the body outgrew the stream buffers (observed between 70 and 200 KB). Staging rather than streaming straight into the mount keeps the one-file and size rejections from half-applying.)
+The file part is consumed while iterating, never held across later parts (settled 2026-10-16): holding it to check for a second file hangs the upload.
 
 ### POST /api/containers/:name/mounts/:mountName/file · `admin`
 
@@ -244,7 +244,7 @@ Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an exis
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
-Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary. The upload and the extract hold the container's operation lock as one, from the upload's first byte to the end of the extract: the upload is received in the job's check, before the job exists.
+Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check, the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip. The upload and the extract hold the container's operation lock as one, from the upload's first byte to the end of the extract: the upload is received in the job's check, before the job exists.
 
 **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` — another command holds the lock when the upload starts; while the upload and its extract run, other commands get it | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
 
@@ -252,7 +252,7 @@ Multipart: one file part. Mount must have **`type: "directory"`** (Local, not st
 
 **File** mounts only. Returns the backing file as UTF-8 text for the in-app editor.
 
-**Secret file mounts are refused for every caller** (session or token, any scope) with **403** `CONTAINER_MOUNT_SECRET` — a stored `secret: true`, or a file the container's app module declares secret (tiny-samba `tiny-samba-passwords`; zot `htpasswd`, `session-keys`, and `config-json` while OIDC is on). Their content is write-only: replace it with **PUT** or the file upload, never read it back. Non-secret files of app containers (Caddy's `Caddyfile`, …) are readable; *writes* to any app-managed mount stay refused with `APP_CONFIG_ONLY` (see PUT below). (settled 2026-10-16: P5.2 replaced the earlier refuse-all-app-mounts read guard with this generic secret rule — refusal for all callers, no token-only special case.)
+**Secret file mounts are refused for every caller** (session or token, any scope) with **403** `CONTAINER_MOUNT_SECRET` — a stored `secret: true`, or a file the container's app module declares secret (tiny-samba `tiny-samba-passwords`; zot `htpasswd`, `session-keys`, and `config-json` while OIDC is on). Their content is write-only: replace it with **PUT** or the file upload, never read it back. Non-secret files of app containers (Caddy's `Caddyfile`, …) are readable; *writes* to any app-managed mount stay refused with `APP_CONFIG_ONLY` (see PUT below). (settled 2026-10-16: one secret rule, refusal for all callers, no token-only special case.)
 
 **200:** `{ content: string }` — UTF-8 text (max **512 KiB** decoded size on disk).
 
@@ -260,7 +260,7 @@ Multipart: one file part. Mount must have **`type: "directory"`** (Local, not st
 
 ### PUT /api/containers/:name/mounts/:mountName/content · `admin`
 
-**Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length). The route's `bodyLimit` is set just above the content cap to reject oversized payloads at the parser before reaching the handler; the handler enforces the exact byte cap on the decoded content.
+**Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length).
 
 Works on secret mounts (write-only); `{ "content": "" }` clears one.
 
@@ -295,5 +295,3 @@ Update one service identified by its current **`port`** (URL segment). **Body:**
 Remove an mDNS service by its port. Live deregistration happens immediately if the container is running.
 
 **204:** removed; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **404:** `CONTAINER_SERVICE_NOT_FOUND`
-
-**200:** `{ ok: true }`
