@@ -32,7 +32,7 @@ Everything else can be changed while it runs.
 | **The app's own** (an app container) | See below | The app's rows and forms | `PATCH /api/containers/:name` `{ appConfig }`, the whole config |
 | **Image** | The image; "Update available" when a newer one was pulled | Edit: the image. An update is applied by Restart | `PATCH` `{ image }` |
 | **Environment** (not an app container) | Each variable; a secret shows as "Secret" | Add, Edit, Remove | `PATCH` `{ envPatch }` |
-| **Storage** (not an app container) | Each mount: its path, kind and size | Add a folder, a file or a memory folder; Edit; Remove; open a file's content; upload | The mount routes ([API-CONTAINERS.md](API-CONTAINERS.md)) |
+| **Storage** (not an app container) | Each mount: its path, kind and size | Add a folder, a file or a memory folder; Edit; Remove; open a file's content; upload. A zip upload is offered only for a folder kept on this host: for one kept on a storage share it is disabled and says so | The mount routes ([API-CONTAINERS.md](API-CONTAINERS.md)) |
 | **Network** | A switch: announce as `<name>.local`. Bridge, MAC, and the services it announces | The switch, at once. Edit *(needs stopped)*: bridge, MAC. A service: Add (one of the image's ports not yet announced, or a typed port), Edit, Remove, while the local name is on | `PATCH` `{ localDns }`; `PATCH` `{ network }`; the service routes |
 | **Limits and restarts** | CPU limit, memory limit, what happens when it stops | Edit | `PATCH` `{ cpuLimit, memoryLimitMiB, restartPolicy }` |
 | **Start-up and backups** | The last backup | Two switches: start with the host; include in the nightly backup. Back up now | `PATCH` `{ autostart }`, `{ autoBackup }`; the backup route |

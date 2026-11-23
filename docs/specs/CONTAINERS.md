@@ -186,7 +186,7 @@ Service publication is best-effort: if Avahi is unavailable, services are kept i
 
 ### Idmapped Local mounts
 
-When `runAsRoot` is true on a container, every **Local** directory/file bind mount carries a per-mount idmap that translates a single in-container UID/GID pair to the host deploy UID/GID. This makes files created inside the container land on the host with ownership the backend can read/delete without `sudo`. Storage-sourced mounts never get an idmap.
+When `runAsRoot` is true on a container, every **Local** directory/file bind mount carries a per-mount idmap that translates a single in-container UID/GID pair to the host deploy UID/GID. This makes files created inside the container land on the host with ownership the backend can read/delete without `sudo`. Storage-sourced mounts never get an idmap (CIFS/SMB/NFS support is inconsistent and the data lives outside the container directory anyway).
 
 **Mapping shape**: for each Local mount under `runAsRoot`, the mapping is attached **unconditionally** — there is no no-op short-circuit, even when `containerOwnerUid === deployUid`, so the contract is the same for every mount: exactly one in-container UID/GID writes through it cleanly.
 
@@ -226,7 +226,7 @@ Host device passthrough for containers. Unlike VM PCI passthrough (VFIO), the ho
 
 **Pre-start check:**
 - A `gpu` entry's `device` must still match `^/dev/dri/renderD\d+$` — re-checked here, not only at PATCH/create, because `container.json` can also arrive from a backup archive. Otherwise start fails with `INVALID_CONTAINER_DEVICES` (422).
-- The configured `device` path must exist and be a character device. If missing (driver glitch, hardware change, hot-removal), start hard-fails with `CONTAINER_DEVICE_MISSING` (503). The container is not auto-cleared of its `gpu` entry.
+- The configured `device` path must exist and be a character device. If missing (driver glitch, hardware change, hot-removal), start hard-fails with `CONTAINER_DEVICE_MISSING` (503). The container is not auto-cleared of its `gpu` entry: the failed start makes a lost GPU visible to a user who set up hardware acceleration.
 
 **Concurrency:** DRM render nodes are designed for concurrent open by multiple processes. Multiple Wisp containers (and the host itself) can hold the same device simultaneously. No exclusivity bookkeeping in Wisp.
 
@@ -243,7 +243,7 @@ Individual env vars can be marked `secret: true` to hide their values from the U
 - Flipping a key from `secret: true` to `secret: false` without providing a new value clears the stored value server-side: the UI never received the old value, so there is nothing to preserve. The UI warns the user before flipping the toggle.
 - Creating a brand-new secret key without a `value` is rejected with `CONFIG_ERROR` (`Secret env var "X" requires a value`).
 
-A container backup restores the env shape it holds: backups are outside the state migrations' reach (settled 2026-11-12).
+A container backup restores the env shape it holds: backups are outside the state migrations' reach, and container backups exist only since 2026-05-02, after both shape changes (settled 2026-11-12).
 
 ### Secret file mounts
 
@@ -402,7 +402,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 - **Apply on start (and restart):** the rootfs is prepared from the current library image on every start ([Ephemeral rootfs](#ephemeral-rootfs)). If containerd's current digest for the reference differs from the stored `imageDigest`, both `imageDigest` and `imagePulledAt` are refreshed. No registry I/O happens here; the start uses whatever the most recent check or create-time pull left in the local image store. No rollback logic: if the snapshot cannot be prepared, the container fails to start and the user must recreate.
 - **Auto-pull on missing image:** if the image was removed under us (e.g. `ctr -n wisp image rm <ref>`), the start pulls `config.image` and retries. Operator never has to intervene unless the registry itself is unreachable (in which case the pull surfaces the underlying error).
 - **Cached summary:** `GET /api/containers/images/update-status` returns `{ lastCheckedAt, imagesChecked, imagesUpdated }` from the last bulk or single-image run (in-memory, lost on restart).
-- **Modified timestamp stability:** containerd bumps an image's `updatedAt` on every pull, including idempotent re-pulls. To keep the Image Library's **Modified** column meaningful, Wisp pins each image's displayed timestamp, for every OCI image whether or not a container uses it: it returns the pinned value while the digest is unchanged, adopts containerd's current `updatedAt` when the digest changes or the image is new, and forgets refs no longer present in containerd.
+- **Modified timestamp stability:** containerd bumps an image's `updatedAt` on every pull, including idempotent re-pulls. To keep the Image Library's **Modified** column meaningful, Wisp pins each image's displayed timestamp, for every OCI image whether or not a container uses it: it returns the pinned value while the digest is unchanged, adopts containerd's current `updatedAt` when the digest changes or the image is new, and forgets refs no longer present in containerd. The pins live in a sidecar, `.oci-image-meta.json` in the containers path (shape `{ ref: { digest, updatedAt } }`), whose read-change-write runs one at a time; it also gives a container's `updateAvailable` the library digest without asking containerd. It is a cache: missing, it is rebuilt.
 - **Pinned digests:** containers whose `image` is `ref@sha256:…` never flag updates — correct behavior (immutable by design).
 - **Where it runs:** the check itself is containerManager's; starting it as a job and its hourly trigger are app glue, shared with the OS update check, because the manager cannot start a job (CODING-RULES §7).
 
@@ -424,7 +424,7 @@ A container's name is its containerd container ID, the directory key under `cont
 
 **Preconditions:**
 
-- Container must be **stopped** (no running/paused task). Returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise. The rename does not auto-stop: the user stops the container first.
+- Container must be **stopped** (no running/paused task). Returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise. The rename does not auto-stop: the user stops the container first (an auto-stop would amount to a restart, too much of a side effect for editing a name).
 - New name must pass the [name rules](#name-validation) (1–63 chars, no `..` / path separators).
 - New name must not already exist as a containerd container or as a directory under `containersPath`. Returns **409** `CONTAINER_EXISTS` otherwise.
 
