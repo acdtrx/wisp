@@ -13,6 +13,8 @@ export const disconnect = impl.disconnect;
 export const containerError = impl.containerError;
 
 export const getContainerDir = impl.getContainerDir;
+export const validateMountSegmentName = impl.validateMountSegmentName;
+export const validateSubPath = impl.validateSubPath;
 
 export const listContainers = impl.listContainers;
 export const getContainerConfig = impl.getContainerConfig;

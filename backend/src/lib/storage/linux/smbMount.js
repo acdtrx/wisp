@@ -5,8 +5,8 @@ import { writeFile, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../appErrors.js';
-import { runPrivileged, helperPath } from '../../base/index.js';
 import { isMountPoint } from '../mountTable.js';
+import { runWispMount } from './wispMountHelper.js';
 
 /*
  * Each ends after the helper's own worst case (docs/specs/STORAGE.md,
@@ -81,15 +81,6 @@ function helperFailure(message, err) {
   return createAppError(UNAVAILABLE, message, sanitizeStderr(err?.detail ?? err?.message));
 }
 
-async function runHelper(args, timeoutMs) {
-  try {
-    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs });
-  } catch (err) {
-    if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
-    throw err;
-  }
-}
-
 /**
  * Mount an SMB share.
  * @param {string} share - e.g. //server/share
@@ -123,7 +114,7 @@ async function _mountSMB(share, mountPath, { username, password, ownerOnly } = {
 
   const { credentials, dir } = await credentialsArg({ username, password });
   try {
-    await runHelper(['smb-mount', share, mountPath, credentials, ownerOnly ? 'owner-only' : 'shared'], MOUNT_TIMEOUT_MS);
+    await runWispMount(['smb-mount', share, mountPath, credentials, ownerOnly ? 'owner-only' : 'shared'], MOUNT_TIMEOUT_MS, UNAVAILABLE);
   } catch (err) {
     throw helperFailure(`Failed to mount ${share}`, err);
   } finally {
@@ -149,7 +140,7 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   const tempMountPath = `/mnt/wisp/smb-check-${Date.now()}`;
   const { credentials, dir } = await credentialsArg({ username, password });
   try {
-    await runHelper(['smb-check', trimmedShare, tempMountPath, credentials], CHECK_TIMEOUT_MS);
+    await runWispMount(['smb-check', trimmedShare, tempMountPath, credentials], CHECK_TIMEOUT_MS, UNAVAILABLE);
   } catch (err) {
     throw helperFailure(`Could not connect to ${trimmedShare}`, err);
   } finally {
@@ -168,7 +159,7 @@ export async function unmountSMB(mountPath, { lazy = false, ignoreNotMounted = f
     throw createAppError('SMB_INVALID', 'Invalid mountPath', 'mountPath must be absolute');
   }
   try {
-    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], UNMOUNT_TIMEOUT_MS);
+    await runWispMount([lazy ? 'unmount-lazy' : 'unmount', mountPath], UNMOUNT_TIMEOUT_MS, UNAVAILABLE);
   } catch (err) {
     if (ignoreNotMounted && err.reason === 'not-found') return;
     if (err.code === UNAVAILABLE) throw err;
@@ -184,7 +175,7 @@ export async function unmountSMB(mountPath, { lazy = false, ignoreNotMounted = f
 export async function rmdirMountpoint(mountPath) {
   if (!mountPath || !mountPath.startsWith('/mnt/wisp/')) return;
   try {
-    await runHelper(['rmdir', mountPath], RMDIR_TIMEOUT_MS);
+    await runWispMount(['rmdir', mountPath], RMDIR_TIMEOUT_MS, UNAVAILABLE);
   } catch (err) {
     if (err.reason === 'not-found') return;
     if (err.code === UNAVAILABLE) throw err;

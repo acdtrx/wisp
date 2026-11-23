@@ -3,10 +3,9 @@
  */
 import { containerError } from './containerManagerConnection.js';
 import { getTaskState, isTaskOn } from './containerManagerLifecycle.js';
+import { validateMountSegmentName, validateSubPath } from './containerMountNames.js';
 import {
   validateAndNormalizeMounts,
-  validateMountSegmentName,
-  validateSubPath,
   validateOwnerId,
   validateTmpfsSizeMiB,
   validateSecretFlag,

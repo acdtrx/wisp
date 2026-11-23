@@ -10,6 +10,7 @@ import {
 import { normalizeImageRef } from './containerImageRef.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 import { SNAPSHOTTER } from './containerManagerSnapshot.js';
+import { OCI_ARCH, hostLinuxManifests } from './containerManagerPlatform.js';
 
 /**
  * An image pull runs as long as the image is big: no total bound, but it is
@@ -20,17 +21,6 @@ const PULL_STALL_MS = 5 * 60_000;
 /** Opening the progress stream is one round trip. */
 const PROGRESS_STREAM_OPEN_MS = 30_000;
 
-const OCI_ARCH = ({ x64: 'amd64', arm64: 'arm64', arm: 'arm' })[process.arch] || process.arch;
-
-/** Map registry architecture strings to OCI-normalized values (matches common image indexes). */
-function normalizeOCIArchitecture(arch) {
-  if (!arch || typeof arch !== 'string') return '';
-  const a = arch.toLowerCase();
-  if (a === 'x86_64' || a === 'x86-64') return 'amd64';
-  if (a === 'aarch64') return 'arm64';
-  return a;
-}
-
 function formatPlatform(p) {
   if (!p?.os) return '';
   const os = p.os;
@@ -40,36 +30,11 @@ function formatPlatform(p) {
 }
 
 /**
- * Higher = preferred when multiple descriptors match linux + host arch (variant tie-break).
- */
-function variantPreference(platform) {
-  if (!platform) return 0;
-  const arch = normalizeOCIArchitecture(platform.architecture);
-  const v = (platform.variant || '').toLowerCase();
-  if (arch === 'arm64') {
-    if (v === 'v8' || v === '') return 3;
-    return 1;
-  }
-  if (arch === 'arm') {
-    if (v === 'v7') return 3;
-    if (v === 'v6') return 2;
-    if (v === '') return 1;
-    return 0;
-  }
-  return 1;
-}
-
-/**
  * Pick the child descriptor for this host from an OCI index / Docker manifest list.
  * Never falls back to an arbitrary first entry (avoids selecting Windows on multi-arch images).
  */
 function selectLinuxManifestDescriptor(manifests) {
-  const linux = manifests.filter((m) => {
-    const p = m.platform;
-    if (!p) return false;
-    if ((p.os || '').toLowerCase() !== 'linux') return false;
-    return normalizeOCIArchitecture(p.architecture) === OCI_ARCH;
-  });
+  const linux = hostLinuxManifests(manifests);
   if (linux.length === 0) {
     const available = manifests
       .map((m) => formatPlatform(m.platform))
@@ -80,11 +45,6 @@ function selectLinuxManifestDescriptor(manifests) {
       `No Linux image manifest for ${OCI_ARCH} in this image. Available platforms: ${hint}`,
     );
   }
-  linux.sort((a, b) => {
-    const d = variantPreference(b.platform) - variantPreference(a.platform);
-    if (d !== 0) return d;
-    return String(a.digest || '').localeCompare(String(b.digest || ''));
-  });
   return linux[0];
 }
 

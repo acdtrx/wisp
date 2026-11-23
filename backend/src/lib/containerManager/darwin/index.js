@@ -17,6 +17,7 @@ export {
 
 /* Pure filesystem work over the configured containers path — real on macOS too. */
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from '../linux/containerManagerFileModes.js';
+export { validateMountSegmentName, validateSubPath } from '../linux/containerMountNames.js';
 
 
 export { containerError };

@@ -2,7 +2,7 @@
  * Removable/fixed disk mount via `wisp-mount disk` helper. Same invocation pattern as smbMount.
  */
 import { createAppError } from '../../appErrors.js';
-import { runPrivileged, helperPath } from '../../base/index.js';
+import { runWispMount } from './wispMountHelper.js';
 
 /*
  * Each ends after the helper's own worst case (docs/specs/STORAGE.md,
@@ -39,15 +39,6 @@ function assertNoForbiddenChars(field, value) {
   }
 }
 
-async function runHelper(args, timeoutMs) {
-  try {
-    return await runPrivileged(helperPath('wisp-mount'), args, { timeoutMs });
-  } catch (err) {
-    if (err.reason === 'missing') throw createAppError(UNAVAILABLE, 'wisp-mount script not found or not readable', err.message);
-    throw err;
-  }
-}
-
 /**
  * Mount a filesystem by UUID at mountPath.
  * @param {string} uuid
@@ -81,7 +72,7 @@ async function _mountDisk(uuid, mountPath, { fsType, readOnly }) {
 
   const access = readOnly || fsType === 'ntfs3' ? 'ro' : 'rw';
   try {
-    await runHelper(['disk-mount', uuid, mountPath, fsType, access], MOUNT_TIMEOUT_MS);
+    await runWispMount(['disk-mount', uuid, mountPath, fsType, access], MOUNT_TIMEOUT_MS, UNAVAILABLE);
   } catch (err) {
     if (err.code === UNAVAILABLE) throw err;
     const safeMsg = sanitizeStderr(err.detail ?? err.message);
@@ -99,7 +90,7 @@ export async function unmountDisk(mountPath, { lazy = false, ignoreNotMounted = 
     throw createAppError('DISK_MOUNT_INVALID', 'Invalid mountPath', 'mountPath must be absolute');
   }
   try {
-    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], UNMOUNT_TIMEOUT_MS);
+    await runWispMount([lazy ? 'unmount-lazy' : 'unmount', mountPath], UNMOUNT_TIMEOUT_MS, UNAVAILABLE);
   } catch (err) {
     if (ignoreNotMounted && err.reason === 'not-found') return;
     if (err.code === UNAVAILABLE) throw err;

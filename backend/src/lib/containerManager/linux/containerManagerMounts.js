@@ -10,11 +10,12 @@
  * for the lifetime of the container task and are gone on stop/restart. tmpfs entries carry
  * a sizeMiB cap (default 64) and ignore sourceId/subPath/readonly/containerOwnerUid/Gid.
  */
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { lstat, mkdir, stat, writeFile, realpath } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerFilesDir } from './containerPaths.js';
+import { validateMountSegmentName, validateSubPath } from './containerMountNames.js';
 import { getMountStatus } from '../../storage/index.js';
 
 /**
@@ -23,37 +24,6 @@ import { getMountStatus } from '../../storage/index.js';
  * runAsRoot as root through the mount's idmap.
  */
 export const SECRET_MOUNT_FILE_MODE = 0o600;
-
-/**
- * @param {string} name
- * @returns {string|null} normalized segment or null if invalid
- */
-export function validateMountSegmentName(name) {
-  if (!name || typeof name !== 'string') return null;
-  const t = name.trim();
-  if (t.includes('/') || t.includes('\\') || t.includes('..')) return null;
-  if (t.startsWith('.')) return null;
-  if (t !== basename(t)) return null;
-  return t;
-}
-
-/**
- * Validate a sub-path (relative, no `..`, no leading `/`). Empty string is allowed (means mount root).
- * @param {unknown} value
- * @returns {string|null} normalized sub-path (no leading/trailing slashes) or null if invalid
- */
-export function validateSubPath(value) {
-  if (value === undefined || value === null || value === '') return '';
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (trimmed === '') return '';
-  if (trimmed.startsWith('/')) return null;
-  const segments = trimmed.split('/').filter((s) => s.length > 0);
-  for (const seg of segments) {
-    if (seg === '..' || seg === '.') return null;
-  }
-  return segments.join('/');
-}
 
 /**
  * Resolve the host-side bind-mount source path for a single mount entry.

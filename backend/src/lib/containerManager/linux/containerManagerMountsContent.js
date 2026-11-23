@@ -15,7 +15,8 @@ import { TextDecoder, TextEncoder } from 'node:util';
 import { containerError } from './containerManagerConnection.js';
 import { getContainerFilesDir } from './containerPaths.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
-import { findMount, validateMountSegmentName, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
+import { findMount, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
+import { validateMountSegmentName } from './containerMountNames.js';
 import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
 import { atomicTmpName } from './atomicJson.js';
 

@@ -4,53 +4,14 @@
  * size — not useful for display.
  */
 import { getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS } from './containerManagerConnection.js';
-
-const OCI_ARCH = ({ x64: 'amd64', arm64: 'arm64', arm: 'arm' })[process.arch] || process.arch;
-
-function normalizeOCIArchitecture(arch) {
-  if (!arch || typeof arch !== 'string') return '';
-  const a = arch.toLowerCase();
-  if (a === 'x86_64' || a === 'x86-64') return 'amd64';
-  if (a === 'aarch64') return 'arm64';
-  return a;
-}
-
-function variantPreference(platform) {
-  if (!platform) return 0;
-  const arch = normalizeOCIArchitecture(platform.architecture);
-  const v = (platform.variant || '').toLowerCase();
-  if (arch === 'arm64') {
-    if (v === 'v8' || v === '') return 3;
-    return 1;
-  }
-  if (arch === 'arm') {
-    if (v === 'v7') return 3;
-    if (v === 'v6') return 2;
-    if (v === '') return 1;
-    return 0;
-  }
-  return 1;
-}
+import { hostLinuxManifests } from './containerManagerPlatform.js';
 
 /**
  * Pick the child descriptor for this host from an OCI index / Docker manifest list.
  * Returns null if no Linux manifest matches the host arch (caller treats as unknown size).
  */
 function pickLinuxManifestDescriptor(manifests) {
-  if (!Array.isArray(manifests)) return null;
-  const linux = manifests.filter((m) => {
-    const p = m.platform;
-    if (!p) return false;
-    if ((p.os || '').toLowerCase() !== 'linux') return false;
-    return normalizeOCIArchitecture(p.architecture) === OCI_ARCH;
-  });
-  if (linux.length === 0) return null;
-  linux.sort((a, b) => {
-    const d = variantPreference(b.platform) - variantPreference(a.platform);
-    if (d !== 0) return d;
-    return String(a.digest || '').localeCompare(String(b.digest || ''));
-  });
-  return linux[0] ?? null;
+  return hostLinuxManifests(manifests)[0] ?? null;
 }
 
 async function readContent(digest) {

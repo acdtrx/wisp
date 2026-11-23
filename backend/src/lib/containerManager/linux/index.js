@@ -133,6 +133,7 @@ export {
 } from './containerManagerMountsContent.js';
 
 export { subscribeContainerChange } from './containerManagerChange.js';
+export { validateMountSegmentName, validateSubPath } from './containerMountNames.js';
 
 /* Every write of a mount's content announces itself (subscribeContainerChange);
  * container.json writes announce through the config-write notification. */
