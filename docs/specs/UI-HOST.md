@@ -102,19 +102,19 @@ Empty state (no visible tiles): "No lanterns yet", explaining that a container w
 
 Section cards, in this order. What each figure is and where it comes from: [HOST-MONITORING.md](HOST-MONITORING.md).
 
-- **CPU** — model, cores/threads, MHz, cache, load average (1/5/15 min), temperature when available, and **Power: W** only when the backend reports `cpuPowerWatts`; per-core usage bars below.
-- **Memory** — total, used, cached, buffers; swap total and used when swap is present.
+- **CPU** — model, cores/threads, MHz, cache, load average (1/5/15 min), temperature when available (its tooltip shows the max and critical values when the thresholds are known), and **Power: W** only when the backend reports `cpuPowerWatts`; per-core usage bars below.
+- **Memory** — total, used, cached, buffers; the RAM bar is used plus cached, without swap; swap total and used, with a bar of their own, when swap is present.
 - **Storage** — filesystem usage per mount point.
 - **Network** — one row per adapter: interface, MAC, speed, state. Real-time I/O is in the top bar stats.
 - **Software** — host, OS, kernel, IP; Wisp, Node, libvirt and QEMU versions.
-- **Hardware** — board, system and BIOS when available, the motherboard temperature when present; one table of RAM modules, block devices (model, size, disk health, temperature) and PCI devices. A drive is listed under its PCI controller. PCI bridge devices are omitted.
+- **Hardware** — board, system and BIOS when available, the motherboard temperature when present; one table (Type, Device, Vendor, Driver, Address, Temp) of RAM modules, block devices (model, size, disk health, temperature) and PCI devices, in three sections: **Main** (RAM modules, drives, network and storage controllers), **I/O** (display, audio, USB host controllers) and **Misc** (the rest). A drive is listed under its PCI controller; its temperature is the SMART one when present, else the NVMe reading from the stats stream; its power-on time is shown compactly in months, days and hours (30-day months, `2m 3d 12h`). PCI bridge devices are omitted.
 
 ### Tab: Host Mgmt
 
 Each block is a card:
 
 - **Network Bridges** — table with columns **Name**, **Parent**, **VLAN Id**, **Status**, **Actions**. Create is a modal form (parent select, VLAN id, derived-name preview). Delete is available on phones.
-- **Storage** — SMB shares and adopted removable drives. Read-only table rows; all create/edit flows use **modal form editors** (see [FRONTEND-RULES.md](../FRONTEND-RULES.md) § Modal form editor), so add/edit/adopt/delete work at every breakpoint. The share form: label, share, mount path, username, password with keep-on-empty semantics, and **Test connection** with inline OK/error text. The drive form (row **Edit**, and **Adopt** on a detected drive): the UUID and filesystem as text, label, mount path, read-only + auto-mount checkboxes; NTFS forces read-only. Mount state is a **status dot before the label** (green mounted / gray unmounted-or-present / red disconnected) — there is no Status column. On phones **tapping a row expands its actions** (mount, check, edit, delete) under it. The **Detected drives** table is visible on phones.
+- **Storage** — SMB shares and adopted removable drives. Read-only table rows; all create/edit flows use **modal form editors** (see [FRONTEND-RULES.md](../FRONTEND-RULES.md) § Modal form editor), so add/edit/adopt/delete work at every breakpoint. The share form: label, share, mount path, username, password with keep-on-empty semantics, and **Test connection** with inline OK/error text. The drive form (row **Edit**, and **Adopt** on a detected drive): the UUID and filesystem as text, label, mount path, read-only + auto-mount checkboxes; NTFS forces read-only. Mount state is a **status dot before the label** (green mounted / gray unmounted-or-present / red disconnected) — there is no Status column. An SMB row's **Check** shows its result on the button: green when the connection is fine, red when it failed, with the error as its tooltip. On phones **tapping a row expands its actions** (mount, check, edit, delete) under it. The **Detected drives** table is visible on phones.
 - **Backup**: the local backup path and the second destination, as text, with an Edit. The second destination is none, or any mount from Storage, shown with its type (SMB share or drive).
 - **Scheduled backups**: a switch (back up on schedule) that acts at once; the time, the destinations and what is kept, as text, with an Edit. The form holds the time, the destinations (Local, and the second destination when one is set; at least one), and how many days and weeks to keep (1 to 365 days, 0 to 52 weeks; a number outside is refused with a reason).
 

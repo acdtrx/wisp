@@ -173,8 +173,8 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
   "cpuTemp": 62.5,
   "cpuTempThresholds": { "maxC": 80.0, "critC": 95.0 },
   "thermalZones": [
-    { "type": "x86_pkg_temp", "label": "CPU Package", "tempC": 62.5, "maxC": 80.0, "critC": 95.0 },
-    { "type": "acpitz", "label": "ACPI", "tempC": 27.8, "maxC": null, "critC": 95.0 }
+    { "type": "x86_pkg_temp", "label": "CPU Package", "tempC": 62.5, "maxC": 80.0, "critC": 95.0, "pciAddress": null },
+    { "type": "nvme nvme0", "label": "nvme nvme0", "tempC": 41.0, "maxC": null, "critC": null, "pciAddress": "0000:01:00.0" }
   ],
   "cpuPowerWatts": 45.2,
   "memory": {
@@ -194,15 +194,18 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
   "runningContainers": 2,
   "pendingUpdates": 0,
   "updatesLastChecked": "2026-04-03T12:00:00.000Z",
+  "updateOperationInProgress": false,
   "rebootRequired": false,
-  "rebootReasons": []
+  "rebootReasons": [],
+  "wispUpdate": { "current": "…", "latest": "…", "available": false, "lastChecked": "…" }
 }
 ```
 
 - `runningContainers` is the count of containers in the running state (0 on non-Linux dev hosts). It is `null` when the container list could not be read (containerd down), as `runningVMs`, `cpu.allocated` and `memory.allocatedGB` are when the VM list could not (libvirt down): a figure is never a guessed 0.
 - `cpuTemp` and `cpuPowerWatts` are `null` when unavailable (e.g. non-Intel, VM, or no thermal/powercap sysfs); `cpuTempThresholds` is `null` when unavailable; `thermalZones` is an empty array when unavailable.
 - `loadAvg` is [1min, 5min, 15min].
-- What each figure measures: [HOST-MONITORING.md](HOST-MONITORING.md), Host Stats.
+- `wispUpdate` is the self-update status ([UPDATES.md](UPDATES.md), API).
+- This is the payload's one home. What each figure measures, and what the other fields mean: [HOST-MONITORING.md](HOST-MONITORING.md), Host Stats and OS updates.
 - `pendingUpdates` is the count of upgradable packages from the background hourly check (or 0 if check unavailable).
 - `updatesLastChecked` is an ISO 8601 timestamp of the last successful update check (background or manual), or `null` if no check has completed since the backend started.
 - `rebootRequired` is `true` when the host has a pending reboot. `rebootReasons` is a list of short tags (the package names that asked for the reboot).

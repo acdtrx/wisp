@@ -35,49 +35,13 @@ The VM list is read from libvirt when libvirt announces a change (start, stop, d
 
 ### SSE stream
 
-Host statistics are pushed on the `stats` topic of `GET /api/events` (the single multiplexed always-on SSE stream, see [API.md](API.md) § Events stream) every 5 seconds. Topic `data`:
-
-```json
-{
-  "cpu": {
-    "allocated": 8,
-    "total": 16,
-    "usagePercent": 34.2,
-    "perCore": [12.5, 45.0, 8.3]
-  },
-  "cpuTemp": 62.5,
-  "cpuTempThresholds": { "maxC": 80.0, "critC": 95.0 },
-  "thermalZones": [
-    { "type": "x86_pkg_temp", "label": "CPU Package", "tempC": 62.5, "maxC": 80.0, "critC": 95.0, "pciAddress": null },
-    { "type": "nvme nvme0", "label": "nvme nvme0", "tempC": 41.0, "maxC": null, "critC": null, "pciAddress": "0000:01:00.0" }
-  ],
-  "cpuPowerWatts": 45.2,
-  "memory": {
-    "allocatedGB": 12.0,
-    "totalGB": 64.0,
-    "usagePercent": 28.1,
-    "usedBytes": 0,
-    "buffersBytes": 0,
-    "cachedBytes": 0,
-    "swapTotalBytes": 0,
-    "swapUsedBytes": 0
-  },
-  "loadAvg": [1.2, 0.8, 0.6],
-  "disk": { "readMBs": 1.2, "writeMBs": 0.4 },
-  "net": { "rxMBs": 2.1, "txMBs": 0.8 },
-  "runningVMs": 3,
-  "runningContainers": 2,
-  "pendingUpdates": 0,
-  "rebootRequired": false,
-  "rebootReasons": []
-}
-```
+Host statistics are pushed on the `stats` topic of `GET /api/events` every 5 seconds. The payload: [API.md](API.md#stats-topic-payload). What its fields mean:
 
 - `runningContainers` is the number of containers reported as running (same source as the workload list). It is `null` when the container list could not be read, as `runningVMs`, `cpu.allocated` and `memory.allocatedGB` are when the VM list could not (settled 2026-11-22: a manager does its job or says it could not). The top bar shows "—" for a `null` figure.
 - A per-tick sensor or counter read that fails is no value, and is logged once per path, not every tick.
 - `cpuTemp` and `cpuPowerWatts` may be `null`.
 - `cpuTempThresholds` contains thresholds for the selected primary CPU sensor as `{ maxC, critC }` (or `null` when unavailable).
-- `thermalZones` includes all readable thermal sensors (`type`, user-facing `label`, `tempC`, `maxC`, `critC`, `pciAddress`). It can be empty when sensors are unavailable. For entries sourced from hwmon, `pciAddress` is derived from the resolved `device` symlink path by taking the **last** `dddd:dd:dd.d` segment (so NVMe and other devices nested under a PCI function still map to that function’s BDF); `null` if no PCI segment is found. Thermal zones from `/sys/class/thermal` use `pciAddress: null`.
+- `thermalZones` includes all readable thermal sensors (`type`, user-facing `label`, `tempC`, `maxC`, `critC`, `pciAddress`). It can be empty when sensors are unavailable. When both sysfs sources expose the same sensor type, the `thermal_zone` entry is kept and the `hwmon` duplicate is left out. For entries sourced from hwmon, `pciAddress` is derived from the resolved `device` symlink path by taking the **last** `dddd:dd:dd.d` segment (so NVMe and other devices nested under a PCI function still map to that function’s BDF); `null` if no PCI segment is found. Thermal zones from `/sys/class/thermal` use `pciAddress: null`.
 - `pendingUpdates` is the count of upgradable packages from a background hourly check (see OS Updates); 0 if check unavailable.
 - `rebootRequired` is `true` when the host needs a reboot to apply pending kernel/system updates. `rebootReasons` is a list of short tags: package names from `/var/run/reboot-required.pkgs`. Detected via `/var/run/reboot-required`.
 
@@ -140,7 +104,7 @@ These thresholds apply to CPU and memory utilization. Disk and network I/O are d
 | PCI devices (address, class, vendor/device names, driver) | Vendor/device/class strings resolved from the system's `pci.ids` database; hex fallbacks if the file is missing |
 | System / board / BIOS (`system` object) | `null` for the whole object when DMI sysfs is unavailable |
 
-On Host Overview, a PCI device's temperature comes from the stats stream's `thermalZones`, matched by `pciAddress`; an NVMe drive's the same way; the motherboard's from the first ACPI `acpitz` zone when present.
+On Host Overview, a PCI device's temperature comes from the stats stream's `thermalZones`, matched by `pciAddress`; a drive's is its SMART temperature when there is one, else an NVMe drive's reading from `thermalZones`; the motherboard's from the first ACPI `acpitz` zone when present.
 
 On macOS (development) the same shape is filled from the system profiler, and from OS-only data when the profiler fails.
 

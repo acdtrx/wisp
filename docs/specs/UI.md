@@ -182,7 +182,7 @@ Same centered card as the Server Unreachable screen: title "Something went wrong
 
 ## Component Patterns
 
-The shared patterns (tables, modals, buttons, form inputs, row state): [FRONTEND-RULES.md](../FRONTEND-RULES.md), Design and UI patterns.
+The shared patterns (tables, modals, row state): [FRONTEND-RULES.md](../FRONTEND-RULES.md), Design and UI patterns.
 
 ### Cards
 
@@ -194,6 +194,21 @@ Save. An error of the card's own shows in it, below the header, and can be dismi
 ### Radio Pills
 
 Content-sized single-choice chips are the app-wide control for binary/small-set form choices (OS Type, firmware, CPU model, NIC model, restart policy, disk add mode) (settled 2026-08-29); groups wrap instead of stretching. The segmented style survives only in the sidebar's type filter, which is view chrome rather than a form field.
+
+### Action Buttons
+
+Three variants:
+- **Default:** bordered, secondary text, hover background
+- **Primary:** accent background, white text
+- **Danger:** red-bordered, red text, red hover background
+
+All buttons: disabled state at 40% opacity, not-allowed cursor.
+
+### Form inputs
+
+- `.input-field` class: rounded border, focus ring in accent color, disabled state
+- Labels: 11px uppercase tracking-wider muted text
+- Number inputs: no spinner
 
 ### Modals
 
@@ -216,6 +231,12 @@ optional checkbox, Cancel/Confirm buttons. Backdrop, layer, focus and Escape:
 ## Loading States
 
 Every view that reads has a loading, an empty and an error state (settled 2026-11-20): a loading line or skeleton until its first read answers; its own empty text when the read holds nothing; its read's error, with a Retry when nothing is shown yet, or dismissible above the data already shown, which stays.
+
+Empty texts:
+
+- **No workloads:** the left panel says "No workloads".
+- **A search with no match:** "No matches for "…"" with the search term.
+- **An empty image library:** "No images found", pointing to the upload control in the card's header for VM files and to creating a container for OCI images. Under the **OCI** filter: "No OCI images found", saying that images are stored in containerd when a container is created or an image pulled, and that a container must be removed first while an image is still in use.
 
 ---
 
