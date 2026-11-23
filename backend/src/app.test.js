@@ -36,7 +36,7 @@ let app;
 before(async () => {
   // wisp-password beside the config file, where lib/auth.js reads it.
   const { setPassword } = await import('./lib/auth.js');
-  setPassword(PASSWORD);
+  await setPassword(PASSWORD);
   const { buildApp } = await import('./app.js');
   ({ app } = await buildApp(Fastify({ logger: { level: 'silent' } }).log));
 });

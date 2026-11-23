@@ -1,14 +1,11 @@
 /**
- * Atomic file writes (JSON, and plain text for runtime.env): stage to a sibling
- * temp file, fsync, then rename(2).
+ * The one atomic file write: stage to a sibling temp file created with `mode`
+ * (wx: never reusing one), fsync, close, then rename(2) over the target. A
+ * crash mid-write leaves the old file whole, never a truncated one; `rename`
+ * is atomic on one filesystem. The temp file is removed when a step fails.
  *
- * Why: a crash mid-write of a JSON config file (container.json, wisp-config.json,
- * oci-image-meta.json) leaves a truncated file that can't be parsed on next start.
- * `rename` is atomic on the same filesystem, so readers always see either the
- * old or the new full file — never a half-written one.
- *
- * Tmp suffix: `.tmp.<pid>.<timestamp>.<rand>` so the boot-time cleanup pass
- * (cleanPartialJsonArtifacts) can find and remove leftovers.
+ * Temp suffix: `.tmp.<pid>.<timestamp>.<rand>`, which the boot cleanup
+ * (bootCleanup.js) matches to remove what a crash left mid-rename.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdir, open, rename, unlink } from 'node:fs/promises';
@@ -20,11 +17,6 @@ export function atomicTmpName(filePath) {
   return `${filePath}.tmp.${process.pid}.${Date.now()}.${randomBytes(4).toString('hex')}`;
 }
 
-/**
- * Atomic text write: stage `text` to a sibling temp file created with `mode`
- * (wx: never reusing one), fsync, close, rename over `filePath`. The temp file
- * is removed when any step fails.
- */
 export async function writeFileAtomic(filePath, text, { mode } = {}) {
   await mkdir(dirname(filePath), { recursive: true });
   const tmp = atomicTmpName(filePath);
@@ -37,8 +29,8 @@ export async function writeFileAtomic(filePath, text, { mode } = {}) {
     handle = null;
     await rename(tmp, filePath);
   } catch (err) {
-    if (handle) await handle.close().catch(() => {});
-    await unlink(tmp).catch(() => {});
+    if (handle) await handle.close().catch(() => { /* the write's own error, thrown below, is the one to report */ });
+    await unlink(tmp).catch(() => { /* the write's own error, thrown below, is the one to report */ });
     throw err;
   }
 }

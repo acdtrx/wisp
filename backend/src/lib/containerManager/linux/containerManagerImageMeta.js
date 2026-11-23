@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
 import { getContainersPath } from './containerPaths.js';
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from '../../base/index.js';
 
 /**
  * Sidecar pinning OCI image "modified" timestamps by digest.

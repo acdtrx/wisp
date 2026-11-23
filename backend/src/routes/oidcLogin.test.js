@@ -65,7 +65,7 @@ let app;
 
 before(async () => {
   const { setPassword } = await import('../lib/auth.js');
-  setPassword('test-login-password');
+  await setPassword('test-login-password');
   const { buildApp } = await import('../app.js');
   ({ app } = await buildApp(Fastify({ logger: { level: 'silent' } }).log));
 });

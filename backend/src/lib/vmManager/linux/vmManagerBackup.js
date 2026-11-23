@@ -7,7 +7,7 @@
  * overlay made outside Wisp, e.g. by `virsh`) is first flattened into one
  * standalone qcow2, so every backup is self-contained.
  */
-import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, lstat, open, rename } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, lstat, open } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
@@ -29,6 +29,7 @@ import {
   getBackingChain, copyAndConvert, inspectDiskImage, createStallWatchdog, stallMinutes,
 } from '../../storage/index.js';
 import { assertRestorableDomain } from './vmManagerRestoreCheck.js';
+import { writeJsonAtomic } from '../../base/index.js';
 
 /*
  * Bounds (CODING-RULES §6; contracts in docs/specs/BACKUPS.md § Timeouts). A
@@ -462,7 +463,7 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
     disks: diskPlans.map((p) => ({ slot: p.slot, file: p.fileName })),
     sizeBytes: totalBytes,
   };
-  await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: BACKUP_FILE_MODE });
+  await writeJsonAtomic(join(backupDir, 'manifest.json'), manifest, { mode: BACKUP_FILE_MODE });
   emit('manifest', { percent: 100, currentFile: 'Backup complete' });
   return { path: backupDir, timestamp };
 }
@@ -632,21 +633,7 @@ export async function setVMBackupOrigin(backupPath, origin) {
   const manifestPath = join(backupPath, 'manifest.json');
   const manifest = await readBackupManifest(backupPath);
   manifest.origin = origin;
-  const tmp = `${manifestPath}.tmp.${process.pid}.${Date.now()}.${randomUUID().slice(0, 8)}`;
-  let handle;
-  try {
-    handle = await open(tmp, 'wx', BACKUP_FILE_MODE);
-    await handle.writeFile(JSON.stringify(manifest, null, 2), 'utf8');
-    await handle.sync();
-  } finally {
-    if (handle) await handle.close().catch(() => { /* write already settled; nothing to report */ });
-  }
-  try {
-    await rename(tmp, manifestPath);
-  } catch (err) {
-    await rm(tmp, { force: true }).catch(() => { /* best-effort: the rename error is the one to report */ });
-    throw err;
-  }
+  await writeJsonAtomic(manifestPath, manifest, { mode: BACKUP_FILE_MODE });
 }
 
 /**
@@ -671,8 +658,8 @@ async function readBackupDomain(backupPath) {
   }
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
-  /* Every VM Wisp defines has a profile, and a backup made before profiles holds none:
-   * it is refused, not given one (settled 2026-11-21). */
+  /* Every VM Wisp defines has a profile; a backup that holds none is refused, not
+   * given one (docs/specs/BACKUPS.md). */
   const current = config.profile
     && typeof manifest.vmName === 'string' && manifest.vmName
     && typeof manifest.vmBasePath === 'string' && manifest.vmBasePath;

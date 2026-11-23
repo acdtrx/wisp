@@ -14,7 +14,7 @@
 import { readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { ATOMIC_TMP_SUFFIX_RE } from './atomicJson.js';
+import { ATOMIC_TMP_SUFFIX_RE } from './base/index.js';
 import { CONFIG_PATH } from './config.js';
 import { getSettings } from './settings.js';
 import { readContainerConfig } from './containerManager/index.js';

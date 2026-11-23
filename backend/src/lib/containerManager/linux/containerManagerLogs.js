@@ -10,9 +10,10 @@
  * containers run tasks serially. Retention: the newest RUN_RETENTION runs are
  * kept; older pairs are pruned on every new-run allocation.
  */
-import { readFile, writeFile, readdir, mkdir, stat, open, unlink } from 'node:fs/promises';
+import { readFile, readdir, mkdir, stat, open, unlink } from 'node:fs/promises';
 import { watch, createReadStream } from 'node:fs';
 
+import { writeJsonAtomic } from '../../base/index.js';
 import { containerError } from './containerManagerConnection.js';
 import {
   getContainerRunsDir, getRunLogPath, getRunMetaPath, RUN_ID_REGEX,
@@ -40,7 +41,7 @@ async function readRunMeta(name, runId) {
 }
 
 async function writeRunMeta(name, runId, meta) {
-  await writeFile(getRunMetaPath(name, runId), JSON.stringify(meta, null, 2), 'utf8');
+  await writeJsonAtomic(getRunMetaPath(name, runId), meta);
 }
 
 async function listRunIds(name) {

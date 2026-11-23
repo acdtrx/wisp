@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createAppError } from './appErrors.js';
+import { writeFileAtomic } from './base/index.js';
 import { CONFIG_PATH } from './config.js';
 import { parseCookieHeader, appendSetCookie, buildSetCookie } from './cookies.js';
 import { verifyApiToken } from './apiTokens.js';
@@ -137,16 +138,16 @@ export function verifyPassword(input) {
 }
 
 /**
- * Write new password to wisp-password (mode 0o600). Used by change-password route.
+ * Write new password to wisp-password (mode 0o600, atomically). Used by change-password route.
  * Stores a scrypt hash so the password is not stored in plain text.
  */
-export function setPassword(newPassword) {
+export async function setPassword(newPassword) {
   const str = String(newPassword).trim();
   if (!str) throw createAppError('PASSWORD_EMPTY', 'Password cannot be empty');
   const salt = randomBytes(SCRYPT_SALT_LEN);
   const key = scryptSync(str, salt, SCRYPT_KEYLEN);
   const line = `scrypt:${salt.toString('hex')}:${key.toString('hex')}\n`;
-  writeFileSync(PASSWORD_FILE, line, { mode: 0o600, encoding: 'utf8' });
+  await writeFileAtomic(PASSWORD_FILE, line, { mode: 0o600 });
 }
 
 /**

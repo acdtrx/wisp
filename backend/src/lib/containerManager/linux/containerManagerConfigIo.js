@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 
 import { containerError, containerState, wrapContainerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from '../../base/index.js';
 import { createEmitter } from '../../base/index.js';
 
 const configWrite = createEmitter('[containerManager] config-write', () => containerState.logger);

@@ -24,7 +24,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { writeJsonAtomic } from '../src/lib/atomicJson.js';
+import { writeJsonAtomic } from '../src/lib/base/index.js';
 
 export const id = '0009-backup-status-error-code';
 export const description = 'Failed backup attempt records carry an error code and the message as their detail';

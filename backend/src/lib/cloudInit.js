@@ -23,7 +23,7 @@ import { dump as yamlDump } from 'js-yaml';
 
 import { getVMBasePath } from './paths.js';
 import { createAppError } from './appErrors.js';
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from './base/index.js';
 import {
   attachISO,
   ejectISO,

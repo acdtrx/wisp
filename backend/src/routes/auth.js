@@ -156,7 +156,7 @@ export default async function authRoutes(fastify) {
       }
 
       try {
-        setPassword(newPassword);
+        await setPassword(newPassword);
         // Rotate every live connection so pre-rotation tokens can't keep
         // streaming. New connections will fail JWT verify against the new
         // secret and the frontend's 401 handler bounces them to /login.

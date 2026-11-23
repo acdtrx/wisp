@@ -17,7 +17,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { writeJsonAtomic } from '../src/lib/atomicJson.js';
+import { writeJsonAtomic } from '../src/lib/base/index.js';
 
 export const id = '0013-cloud-init-key-source';
 export const description = "cloud-init.json files lose sshKeySource (a VM's keys are named by Wisp's list)";

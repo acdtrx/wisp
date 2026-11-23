@@ -19,7 +19,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from './base/index.js';
 import { errorBody } from './appErrors.js';
 import { subscribeVMBackupDeleted } from './vmManager/index.js';
 import { subscribeContainerBackupDeleted } from './containerManager/index.js';

@@ -18,7 +18,7 @@ import { readContainerConfig } from './containerManagerConfigIo.js';
 import { findMount, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
 import { validateMountSegmentName } from './containerMountNames.js';
 import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
-import { atomicTmpName } from './atomicJson.js';
+import { atomicTmpName } from '../../base/index.js';
 
 /** Same contract as `import { execFile } from 'node:child_process/promises'` (avoids subpath builtin issues on some runtimes). */
 function execFile(command, args, options) {

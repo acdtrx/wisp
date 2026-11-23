@@ -11,7 +11,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 
-import { writeFileAtomic } from '../src/lib/atomicJson.js';
+import { writeFileAtomic } from '../src/lib/base/index.js';
 import { retiredKeyOfLine, RETIRED_HELPER_PATH_KEYS } from '../src/lib/loadRuntimeEnv.js';
 
 export const id = '0014-retire-helper-path-overrides';

@@ -12,7 +12,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 
-import { writeFileAtomic } from '../src/lib/atomicJson.js';
+import { writeFileAtomic } from '../src/lib/base/index.js';
 import { retiredKeyOfLine, RETIRED_CNI_DIR_KEYS } from '../src/lib/loadRuntimeEnv.js';
 
 export const id = '0015-retire-cni-dir-overrides';

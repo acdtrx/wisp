@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { readTolerantConfig } from '../../migrations/lib/tolerantConfig.js';
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from './base/index.js';
 import { CONFIG_PATH } from './config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './managerBootstrap.js';
 import { createAppError } from './appErrors.js';

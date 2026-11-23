@@ -18,7 +18,7 @@
  */
 import { readFile } from 'node:fs/promises';
 
-import { writeJsonAtomic } from '../src/lib/atomicJson.js';
+import { writeJsonAtomic } from '../src/lib/base/index.js';
 import { checkMountPath, checkShare } from '../src/lib/configSchema.js';
 
 export const id = '0016-canonical-mount-forms';

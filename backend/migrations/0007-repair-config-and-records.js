@@ -45,7 +45,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 
-import { writeFileAtomic, writeJsonAtomic } from '../src/lib/atomicJson.js';
+import { writeFileAtomic, writeJsonAtomic } from '../src/lib/base/index.js';
 import { checkMountPath } from '../src/lib/configSchema.js';
 import { retiredKeyOfLine, RETIRED_PORT_KEYS } from '../src/lib/loadRuntimeEnv.js';
 import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';

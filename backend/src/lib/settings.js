@@ -18,7 +18,7 @@ import {
 } from './configSchema.js';
 import { getMountStatus } from './storage/index.js';
 import { createAppError } from './appErrors.js';
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from './base/index.js';
 import {
   MAX_SSH_KEYS, defaultSshKeyName, parseSshKey, readSshKey, sshKeyFingerprint, validSshKeyName,
 } from './sshKeys.js';

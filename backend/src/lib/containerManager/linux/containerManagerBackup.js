@@ -29,7 +29,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-  access, chmod, constants, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile,
+  access, chmod, constants, mkdir, readFile, readdir, realpath, rename, rm, stat,
 } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { join } from 'node:path';
@@ -46,7 +46,7 @@ import {
 } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartState.js';
 import { readContainerConfig, readContainerConfigFile, writeContainerConfig } from './containerManagerConfigIo.js';
-import { writeJsonAtomic } from './atomicJson.js';
+import { writeJsonAtomic } from '../../base/index.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
 import { pullImage } from './containerManagerPull.js';
@@ -344,7 +344,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
     sizeBytes: archiveBytes,
   };
   try {
-    await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: BACKUP_FILE_MODE });
+    await writeJsonAtomic(join(backupDir, 'manifest.json'), manifest, { mode: BACKUP_FILE_MODE });
   } catch (err) {
     /* Without its manifest the directory is no backup (listings skip it) — remove it. */
     await rm(backupDir, { recursive: true, force: true }).catch(() => {});
