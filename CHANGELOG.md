@@ -11,13 +11,14 @@
 - **Every page's cards share one set of gutters** — on the Host tabs cards sit closer together, and on a phone the Host tabs and the create pages have the workload pages' narrower side margins.
 - **More actions are icons** — a detected drive's Adopt, Home's Add link and Add group, and a finished job's Dismiss; each names itself on hover.
 - **A release holds only what a host runs** — the install and update tarball no longer carries the project's docs, its development scripts and checks, or its test fixtures; an update removes them from the host. The README's screenshots come with it.
+- **A workload's figures are one row** — the address, the name and "up" with the uptime as one quiet line, then the live figures with their labels: CPU and memory for a container ("7 / 256 MB", the unit once when both amounts share it), CPU and the disk and network rates for a VM. A value Wisp does not have yet is left out. Only the line of address and name is ever cut, the name first, with the whole text on hover; a changing figure moves nothing. Paused, the row says "Paused", for a VM and a container alike.
 
 ### Bug Fixes
 - **A failure Wisp used to drop silently is logged** — a cleanup that left a folder behind, an unreadable backup folder, a rollback step that failed, a config the mDNS publisher could not read; the journal now says so.
 - **One path holds one host mount** — adding a mount, or moving one, onto another mount's path is refused (409 `MOUNT_DUPLICATE`), and a settings file that holds two mounts on one path stops Wisp's start, naming both.
 - **The password, a backup's manifest and a container run's record are written atomically** — a crash mid-write no longer leaves a truncated file.
 - **A network link whose speed is unknown shows a dash** on the Host overview, not "-1 Mbps".
-- **A workload's figures are one row** — the address, the name and the uptime as one quiet line, then the live figures with their labels: CPU and memory for a container ("7 / 256 MB", the unit once when both amounts share it), CPU and the disk and network rates for a VM. A value Wisp does not have yet is left out, and only a long name is ever cut.
+- **A paused container's page no longer shows zero figures**, and a VM's page no longer reads "State: running" while its first figures load.
 - **`config/runtime.env.example` names every setting an operator may set** — the containerd socket, the extra WebSocket origins and the update repository were missing.
 
 ## 2026-11-22

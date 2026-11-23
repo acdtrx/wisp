@@ -2,37 +2,71 @@ import { liveData } from '../../store/streamStore.js';
 import { useVmStatsStore } from '../../store/vmStore.js';
 import { formatDecimal, formatUptimeMs } from '../../utils/formatters.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import FiguresRow from '../shared/FiguresRow.jsx';
+import FiguresRow, { PERCENT_SLOT } from '../shared/FiguresRow.jsx';
 
 const PAUSED = new Set(['paused', 'pmsuspended']);
-const rate = (up, down) => `↑${formatDecimal(up)} ↓${formatDecimal(down)}`;
+const STOPPED = new Set(['shutoff', 'nostate']);
 
 /**
- * The running VM's figures, as its stats stream carries them: address and host name
- * (from the guest agent, when it answers: left out until it does) and uptime, then CPU
- * and the disk and network rates, in MB/s. A stats read that failed shows its error in
- * their place until the next good frame.
+ * Two rates in MB/s under their arrows, which a screen reader does not say: it hears
+ * each rate's word and unit instead (`words`, what the up and the down arrow mean).
+ */
+function Rate({ up, down, words }) {
+  return (
+    <>
+      <span className="sr-only">{words[0]} </span>
+      <span aria-hidden>↑</span>
+      {formatDecimal(up)}
+      <span className="sr-only"> MB/s,</span>{' '}
+      <span className="sr-only">{words[1]} </span>
+      <span aria-hidden>↓</span>
+      {formatDecimal(down)}
+      <span className="sr-only"> MB/s</span>
+    </>
+  );
+}
+
+/** A rate's usual range, up to 99.9 MB/s each way, set as a rate is (each piece shaped alone). */
+function RateSlot() {
+  return <Rate up={99.9} down={99.9} words={['', '']} />;
+}
+
+/**
+ * The VM's figures, by its state: paused or stopped, the row says so; running, its
+ * stats stream's figures as far as the stream has them (none before its first frame);
+ * another state, its figures while the stream has them, else the state's word:
+ * address and host name (from the guest agent, when it answers: left out until it
+ * does) and uptime, then CPU and the disk and network rates. A stats read that failed
+ * shows its error in their place until the next good frame.
  */
 export default function VmFigures({ state }) {
   const stats = useVmStatsStore(liveData);
   const error = useVmStatsStore((s) => s.error);
   if (error) return <ErrorBanner error={error} prefix="Figures unavailable" />;
-  if (!stats?.active) {
-    const text = PAUSED.has(state) ? 'Paused' : state === 'shutoff' || state === 'nostate' ? 'Stopped' : `State: ${state ?? 'unknown'}`;
-    return <FiguresRow stoppedText={text} />;
-  }
+  if (PAUSED.has(state)) return <FiguresRow stoppedText="Paused" />;
+  if (STOPPED.has(state)) return <FiguresRow stoppedText="Stopped" />;
+  if (!stats?.active) return state === 'running' ? <FiguresRow /> : <FiguresRow stoppedText={`State: ${state ?? 'unknown'}`} />;
   const uptime = formatUptimeMs(stats.uptime);
   return (
     <FiguresRow
       identity={[
         { label: 'Address', value: stats.guestIp, mono: true },
-        { label: 'Host name', value: stats.guestHostname, name: true },
-        { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up' },
+        { label: 'Host name', value: stats.guestHostname },
+        { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up', keep: true },
       ]}
       live={[
-        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, percent: stats.cpu?.percent ?? null, narrowMeter: true },
-        { label: 'Disk', value: rate(stats.disk?.readMBs, stats.disk?.writeMBs) },
-        { label: 'Net', value: rate(stats.net?.txMBs, stats.net?.rxMBs), unit: 'MB/s' },
+        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, slot: PERCENT_SLOT, percent: stats.cpu?.percent ?? null },
+        {
+          label: 'Disk',
+          value: <Rate up={stats.disk?.readMBs} down={stats.disk?.writeMBs} words={['read', 'write']} />,
+          slot: <RateSlot />,
+        },
+        {
+          label: 'Net',
+          value: <Rate up={stats.net?.txMBs} down={stats.net?.rxMBs} words={['sent', 'received']} />,
+          slot: <RateSlot />,
+          unit: <span aria-hidden>MB/s</span>,
+        },
       ]}
     />
   );
