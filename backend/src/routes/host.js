@@ -380,7 +380,7 @@ export default async function hostRoutes(fastify) {
       devPath: { type: 'string' },
       fsType: { type: 'string' },
       label: { type: 'string' },
-      sizeBytes: { type: 'number' },
+      sizeBytes: { type: ['number', 'null'] },
       removable: { type: 'boolean' },
       vendor: { type: 'string' },
       model: { type: 'string' },
