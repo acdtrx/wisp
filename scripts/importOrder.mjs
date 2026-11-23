@@ -53,9 +53,9 @@ export function importOrderFiles(root) {
 }
 
 /** A file's import declarations, in source order: `{ source, start, end }` lines. */
-function readImports(file, source) {
+function readImports(root, file, source) {
   const found = [];
-  const linter = new Linter({ configType: 'flat' });
+  const linter = new Linter({ configType: 'flat', cwd: root });
   const messages = linter.verify(source, [{
     files: ['**/*.js', '**/*.mjs', '**/*.jsx'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module', parserOptions: { ecmaFeatures: { jsx: true } } },
@@ -74,17 +74,19 @@ function readImports(file, source) {
     },
     rules: { 'order/imports': 'error' },
   }], { filename: file });
-  const fatal = messages.find((m) => m.fatal);
-  if (fatal) return { error: `does not parse (line ${fatal.line}): ${fatal.message}` };
+  /* A message of no rule is the linter's own: a file that does not parse, or one no
+   * configuration matched (read as no imports, it would pass unread). */
+  const own = messages.find((m) => m.ruleId === null);
+  if (own) return { error: `was not read (line ${own.line ?? 0}): ${own.message}` };
   return { imports: found };
 }
 
-/** The problems of `files`: `{ file, line, message }` each. */
-export function importOrderProblems(files) {
+/** The problems of `files` under `root`: `{ file, line, message }` each. */
+export function importOrderProblems(root, files) {
   const problems = [];
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
-    const { imports, error } = readImports(file, source);
+    const { imports, error } = readImports(root, file, source);
     if (error) {
       problems.push({ file, line: 0, message: error });
       continue;

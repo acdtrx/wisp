@@ -515,7 +515,7 @@ const tables = new Map();
 const parity = await facadeParity(files, tables);
 const named = await namedImports(files, tables);
 const orderFiles = importOrderFiles(REPO_ROOT);
-const order = importOrderProblems(orderFiles);
+const order = importOrderProblems(REPO_ROOT, orderFiles);
 for (const p of [...parity.problems, ...named.problems, ...order]) {
   console.error(`${path.relative(REPO_ROOT, p.file)}${p.line ? `:${p.line}` : ''} ${p.message}`);
 }
