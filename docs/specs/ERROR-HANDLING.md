@@ -20,8 +20,7 @@ Every error a client receives is
   resize disk: qemu-img: …`). The cause is redacted (below); the message is not. An error
   with no code (a bug, a failure nothing turned into a code) has no message of Wisp's:
   its whole text is cause, redacted. There is no third key. A Wisp error wrapped by
-  another (`wrapAppError` in `lib/appErrors.js`, or a manager's twin beside its private
-  factory) keeps its message as Wisp's, so the detail reads `<outer message>: <inner
+  another keeps its message as Wisp's, so the detail reads `<outer message>: <inner
   message>: <inner cause, redacted>`, and an inner error that is not Wisp's is all cause,
   `<outer message>: <its text, redacted>` (settled 2026-11-20).
 
@@ -54,27 +53,24 @@ error.
 
 ## Where errors come from
 
-- Code throws structured errors: `createAppError(code, message, raw?)` in
-  `lib/appErrors.js`, or a manager's private factory (`vmError`, `containerError`), which
-  build the same shape (CODING-RULES §5). `raw` holds a toolchain's or daemon's own text.
+- Code throws structured errors, built by the one error factory or a manager's private
+  one, which build the same shape (CODING-RULES §5): a code, Wisp's message, and the raw
+  cause, a toolchain's or daemon's own text.
 - **Routes throw; one handler answers.** No route builds an error body or picks a status.
-  Fastify's error handler (`handleRequestError`) answers every error that leaves a
-  handler or a hook, and every refusal of the framework itself (a schema violation, a body
-  too large, an unknown route).
-- **One table** maps each code to its status: `ERROR_STATUS` in `lib/errorCodes.js`. An
-  error without a code from the table (a bug, a Node errno) answers **500**
-  `INTERNAL_ERROR`, its message as the detail.
+  The one error handler answers every error that leaves a handler or a hook, and every
+  refusal of the framework itself (a schema violation, a body too large, an unknown
+  route).
+- **One table** maps each code to its status. An error without a code from the table (a
+  bug, a Node errno) answers **500** `INTERNAL_ERROR`, its message as the detail.
 - **Wisp's own words are the factories' mark** (settled 2026-11-20): an error is Wisp's,
-  its message shown whole and its `raw` the cause, when a factory built it
-  (`createAppError`, the managers' and the networking module's), which set the
-  `Symbol.for('wisp.error')` mark; `wrapAppError`, the managers' twins and the handler all
-  test the mark, never whether the code is in the table. An error built by hand with a
-  code is not Wisp's: its whole text is cause. A marked error whose code the table lacks
-  answers **500** `INTERNAL_ERROR`, its message kept (the code check keeps the table
-  complete, so this is a bug).
-- `npm run check` (`scripts/check-error-codes.mjs`) holds the code, the table and this
-  document in step: it fails when the code throws a code the table lacks, when the table
-  holds a code nothing throws, and when the table and the list below disagree.
+  its message shown whole and its raw text the cause, when a factory built it; the
+  wrappers and the handler test that mark, never whether the code is in the table. An
+  error built by hand with a code is not Wisp's: its whole text is cause. A marked error
+  whose code the table lacks answers **500** `INTERNAL_ERROR`, its message kept (the code
+  check keeps the table complete, so this is a bug).
+- `npm run check` holds the code, the table and this document in step: it fails when the
+  code throws a code the table lacks, when the table holds a code nothing throws, and
+  when the table and the list below disagree.
 
 ### Framework refusals
 
@@ -91,8 +87,8 @@ error.
 | A route parameter over its length limit | **414** `URI_TOO_LONG` |
 | An unsupported content type, or a multipart route sent something else | **415** `UNSUPPORTED_MEDIA_TYPE` |
 
-These are the framework's refusals that can occur in Wisp (`FRAMEWORK_CODES` in
-`lib/appErrors.js`). Fastify sets no request timeout here, so there is no 408. Any other
+These are the framework's refusals that can occur in Wisp. Fastify sets no request
+timeout here, so there is no 408. Any other
 4xx the framework might raise answers **400** `BAD_REQUEST`, and any 5xx **500**
 `INTERNAL_ERROR`.
 
@@ -102,8 +98,8 @@ These are the framework's refusals that can occur in Wisp (`FRAMEWORK_CODES` in
 Unmatched routes answer `ROUTE_NOT_FOUND` under `/api`, `/ws`, `/assets/` and `/vendor/`;
 in production every other unmatched path serves the SPA shell. Unmatched requests run no
 handler and so get no auth check (see [AUTH.md](AUTH.md) § Route access levels). The
-decision uses the request's percent-decoded path (`routePath` in `app.js`), so
-`/%61pi/nope` is an API miss, not a client-side route.
+decision uses the request's percent-decoded path, so `/%61pi/nope` is an API miss, not a
+client-side route.
 
 ### Authentication
 
@@ -126,8 +122,7 @@ rejects a *request* while the session is fine (a wrong current password on
 change-password) answers 422. Login keeps 401 for a wrong password (`LOGIN_FAILED`): the
 login page posts with a bare `fetch`, never through the shared client.
 
-Login rate limiting: 5 failed attempts per IP within a 60-second window. The map is swept
-every 60 s for expired entries and capped at 10 000 distinct IPs.
+The rate limit: [AUTH.md](AUTH.md), Login Rate Limiting.
 
 A `config/wisp-password` that exists but isn't in the expected `scrypt:salt:hash` shape,
 or can't be read, stops the backend at startup (settled 2026-11-12,
@@ -359,7 +354,7 @@ before the port opens.
 ## Request validation
 
 Input is checked at the boundary by one validator, JSON Schema with ajv
-(`lib/schemaValidation.js`; settled 2026-11-20): every route's params, querystring and
+(settled 2026-11-20): every route's params, querystring and
 body, and every MCP tool's arguments. What it refuses answers **400** `VALIDATION_FAILED`,
 the detail naming the part and the first field that fails (above).
 
@@ -376,42 +371,36 @@ the detail naming the part and the first field that fails (above).
 - The schema says the shape: required keys, types, enums, lengths, ranges, patterns. A
   route's own 4xx codes are for what a schema cannot say (a name of whitespace only, a
   duplicate, an id that names nothing, a path outside the allowed roots).
-- `npm run check` fails a route that lacks a schema it needs (the route report,
-  `routeSchemaProblems` in `routes/schemas.js`): params for each URL param, a response
-  schema for a success, every object, in the input and in the answers, listing its keys
-  and taking no others (`additionalProperties: false`), and every array saying its
-  `items`. The check descends into every keyword that holds a schema (the branches of
-  `if`/`then`/`else`, `not`, `allOf`/`anyOf`/`oneOf`, `patternProperties`,
-  `prefixItems`, a local `$ref` …) and fails a `$ref` it cannot follow. An object that
-  takes keys it does not list (an app's config, a map, the OIDC provider's callback
-  parameters, a branch that narrows keys its parent closes), or a value any JSON may be
-  (the MCP envelope), is marked open on purpose (`openOnPurpose`,
-  `lib/schemaValidation.js`); the check fails any other, and a schema that names no
-  type.
+- `npm run check` fails a route that lacks a schema it needs: params for each URL param,
+  a response schema for a success, every object, in the input and in the answers, listing
+  its keys and taking no others (`additionalProperties: false`), and every array saying
+  its `items`, at every depth of the schema. An object that takes keys it does not list
+  (an app's config, a map, the OIDC provider's callback parameters, a branch that narrows
+  keys its parent closes), or a value any JSON may be (the MCP envelope), is marked open
+  on purpose; the check fails any other, and a schema that names no type.
 
 ### Name validation
 
 A VM or container name is a path segment: letters, digits, dots, hyphens and
 underscores, a leading letter or digit, no `..`, at most 128 characters for a VM and 63
-for a container, and used as sent, never trimmed (`vmNameSchema`, `containerNameSchema`
-in `lib/validation.js`). The same schema checks a name in a URL, a body (a create, a
+for a container, and used as sent, never trimmed. The same schema checks a name in a URL, a body (a create, a
 rename, a backup's and a restore's names) and an MCP tool's arguments, so a name that
 breaks it is **400** `VALIDATION_FAILED`. The managers check a name they are given again
 (`INVALID_VM_NAME`, `INVALID_CONTAINER_NAME`, 422), for callers that reach them without a
 schema, and every path a manager builds from a name or a backup's timestamp is checked
 where it is built: each name and timestamp is one path segment (not empty, `.` or `..`,
-no `/` or NUL), and the path stays below the directory it is joined into (`pathUnder` in
-each manager's paths module; **422** `PATH_NOT_ALLOWED`).
+no `/` or NUL), and the path stays below the directory it is joined into (**422**
+`PATH_NOT_ALLOWED`).
 
 ### Path policy for VM disks / ISOs
 
-`assertPathInsideAllowedRoots(absPath, vmName)` is invoked by attach/create paths (CDROM,
-ISO, sourcePath). Any path that resolves — symlinks followed, as `realpath` does —
-outside the image library or the VM's per-VM directory returns **422 PATH_NOT_ALLOWED**.
+A path given for a VM's disk, CD-ROM or ISO (attach and create) that resolves — symlinks
+followed, as `realpath` does — outside the image library or the VM's per-VM directory
+returns **422 PATH_NOT_ALLOWED**.
 
 ### Filename validation
 
-The library validates the file names it is given (`lib/library`, where the path is built): no path separators (`/`, `\`), no `..`, no
+The library validates the file names it is given, where the path is built: no path separators (`/`, `\`), no `..`, no
 leading dots, and the filename must equal its `basename()`; a name that breaks them
 answers **422** `INVALID_FILENAME`.
 
@@ -421,8 +410,7 @@ answers **422** `INVALID_FILENAME`.
   cause at `warn` with it. Other 4xx are not logged.
 - Background job failures are logged by the job starter as `Background job failed`:
   at **warn** with the code, the message and the raw cause for codes that map to 4xx
-  (`isExpectedAppError` in `lib/appErrors.js`, e.g. a `VM_MUST_BE_OFFLINE` that a race
-  let past the pre-check), at **error** with the full error/stack for unexpected
+  (e.g. a `VM_MUST_BE_OFFLINE` that a race let past the pre-check), at **error** with the full error/stack for unexpected
   failures.
 - A failed MCP tool call is logged at `warn` with the tool, the code and the raw cause.
 - DBus connection errors are logged and trigger automatic reconnection with backoff (see
@@ -433,18 +421,16 @@ answers **422** `INVALID_FILENAME`.
 
 ### One error object
 
-Every error the client handles is an `ApiError` (`frontend/src/api/errors.js`): `status`
-(the HTTP status, or none for a client-side error), `code` (the body's `error`) and
-`detail`. `api()`, the upload client and the stream clients build it from the error body;
-a job's error event becomes one on the job's row; client-side failures (a request
-timeout, a lost job stream) are ApiErrors with codes of their own. Every component shows
-an error through `errorText(err)`, which takes the detail, and branches on `err.code`,
-never on the text.
+Every error the client handles is one object, an `ApiError`: `status` (the HTTP status,
+or none for a client-side error), `code` (the body's `error`) and `detail`. The REST
+client, the upload client and the stream clients build it from the error body; a job's
+error event becomes one on the job's row; client-side failures (a request timeout, a
+lost job stream) are ApiErrors with codes of their own. Every component shows an error's
+detail, and branches on its code, never on the text.
 
 ### Client codes
 
-The client gives the errors it makes itself codes of its own, never sent by the server
-(`CLIENT_CODES` in `frontend/src/api/errors.js`):
+The client gives the errors it makes itself codes of its own, never sent by the server:
 
 | Code | Meaning |
 |------|---------|
@@ -456,22 +442,17 @@ The client gives the errors it makes itself codes of its own, never sent by the 
 | `JOB_GONE` | The job a wait follows is gone: its progress stream answers 404 (it expired, or never existed). A dropped stream reconnects and replays instead |
 | `JOB_CANCELLED` | The job a wait follows was cancelled before it finished (an interruptible job cut at shutdown): the command did not succeed (settled 2026-11-21) |
 
-### Error bar
+### Where an error shows
 
-A persistent red bar below the VM header. Visible on both Overview and Console tabs. Used
-for VM action failures (start, stop, save, etc.). Remains until the user dismisses it or
-starts another VM header action—the store clears the error when that new action
-**begins**, not only after it succeeds (so errors are not auto-dismissed solely because
-some other operation later succeeds).
+How an error is shown and how long it stays: `docs/FRONTEND-RULES.md`, Errors.
 
-### Inline errors
-
-Red error text displayed within a card, below its header. Used for a card's own error: a failed read, or a failed action of that card.
-
-### Job progress errors
-
-For async operations (VM creation, backup, download), errors appear inline in the
-progress area, with a red indicator.
+- **A workload's action error** (start, stop, save, …) shows in a bar below the VM
+  header, on every tab. It remains until the user dismisses it or starts another VM
+  header action: the error is cleared when that new action **begins**, not only after it
+  succeeds.
+- **A card's own error** (a failed read, or a failed action of that card) shows within
+  the card, below its header.
+- **A job's error** shows inline in its progress area.
 
 ### Stream refusals
 
@@ -495,12 +476,12 @@ the error's text beside it until a good frame comes.
 
 ### Global 401 handling
 
-The frontend API client (`api()` in `api/client.js`) recognises a lost session by its
-code (`AUTH_REQUIRED`, `AUTH_INVALID`). On one:
+The frontend API client recognises a lost session by its code (`AUTH_REQUIRED`,
+`AUTH_INVALID`). On one:
 
 1. Write the `wisp_logout` localStorage signal so other tabs bounce too
-2. Leave the error's text (`errorText`) for the login page, which shows it once, so the
-   user sees why they are signing in again
+2. Leave the error's text for the login page, which shows it once, so the user sees why
+   they are signing in again
 3. Redirect to `/login`
 
 This is automatic and applies to all API calls, handling session expiry and password
@@ -509,11 +490,8 @@ for a missing or expired session (see [Authentication](#authentication)).
 
 ### Render errors
 
-A render throw anywhere in the tree lands in the top-level `AppErrorBoundary` (wraps the
-router in `main.jsx`), which replaces the page with a recovery card and a **Reload**
-button instead of unmounting to a blank page. See [UI.md](UI.md) § Render Error Screen. It
-is a last resort — data errors are still handled where they occur (store guards, inline
-errors).
+A render throw anywhere in the tree lands in the one top-level error boundary:
+[UI.md](UI.md) § Render Error Screen.
 
 ### Stale responses for a previous selection
 
