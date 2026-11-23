@@ -8,26 +8,17 @@ Wisp provides real-time monitoring of host system resources and per-VM statistic
 
 ## Host Stats
 
-### Data sources
+### What is measured
 
-Host metrics are read directly from the Linux `/proc` and `/sys` filesystems — no third-party monitoring library:
+Host metrics are read directly from the Linux `/proc` and `/sys` filesystems — no third-party monitoring library. Rates and percentages are deltas between consecutive reads (every 5 seconds). Temperature and power are `null` when unavailable (e.g. non-Linux, VM, or no sysfs support).
 
-| Metric | Source | Calculation |
-|--------|--------|-------------|
-| CPU usage % (aggregate) | `/proc/stat` (cpu line) | Delta of user+nice+system+irq+softirq vs total since last read |
-| CPU usage % (per-core) | `/proc/stat` (cpu0, cpu1, ...) | Same delta logic per core |
-| Load average | `/proc/loadavg` | 1, 5, 15 min values |
-| Memory usage % | `/proc/meminfo` | (Total - Available) / Total; also Buffers, Cached, SwapTotal, SwapFree |
-| CPU temperature | `/sys/class/thermal/thermal_zone*` and `/sys/class/hwmon/.../temp*_input` | Enumerates thermal sensors, converts millidegree to Celsius, prefers `thermal_zone` when both sources expose the same sensor type, and selects primary CPU temp by sensor-type priority (prefers package/CPU sensors over generic ACPI) |
-| CPU power (watts) | `/sys/class/powercap/intel-rapl:0/energy_uj` | Delta of energy_uj over time; Intel RAPL only, best-effort. Not available on AMD or in VMs. |
-| Disk I/O | `/proc/diskstats` | Delta of read/write sectors, converted to MB/s |
-| Network I/O | `/proc/net/dev` + `/sys/class/net/<if>/device` | Delta of rx/tx bytes summed over **physical interfaces only** — those with a sysfs `device` link (PCI/USB/virtio NICs, Wi-Fi) — converted to MB/s. See *Host network throughput* below. |
+- **CPU usage %**, aggregate and per core, and the load average (1, 5, 15 min).
+- **Memory usage %** is (Total - Available) / Total; buffers, cached and swap are reported too.
+- **CPU temperature** is the primary CPU sensor: package/CPU sensors are preferred over generic ACPI.
+- **CPU power (watts)** is Intel RAPL only, best-effort: not available on AMD or in VMs. The RAPL file is often root-only, so setup grants the deploy user read access with a udev rule that sets group read at every boot (a direct `setfacl`/`chmod` on sysfs would not survive a reboot).
+- **Disk I/O** and **network I/O** in MB/s.
 
-Deltas are computed between consecutive reads (every 5 seconds). Temperature and power are `null` when unavailable (e.g. non-Linux, VM, or no sysfs support).
-
-**Host network throughput** (settled 2026-10-16) is the host's traffic over the wire: bytes through its physical NICs. Every byte that enters or leaves the host crosses exactly one of them — VM and container LAN traffic included, since it flows through the NIC enslaved to `br0`. Virtual interfaces (bridges, bonds, VLANs, `vnet*`/tap, `veth*`, the `wisp-dns0` dummy, `lo`) are excluded: they carry bytes a physical NIC already counted (a VM's download shows on the NIC and again on its `vnet`; the host's own on the NIC and again on `br0`), so summing every non-`lo` interface was rejected as double counting. A bond's slaves are physical and counted; the bond itself is not. Traffic that never touches a wire (VM↔VM on one bridge, host↔guest) is not part of this number — per-VM and per-container stats show it.
-
-**Checking CPU power support on the server:** Run `test -r /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj && echo supported`. The file is often root-only (mode 400). Setup (run by every install and update) grants the deploy user read access through `rapl.sh`: it creates group `wisp-power`, adds the deploy user, and installs a udev rule that sets group read on the RAPL file at every boot (a direct `setfacl`/`chmod` on sysfs would not survive a reboot). `wisp.service` picks up the group on its next start. Not available in VMs or on non-Intel CPUs.
+**Host network throughput** (settled 2026-10-16) is the host's traffic over the wire: bytes through its physical NICs — the interfaces with a sysfs `device` link (PCI/USB/virtio NICs, Wi-Fi). Virtual interfaces (bridges, bonds, VLANs, `vnet*`/tap, `veth*`, the `wisp-dns0` dummy, `lo`) are excluded: they carry bytes a physical NIC already counted. A bond's slaves are physical and counted; the bond itself is not. Traffic that never touches a wire (VM↔VM on one bridge, host↔guest) is not part of this number — per-VM and per-container stats show it.
 
 ### VM allocation totals
 
@@ -40,7 +31,7 @@ In addition to host-level metrics, the stats include aggregate allocation across
 | Running VM count | Number of active domains |
 | Running container count | Number of containers in the running state (from containerd + on-disk configs, same as the workload list) |
 
-VM allocation fields are summed from the VM list that `vmManagerList.js` holds in memory. The list is read from libvirt when libvirt fires a `DomainEvent` (start, stop, define, undefine) and on the next ask after a libvirt call failed, never on a healthy tick. Each stats tick asks libvirt **one cheap question** (its version), so that a libvirtd that stopped or restarted is noticed while a tab is open: a failed answer marks the list stale, and the same tick reads it and reports the error. The question also makes libvirt-dbus subscribe to libvirt's events again after a libvirtd restart (settled 2026-11-22; without it a tab showing only the sidebar asked libvirt nothing, and a stopped libvirt's VMs stayed on screen as they were). The running container count is computed each tick via `getRunningContainerCount()` (see container manager list). A figure whose list could not be read is `null`, never a guessed 0 (below).
+The VM list is read from libvirt when libvirt announces a change (start, stop, define, undefine) and on the next ask after a libvirt call failed, never on a healthy tick. Each stats tick asks libvirt **one cheap question** (its version), so that a libvirtd that stopped or restarted is noticed while a tab is open: a failed answer marks the list stale, and the same tick reads it and reports the error. The question also makes libvirt-dbus subscribe to libvirt's events again after a libvirtd restart (settled 2026-11-22). A figure whose list could not be read is `null`, never a guessed 0 (below).
 
 ### SSE stream
 
@@ -90,39 +81,11 @@ Host statistics are pushed on the `stats` topic of `GET /api/events` (the single
 - `pendingUpdates` is the count of upgradable packages from a background hourly check (see OS Updates); 0 if check unavailable.
 - `rebootRequired` is `true` when the host needs a reboot to apply pending kernel/system updates. `rebootReasons` is a list of short tags: package names from `/var/run/reboot-required.pkgs`. Detected via `/var/run/reboot-required`.
 
-The stream runs until the client disconnects. The interval timer is cleaned up on connection close.
-
-### macOS (development, Tier A)
-
-When the backend runs on macOS (local dev; no libvirt), host stats avoid `/proc` / `/sys` (`backend/src/lib/host/darwin/procStats.js`):
-
-| Metric | Source | Notes |
-|--------|--------|--------|
-| CPU (aggregate + per-core) | `os.cpus()` `times` | Delta between SSE ticks (~3 s), same idea as `/proc/stat` |
-| Load average | `os.loadavg()` | 1, 5, 15 min |
-| Memory | `os.totalmem()` + **`/usr/bin/vm_stat`** | **Not** `os.freemem()` alone — on Darwin that value is only the small free page pool, so “used” looked ~100%. **Available**-like bytes = `(free + inactive + speculative + purgeable pages) × page size` from `vm_stat`; **used** = total − that (clamped). **`cachedBytes`** ≈ inactive × page size (file cache analogue). **`sysctl -n vm.swapusage`** for swap total/used when available. If `vm_stat` fails, falls back to `total − os.freemem()`. |
-| Disk / net throughput | — | Always 0 (no Tier A source without extra counters) |
-| Thermal / power | — | `cpuTemp` null, `thermalZones` empty, `cpuPowerWatts` null |
-
-`GET /api/host/hardware` on macOS (`backend/src/lib/host/darwin/hostHardware.js` and `systemProfilerHardware.js`) runs **`/usr/sbin/system_profiler -json`** (types include `SPHardwareDataType`, `SPMemoryDataType`, `SPStorageDataType`, `SPNVMeDataType`, `SPPCIDataType`, `SPNetworkDataType`, `SPDisplaysDataType`), parses JSON with `JSON.parse`, and maps fields into the same response shape as Linux. **CPU** uses hardware overview (`chip_type` / `cpu_type`, `number_processors` for Apple Silicon P/E split when the string matches `proc total:perf:eff:…`). **Memory** modules, **disks** (storage + NVMe trees), **PCI**-like rows, **display/GPU** (from displays data), and **system** (model, ROM, Apple identifiers) come from the profiler when present. **Filesystem usage** (used vs total bytes) still uses **`fs.statfsSync`** on `/` and `/System/Volumes/Data` — those values change over time and are not taken from the profiler. **Network** starts from `os.networkInterfaces()` and is enriched with MAC and link speed from `SPNetworkDataType` when the `interface` name matches. If `system_profiler` fails (timeout, parse error), the handler falls back to **OS-only** data (`os.cpus()`, empty disks/PCI/memory). Profiler PCI **addresses** are synthetic (`0000:fe:…`) for UI sorting, not real BDFs. Host stats SSE still has **no** disk/net throughput rates on macOS.
-
-`GET /api/host` on macOS merges **`SPSoftwareDataType`** (`os_version`, `kernel_version`, `local_host_name`) into `osRelease`, `kernel`, and `hostname` when `system_profiler` succeeds (see `systemProfilerSoftware.js`).
+On macOS (development) the stream has the same shape from what the OS offers: disk and network rates are always 0, `cpuTemp` and `cpuPowerWatts` are `null`, `thermalZones` is empty.
 
 ## Per-VM Stats
 
-### Data sources
-
-Per-VM metrics are read via libvirt DBus:
-
-| Metric | Source | Notes |
-|--------|--------|-------|
-| vCPU usage % | Domain GetStats (cpu.time delta) | Computed as delta of CPU time vs wall time |
-| Disk I/O (read/write MB/s) | Block stats per device | Aggregated across all block devices |
-| Network I/O (rx/tx MB/s) | Interface stats per NIC | Aggregated across all NICs |
-| Uptime | Tracked from domain start event | Measured from when the VM started running |
-| Guest hostname | Guest agent GetHostname | Shown when guest agent is enabled and available |
-| Guest IP | Guest agent InterfaceAddresses | Primary IPv4 or IPv6, when guest agent is available |
-| State | Domain state query | Running, stopped, paused, etc. |
+A running VM's stats: vCPU usage % (CPU time against wall time), disk I/O (read/write MB/s, all block devices), network I/O (rx/tx MB/s, all NICs), uptime (from when the VM started running), the guest's hostname and primary IPv4 or IPv6 address when the guest agent is enabled and answers, and the state.
 
 The backend does not expose RAM used/allocated in the VM stats stream (memory stats would require balloon or guest agent and are not currently implemented).
 
@@ -133,20 +96,7 @@ The backend does not expose RAM used/allocated in the VM stats stream (memory st
 - **Running VM:** Full stats object with all metrics
 - **Stopped VM:** Only state information, no resource metrics
 
-The frontend subscribes when a VM is selected and unsubscribes when deselected (or a different VM is selected).
-
-Per-tick libvirt traffic is intentionally minimal:
-
-- **Non-running VM (cached):** zero DBus calls. `getVMStats` fast-paths on `getCachedStateCode(name)`; the cache is refreshed on every libvirt `DomainEvent`, so the cost stays at zero until the VM is actually running again. With no list cached (before the first read, or after a failed one), the tick reads the domain and its `GetState` from libvirt.
-- **Running VM:** one `GetStats(VM_STATS_MASK, 0)` per tick — and that's it on most ticks. The bitmask narrows the call to the four groups we actually consume (`CPU_TOTAL | VCPU | INTERFACE | BLOCK`), excluding `BALLOON` (which forces a qemu-monitor round-trip on libvirtd). Only when the cached `guestAgent` flag is true *and* the per-VM 30 s `guestInfoCache` entry has expired: one `InterfaceAddresses` + `GetHostname` pair to the in-guest agent (so ~1 in 6 ticks). **No `DomainLookupByName`, no `GetState`, no `Introspect`, no `GetXMLDesc`.** A `GetStats` that fails (libvirt gone, or the VM stopped as the tick ran) fails the tick: the stream sends its error frame and the page shows "Figures unavailable: …", never zeros (settled 2026-11-22).
-
-How the per-tick cost was driven down:
-
-- `DomainLookupByName` is skipped via `getCachedDomainPath(name)` — paths are captured by `ListDomains` during cache population and are stable for the lifetime of the domain definition.
-- `GetState` is skipped — `getCachedStateCode(name)` is kept current by `DomainEvent` signals; in the rare race (state changes between event and tick) that one tick fails, and the next reads the new state.
-- `Introspect` is skipped — `getDomainObjAndIface` reads from `connectionState.domainProxyCache`, populated once per domain path and invalidated on disconnect / undefine.
-- `GetXMLDesc` is skipped — vCPU count and guest-agent presence come from the `vmListCache` via `getCachedVcpus`/`getCachedGuestAgent`.
-- Guest-agent calls (`InterfaceAddresses`, `GetHostname`) are gated by `guestInfoCache` (TTL 30 s, dropped when state turns non-running) — these are the heaviest because libvirtd has to round-trip through virtio-serial to qemu-ga inside the guest, and the data they return (hostname, primary IP) is essentially static between DHCP renewals.
+**Per-tick libvirt traffic is intentionally minimal.** A VM known not to be running costs no libvirt call. A running VM costs one stats call per tick, narrowed to the CPU, vCPU, interface and block groups — not the balloon group, which forces a qemu-monitor round-trip. The guest agent is asked at most once per 30 s per VM, and only for a VM that has one. A stats call that fails (libvirt gone, or the VM stopped as the tick ran) fails the tick: the stream sends its error frame and the page shows "Figures unavailable: …", never zeros (settled 2026-11-22).
 
 ## Color Thresholds
 
@@ -154,29 +104,11 @@ The UI displays stat values with color coding based on utilization level:
 
 | Threshold | Color | Meaning |
 |-----------|-------|---------|
-| < 60% | Green (`#16a34a`) | Normal |
-| 60% – 85% | Amber (`#d97706`) | Warning |
-| > 85% | Red (`#dc2626`) | Critical |
+| < 60% | Green | Normal |
+| 60% – 85% | Amber | Warning |
+| > 85% | Red | Critical |
 
 These thresholds apply to CPU and memory utilization. Disk and network I/O are displayed without color coding (they are throughput values, not utilization percentages).
-
-## UI Presentation
-
-### Host stats bar
-
-Embedded in the top bar, always visible. Compact inline pills:
-
-```
-[ CPU  8/16 cores  ████░░ 34% ]  [ RAM  12/64 GB  ███░░ 28% ]  [ Disk  ↑1.2  ↓0.4 MB/s ]  [ Net  ↑0.8  ↓2.1 MB/s ]  [ RUNNING  3 | 2 ]
-```
-
-Each pill shows: label, value, and a slim progress bar where applicable (CPU, RAM). The **RUNNING** pill shows running VM and container counts separated by `|`, each count prefixed by the monitor icon (VMs) and box icon (containers), matching the left panel workload icons.
-
-### The VM page's figures
-
-The VM page shows these as a row of figures under its header while the VM runs ([UI-VM.md](UI-VM.md)): address and host name (from the guest agent, when it answers), uptime, CPU, disk and network rates.
-
-When the VM is **stopped**: shows a single muted label "Stopped" with no metrics. When **paused**: shows "Paused".
 
 ## Host Info Endpoint
 
@@ -191,28 +123,26 @@ When the VM is **stopped**: shows a single muted label "Stopped" with no metrics
 | wispVersion | Application version (from package.json) |
 | uptimeSeconds | Host uptime |
 | kernel | Kernel version |
-| osRelease | Linux: `/etc/os-release`. macOS: `system_profiler -json SPSoftwareDataType` (`os_overview.os_version` → `prettyName` with the **last** trailing ` (…)` removed — usually the build id; `id` `macos`, semver-ish `versionId` from the raw string) when profiler succeeds; otherwise `null` |
+| osRelease | Linux: `/etc/os-release`. macOS: from the system profiler when it succeeds; otherwise `null` |
 | primaryAddress | Primary network interface IP — first non-internal IPv4, skipping `lo` and the link-local `169.254.0.0/16` range (which includes Wisp's own mDNS DNS forwarder at `169.254.53.53`) |
 
 ## Host Hardware Endpoint
 
-`GET /api/host/hardware` returns static or semi-static hardware details for the Host Overview tab. On **Linux** servers, sources are as below. On **macOS** (local dev), inventory comes from **`system_profiler -json`** plus `statfs` and `os.networkInterfaces` — see *macOS (development, Tier A)* under Host Stats.
+`GET /api/host/hardware` returns static or semi-static hardware details for the Host Overview tab. All file reads, except two privileged helpers: `wisp-dmidecode` for RAM and `wisp-smartctl` for disk SMART summaries ([DEPLOYMENT.md](DEPLOYMENT.md), The helpers). No `lspci` subprocess.
 
-| Data | Source |
-|------|--------|
-| CPU model, cores, threads, MHz, cache, core types (`coreTypes.performance[]`, `coreTypes.efficiency[]`) | `/proc/cpuinfo` + `/sys/devices/cpu_core/cpus` + `/sys/devices/cpu_atom/cpus` (hybrid-only) |
-| Block devices (name, model, size, `rotational`, `pciAddress`, `smart`) | `/sys/block/*` (model, size); `/sys/block/<name>/queue/rotational`; PCI BDF parsed from the block device sysfs symlink path; SMART summary from `wisp-smartctl` (`smartctl --json -n standby,130 -a`; NVMe without `-n`) — includes health, temperature, power-on hours, NVMe wear/spare fields, and ATA sector-health / SSD-life attributes where parseable. Reading SMART never spins up a disk (settled 2026-10-16): a drive in STANDBY/SLEEP is skipped and reported as `overall: "sleeping"` (UI: **Sleeping**) with no error; the helper turns smartctl's skip status into `{"error":"standby"}` (status 130 = bits 1 + 7, a combination a real run cannot produce, since bit 7 needs SMART data that a bit-1 abort never read) |
-| Filesystem usage per mount | Mount table (`/proc/self/mounts`, decoded by the shared parser — see [STORAGE.md → Mount table](STORAGE.md#mount-table)) + `statfs()`; one row per mount point (when mounts are stacked, the visible topmost one); omits `/proc`, `/sys`, `/dev`, `tmpfs`/`devtmpfs`/`squashfs`, `ip netns` bind mounts under `/run/netns` and `/var/run/netns`, and containerd's task mounts under `/run/containerd/` (a running container's root filesystem): none of these is host storage. **Network shares are left out too** (settled 2026-11-22), by `df -l`'s rule: a mount whose source contains `:` (NFS, sshfs) or starts with `//` (SMB). The list is local storage only, so the server never waits on a share that stopped answering; a share's state is on the Mounts card, which reads the mount table and never the share. Before, one dead share froze every request, because the size read ran on the main thread. Rejected: reading a share's size in a worker thread with a time limit (built first; a thread stuck in the kernel cannot be ended, and Node waits for it at exit, so every stop of Wisp took 15 s and ended in a kill), and the same read in a child process (`stat -f`, or Node itself): a new program to run, for a figure the user chose to do without. A read that fails leaves its row out and is logged once per path. Sizes follow `df`: `usedBytes` = (`blocks` − `bfree`) × `bsize`; `availBytes` = `bavail` × `bsize` — space an unprivileged writer can still use, excluding the filesystem's root reserve — so `usedBytes + availBytes` can be less than `totalBytes` |
-| Network adapters (name, MAC, speed, state) | `/sys/class/net/*` |
-| RAM modules (type, size, speed, slot, form factor, manufacturer, voltage) | `wisp-dmidecode` (`dmidecode --type 17`); installed to `/usr/local/bin` + sudoers by setup; empty only when DMI lists no modules (a VM, usually). A read that failed is `memory: null` with `memoryError`, the helper's error line, and Host Overview says "RAM modules could not be read: …" (settled 2026-11-22; before, a failed read showed as no modules). When a BIOS writes the raw JEDEC manufacturer ID as hex (e.g. `80CE000080CE`) instead of a human-readable name, the backend resolves it via a built-in JEDEC lookup table in `host/linux/hostHardware.js`; unrecognised hex codes are passed through as-is. Slot values are replaced with sequential numbers (1, 2, 3, …) instead of the verbose dmidecode Locator strings |
-| PCI devices (address, class, vendor/device names, driver) | `/sys/bus/pci/devices/*` + system `pci.ids` (or `.gz`) under `/usr/share/misc`, `/usr/share/hwdata`, etc.; vendor/device/class strings resolved from the database; hex fallbacks if the file is missing |
-| System / board / BIOS (`system` object) | `/sys/class/dmi/id/*` (board, product, BIOS); `null` for the whole object when DMI sysfs is unavailable |
+| Data | Notes |
+|------|-------|
+| CPU model, cores, threads, MHz, cache, core types (`coreTypes.performance[]`, `coreTypes.efficiency[]`) | `coreTypes` is `null` on non-hybrid CPUs (or kernels that do not expose hybrid sysfs groups). When available, the Host Overview CPU section shows per-core usage split into **Performance cores** and **Efficiency cores**. |
+| Block devices (name, model, size, `rotational`, `pciAddress`, `smart`) | The SMART summary includes health, temperature, power-on hours, NVMe wear/spare fields, and ATA sector-health / SSD-life attributes where parseable. **Reading SMART never spins up a disk** (settled 2026-10-16): a drive in STANDBY/SLEEP is skipped and reported as `overall: "sleeping"` (UI: **Sleeping**) with no error. |
+| Filesystem usage per mount | From the mount table ([STORAGE.md → Mount table](STORAGE.md#mount-table)) + `statfs()`; one row per mount point (when mounts are stacked, the visible topmost one); omits `/proc`, `/sys`, `/dev`, `tmpfs`/`devtmpfs`/`squashfs`, `ip netns` bind mounts under `/run/netns` and `/var/run/netns`, and containerd's task mounts under `/run/containerd/` (a running container's root filesystem): none of these is host storage. **Network shares are left out too** (settled 2026-11-22), by `df -l`'s rule: a mount whose source contains `:` (NFS, sshfs) or starts with `//` (SMB). The list is local storage only, so the server never waits on a share that stopped answering — not in a worker thread or a child process either; a share's state is on the Mounts card, which reads the mount table and never the share. A read that fails leaves its row out and is logged once per path. Sizes follow `df`: `usedBytes` = (`blocks` − `bfree`) × `bsize`; `availBytes` = `bavail` × `bsize` — space an unprivileged writer can still use, excluding the filesystem's root reserve — so `usedBytes + availBytes` can be less than `totalBytes` |
+| Network adapters (name, MAC, speed, state) | |
+| RAM modules (type, size, speed, slot, form factor, manufacturer, voltage) | Empty only when DMI lists no modules (a VM, usually). A read that failed is `memory: null` with `memoryError`, the helper's error line, and Host Overview says "RAM modules could not be read: …" (settled 2026-11-22). A manufacturer a BIOS writes as a raw JEDEC ID in hex (e.g. `80CE000080CE`) is resolved to its name; unrecognised hex codes are passed through as-is. Slot values are sequential numbers (1, 2, 3, …) instead of the verbose dmidecode Locator strings |
+| PCI devices (address, class, vendor/device names, driver) | Vendor/device/class strings resolved from the system's `pci.ids` database; hex fallbacks if the file is missing |
+| System / board / BIOS (`system` object) | `null` for the whole object when DMI sysfs is unavailable |
 
-All file reads except two privileged helpers: `wisp-dmidecode` for RAM and `wisp-smartctl` for disk SMART summaries (through the one privileged runner, as every helper is: [DEPLOYMENT.md](DEPLOYMENT.md)). PCI name resolution reads `pci.ids` from `/usr/share/hwdata/` or other standard paths (see `host/linux/pciIds.js`); no `lspci` subprocess. `scripts/linux/setup/packages.sh` installs `hwdata` and `smartmontools` for these host inventory features.
+On Host Overview, a PCI device's temperature comes from the stats stream's `thermalZones`, matched by `pciAddress`; an NVMe drive's the same way; the motherboard's from the first ACPI `acpitz` zone when present.
 
-`coreTypes` is `null` on non-hybrid CPUs (or kernels that do not expose hybrid sysfs groups). When available, the Host Overview CPU section shows per-core usage split into **Performance cores** and **Efficiency cores** (stacked sections).
-
-The Host Overview **Hardware** section shows a summary line (DMI board/system/BIOS when available, plus **Motherboard:** °C from the first ACPI `acpitz` thermal zone in the stats SSE `thermalZones` when present). It lists RAM modules, block devices, and PCI devices (excluding PCI bridge class `0x06`) in a single table with three labelled sections (**Main**, **I/O**, **Misc**); block devices that resolve to a PCI address are grouped under their matching PCI function row (controller first, then drives as nested rows). Columns are **Device**, **Vendor**, **Driver**, **Address**, **Temp**: the device kind is an icon prefixed to the device name (`MemoryStick` RAM, `HardDrive` storage, `Network`, `Gpu`, `Usb`, `CircuitBoard` fallback — the full type label lives in the icon tooltip). Nested drive rows keep the `└` marker but no extra indent. Below `sm`, only the Device column renders: vendor (first word) and temp collapse into a muted second line under the device name, and Driver/Address are omitted, so the table fits phones without horizontal scroll. The table bleeds `-mx-4` inside its SectionCard so the first column aligns with the card's own padding instead of double-indenting. **Temp** for PCI rows comes from matching `pciAddress` on hwmon zones; NVMe drive temperatures use the same NVMe thermal matching as the stats stream.
+On macOS (development) the same shape is filled from the system profiler, and from OS-only data when the profiler fails.
 
 ## Host Discovery Endpoints
 
@@ -232,7 +162,7 @@ When `wisp-power` is available (`/usr/local/bin/wisp-power` and its sudoers rule
 | `POST /api/host/power/shutdown` | Runs `wisp-power shutdown` (host shuts down) |
 | `POST /api/host/power/restart` | Runs `wisp-power reboot` (host reboots) |
 
-Same sudo pattern as wisp-os-update. Returns 503 `POWER_UNAVAILABLE` if the script is not configured.
+Returns 503 `POWER_UNAVAILABLE` if the script is not configured.
 
 ## OS Updates
 
@@ -246,23 +176,20 @@ When `/usr/local/bin/wisp-os-update` is installed:
 
 The `upgrade` action runs `apt-get dist-upgrade -y` (not plain `upgrade`) so kept-back packages that require installing or removing dependencies — kernel-meta ABI jumps, transitional packages — are applied too. The `check`/`list` actions simulate with `apt-get -s dist-upgrade` so the count and package list match exactly what the Upgrade button will do.
 
-**Non-interactive, local config kept (settled 2026-10-16).** The upgrade runs with no terminal, so nothing in the package-manager chain may prompt — a prompt is a hang until the inactivity bound (below) kills apt/dpkg mid-run. The backend closes the helper's stdin, and the helper (not the caller: sudo's `env_reset` drops the environment) sets `DEBIAN_FRONTEND=noninteractive` and `NEEDRESTART_MODE=a` (Ubuntu's needrestart restarts affected services itself instead of asking). Automatic restarts are the user's explicit choice: an upgrade that touches a library or Node itself can restart `wisp.service` once dpkg has finished, so the upgrade job may end in an error (its stream lost) while the backend comes back on the new packages — accepted over `NEEDRESTART_MODE=l` (list only, never restart), which would leave updated services running old code until someone restarts them by hand. Config files: a locally modified file is **kept** and the package's new version is left beside it — dpkg conffiles via `--force-confdef --force-confold` (new file as `.dpkg-dist`) and ucf-managed files such as `sshd_config` via `UCF_FORCE_CONFFOLD=1`. Unmodified config files take the new version. Rejected: taking the maintainer's version (`--force-confnew`) — an unattended button press must not silently replace a host's tuned config.
+**Non-interactive, local config kept (settled 2026-10-16).** The upgrade runs with no terminal, so nothing in the package-manager chain may prompt. The backend closes the helper's stdin, and the helper (not the caller: sudo's `env_reset` drops the environment) sets `DEBIAN_FRONTEND=noninteractive` and `NEEDRESTART_MODE=a` (Ubuntu's needrestart restarts affected services itself instead of asking). Automatic restarts are the user's explicit choice: an upgrade that touches a library or Node itself can restart `wisp.service` once dpkg has finished, so the upgrade job may end in an error (its stream lost) while the backend comes back on the new packages. Config files: a locally modified file is **kept** and the package's new version is left beside it — dpkg conffiles via `--force-confdef --force-confold` (new file as `.dpkg-dist`) and ucf-managed files such as `sshd_config` via `UCF_FORCE_CONFFOLD=1`. Unmodified config files take the new version. Not the maintainer's version (`--force-confnew`): an unattended button press must not silently replace a host's tuned config.
 
 **Timeouts (settled 2026-11-13, CODING-RULES §6).** On inactivity, no total bound, except where noted. `list`: the helper stops an index refresh after **60 s** without output, and bounds the simulated upgrade at a fixed **60 s**, so a step that hangs is killed rather than orphaned holding the lock; the backend stops the helper after **90 s** without its output, which each step's bound ends inside. `upgrade`: stopped after **15 min** without output from apt. A stopped run fails, saying it printed nothing for that long. The check (one shared run) and the upgrade run as server jobs; each upgrade output line is the job's progress.
 
 ### Concurrency and lock contention
 
-apt/dpkg serialize their work via lock files, so only one package-manager op can succeed at a time. Wisp guards this in two layers:
+apt/dpkg serialize their work via lock files, so only one package-manager op can succeed at a time:
 
-- **In-process dedup.** A single shared in-flight promise covers `check` and `list` (both run the same apt invocation under the hood). A second concurrent `check`/`list` reuses that promise instead of spawning a duplicate. `upgrade` is exclusive — any concurrent op returns `409` with code `UPDATE_BUSY`.
+- **One check at a time.** A second concurrent check joins the one that runs. `upgrade` is exclusive — any concurrent op returns `409` with code `UPDATE_BUSY`.
 - **External lock detection.** When apt/dpkg is held by another process on the host (e.g. `unattended-upgrades`), `wisp-os-update` exits `75` (EX_TEMPFAIL). The backend translates that to code `UPDATE_BUSY` with HTTP `409`. The UI renders this as a soft "another package manager operation is running" status rather than a red error, prompting the user to retry.
 
 ### Caching
 
-`getCachedPackages()` keeps the most recent `list` result in memory across calls. It is populated by:
-- Any successful `check` (same apt invocation produces both count + list), the hourly one included (~30s after backend boot).
-
-Emptied on successful `upgrade` (its time becomes `checkedAt`). The cache is in-memory only — backend restart loses it; the next background tick repopulates within 30s.
+The count and the package list of the last check are kept in memory only: a backend restart loses them, and the next hourly check (about 30 s after the backend's start) fills them again. A successful `upgrade` empties them (its time becomes `checkedAt`).
 
 ### Stats SSE fields
 
@@ -272,13 +199,10 @@ Emptied on successful `upgrade` (its time becomes `checkedAt`). The cache is in-
 | `updatesLastChecked` | ISO timestamp of the last successful list/check (or `null`) |
 | `updateOperationInProgress` | `true` while a `check`/`list`/`upgrade` subprocess is running — the UI uses this to disable buttons and avoid surprise BUSY errors |
 
-### Error codes (osUpdate routes)
+### Error codes
 
-| Code | HTTP | Meaning |
-|------|------|---------|
-| `UPDATE_BUSY` | 409 | Another package-manager op is running (Wisp's own or external). UI surfaces as a transient warn, not an error. |
-| `UPDATE_CHECK_UNAVAILABLE` | 503 | Script missing, or sudo refused. |
+`UPDATE_BUSY` (409) and `UPDATE_CHECK_UNAVAILABLE` (503, script missing or sudo refused): [ERROR-HANDLING.md](ERROR-HANDLING.md#codes).
 
-`wisp-os-update` uses apt (Wisp hosts run Debian or Ubuntu). The script is invoked via `sudo`.
+`wisp-os-update` uses apt (Wisp hosts run Debian or Ubuntu).
 
-A **background hourly check** runs automatically (first check after 30s delay), armed only where the platform can check (not on the macOS dev stub). Its trigger is app glue, with the image update check's, and it starts the same shared `os-update-check` job as the route, through the job starter: it is in the tray and in `GET /api/jobs`. It uses the `list` op so the package cache is primed for free. If a check is already running when the timer fires, the tick joins it; while an upgrade runs, the tick is refused (`UPDATE_BUSY`, logged) — the running op's result populates the same caches.
+A **background hourly check** runs automatically (first check after 30s delay), armed only where the platform can check (not on the macOS dev stub). It starts the same shared `os-update-check` job as the route, through the job starter: it is in the tray and in `GET /api/jobs`. If a check is already running when the timer fires, the tick joins it; while an upgrade runs, the tick is refused (`UPDATE_BUSY`, logged) — the running op's result populates the same caches.
