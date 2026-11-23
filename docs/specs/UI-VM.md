@@ -14,7 +14,8 @@ the shared components are in [UI.md](UI.md); the three shapes (view, edit, act) 
   Back up now needs the VM shut off.
 - **Figures**, in a row under the header while the VM runs: address, host name, uptime,
   CPU, disk and network rates, as the stats stream carries them. Each sits in a cell of
-  fixed width. Stopped or paused, the row says so ("Stopped", "Paused").
+  fixed width, a meter under its value; on a phone a cell is as wide as its value, so
+  no figure is cut. Stopped or paused, the row says so ("Stopped", "Paused").
 - **Groups**, in the order below. Each is a card: a title, its values as text, and its
   actions as icons.
 - A VM that is gone shows the gone page ([UI.md](UI.md), View Switching).

@@ -14,7 +14,8 @@ act) are in `FRONTEND-RULES.md`, Data. Settled 2026-11-21.
   its Stop cancels it.
 - **Figures**, in a row under the header while the container runs: address, local name,
   uptime, CPU, memory, as the stats stream carries them. Each sits in a cell of fixed
-  width. Stopped, the row says so.
+  width, a meter under its value; on a phone a cell is as wide as its value, so no
+  figure is cut. Stopped, the row says so.
 - **Groups**, in the order below. Each is a card: a title, its values as text, and its
   actions as icons.
 - A container that is gone shows the gone page ([UI.md](UI.md), View Switching).
