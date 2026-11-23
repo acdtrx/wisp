@@ -12,7 +12,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import {
-  DataTable, DataTableScroll, DataTableTd, DataTableTh, dataTableBodyRowClass, dataTableHeadRowClass,
+  DataTable, DataTableTd, DataTableTh, dataTableBodyRowClass, dataTableHeadRowClass,
 } from '../shared/DataTableChrome.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -215,7 +215,9 @@ function PackagesDialog({ onClose, onRefresh, refresh }) {
         {(found) => (found.packages.length === 0 ? (
           <p className="text-xs text-text-muted">No upgradable packages.</p>
         ) : (
-          <DataTableScroll>
+          /* No DataTableScroll: an overflow box would be the sticky header's scroller,
+           * and the header must stick to the modal body's. */
+          <div className="-mx-4">
             <DataTable>
               <thead className="sticky top-0 bg-surface-card">
                 <tr className={dataTableHeadRowClass}>
@@ -234,7 +236,7 @@ function PackagesDialog({ onClose, onRefresh, refresh }) {
                 ))}
               </tbody>
             </DataTable>
-          </DataTableScroll>
+          </div>
         ))}
       </RecordGate>
     </UpdateDetailsModal>
