@@ -1,10 +1,6 @@
 # Configuration
 
-Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). `WISP_CONFIG_PATH`, which moves the settings file and with it the login secret and the migration ledger, is for development and tests only: an installed Wisp refuses it ([Password Storage](#password-storage)). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing.
-
-## Deployment (install.sh)
-
-On a new server, run `./scripts/install.sh` from the unpacked release tarball, or `scripts/push.sh` from a development machine ([DEPLOYMENT.md → Install](DEPLOYMENT.md#install)). It asks, before it changes anything, for the server name and the initial password when the install has none yet, and for one confirmation of the bridge when the uplink has none; it then copies the tree, runs setup (which writes the answers into `config/` and its secrets at 0600) and starts `wisp.service`, waiting until it is ready. Run as a normal user; it uses sudo once, for the rest.
+Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). `WISP_CONFIG_PATH`, which moves the settings file and with it the login secret and the migration ledger, is for development and tests only: an installed Wisp refuses it ([Password Storage](#password-storage)). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing. How the install fills it: [DEPLOYMENT.md → Install](DEPLOYMENT.md#install).
 
 ## Optional `config/runtime.env`
 
@@ -26,15 +22,13 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 
 Shipped template: `config/runtime.env.example` (copy to `runtime.env` if you need overrides).
 
-OS updates, SMB shares, and removable-drive mounts use **`/usr/local/bin/wisp-os-update`** and **`/usr/local/bin/wisp-mount`** when installed by setup (no env vars required).
-
 ## Application Config (`config/wisp-config.json`)
 
 JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (or `WISP_CONFIG_PATH`). Created from `config/wisp-config.json.example` on first install.
 
-**Atomic writes.** `wisp-config.json`, every container's `container.json`, and the `oci-image-meta.json` sidecar are written via `writeJsonAtomic`: stage to a `*.tmp.<pid>.<timestamp>.<rand>` sibling, `fsync`, then `rename(2)`. Readers always see either the previous full file or the new full file — never a half-written one. Orphan temp files left by a crash between fsync and rename are swept by `cleanPartialJsonArtifacts` at backend startup.
+**Atomic writes.** `wisp-config.json`, every container's `container.json`, and the OCI image metadata sidecar are written atomically (a temp sibling, `fsync`, then `rename(2)`). Readers always see either the previous full file or the new full file — never a half-written one. Temp files left by a crash are swept at backend startup.
 
-**Settings concurrency.** `updateSettings`, `addMount`, `updateMount`, and `removeMount` read the on-disk file **inside** the write mutex (`withSettingsWriteLock`) so concurrent `PATCH /api/settings` calls cannot lose updates.
+**Settings concurrency.** Every settings write reads the on-disk file **inside** the write lock, so concurrent `PATCH /api/settings` calls cannot lose updates.
 
 ### Schema
 
@@ -69,7 +63,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 
 ### Home page object (`homepage`)
 
-Only the human half of the Home page is persisted — every tile is re-derived from live workload data on each read (see [API-WORKSPACE.md § Home page](API-WORKSPACE.md#home-page) and [UI.md § Tab: Home](UI.md#tab-home)). A Wisp with no `homepage` key renders a complete launcher.
+Only the human half of the Home page is persisted — every tile is re-derived from live workload data on each read (see [API-WORKSPACE.md § Home page](API-WORKSPACE.md#home-page) and [UI-HOST.md § Tab: Home](UI-HOST.md#tab-home)). A Wisp with no `homepage` key renders a complete launcher.
 
 ```jsonc
 {
@@ -95,43 +89,19 @@ Keys are `tileId`s — a derived tile's id is its canonical URL, a manual tile's
 
 ### Mount object (`mounts[]`)
 
-Common fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | Unique id |
-| `type` | `string` | `"smb"` or `"disk"`. Discriminates the remaining fields. |
-| `label` | `string` | Display name |
-| `mountPath` | `string` | Absolute mount point under `/mnt/wisp/` (not `/mnt/wisp` itself) |
-| `autoMount` | `boolean` | When `true` (default), Wisp mounts on startup (SMB) or on device insertion (disk). |
-
-SMB-only (`type: "smb"`):
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `share` | `string` | SMB URL (e.g. `//server/share`) |
-| `username` | `string` | SMB user |
-| `password` | `string` | SMB password. Never returned by the API — mounts carry `hasPassword` (boolean) instead |
-
-Disk-only (`type: "disk"`):
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `uuid` | `string` | Filesystem UUID (resolved to `/dev/disk/by-uuid/<uuid>`) |
-| `fsType` | `string` | One of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3` |
-| `readOnly` | `boolean` | Force read-only mount (mandatory for `ntfs3`) |
+The mount object's home is [STORAGE.md → Data model](STORAGE.md#data-model).
 
 ### Strict reading
 
 (settled 2026-11-12, CODING-RULES §4.) A missing file, or a missing key, takes the defaults above. Anything else wrong fails startup with a message naming the key: invalid JSON, an unknown key at any level (`_comment`, the shipped example's note, is allowed), a wrong type, or an out-of-range value. A typo then shows in `systemctl status wisp` instead of silently becoming a default. The start reads it this way once its state migrations have run ([UPDATES.md → State migrations](UPDATES.md#state-migrations)), and an invalid file ends the start whether or not a migration ran.
 
-**What older releases wrote still updates** (settled 2026-11-13). Migration `0007-repair-config-and-records` repairs what earlier releases left, reading the files raw: from `runtime.env` the retired `WISP_BACKEND_PORT` and `WISP_FRONTEND_PORT` (and migration `0014` the five retired `WISP_*_SCRIPT` helper overrides, and `0015` `WISP_CNI_BIN_DIR` and `WISP_CNI_CONF_DIR`, which went with the CNI network file; settled 2026-11-22: a privileged helper is only ever the one setup installs in `/usr/local/bin`, [DEPLOYMENT.md](DEPLOYMENT.md); a retired key is tolerated at the start until its migration removes the line); from this file the retired keys `refreshIntervalSeconds`, `networkMounts`, `backupNetworkMountId`, each mount whose `mountPath` is outside `/mnt/wisp/` (logged with the containers that use it), a `backupMountId` naming no mount, and schedule destinations that are neither `'local'` nor the `backupMountId`. Nothing reads the config strictly before it: the migrations before it read their paths tolerantly. A rollback restores `config/` and the migration ledger together, so `0007` runs again on the next start of the newer release. Anything else invalid is left for the start's strict check to report.
+**What older releases wrote still updates** (settled 2026-11-13). State migrations repair what earlier releases left before the strict read ([UPDATES.md → Shipped migrations](UPDATES.md#shipped-migrations)): retired keys in `runtime.env` and in this file, a mount whose `mountPath` is outside `/mnt/wisp/`, a `backupMountId` naming no mount, and schedule destinations that are neither `'local'` nor the `backupMountId`. A retired `runtime.env` key is tolerated at the start until its migration removes the line (settled 2026-11-22). Anything else invalid is left for the start's strict check to report.
 
-The read and the Settings writes share one schema (`backend/src/lib/configSchema.js`): the API refuses (422) what the read would reject, and every write goes through the read's parse before it lands, so a file the UI wrote always boots. A write that removes or swaps the backup mount prunes its references in the same write; an assignment to a removed section still falls back to Main. A file edited by hand while Wisp runs is parsed on the next read, so a broken edit makes settings reads and writes fail (**500** `CONFIG_INVALID`) until it is fixed.
+The read and the Settings writes share one schema: the API refuses (422) what the read would reject, and every write goes through the read's parse before it lands, so a file the UI wrote always boots. A write that removes or swaps the backup mount prunes its references in the same write; an assignment to a removed section still falls back to Main. A file edited by hand while Wisp runs is parsed on the next read, so a broken edit makes settings reads and writes fail (**500** `CONFIG_INVALID`) until it is fixed.
 
 ### Config file permissions
 
-The file may hold secrets (SMB passwords, the OIDC `clientSecret`, API token hashes), so it is kept **`0600`**: `permissions.sh` sets it at install, and every Settings write re-stages the atomic temp file with mode `0600` so a save can't silently widen it back to the umask default.
+The file may hold secrets (SMB passwords, the OIDC `clientSecret`, API token hashes), so it is kept **`0600`**: set at install, and kept by every Settings write, so a save can't widen it back to the umask default.
 
 ### Reverse proxy / HTTPS (`trustedProxies`)
 
@@ -140,7 +110,7 @@ Wisp itself serves plain HTTP; TLS is expected to terminate at an optional rever
 - the session cookie's `Secure` flag, and
 - the scheme of generated absolute URLs — notably the **OIDC redirect/callback URI** when `advertisedUrl` is not set. If Wisp thinks the request was `http` when the browser used `https`, the callback it sends to the identity provider is `http://…` and the provider rejects it as an invalid callback URL. Setting `advertisedUrl` to the proxy's `https://` URL pins the callback regardless of forwarded headers.
 
-**HTTPS also enables the offline shell.** Service workers only run in a secure context (HTTPS, or `localhost`). Reached over plain HTTP at a LAN IP, `navigator.serviceWorker` is undefined, registration is skipped, and Wisp still works — but a launch made while the server is unreachable (VPN down, app installed to a phone's home screen) cannot render a "Can't reach Wisp" page, because the browser never gets the HTML. Put TLS in front of Wisp if you use it as an installed web app. See [ARCHITECTURE.md](../ARCHITECTURE.md#offline-shell-frontendpublicswjs).
+**HTTPS also enables the offline shell.** Service workers only run in a secure context (HTTPS, or `localhost`). Reached over plain HTTP at a LAN IP, registration is skipped and Wisp still works — but a launch made while the server is unreachable cannot render a "Can't reach Wisp" page. Put TLS in front of Wisp if you use it as an installed web app. See [ARCHITECTURE.md](../ARCHITECTURE.md#offline-shell-frontendpublicswjs).
 
 For safety, forwarded headers are honored **only from trusted sources**. Loopback (`127.0.0.1`, `::1`) is always trusted — enough for a proxy on the same host that connects to Wisp over localhost. When the **proxy runs on a different host or container** (so Wisp sees the connection from a LAN/Docker IP), add that source to `trustedProxies`:
 
@@ -150,13 +120,13 @@ For safety, forwarded headers are honored **only from trusted sources**. Loopbac
 "trustedProxies": ["192.168.1.0/24"]      // … or its subnet (CIDR)
 ```
 
-Entries may be IPv4/IPv6 addresses, CIDR subnets, or the named ranges `loopback` / `linklocal` / `uniquelocal`. An invalid entry fails startup, naming it (settled 2026-11-12: this reverses "a typo must not crash-loop the service" — a dropped entry silently changed the cookie `Secure` flag and the rate-limit key, while a crash-loop is visible in `systemctl status`). This field is read at process start, so **restart Wisp after changing it** (`systemctl restart wisp`); it is not editable from the UI. Also ensure the proxy actually sends the headers (Caddy/Traefik do by default; nginx needs `proxy_set_header X-Forwarded-Proto $scheme;` and `proxy_set_header Host $host;`). **Never** widen this to trust the whole world — an attacker who can reach Wisp directly could otherwise forge `X-Forwarded-For` to defeat the login rate limit.
+Entries may be IPv4/IPv6 addresses, CIDR subnets, or the named ranges `loopback` / `linklocal` / `uniquelocal`. An invalid entry fails startup, naming it (settled 2026-11-12: a dropped entry would silently change the cookie `Secure` flag and the rate-limit key). This field is read at process start, so **restart Wisp after changing it** (`systemctl restart wisp`); it is not editable from the UI. Also ensure the proxy actually sends the headers (Caddy/Traefik do by default; nginx needs `proxy_set_header X-Forwarded-Proto $scheme;` and `proxy_set_header Host $host;`). **Never** widen this to trust the whole world — an attacker who can reach Wisp directly could otherwise forge `X-Forwarded-For` to defeat the login rate limit.
 
 ## Password Storage
 
 Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `install.sh` / `wispctl password` / change-password in the UI.
 
-**Beside the config file, which an installed Wisp keeps in `config/`** (settled 2026-11-20, replacing the same day's "beside the config file, wherever `WISP_CONFIG_PATH` puts it", which setup followed by reading the key from `runtime.env` and a migration followed by moving the file). The backend reads and writes `wisp-password` in the directory of `wisp-config.json`, as it keeps the migration ledger there: one rule for where configuration lives. `WISP_CONFIG_PATH` is for development and tests only — the unit tests and the route check point it at a directory of their own, password file included; `npm run dev` sets none, so the dev server uses the checkout's `config/`. An installed Wisp — a tree carrying the `RELEASE` file `scripts/stage-release.sh` writes into every tree the installer and the updater install, which a git checkout lacks — refuses to start with the key set, before its migrations, naming the key and `<install>/config/` (`CONFIG_PATH_NOT_ALLOWED`). So on a host the config file, the password and the ledger are always in `<install>/config/`, where setup's password step, `wispctl password` and the installer's checks use them directly. Replaced because a config directory outside the install tree is outside the updater's rollback: its snapshot holds only `<install>/config/`, so a rollback reverted `runtime.env` but not the config, the ledger or the password ([UPDATES.md → Authoring a migration](UPDATES.md#authoring-a-migration)). JWT signing requires this file; run `wispctl password` if the backend reports no password configured. A file that exists but can't be read, or isn't in the `scrypt:salt:hash` form, fails startup. It is read on each use, so `wispctl password` applies without a restart.
+**Beside the config file, which an installed Wisp keeps in `config/`** (settled 2026-11-20). The backend reads and writes `wisp-password` in the directory of `wisp-config.json`, as it keeps the migration ledger there: one rule for where configuration lives. `WISP_CONFIG_PATH` is for development and tests only. An installed Wisp — a tree carrying the `RELEASE` file every release-shaped tree has, which a git checkout lacks — refuses to start with the key set, before its migrations, naming the key and `<install>/config/` (`CONFIG_PATH_NOT_ALLOWED`): a config directory outside the install tree is outside the updater's rollback. So on a host the config file, the password and the ledger are always in `<install>/config/`. JWT signing requires this file; run `wispctl password` if the backend reports no password configured. A file that exists but can't be read, or isn't in the `scrypt:salt:hash` form, fails startup. It is read on each use, so `wispctl password` applies without a restart.
 
 ## Filesystem Paths
 
@@ -170,29 +140,4 @@ Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `ins
 | `/var/lib/wisp/containers/` | `<deploy-user>:libvirt` | `0775` | Container storage (when created by setup) |
 | `/var/lib/wisp/updates/` | `<deploy-user>:libvirt` | `0775` | Self-update staging |
 | `/mnt/wisp/` | `<deploy-user>:libvirt` | `0775` | Parent of the mount points |
-
-### Per-VM directory layout
-
-```
-<vmsPath>/<vm-name>/
-├── disk0.qcow2
-├── disk1.qcow2
-├── cloud-init.iso
-├── cloud-init.json
-└── VARS.fd
-```
-
-### Backup directory layout
-
-[BACKUPS.md → Backup Directory Structure](BACKUPS.md#backup-directory-structure).
-
-## Systemd unit placeholders
-
-Templates in `systemd/` use:
-
-| Placeholder | Value |
-|-------------|--------|
-| `WISP_USER` | Deploy user |
-| `WISP_PATH` | Install directory |
-
-Installed unit is **`wisp.service`**. Optional `EnvironmentFile=-WISP_PATH/config/runtime.env`.
+What they hold: `docs/ARCHITECTURE.md` (the folder tree) and [BACKUPS.md → Backup Directory Structure](BACKUPS.md#backup-directory-structure).
