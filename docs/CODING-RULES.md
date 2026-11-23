@@ -30,11 +30,14 @@ source refer to them.
 
 - Share code only between call sites with the same purpose; keep similar-looking code
   with different purposes separate.
-  - Applied: keep vmManager and containerManager the **single implementation** of every
-    VM and container operation; never duplicate operation logic in routes.
+  - Applied: each VM and container operation has **one implementation**: what is
+    generic libvirt or containerd in its manager, a workload command's orchestration in
+    its side's operation module (§7); never in a route.
 - Split a function whose parameters collect behaviour-changing booleans, rather than add
   another flag.
 - Keep a shared helper in one module; never copy it between files.
+  - Applied: the two managers each own their error factory, validators and path helpers
+    (§7): those twins are not copies to merge.
 
 ## 3. Minimal External Dependencies
 
@@ -75,16 +78,11 @@ source refer to them.
   present, and `detail` the human-readable message, where it adds value. Use the same
   shape on HTTP and streaming channels.
   - Applied: routes, hooks and jobs throw; one handler answers (`lib/appErrors.js`), the
-    status from the one table of codes (`lib/errorCodes.js`). Every channel sends the
-    same body, `{ error: <code>, detail }`; here `detail` is always present: Wisp's
-    message, followed by the raw cause, which alone is redacted, where the body is
-    built. The channels: HTTP answers, a job's
-    `{ step: 'error', error, detail }`, stream error frames and MCP tool errors. A new
-    code goes in the table and in
-    [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md#codes) in the same change;
-    `npm run check` fails otherwise, and when an error factory's message carries another
-    error's text (`scripts/check-error-messages.mjs`): a wrapping error takes the inner one
-    through `wrapAppError` (`lib/appErrors.js`) or its manager's twin.
+    status from the one table of codes (`lib/errorCodes.js`). The body, its channels and
+    every code: [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md). A new code goes in
+    the table and in that spec in the same change, and a wrapping error takes the inner
+    one through `wrapAppError` (`lib/appErrors.js`) or its manager's twin, never by
+    carrying its text in a message: `npm run check` fails otherwise.
 - Prefer inspecting state up front and choosing the right path once, rather than
   try/catch/retry as control flow.
 - Comment every silent `catch {}` block with why the error is intentionally swallowed.
@@ -131,25 +129,20 @@ source refer to them.
   - Applied: import `dbus-next` for libvirt only in `lib/vmManager/linux/` (behind the
     `vmManager` facade), `@grpc/grpc-js` only in `lib/containerManager/linux/` (behind
     its facade), Avahi's `dbus-next` only in `lib/mdns/linux/`, and `undici` only in
-    `lib/downloads/` (settled 2026-11-12: one home for outbound HTTP's SSRF guard and
-    its timeouts). Add a new operation as a new purpose-named facade export.
-  - Applied: outbound HTTP has one home, `lib/downloads/`: no backend file outside it
-    imports `undici` or Node's HTTP clients (`node:http`, `node:https`, `node:http2`; a
-    server's `createServer` aside), calls the global `fetch` or opens a WebSocket client
-    (settled 2026-11-20). It has two
-    fetches: `ssrfSafeFetch` for every URL from user input or a public source, and
+    `lib/downloads/` (settled 2026-11-12). Add a new operation as a new purpose-named
+    facade export.
+  - Applied: outbound HTTP has one home, `lib/downloads/` (settled 2026-11-20): no
+    backend file outside it imports `undici` or Node's HTTP clients (a server's
+    `createServer` aside), calls the global `fetch` or opens a WebSocket client. It has
+    two fetches: `ssrfSafeFetch` for every URL from user input or a public source, and
     `fetchOperatorEndpoint` for an endpoint only the operator sets, the OIDC issuer
-    (§9), which no file but `lib/oidc.js` may name (the fence check holds it). Inside
-    `lib/downloads/` too, only the two files that implement those fetches import
-    `undici` or call the global `fetch`: every other request there, a public
-    source's included, goes through one of them (settled 2026-11-20).
-  - Applied — the lint is `npm run check-fences` (`scripts/check-fences.mjs`): the
-    package fences, the facades (a module with an `index.js` is imported only through
-    it), strict managers and carved modules, and routes that take no operation lock (a
-    workload command's lock is its operation module's, ARCHITECTURE.md, Repo layout), and
-    outbound HTTP outside `lib/downloads/` (the global `fetch`, Node's HTTP clients, a
-    WebSocket client; its header lists what it cannot see), and the three shared homes
-    below. A reviewed allowance is one line in its `EXCEPTIONS`.
+    (§9), which no file but `lib/oidc.js` may name. Inside `lib/downloads/` too, only
+    the two files that implement those fetches import `undici` or call `fetch`.
+  - Applied — the lint is `npm run check-fences`: the package fences, the facades (a
+    module with an `index.js` is imported only through it), the strict managers and
+    carved modules, routes that take no operation lock, outbound HTTP outside
+    `lib/downloads/`, and the three shared-home rules below. A reviewed allowance is one
+    line in its `EXCEPTIONS`.
   - Applied — **shared homes** (settled 2026-11-22): `lib/base/` is the one module every
     other may import, the strict managers and the carved modules included; it imports
     only Node builtins, and holds what all of them need and none should write again:
@@ -157,9 +150,7 @@ source refer to them.
     run) and the privileged runner (`runPrivileged`: a helper is the one setup installs
     in `/usr/local/bin`, run through `sudo -n` with a time bound, its failure told
     apart as missing, refused, failed or timed out, and a helper's own exit code as
-    invalid, not found or busy, §12). Before, 37 emitters and 14 sudo
-    calls were each written out by hand, with different answers to a failing handler
-    and five ways to find a helper. The fence check holds three rules for it: no
+    invalid, not found or busy, §12). The fence check holds three rules for it: no
     hand-written emitter outside `lib/base/`, no `'sudo'` outside its runner, and no
     `console.` in the backend (a module logs to the logger `configure()` handed it, the
     glue to `lib/log.js`; what runs before a logger exists, or at exit, writes to
@@ -283,8 +274,7 @@ In projects with a web UI: `FRONTEND-RULES.md`.
     the bridge's check run in the background and are waited for (`step_run`), and those
     that show progress are stopped after a time without it.
 - **A privileged helper** (`backend/scripts/wisp-*`, run as root through `sudo`) is
-  written in one dialect (settled 2026-11-22). It is the most privileged code Wisp has,
-  so each rule is one a reader can check line by line:
+  written in one dialect (settled 2026-11-22):
   - **Who it defends against**: data, not the service user. The service user is root's
     equal by design (the `libvirt` group; it stages the tree an update installs). What a
     request body, a disk or a share can carry into an argument (a share name, a UUID, a
@@ -349,40 +339,27 @@ checks and the unit tests below for what they cover:
   pass (it needs `npm ci` at the root and in `frontend/`). It runs each check below and
   fails if any of them fails; the release workflow and `scripts/release.sh` run it too,
   so a failure blocks a release.
-  - `check-imports`: every relative import in the backend and `shared/` resolves, and every name one
-    backend file imports from another is exported there. The backend has no
-    build step, so nothing else validates import paths — and a *dynamic* import only
-    resolves when its code path runs, so a stale one boots fine and 500s a single route
-    later. It also checks module-relative paths (`resolve(__dirname, '…')`,
-    `new URL('…', import.meta.url)`) land in a directory that exists, and facade
-    parity: every name a platform facade takes is exported by its `linux/` and
-    `darwin/` sides.
-  - `check-fences`: the import fences (§7), no route importing an operation lock
-    among them and no outbound HTTP outside `lib/downloads/`; `shared/` (the wire's
-    names) importing nothing; no import cycle in the backend beyond its listed exceptions; and only
-    the backend runs the state migrations (§16): outside
-    `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
-    but the runner and the checks reaches for `backend/migrations`, comments aside.
+  - `check-imports`: every relative import in the backend and `shared/` resolves, every
+    name one backend file imports from another is exported there, module-relative paths
+    land in a directory that exists, and each platform facade's names are exported by
+    its `linux/` and `darwin/` sides. The backend has no build step, so nothing else
+    checks an import, and a dynamic one fails only when its code path runs.
+  - `check-fences`: the import fences (§7); `shared/` importing nothing; no import cycle
+    in the backend; and only the backend running the state migrations (§16).
   - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules
-    only: a use of an undefined name, an unused import or variable, an unused parameter
-    after the last used one, a duplicate object key, a hook called outside the rules of
-    hooks, and a topic, change kind or job kind written as a string outside
-    `shared/wireNames.js` (selectors built from it in `eslint.config.mjs`).
-    Inline ESLint comments (`eslint-disable`, `/* global */`) are not honoured, and
-    one left in the code fails the check: an allowance, if one is ever needed, is a
-    reviewed line in `eslint.config.mjs`, like the lists of the other checks.
+    only, and a topic, change kind or job kind written as a string outside
+    `shared/wireNames.js`. Inline ESLint comments are not honoured, and one left in the
+    code fails the check: an allowance is a reviewed line in `eslint.config.mjs`.
   - the shell check: `bash -n` and `shellcheck` over every shell script. shellcheck is
-    required (settled 2026-11-22: the check fails without it, it does not skip); an
-    inline `# shellcheck disable=` fails the check, and an allowance is a reviewed line
-    in `scripts/check-shell.mjs`, like the lists of the other checks. It also holds
-    each script's mode to its use (executable if and only if it starts with a shebang;
-    a sourced file has none and starts with `# shellcheck shell=bash`), and the
-    helpers folder to helpers, the updater and their shared file.
+    required (settled 2026-11-22): the check fails without it. An inline
+    `# shellcheck disable=` fails the check; an allowance is a reviewed line in
+    `scripts/check-shell.mjs`. It also holds each script's mode to its use (executable
+    if and only if it starts with a shebang) and the helpers folder to helpers, the
+    updater and their shared file.
   - `npm test`: the unit tests, `node --test` over the `*.test.js` files beside the
-    modules they test (`frontend/src/`, `backend/src/`) and a migration's in
-    `backend/migrations/test/`, which the migration loader never reads, for code with no
-    platform behind it: timing, state and stream handling, rules such as which migrations are
-    pending. Platform code is verified by running it, below.
+    modules they test and a migration's in `backend/migrations/test/`, for code with no
+    platform behind it: timing, state and stream handling, rules. Platform code is
+    verified by running it, below.
 - Run the frontend build: it must pass.
 - Drive the change in the local dev stack where the platform supports it. The macOS dev
   environment runs stub managers (no libvirt/containerd): host-level pages verify locally,
@@ -413,16 +390,14 @@ try/catch.
 
 - Handle only the current shape of the stored data: no dual reads, no code for older
   shapes. Ship a shape change with the migration that brings the stored data to it.
-  - Applied: the stored data is libvirt domain XML, `container.json`, `wisp-config.json`
-    and file modes; give no legacy code even to an artifact produced earlier in the same
-    session. Bring what an earlier release wrote to the current shape with a **state
-    migration**, run by the backend at every start before it reads stored state for
-    anything else, and by nothing else (settled 2026-11-18, replacing "during the
-    update, with the backend stopped", 2026-10-16: a start that did not come through
-    the updater must not meet unmigrated state either):
-    `backend/migrations/NNNN-short-name.js`, run once per host. The contract, and the
-    authoring rules the runner cannot check: [`specs/UPDATES.md`](specs/UPDATES.md) →
-    State migrations.
+  - Applied: the stored data is everything Wisp wrote: domain XML, `container.json`,
+    `wisp-config.json`, `cloud-init.json`, `runtime.env`, `backup-status.json`, and file
+    modes. Give no legacy code even to an artifact produced earlier in the same session.
+    Bring what an earlier release wrote to the current shape with a **state migration**,
+    run by the backend at every start before it reads stored state for anything else,
+    and by nothing else (settled 2026-11-18): a start that did not come through the
+    updater must not meet unmigrated state either. The contract, and the authoring
+    rules: [`specs/UPDATES.md`](specs/UPDATES.md) → State migrations.
 - Repair data left by a past bug with a migration too, never with code in the normal
   path.
 - Run a change that touches more than one record in one transaction.
