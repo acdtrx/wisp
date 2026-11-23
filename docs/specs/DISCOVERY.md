@@ -2,36 +2,30 @@
 
 Wisp instances on the same network discover each other via mDNS (Avahi). Each instance announces a `_wisp._tcp` service and browses for peers; discovered peers surface in the top bar as a dropdown next to the server name (see [UI.md](UI.md) § Top Bar).
 
-Module layout follows the mdns rules: all Avahi DBus code lives in `backend/src/lib/mdns/linux/avahi.js` (generic, type-agnostic browse surface `subscribeServiceBrowse`); Wisp policy — what to announce, self-filtering, the peer map — lives in the app-glue module `backend/src/lib/wispDiscovery.js`. macOS dev is a no-op (darwin stubs): nothing announces, the peer list stays empty.
-
 ## Announcement
 
-Registered at boot (`startWispDiscovery`, after `connectMdns`, fire-and-forget so a hung avahi never delays `app.listen`) and re-registered when a successful `PATCH /api/settings` changes a discovery-relevant field (`serverName`, `discoveryEnabled`, `advertisedUrl`) — not on unrelated saves, since re-registering is a goodbye+announce on the wire. Reconciliation runs are serialized, so rapid toggle changes cannot interleave register/deregister. Gated by the `discoveryEnabled` setting (default on); disabling withdraws the service and stops browsing.
+Registered at boot, without waiting for it (a hung avahi never delays the listener), and re-registered when a successful `PATCH /api/settings` changes a discovery-relevant field (`serverName`, `discoveryEnabled`, `advertisedUrl`) — not on unrelated saves, since re-registering is a goodbye+announce on the wire. Reconciliation runs are serialized, so rapid toggle changes cannot interleave register/deregister. Gated by the `discoveryEnabled` setting (default on); disabling withdraws the service and stops browsing.
 
 | Property | Value |
 |----------|-------|
 | Service type | `_wisp._tcp` |
-| Instance name | Short host name (`os.hostname()` up to the first dot) — LAN-unique by mDNS convention. **Not** `serverName`, which defaults to "My Server" everywhere and would collide. |
+| Instance name | Short host name (up to the first dot) — LAN-unique by mDNS convention. **Not** `serverName`, which defaults to "My Server" everywhere and would collide. |
 | SRV target / port | `<hostname>.local` (A record published by avahi-daemon itself) : `WISP_PORT`. Containers on this host resolve the host's name through the DNS forwarder's host fast path (avahi's current name, answered from the containers' bridge addresses), not via avahi — see [CONTAINERS.md → Host's own name](CONTAINERS.md#resolution-in-process-dns-forwarder-on-16925453535). |
 | TXT `url` | `advertisedUrl` setting if set, else `http://<hostname>.local:<port>`. Authoritative for navigation — behind a reverse proxy the SRV host/port are not reachable by browsers. |
 | TXT `name` | `serverName` (display name shown in peers' dropdowns) |
-| TXT `version` | Wisp version (`getCurrentVersion()` from `wispUpdate.js`) |
+| TXT `version` | Wisp version |
 
-Re-announcing frees the old Avahi entry group and commits a new one — on the wire that is a goodbye + announce, so peers see `ItemRemove` + `ItemNew` and re-resolve the new TXT.
+Re-announcing is a goodbye + announce on the wire, so peers see the service leave and come back, and resolve the new TXT.
 
 ## Browsing
 
-`subscribeServiceBrowse(type, { onUp, onDown, onReset })` in the mdns module:
-
-- One Avahi `ServiceBrowser` per service type (`IF_UNSPEC`/`PROTO_UNSPEC`), shared across subscribers; freed when the last subscriber leaves.
-- Signals are dispatched at the raw bus level (dbus-next `bus.on('message')`) and routed by object path. Avahi emits signals immediately after the `*New` method returns — signals for a not-yet-registered path are buffered while a creation is in flight so none are lost to the proxy-introspection race.
-- The same service is reported once per interface and protocol; sightings are refcounted per `(interface, protocol)` pair — `onUp` fires on the first sighting, `onDown` only when the last one is removed.
-- Resolution uses a **persistent `ServiceResolver` per instance name** (freed when the service leaves or the browser resets). Avahi re-emits `Found` whenever the service's records change, so a peer changing its advertised URL / name / version propagates live as a fresh `onUp` — a one-shot resolve would freeze the first TXT forever, because a same-name re-registration updates records in place without any `ItemRemove`/`ItemNew` on remote browsers.
-- Avahi restart (`NameOwnerChanged`), or a system bus that failed and was reopened ([CONTAINERS.md](CONTAINERS.md), Avahi restart recovery): announcements are re-registered, browsers re-created (resolvers follow via fresh `ItemNew`s), and subscribers get `onReset` (drop everything) followed by fresh `onUp` events as peers are re-learned.
+- A service seen on several interfaces or protocols is one peer, gone only when its last sighting is.
+- **A peer is resolved persistently, not once**, so a peer changing its advertised URL / name / version propagates live. A one-shot resolve would freeze the first TXT forever: a same-name re-registration updates records in place, and remote browsers see no remove and no new.
+- Avahi restart, or a system bus that failed and was reopened ([CONTAINERS.md](CONTAINERS.md), Avahi restart recovery): announcements are re-registered, browsing starts over, and the peer list is dropped and re-learned.
 
 ## Self-filtering and peer-URL safety
 
-Browsed services carry a normalized `isLocal` flag (computed inside the linux impl from avahi's lookup-result bits `LOCAL`/`OUR_OWN` — the wire flags never leave the mdns module). `wispDiscovery.onUp` drops `isLocal` services, plus a belt-and-braces instance-name check for mDNS-reflector setups. A hypothetical second Wisp instance on the same host is therefore also filtered — the deployment model is one instance per host.
+A browsed service that avahi marks as this host's own is dropped, as is one carrying this host's instance name (for mDNS-reflector setups). A hypothetical second Wisp instance on the same host is therefore also filtered — the deployment model is one instance per host.
 
 The peer's TXT `url` is attacker-controllable (any LAN device can announce `_wisp._tcp`) and ends up as a clickable link in the authenticated UI, so it is accepted only when it parses as `http`/`https`; otherwise the URL falls back to `http://<SRV host>:<SRV port>`, and peers with no usable URL are dropped.
 
@@ -45,8 +39,6 @@ The `discovery` topic of `GET /api/events` (SSE, cookie-authenticated like every
 
 `name` falls back to the mDNS instance name when TXT `name` is missing; `url` falls back to `http://<host>:<port>` from the SRV record; `version` may be `null` (non-Wisp or older announcer).
 
-Frontend: the peer list arrives on the `discovery` topic of the events stream; the top bar's server switcher follows it while it is mounted and renders the dropdown only when peers exist.
-
 ## Settings
 
 | Key | Default | Effect |
@@ -58,6 +50,6 @@ Both live in `wisp-config.json` ([CONFIGURATION.md](CONFIGURATION.md)) and are e
 
 ## Limitations
 
-- **Instance-name collisions are not handled.** Two hosts with the same short hostname → the second announcement never establishes; the mdns module logs the group's `COLLISION` state (`[mdns] entry group not published`) but does not rename. A group avahi leaves stuck probing after a Wisp-initiated interface removal is re-published — see [CONTAINERS.md → Stuck-probe recovery](CONTAINERS.md#publishing-avahi-daemon-via-dbus).
+- **Instance-name collisions are not handled.** Two hosts with the same short hostname → the second announcement never establishes; the collision is logged, and nothing is renamed. A group avahi leaves stuck probing after a Wisp-initiated interface removal is re-published — see [CONTAINERS.md → Stuck-probe recovery](CONTAINERS.md#publishing-avahi-daemon-via-dbus).
 - **macOS dev:** darwin stubs — no announcement, no peers, no chevron.
 - **TXT contents are public to the LAN** (server name, URL, version) — inherent to mDNS.
