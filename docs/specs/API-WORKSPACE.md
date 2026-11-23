@@ -23,7 +23,7 @@ User-defined groupings for the sidebar workload list. The synthetic **Main** sec
 }
 ```
 
-Main's `order` is `null`: it sorts before every section (internally `-Infinity`, which JSON writes as `null`).
+Main's `order` is `null`: it sorts before every section.
 
 `assignments` keys are `"<type>:<workload-name>"` (`<type>` is `vm` or `container`); values are section ids. Missing keys mean Main.
 
@@ -37,10 +37,8 @@ Return the current sections + assignments envelope.
 
 The envelope is pushed on the `sections` topic of `GET /api/events`: a full snapshot on connect, then again after every successful section or assignment write (create, rename, delete, reorder, assign, and the assignment move that rides a container rename). A rejected write pushes nothing. No polling timer.
 
-This is the sidebar's live channel for grouping. It exists because sections are pure Wisp metadata — no libvirt or containerd event announces them — so without it a client that never reloads keeps the ordering it saw at mount: an iOS home-screen app resumed from the app switcher, or a desktop tab left open while another device reorders.
-
 - **Topic `data`:** The envelope above, or `{ error, detail }` if the settings read fails. Clients keep their last good envelope on an error frame.
-- `Main`'s `order` is `-Infinity`, which serialises to `null` in both the topic frames and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
+- `Main`'s `order` is `null` in both the topic frames and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
 
 ### POST /api/sections · `admin`
 
@@ -89,15 +87,15 @@ Move a workload to a section.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
-> Section info is **not** embedded in the VM/container list payloads or their live topics. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the feed could stay stale until the next workload event. Sections get their own topic instead: subscribe to `sections` on `GET /api/events` for steady state. `GET /api/sections` remains for API clients.
+> Section info is **not** embedded in the VM/container list payloads or their live topics: libvirt and containerd announce no assignment change, so those lists could stay stale until the next workload event. Sections have their own topic, `sections` on `GET /api/events`; `GET /api/sections` remains for API clients.
 
 ---
 
 ## Home page
 
-The Home tab's launcher tiles. Everything a tile *is* — its URL, the workload behind it, its live state — is **derived on every read** from workload data (see [UI.md § Tab: Home](UI.md#tab-home) for the derivation rules); only the human overlay (groups, per-tile overrides, manual links) is persisted, under the `homepage` key in `wisp-config.json` (see [CONFIGURATION.md](CONFIGURATION.md)).
+The Home tab's launcher tiles. Everything a tile *is* — its URL, the workload behind it, its live state — is **derived on every read** from workload data (see [UI-HOST.md § Tab: Home](UI-HOST.md#tab-home) for the derivation rules); only the human overlay (groups, per-tile overrides, manual links) is persisted, under the `homepage` key in `wisp-config.json` (see [CONFIGURATION.md](CONFIGURATION.md)).
 
-Tiles and the MCP `get_deployment_overview` tool read workloads through one aggregate join, `lib/deploymentOverview.js` (`gatherDeployment`), so the two cannot drift. Keep that join the only one.
+Tiles and the MCP `get_deployment_overview` tool read workloads through one aggregate join, so the two cannot drift. Keep that join the only one.
 
 `GET /api/homepage` returns the `{ tiles, groups }` envelope the `home` topic pushes; every write answers with an ack ([Command responses](API.md)): `201 { id }` for a create, `204` otherwise, and the new envelope reaches every client on the `home` topic. Writes go through these routes only, never `PATCH /api/settings`.
 
