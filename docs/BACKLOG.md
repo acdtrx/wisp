@@ -570,6 +570,13 @@ misnamed member in a new migration fails the host's update, which then rolls bac
 `backend/migrations/` against the facades' exports. **Revisit trigger:** the next new
 migration, or the next work on the checks.
 
+**A unit test failed once and could not be made to fail again.** `npm run check` on
+`main` answered "check failed: test" once, right after a merge and while another
+session's work was ending on the same machine (2026-11-23); the next five runs passed
+with all 571 tests, and the failing test's name was not kept. A test that depends on
+timing under load is the likely kind. **Revisit trigger:** the test step fails again
+without a code change: keep the full output and name the test.
+
 ## Docs and method
 
 **Split CONTAINERS.md by area.** Like API.md and UI.md (split 2026-11-15 and later),
