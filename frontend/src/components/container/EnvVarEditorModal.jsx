@@ -241,7 +241,7 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
               onFocus={(e) => e.target.select()}
               className="input-field min-w-0 flex-1 font-mono text-xs text-text-secondary"
             />
-            <CopyButton text={pendingGenerate.value} label="Copy new secret" variant="field" className="self-stretch" />
+            <CopyButton text={pendingGenerate?.value ?? ''} label="Copy new secret" variant="field" className="self-stretch" />
           </div>
         </div>
       </ConfirmDialog>
