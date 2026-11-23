@@ -254,8 +254,8 @@ In projects with a web UI: `FRONTEND-RULES.md`.
 - **Comment only what the code can't say:** why, a non-obvious constraint or invariant,
   or a contract callers rely on, in a sentence or two. Never restate the code or document
   a name that already says it. Leave out history, dates, who decided and plan steps:
-  design reasoning lives in `docs/`, cited by name. Name a rejected alternative only when
-  the obvious approach fails.
+  reasoning lives in the commit message. Name a rejected alternative only when the
+  obvious approach fails.
   - Applied: when touching code, bring any history-narrating comment you meet up to this
     rule.
 

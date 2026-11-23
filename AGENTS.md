@@ -98,11 +98,11 @@ truth, and a doc that mirrors it goes stale.
 what was agreed with the user. Never edit them to match what was built: fix a divergence
 in the code or raise it with the user, and change a spec only once the user agrees.
 
-**Decisions live where their topic lives — inline, dated.** Record a settled decision in
-the doc that owns its topic (see the header), tagged `(settled YYYY-MM-DD)`, with its
-reasoning, and what was rejected when that matters. One home per decision; no separate
-decision log. Record only decisions that settle a spec or a change: an idea turned down
-while brainstorming or speccing goes nowhere, unless the user asks for a backlog entry.
+**Record a decision as a fact, in the doc that owns its topic** (see the header), tagged
+`(settled YYYY-MM-DD)`. Put its reasoning, and what was rejected, in the commit message.
+Keep a reason in the doc only where a reader would otherwise undo the decision, in one
+clause. One home per decision; keep no decision log. Record only what settles a spec or
+a change: an idea turned down goes nowhere, unless the user asks for a backlog entry.
 What a code comment may say: `docs/CODING-RULES.md` §10.
 
 - `docs/specs/<SUBSYSTEM>.md` — one per subsystem, **written with the first feature that
@@ -131,7 +131,8 @@ What a code comment may say: `docs/CODING-RULES.md` §10.
 ## Git
 
 - Use git as you go, with the usual conventions: conventional-ish commit messages, one
-  logical change per commit, each committed as it works, not one commit at the end.
+  logical change per commit, each committed as it works, not one commit at the end. Put
+  the reasoning behind a decision in the commit's body.
 - Build features on a branch, and **rebase it onto main before the ff merge**, so main
   never freezes: small unrelated work keeps landing on main while feature work is in
   flight. Wait out only a same-file collision with the branch.
