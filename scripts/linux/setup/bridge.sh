@@ -215,7 +215,7 @@ undo() {
     remove_dropin || undo_fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was, but $DROPIN, which the step wrote, could not be removed: remove it."
     undo_fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was."
   fi
-  restore || undo_fail "$BRIDGE was not applied ($WHY). Undoing it did not complete: the network may be half the bridge's, and the original stays kept in $KEPT. docs/specs/DEPLOYMENT.md (The bridge) says how to put it back at the console."
+  restore || undo_fail "$BRIDGE was not applied ($WHY). Undoing it did not complete: the network may be half the bridge's, and the original stays kept in $KEPT. Wisp's deployment guide, The bridge (https://github.com/acdtrx/wisp/blob/main/docs/specs/DEPLOYMENT.md#the-bridge), says how to put it back at the console."
   rm -rf -- "$KEPT"
   outcome="$NETPLAN_ORIGIN is back as it was"
   if uplink_back; then

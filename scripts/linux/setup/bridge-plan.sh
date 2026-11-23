@@ -216,7 +216,7 @@ uplink_netplan_id() {
 refuse_netplan_not_applied() {
   local config defined bridges
   local remedy=("Apply netplan's configuration (netplan apply), or first put back the original kept under"
-    "/var/lib/wisp/network-before-bridge (docs/specs/DEPLOYMENT.md, The bridge), and run this again.")
+    "/var/lib/wisp/network-before-bridge (Wisp's deployment guide, The bridge: https://github.com/acdtrx/wisp/blob/main/docs/specs/DEPLOYMENT.md#the-bridge), and run this again.")
   config="$(net_read netplan get)" || exit 1
   UPLINK_DEPENDENTS=""
   if [[ "$BRIDGE_CREATE" == no ]]; then
