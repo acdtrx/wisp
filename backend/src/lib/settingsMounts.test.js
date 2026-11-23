@@ -42,3 +42,11 @@ test('two concurrent adds on one path: only the first is saved', async () => {
   assert.equal(results[1].reason.code, 'MOUNT_DUPLICATE');
   assert.equal(stored().length, 1);
 });
+
+test('the strict read refuses a settings file with two mounts on one path, naming both', async () => {
+  const { parseWispConfig } = await import('./configSchema.js');
+  const two = (pathB) => ({ mounts: [smb('a', '/mnt/wisp/media'), { ...smb('b', pathB), label: 'Backups' }] });
+  assert.throws(() => parseWispConfig(two('/mnt/wisp/media')),
+    (err) => err.code === 'CONFIG_INVALID' && /mounts\[1\]\.mountPath/.test(err.message) && /"a" and "Backups" both use \/mnt\/wisp\/media/.test(err.message));
+  assert.doesNotThrow(() => parseWispConfig(two('/mnt/wisp/other')));
+});

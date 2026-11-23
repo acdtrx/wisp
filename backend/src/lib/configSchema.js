@@ -348,6 +348,16 @@ export function isValidProxyEntry(entry) {
 
 // ── The parse ───────────────────────────────────────────────────────────────
 
+/**
+ * The mount of `mounts`, other than the one with id `ownId`, that already has
+ * `mountPath` (both in canonical form), or null: one path holds one mount.
+ */
+export function mountOnPath(mounts, mountPath, ownId = null) {
+  return mounts.find((m) => m.id !== ownId && m.mountPath === mountPath) ?? null;
+}
+
+const mountName = (m) => `"${m.label || m.id}"`;
+
 function parseMount(d, where) {
   expectObject(d, where);
   const type = d.type;
@@ -594,6 +604,12 @@ export function parseWispConfig(data) {
       if (seen.has(entry.id)) throw configInvalid(`mounts[${i}].id`, `duplicate id "${entry.id}"`);
       seen.add(entry.id);
       return entry;
+    });
+    out.mounts.forEach((entry, i) => {
+      const other = mountOnPath(out.mounts.slice(0, i), entry.mountPath);
+      if (other) {
+        throw configInvalid(`mounts[${i}].mountPath`, `mounts ${mountName(other)} and ${mountName(entry)} both use ${entry.mountPath}`);
+      }
     });
   }
   if (data.backupMountId !== undefined && data.backupMountId !== null) {

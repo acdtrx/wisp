@@ -14,6 +14,7 @@ import {
   checkShare,
   checkUpdateChannel,
   defaultConfig,
+  mountOnPath,
   parseWispConfig,
   parseWispConfigText,
 } from './configSchema.js';
@@ -400,9 +401,9 @@ export async function getRawMounts() {
   return fromFile.mounts;
 }
 
-/** Refuse a mount path another mount already has (both in their canonical stored form). */
+/** Refuse a mount path another mount already has: the read's rule (mountOnPath), as the API's 409. */
 function assertMountPathFree(mounts, mountPath, ownId) {
-  const other = mounts.find((m) => m.id !== ownId && m.mountPath === mountPath);
+  const other = mountOnPath(mounts, mountPath, ownId);
   if (other) {
     throw createAppError('MOUNT_DUPLICATE', `Mount "${other.label || other.id}" already uses ${mountPath}`);
   }
