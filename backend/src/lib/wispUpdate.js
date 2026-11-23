@@ -1,8 +1,8 @@
 /**
  * Self-update: poll GitHub Releases hourly, download + verify the latest tarball,
  * stage it under /var/lib/wisp/updates/, and hand off to wisp-updater.service
- * (a Type=oneshot systemd unit) which performs the atomic swap and service
- * restart in its own cgroup, fully detached from this backend process.
+ * (a Type=oneshot systemd unit) which installs it and restarts the service
+ * in its own cgroup, fully detached from this backend process.
  *
  * Which release counts as "latest" depends on the host's `updateChannel`
  * setting: stable takes GitHub's own latest (prereleases excluded server-side),

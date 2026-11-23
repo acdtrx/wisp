@@ -6,8 +6,8 @@
  * unanswerable from disk alone. This module keeps one small record per
  * workload of the most recent attempt in `config/backup-status.json`,
  * written on every manual/scheduled backup completion. It is a cache of
- * the last outcome, not history: self-healing and safe to delete (the
- * self-updater preserves it via RSYNC_EXCLUDES). A record follows its
+ * the last outcome, not history: self-healing and safe to delete (an
+ * update keeps it, with the rest of config/). A record follows its
  * workload: a rename moves it, a delete drops it.
  *
  * This module also carries the change signal for everything backup-shaped:
@@ -27,8 +27,8 @@ import { createEmitter } from './base/index.js';
 import { log } from './log.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Repo-root config/ (beside wisp-config.json), the directory the updater's swap
-// preserves — not backend/config/, which the swap's rsync --delete removes.
+// Repo-root config/ (beside wisp-config.json), which an install and an update
+// keep — not backend/config/, which belongs to the release's tree.
 const STATUS_PATH = resolve(__dirname, '../../../config/backup-status.json');
 
 let cache = null;

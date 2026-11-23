@@ -108,6 +108,7 @@ page. The service worker keeps the app shell so a launch always boots React.
 │       ├── cloud-init.json       # Cloud-init config (optional)
 │       └── VARS.fd               # UEFI NVRAM (optional)
 ├── backups/                      # Local backup destination (layout: specs/BACKUPS.md)
+├── updates/                      # Self-update staging
 └── containers/
     └── <name>/
         ├── container.json        # Container config (source of truth)
@@ -116,7 +117,7 @@ page. The service worker keeps the app shell so a launch always boots React.
             ├── <runId>.log       # stdout/stderr for one task run
             └── <runId>.json      # run metadata (startedAt, endedAt, exitCode, imageDigest)
 
-/mnt/wisp/smb/                    # Typical SMB mount parent for network storage mounts
+/mnt/wisp/                        # Parent of the mount points (SMB shares, adopted drives)
 ```
 
 ## Backend: events `[PROJECT]`
