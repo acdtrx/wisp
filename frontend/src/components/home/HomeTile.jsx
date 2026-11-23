@@ -203,7 +203,8 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
         >
           {body}
           {/* Launch notch: a tab cut into the top border, centred on the cogwheel's
-              axis (28px from the right edge) so the two read as one action lane. */}
+              axis (29px from the card's outer right edge) so the two read as one
+              action lane. */}
           <span
             className="absolute -top-px right-[15px] grid h-[15px] w-[26px] place-items-center rounded-b-lg border border-t-0 border-accent/25 bg-accent-soft text-text-muted transition-colors duration-150 motion-reduce:transition-none group-hover:border-accent group-hover:bg-accent group-hover:text-white"
             aria-hidden
@@ -215,9 +216,10 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
 
       {/* Cogwheel sits outside the anchor — an interactive control can't nest in a
           link — and is absolutely placed so the two share the tile's right lane.
-          `right-[15px]` against the (border-less) wrapper puts its 28px axis 29px
-          from the card's outer edge, exactly where the notch's axis lands from
-          inside the 1px border. */}
+          The notch's axis is 29px from the card's outer edge (15px inside the 1px
+          border, plus half its 26px). The cog is 28px wide from lg and 32px below
+          (its padding grows for touch), so it sits 15px, or 13px, from the
+          (border-less) wrapper's edge to put its axis there too. */}
       {!editing && !external && (
         <IconLink
           to={`/${tile.workload.type}/${encodeURIComponent(tile.workload.name)}`}
@@ -225,7 +227,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
           label={`Manage ${tile.workload.name} in Wisp`}
           variant="neutral"
           size="sm"
-          className="absolute top-1/2 right-[15px] -translate-y-1/2"
+          className="absolute top-1/2 right-[13px] -translate-y-1/2 lg:right-[15px]"
         />
       )}
 
