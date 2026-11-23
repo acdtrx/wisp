@@ -447,6 +447,11 @@ catches the audit counted in host, storage and mdns were not counted again
 (docs/reviews/2026-11-17/AUDIT.md, V-6 and V-11; 2026-11-22). **Revisit trigger:** the
 next change to the mount helpers, or the docs and rule sweep (phase 8).
 
+**Detected drives list a filesystem Wisp cannot adopt.** An `iso9660` disc (the cloud-init
+disc of a VM that runs Wisp, say) shows in Host Mgmt's Detected drives with an Adopt that
+is off and a UUID cut short, and nothing says why. **Revisit trigger:** a user asks what
+the row is for.
+
 ## Frontend
 
 **Sidebar: manual within-section workload ordering.** A third sort mode alongside
