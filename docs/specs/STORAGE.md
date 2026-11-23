@@ -18,7 +18,7 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 | `id` | Unique identifier (UUID) |
 | `type` | `"smb"` or `"disk"` |
 | `label` | Display name |
-| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape), and is **stored in canonical form** (settled 2026-11-22): a path typed with a trailing or doubled `/` is stored resolved, which is the form the mount table lists and `wisp-mount` takes. Enforced on add and update, and by the start's read of the settings; `wisp-mount` checks it again. **No two mounts share a mount path** (settled 2026-11-23): adding or editing a mount onto a path another mount has answers 409 `MOUNT_DUPLICATE`. |
+| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape), and is **stored in canonical form** (settled 2026-11-22): a path typed with a trailing or doubled `/` is stored resolved, which is the form the mount table lists and `wisp-mount` takes. Enforced on add and update, and by the start's read of the settings; `wisp-mount` checks it again. **No two mounts share a mount path** (settled 2026-11-23): adding or editing a mount onto a path another mount has answers 409 `MOUNT_DUPLICATE`, and the start's read of the settings refuses a file that holds two. |
 | `autoMount` | When true (default), Wisp mounts on startup (SMB) or on device insertion (disk) |
 
 ### SMB-only fields (`type: "smb"`)
