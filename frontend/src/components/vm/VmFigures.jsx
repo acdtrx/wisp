@@ -55,7 +55,7 @@ export default function VmFigures({ state }) {
         { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up', keep: true },
       ]}
       live={[
-        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, slot: PERCENT_SLOT, percent: stats.cpu?.percent ?? null },
+        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, slot: PERCENT_SLOT, percent: stats.cpu?.percent ?? null, ownPhoneLine: true },
         {
           label: 'Disk',
           value: <Rate up={stats.disk?.readMBs} down={stats.disk?.writeMBs} words={['read', 'write']} />,
