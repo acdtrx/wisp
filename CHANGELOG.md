@@ -6,7 +6,7 @@
 - **Wisp runs on Node.js 26** — setup installs it, on a new host and at a host's next update.
 - **Sizes read the same everywhere** — B, KB, MB, GB and TB in powers of 1024, one decimal under 100 and none from 100 up: Host storage showed KiB and GiB, the OS update's download size counted in powers of 1000, and the memory card said 15 GB where the top bar said 14.9. A drive whose size cannot be read shows a dash, not 0 B.
 - **Memory reads the same on every page** — a container's memory and limit, and a memory folder's size, read like a VM's ("128 MB / 512 MB", "2 GB"), and their fields say MB.
-- **Buttons are one set of looks** — every button, tab, menu item and choice comes from a few shared pieces, so the same action looks the same on every page; a keyboard focus shows the accent ring, a disabled button keeps its reason on hover, and a control that only navigates is a link (middle-click opens it in a tab). The icon picker lists its icons as named choices, two to a row.
+- **Buttons are one set of looks** — every button, tab, menu item and choice comes from a few shared pieces, so the same action looks the same on every page; a keyboard focus shows the accent ring, a disabled button keeps its reason on hover, and a control that only navigates is a link (middle-click opens it in a tab).
 - **The update cards show a date** once the last check or the release is more than 30 days old.
 - **Every page's cards share one set of gutters** — on the Host tabs cards sit closer together, and on a phone the Host tabs and the create pages have the workload pages' narrower side margins.
 - **More actions are icons** — a detected drive's Adopt, Home's Add link and Add group, and a finished job's Dismiss; each names itself on hover.
