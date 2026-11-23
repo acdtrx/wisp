@@ -10,11 +10,13 @@
 - **The update cards show a date** once the last check or the release is more than 30 days old.
 - **Every page's cards share one set of gutters** — on the Host tabs cards sit closer together, and on a phone the Host tabs and the create pages have the workload pages' narrower side margins.
 - **More actions are icons** — a detected drive's Adopt, Home's Add link and Add group, and a finished job's Dismiss; each names itself on hover.
+- **A release holds only what a host runs** — the install and update tarball no longer carries the project's docs, its development scripts and checks, or its test fixtures; an update removes them from the host. The README's screenshots come with it.
 
 ### Bug Fixes
 - **A failure Wisp used to drop silently is logged** — a cleanup that left a folder behind, an unreadable backup folder, a rollback step that failed, a config the mDNS publisher could not read; the journal now says so.
 - **One path holds one host mount** — adding a mount, or moving one, onto another mount's path is refused (409 `MOUNT_DUPLICATE`), and a settings file that holds two mounts on one path stops Wisp's start, naming both.
 - **The password, a backup's manifest and a container run's record are written atomically** — a crash mid-write no longer leaves a truncated file.
+- **`config/runtime.env.example` names every setting an operator may set** — the containerd socket, the extra WebSocket origins and the update repository were missing.
 
 ## 2026-11-22
 
