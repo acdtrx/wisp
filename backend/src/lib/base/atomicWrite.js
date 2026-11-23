@@ -4,8 +4,11 @@
  * crash mid-write leaves the old file whole, never a truncated one; `rename`
  * is atomic on one filesystem. The temp file is removed when a step fails.
  *
- * Temp suffix: `.tmp.<pid>.<timestamp>.<rand>`, which the boot cleanup
- * (bootCleanup.js) matches to remove what a crash left mid-rename.
+ * Temp suffix: `.tmp.<pid>.<timestamp>.<rand>`. A temp file a crash leaves
+ * behind is removed at boot (bootCleanup.js) only where that sweep runs: the
+ * config folder, each VM's folder, and each container's folder and its
+ * `files/`. Elsewhere (a container's `runs/`, a backup folder) it stays, the
+ * listings ignore it, and it goes when its folder does.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdir, open, rename, unlink } from 'node:fs/promises';
