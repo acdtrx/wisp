@@ -78,8 +78,8 @@ jobs:
         run: npm run check
 
       # The release-shaped tree and its tarball, by the same script push.sh uses:
-      # it builds the frontend, stages the file list and refuses a tree or tarball
-      # holding test files, extended attributes or macOS litter.
+      # it builds the frontend, stages what a host runs (an allowlist) and refuses a
+      # tree holding anything else, or a tarball holding extended attributes or macOS litter.
       - name: Stage release tarball
         id: pack
         run: |

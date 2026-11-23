@@ -8,15 +8,25 @@
 #     directory `wisp/`), <version> from the root package.json.
 # Needs the frontend's packages installed (`npm ci` in frontend/).
 #
+# What ships is what a host runs, and the few files that describe the release
+# to its owner: an allowlist (SHIPS below), never a denylist, so a file added
+# to the repo stays out until it is named. The backend (without its tests, the
+# helpers' test bench and the route tests' fixtures), the built frontend,
+# shared/ (the wire's names, which the backend loads), the install, setup and
+# wispctl scripts, the unit templates, the config examples, the root
+# package.json (the version's one source; its "type" makes shared/ an ES
+# module), LICENSE, README.md with screenshots/, and CHANGELOG.md. Never docs/,
+# the checks and their lint rules, the release tooling, AGENTS.md or CLAUDE.md:
+# an update removes what a release stops shipping (the keep rule, copy.sh).
+#
 # The files are those git tracks (the index), with the working tree's content:
 # a new file ships once it is `git add`ed, and nothing untracked or ignored
-# (config secrets, notes, logs, node_modules) ever does; from config/ only the
-# examples. Plus the frontend build output, and `RELEASE` naming the version
-# and the commit (marked when the staged content differed from it), by which the
-# installer knows a release-shaped tree and says what it installs. The
-# tarball holds the same files and content from any machine: no extended
-# attributes, no AppleDouble `._*` files, no `.DS_Store`, no test files, no Python
-# bytecode (`__pycache__/`, `*.pyc`); a staged tree or a tarball holding one fails.
+# (config secrets, notes, logs, node_modules) ever does. Plus the frontend
+# build output, and `RELEASE` naming the version and the commit (marked when
+# the staged content differed from it), by which the installer knows a
+# release-shaped tree and says what it installs. A staged tree holding a file
+# outside the list fails. The tarball holds the same files and content from any
+# machine: no extended attributes, no AppleDouble `._*` files, no `.DS_Store`.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -39,31 +49,52 @@ echo "--- Frontend build ---"
 rm -rf "$STAGE" "$ARCHIVE"
 mkdir -p "$STAGE/frontend"
 
-# backend/ (without tests, and without the helpers' test bench), shared/ (the wire's names, which the backend loads at
-# run time), scripts/, systemd/, config/ (the examples), docs/, and the top-level
-# files: package.json among them, whose "type" makes shared/ an ES module. The
-# frontend ships only what the backend serves: dist/ (the built SPA) and public/
-# (noVNC under vendor/, which the build fetches).
 cd "$ROOT"
 LIST="$(mktemp)"
 trap 'rm -f "$LIST"' EXIT
-git ls-files -z --cached -- \
-  backend shared scripts systemd config docs package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md > "$LIST"
+git ls-files -z --cached > "$LIST"
 node - "$STAGE" "$LIST" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
 const [stage, list] = process.argv.slice(2);
+// What ships, by path from the tree's top. The frontend ships only what the
+// backend serves: dist/ (the built SPA) and public/ (noVNC under vendor/, which
+// the build fetches). RELEASE is written after this.
+const SHIPS = [
+  /^backend\//, /^shared\//, /^systemd\//, /^config\/[^/]+\.example$/,
+  /^scripts\/(?:install|wispctl)\.sh$/, /^scripts\/linux\//,
+  /^frontend\/(?:dist|public)\//, /^screenshots\//,
+  /^(?:package\.json|CHANGELOG\.md|LICENSE|README\.md)$/,
+];
+// Inside those, what a host never runs: the unit tests beside their code, the
+// helpers' test bench, the route tests' fixtures, Python bytecode, macOS litter.
+const NEVER = [
+  /\.test\.js$/, /_test\.py$/, /\.pyc$/, /(?:^|\/)__pycache__\//, /^backend\/scripts\/test\//,
+  /^backend\/src\/routes\/fixtures\//, /(?:^|\/)\._[^/]*$/, /(?:^|\/)\.DS_Store$/,
+];
+const ships = (file) => SHIPS.some((re) => re.test(file)) && !NEVER.some((re) => re.test(file));
 const copy = (from) => fs.cpSync(from, path.join(stage, from), { preserveTimestamps: true });
 const listed = fs.readFileSync(list, 'utf8').split('\0').filter(Boolean);
 for (const file of [...new Set(listed)].sort()) {
-  if (file.endsWith('.test.js') || file.startsWith('backend/scripts/test/') || file.endsWith('_test.py') || file.endsWith('.pyc') || file.split('/').includes('__pycache__') || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
-  if (file.startsWith('config/') && !file.endsWith('.example')) continue;
-  copy(file);
+  if (ships(file) && fs.statSync(file, { throwIfNoEntry: false })?.isFile()) copy(file);
 }
-// Build output, not in git's list: the SPA, and the public assets noVNC joins.
-const skip = (src) => ['.DS_Store'].includes(path.basename(src)) || path.basename(src).startsWith('._');
+// Build output, not in git's list.
 for (const dir of ['frontend/dist', 'frontend/public']) {
-  fs.cpSync(dir, path.join(stage, dir), { recursive: true, preserveTimestamps: true, filter: (src) => !skip(src) });
+  fs.cpSync(dir, path.join(stage, dir), { recursive: true, preserveTimestamps: true, filter: (src) => fs.statSync(src).isDirectory() || ships(src) });
+}
+// The staged tree, file by file, against the list.
+const outside = [];
+const walk = (rel) => {
+  for (const entry of fs.readdirSync(path.join(stage, rel), { withFileTypes: true })) {
+    const file = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) walk(file);
+    else if (!ships(file)) outside.push(file);
+  }
+};
+walk('');
+if (outside.length) {
+  console.error(`ERROR: the staged tree holds files outside what ships:\n  ${outside.join('\n  ')}`);
+  process.exit(1);
 }
 NODE
 
@@ -80,15 +111,6 @@ test -f "$STAGE/frontend/dist/index.html" || { echo "ERROR: frontend/dist/index.
 test -f "$STAGE/frontend/dist/sw.js" || { echo "ERROR: frontend/dist/sw.js missing" >&2; exit 1; }
 if grep -q '__WISP_BUILD_ID__\|__WISP_PRECACHE_URLS__' "$STAGE/frontend/dist/sw.js"; then
   echo "ERROR: dist/sw.js still contains build placeholders." >&2
-  exit 1
-fi
-
-# Unit tests run from the repo (npm test), never on a host; macOS litter and
-# Python bytecode never ship.
-STRAY="$(find "$STAGE" \( -name '*.test.js' -o -name '*_test.py' -o -name '__pycache__' -o -name '*.pyc' -o -name '._*' -o -name '.DS_Store' \) -print)"
-if [[ -n "$STRAY" ]]; then
-  echo "ERROR: the staged tree holds files that must not ship:" >&2
-  echo "$STRAY" >&2
   exit 1
 fi
 
