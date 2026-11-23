@@ -8,25 +8,12 @@ The console provides in-browser graphical access to running VMs via VNC. It uses
 Browser (noVNC) ──WebSocket──> Backend WS Proxy ──TCP──> QEMU VNC (127.0.0.1:port)
 ```
 
-1. The browser establishes a WebSocket connection to `/ws/console/:name/vnc`; the upgrade request carries the `wisp_session` cookie
-2. The global auth hook verifies the session before the upgrade completes
-3. The backend reads the VM's domain XML to extract the VNC port from the `<graphics>` element
-4. The backend opens a TCP connection to `127.0.0.1:<port>`
-5. Data flows bidirectionally: WebSocket frames are written to the TCP socket and TCP data is sent as WebSocket frames
-
-## VNC Port Discovery
-
-The VNC port is not hardcoded — it is dynamically assigned by QEMU and discovered at connection time by parsing the domain XML:
-
-```xml
-<graphics type='vnc' port='5900' autoport='yes' listen='127.0.0.1'/>
-```
-
-The backend extracts the `port` attribute from the `<graphics type='vnc'>` element via `getVNCPort(name)`.
+- The browser connects to `/ws/console/:name/vnc`; the upgrade request carries the `wisp_session` cookie.
+- The backend connects to `127.0.0.1:<port>`. The port is not fixed: QEMU assigns it, and the backend reads it from the VM's domain XML at connection time.
 
 ## Authentication
 
-The browser sends the same-origin `wisp_session` cookie with the WebSocket upgrade request, so consoles authenticate exactly like the REST API: the global `onRequest` hook ([AUTH.md](AUTH.md)) verifies the session JWT before the upgrade completes and answers `401` (`AUTH_REQUIRED` / `AUTH_INVALID`, no WebSocket) when it is missing or invalid. No token travels in the URL (CODING-RULES §9). Both console routes declare the `session` access level — an `Authorization: Bearer` API token is refused with `403` `SESSION_REQUIRED`, so a leaked token can never open a shell or a VNC session. The container console (`/ws/container-console/:name`) follows the same rules.
+The browser sends the same-origin `wisp_session` cookie with the WebSocket upgrade request, so consoles authenticate exactly like the REST API ([AUTH.md](AUTH.md)): the session is verified before the upgrade completes, and the answer is `401` (`AUTH_REQUIRED` / `AUTH_INVALID`, no WebSocket) when it is missing or invalid. No token travels in the URL (CODING-RULES §9). Both console routes declare the `session` access level — an `Authorization: Bearer` API token is refused with `403` `SESSION_REQUIRED`, so a leaked token can never open a shell or a VNC session. The container console (`/ws/container-console/:name`) follows the same rules.
 
 The route also enforces a same-origin policy on the upgrade request. CORS does not apply to WebSocket, and `SameSite=Lax` still sends the cookie on an upgrade from another origin of the same site (e.g. a sibling subdomain), so without this such a page could open a WS to `/ws/console/...` and drive the VM with the user's session. In dev, only `http://localhost:5173` is allowed; in production, `Origin`'s host must equal the request `Host` header. Extra origins can be allow-listed via the comma-separated `WISP_ALLOWED_WS_ORIGINS` environment variable (rare — reverse-proxy deployments where the frontend is served from a different origin than the backend).
 
@@ -58,7 +45,7 @@ Toolbar order: Ctrl+Alt+Del, Paste, Screenshot, (divider), Fullscreen, (divider)
 
 ### Paste behavior
 
-QEMU's built-in VNC server has no clipboard bridge to the guest OS, so the standard VNC cut-text channel (`clipboardPasteFrom`) goes nowhere — there's no agent inside the guest listening for clipboard updates. Wisp's Paste button instead reads `navigator.clipboard.readText()` and synthesizes the text as VNC key events (`rfb.sendKey`), one character at a time. This works in any guest because the guest just sees keypresses.
+QEMU's built-in VNC server has no clipboard bridge to the guest OS, so the Paste button reads the browser's clipboard and types the text as VNC key events, one character at a time. This works in any guest because the guest just sees keypresses.
 
 Limitations:
 - **US keyboard layout assumed.** Uppercase letters and US-layout shifted symbols (`!@#$%^&*()_+{}|:"<>?~`) are wrapped in Shift_L. On a guest configured for a different layout, characters will come out wrong.
@@ -67,9 +54,9 @@ Limitations:
 
 ### Viewport
 
-The VNC console viewport fills the available space below the toolbar. The noVNC client uses `scaleViewport = true` to scale the VM display to fit the viewport dimensions.
+The VNC console viewport fills the available space below the toolbar. The VM display is scaled to fit the viewport.
 
-**Console colours follow the theme** *(settled 2026-08-25)*. The terminal well is its own token pair, `--color-console` / `--color-console-text` in `index.css` — deliberately dark in **both** themes, because a terminal is dark; light keeps the slate the consoles have always used, dark drops to the Dusk input well so it stops reading as a blue-grey patch. `consoleTheme()` (`components/console/consoleTheme.js`) resolves them so the `bg-console` class on the viewport and the JS-configured palettes cannot drift apart. The container terminal repaints **live** on a theme flip (`terminal.options.theme`) — no reconnect, no lost scrollback. ANSI colours stay on xterm's defaults: they are tuned for a dark background and both backgrounds are dark, so nothing needs overriding and light stays byte-identical. The noVNC letterbox is recoloured in dark by a CSS rule on `[data-wisp-vnc-viewport] > div` (noVNC paints its screen element inline and gives it no class, so `!important` is the only hook); light keeps noVNC's own default. The remote framebuffer is whatever the guest renders.
+**Console colours follow the theme** *(settled 2026-08-25)*. The terminal well is dark in **both** themes, in a shade of its own per theme. The container terminal repaints **live** on a theme flip — no reconnect, no lost scrollback. ANSI colours stay on xterm's defaults. The remote framebuffer is whatever the guest renders.
 
 If the server closes the proxy before the VNC session is up with `4000` `vnc unavailable` (the VM has no VNC port yet — QEMU briefly reports `-1` after start/resume — or libvirt is not connected), the client treats it as transient and retries with backoff up to the attempt cap. No close code the server sends is final. An upgrade refused with a `400` (a bad name, which a URL the client builds from the VM list does not have) reaches the client as a `1006` close, like any refused upgrade, and is handled as one (Auto-reconnect, below): the session check passes, so it retries with backoff until the attempt cap, then shows the lost-connection error with Retry.
 
@@ -77,32 +64,28 @@ If the server closes the proxy before the VNC session is up with `4000` `vnc una
 
 ### Connect
 
-When the console tab is activated for a running VM:
-1. The VNC client module is loaded (dynamic ESM import of noVNC — see [noVNC.md](noVNC.md))
-2. A same-origin WebSocket URL is constructed (`consoleWsUrl`; the session cookie authenticates it)
-3. A new `RFB` instance is created with the viewport element and WebSocket URL
-4. The `shared: true` option allows multiple VNC connections to the same VM
+The console connects when its tab is activated for a running VM. The connection is `shared`: several VNC connections to the same VM are allowed.
 
 ### Auto-reconnect
 
 When a VM transitions to the running state (detected via the VM list stream), the console automatically attempts to reconnect. This handles the case where a VM is started or rebooted while the console tab is active.
 
-If the VNC session drops (network blip, laptop sleep, browser throttling background timers), the client retries with exponential backoff. Every close the client didn't make counts as a drop, however noVNC reports it, but is retried only while the VM list shows the VM running *(settled 2026-11-12)*: a VM stop closes the session too, and the reconnect on the VM's next start (above) takes over. A `1006` close is checked with one authenticated `GET /api/host` before retrying: an expired session is refused at the upgrade with HTTP `401`, which the browser only reports as `1006`, so a `401` from the probe takes the app's normal expired-session path (`api()` redirects to `/login`) instead of spending the retry budget. The client opens the WebSocket itself and hands it to noVNC, so its close listener runs before noVNC's and the close code is known when noVNC reports the disconnect. When the tab becomes visible again or the browser fires the `online` event, the client starts a fresh connection attempt immediately instead of waiting for the next backoff interval. Restoring a page from the back-forward cache (`pageshow` with `persisted`) also triggers a fresh attempt, because WebSockets do not survive that restore.
+If the VNC session drops (network blip, laptop sleep, browser throttling background timers), the client retries with exponential backoff. Every close the client didn't make counts as a drop, however noVNC reports it, but is retried only while the VM list shows the VM running *(settled 2026-11-12)*: a VM stop closes the session too, and the reconnect on the VM's next start (above) takes over. A `1006` close is checked with one authenticated `GET /api/host` before retrying: an expired session is refused at the upgrade with HTTP `401`, which the browser only reports as `1006`, so a `401` from the probe takes the app's normal expired-session path (a redirect to `/login`) instead of spending the retry budget. When the tab becomes visible again or the browser fires the `online` event, the client starts a fresh connection attempt immediately instead of waiting for the next backoff interval. Restoring a page from the back-forward cache (`pageshow` with `persisted`) also triggers a fresh attempt, because WebSockets do not survive that restore.
 
-**A manual Disconnect stays disconnected.** These resume triggers (visibility, `online`, bfcache restore) skip a console the user disconnected from the toolbar; it stays closed until they click Reconnect (or Retry), which clears the flag. The VM-started reconnect above is an explicit state change and still connects. The container console (`ContainerConsole.jsx`) follows the same rules for visibility and `online`.
+**A manual Disconnect stays disconnected.** These resume triggers (visibility, `online`, bfcache restore) skip a console the user disconnected from the toolbar; it stays closed until they click Reconnect (or Retry), which clears the flag. The VM-started reconnect above is an explicit state change and still connects. The container console follows the same rules for visibility and `online`.
 
 ### Container console sessions
 
-The container console (`ContainerConsole.jsx`) spawns a new `/bin/sh` for every WebSocket, so its client reads the close code before deciding to reconnect *(settled 2026-10-16)*:
+The container console spawns a new `/bin/sh` for every WebSocket, so its client reads the close code before deciding to reconnect *(settled 2026-10-16)*:
 
 | Close | Meaning | Client |
 |-------|---------|--------|
 | `1000` `session ended` | The shell exited (`exit`, Ctrl-D, process killed) — the backend closes when exec stdout ends | **Session ended** with a Reconnect button. No new shell until the user asks for one |
 | `4000` `exec failed` | The exec failed: the container is not running, or the image has no `/bin/sh` | Final error with Retry — no retry loop |
-| `1006` | Abnormal close: a dropped network, the server restarting, **or** a refused upgrade. The session, the name and the PTY size are checked before the upgrade (`401`, or `400` `VALIDATION_FAILED`), so a refused upgrade never gets a close code of its own — the browser only sees `1006` | One authenticated `GET /api/host` first: a `401` takes the app's normal expired-session path (`api()` redirects to `/login` and signals the other tabs); otherwise retry with backoff, and once the budget is spent the lost-connection error with Retry |
+| `1006` | Abnormal close: a dropped network, the server restarting, **or** a refused upgrade. The session, the name and the PTY size are checked before the upgrade (`401`, or `400` `VALIDATION_FAILED`), so a refused upgrade never gets a close code of its own — the browser only sees `1006` | One authenticated `GET /api/host` first: a `401` takes the app's normal expired-session path (a redirect to `/login`, and the other tabs are told); otherwise retry with backoff, and once the budget is spent the lost-connection error with Retry |
 | anything else (`1005` server shutdown, `1008`, `1011`) | Transient | Retry with backoff |
 
-The retry budget (`MAX_RECONNECT_ATTEMPTS`, 12 attempts, 1 s doubling to a 30 s cap) belongs to one connect: retries keep the count, and only a fresh connect (toolbar Reconnect/Retry, the container starting, a visibility/`online` resume) or the session's **first output frame** resets it. The socket opening is not proof — the server accepts the upgrade before it tries the exec. When the budget runs out the console shows *"Console connection was lost after several attempts"* with Retry. A session that ended or failed its exec is held closed like a manual Disconnect: the visibility/`online` resume skips it. A dedicated `4001` auth close was rejected — sending it would mean accepting the upgrade of an unauthenticated request just to close it.
+The retry budget (12 attempts, 1 s doubling to a 30 s cap) belongs to one connect: retries keep the count, and only a fresh connect (toolbar Reconnect/Retry, the container starting, a visibility/`online` resume) or the session's **first output frame** resets it. The socket opening is not proof — the server accepts the upgrade before it tries the exec. When the budget runs out the console shows *"Console connection was lost after several attempts"* with Retry. A session that ended or failed its exec is held closed like a manual Disconnect: the visibility/`online` resume skips it. There is no auth close code of its own: sending one would mean accepting the upgrade of an unauthenticated request just to close it.
 
 ### Disconnect
 
@@ -118,16 +101,9 @@ A TCP error on the connection to QEMU's VNC port closes the WebSocket with code 
 
 After repeated failed reconnect attempts, the UI shows a message with a Retry action instead of staying blank indefinitely.
 
-## Backend Proxy Implementation
+## Backend Proxy
 
-The backend uses Node.js built-in `net.createConnection()` to establish the TCP connection — no third-party TCP proxy library. The TCP leg opens only after the VNC port lookup; if the WebSocket closed during that lookup, no TCP connection to QEMU is made.
-
-Server logs for the console use `scope: 'vnc-console'` and `vmName` on the child logger. Search for `get_vnc_port_failed` to see libvirt/XML failures (includes `code` such as `NO_CONNECTION`), `qemu_tcp_error` for QEMU TCP issues, and lifecycle lines `VNC opening TCP to QEMU` / `VNC TCP connected to QEMU` / `VNC WebSocket closed` to correlate a session.
-
-The bidirectional pipe:
-- WebSocket `message` event → `socket.write(data)`
-- TCP `data` event → `ws.send(data)` (only if WebSocket is open, readyState === 1)
-- Either side closing/erroring triggers cleanup of the other side
+The TCP leg opens only after the VNC port lookup; if the WebSocket closed during that lookup, no TCP connection to QEMU is made. Either side closing or failing closes the other.
 
 ## Timeouts
 
