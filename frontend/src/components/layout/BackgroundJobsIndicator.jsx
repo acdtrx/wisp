@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ListTodo, X } from 'lucide-react';
+
 import { runningJobs, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';

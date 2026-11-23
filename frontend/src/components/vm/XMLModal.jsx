@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Copy, Check, Loader2 } from 'lucide-react';
+
 import Modal from '../shared/Modal.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';

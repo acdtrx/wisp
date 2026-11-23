@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+
 import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 
 /* Widths apply from `sm`: below it every modal is a full-width sheet from the bottom. */

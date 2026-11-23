@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+
 import { useVm } from '../../store/vmStore.js';
 import ConsoleToolbar from './ConsoleToolbar.jsx';
 import VNCConsole from './VNCConsole.jsx';

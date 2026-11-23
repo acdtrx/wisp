@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
+
 import { CONFIG_PATH, INSTALL_ROOT } from './config.js';
 import {
   checkAbsolutePath,

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+
 import { createAppError } from './appErrors.js';
 import { writeFileAtomic } from './base/index.js';
 import { CONFIG_PATH } from './config.js';

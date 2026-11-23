@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Loader2, Key } from 'lucide-react';
+
 import { changePassword } from '../../api/auth.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';

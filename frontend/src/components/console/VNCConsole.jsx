@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
+
 import { closeIfNotOpenWithin, consoleWsUrl } from '../../api/console.js';
 import { getHostInfo } from '../../api/host.js';
 import { errorText, isSessionLost } from '../../api/errors.js';

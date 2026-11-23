@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X } from 'lucide-react';
+
 import { useAuthStore } from '../../store/authStore.js';
 import { SIGNED_OUT_LOGIN_PATH } from '../../api/client.js';
 import { useUiStore } from '../../store/uiStore.js';

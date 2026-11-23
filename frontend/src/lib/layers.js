@@ -10,6 +10,7 @@
  * with `preventDefault()`, and the layer stack leaves it alone.
  */
 import { useLayoutEffect, useRef } from 'react';
+
 import { focusElement } from './focus.js';
 
 /** @type {Array<{ id: number, kind: 'modal'|'drawer'|'popover', trap: boolean, getElement: () => HTMLElement|null, inertTargets: () => Element[], onEscape: () => void }>} */

@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, CloudDownload } from 'lucide-react';
-import { usePopover } from '../../lib/popover.js';
 
+import { usePopover } from '../../lib/popover.js';
 import { getVmIcon } from '../shared/vmIcons.jsx';
 
 const PRESETS = [

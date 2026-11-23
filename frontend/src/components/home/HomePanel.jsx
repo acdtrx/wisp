@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Link as LinkIcon, FolderPlus, Check, Pencil, Lightbulb } from 'lucide-react';
+
 import { useHomeStore } from '../../store/homeStore.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';

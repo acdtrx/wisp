@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
-import { usePopover } from '../../lib/popover.js';
 
+import { usePopover } from '../../lib/popover.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useDiscoveryStore } from '../../store/discoveryStore.js';

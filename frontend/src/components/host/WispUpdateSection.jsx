@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { Loader2, Rocket, AlertCircle, ExternalLink } from 'lucide-react';
+
 import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';

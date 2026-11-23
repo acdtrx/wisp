@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Box, Monitor } from 'lucide-react';
+
 import { useStatsStore } from '../../store/statsStore.js';
 import { CONNECTION } from '../../store/streamStore.js';
 import StatPill from '../shared/StatPill.jsx';

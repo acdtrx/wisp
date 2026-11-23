@@ -6,6 +6,7 @@
  * also escapes any overflow clipping of the sidebar.
  */
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+
 import { useLayer, focusIntoLayer } from './layers.js';
 
 const MARGIN = 8;

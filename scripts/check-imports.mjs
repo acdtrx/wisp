@@ -57,6 +57,10 @@
  *   - a module with both a `linux/` and a `darwin/` folder whose facade binds
  *     neither.
  *
+ * Import order (CODING-RULES §11), over every first-party script, the frontend's
+ * included: the three groups in order with a blank line between them, read from a
+ * real parse (importOrder.mjs).
+ *
  * Known limits (a dumb scan, not a parser): a binding's name inside a string, as
  * an object key or as a shadowing local fails a correct facade; a template
  * literal with a `${…}` outside an import() is not read; export lists are read
@@ -67,6 +71,7 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
+import { importOrderFiles, importOrderProblems } from './importOrder.mjs';
 import { argumentValues, callArgument, stripComments } from './sourceScan.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -509,17 +514,20 @@ for (const miss of unresolved) {
 const tables = new Map();
 const parity = await facadeParity(files, tables);
 const named = await namedImports(files, tables);
-for (const p of [...parity.problems, ...named.problems]) {
+const orderFiles = importOrderFiles(REPO_ROOT);
+const order = importOrderProblems(orderFiles);
+for (const p of [...parity.problems, ...named.problems, ...order]) {
   console.error(`${path.relative(REPO_ROOT, p.file)}${p.line ? `:${p.line}` : ''} ${p.message}`);
 }
 
 const summary = `${specifierCount} relative specifiers and ${dataPathCount} module-relative paths across ${files.length} files`;
 const paritySummary = `${parity.pairs} facade implementations`;
 const namedSummary = `${named.count} imported names`;
-if (unresolved.length > 0 || parity.problems.length > 0 || named.problems.length > 0) {
+const orderSummary = `${orderFiles.length} files`;
+if (unresolved.length > 0 || parity.problems.length > 0 || named.problems.length > 0 || order.length > 0) {
   console.error(`\n${unresolved.length} unresolved (${summary}); ${parity.problems.length} facade parity problem(s) (${paritySummary}); `
-    + `${named.problems.length} named import problem(s) (${namedSummary}).`);
+    + `${named.problems.length} named import problem(s) (${namedSummary}); ${order.length} import order problem(s) (${orderSummary}).`);
   process.exit(1);
 }
 console.log(`OK — ${summary}, all resolve; ${paritySummary}, each exports what its facade takes; `
-  + `${namedSummary}, each exported where it is imported from.`);
+  + `${namedSummary}, each exported where it is imported from; imports in order across ${orderSummary}.`);

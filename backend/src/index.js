@@ -1,5 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import Fastify from 'fastify';
 
 // First project import: runtime.env must be in process.env before config.js loads.

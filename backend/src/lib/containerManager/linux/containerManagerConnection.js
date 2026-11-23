@@ -5,6 +5,7 @@
  */
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import grpc from '@grpc/grpc-js';
 import protoLoader from '@grpc/proto-loader';
 import protobuf from 'protobufjs';

@@ -4,6 +4,7 @@ import {
   ArrowUpRight, Settings, Eye, EyeOff, Pencil, Check, X,
   Trash2, ChevronLeft, ChevronRight, AlertTriangle,
 } from 'lucide-react';
+
 import { getVmIcon } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';

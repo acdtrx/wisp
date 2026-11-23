@@ -8,6 +8,7 @@
  * (sole consumer is hostHardware).
  */
 import { platform } from 'node:os';
+
 import { createEmitter } from '../base/index.js';
 import { setStorageLogger, storageLogger } from './storageLog.js';
 

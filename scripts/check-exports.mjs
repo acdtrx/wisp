@@ -24,6 +24,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import { Linter } from 'eslint';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));

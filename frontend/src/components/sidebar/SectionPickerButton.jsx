@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderInput, Check, FolderPlus } from 'lucide-react';
+
 import { useSectionsStore, MAIN_SECTION_ID, selectSectionId } from '../../store/sectionsStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';

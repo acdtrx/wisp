@@ -1,5 +1,6 @@
 import { basename, dirname, join, sep } from 'node:path';
 import { access, mkdir, realpath } from 'node:fs/promises';
+
 import { getConfigSync } from './config.js';
 import { createAppError } from './appErrors.js';
 

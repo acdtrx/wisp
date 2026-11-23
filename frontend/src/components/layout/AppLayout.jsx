@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+
 import TopBar from './TopBar';
 import LeftPanel from './LeftPanel';
 import { RECORD } from '../../store/records.js';

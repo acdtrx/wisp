@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { Search } from 'lucide-react';
+
 import Modal from './Modal.jsx';
 import { VM_ICONS } from './vmIcons.jsx';
 import { focusField } from '../../lib/focus.js';

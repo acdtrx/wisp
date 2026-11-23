@@ -4,6 +4,7 @@
  * Single public surface for VM/container managers and host routes.
  */
 import { platform } from 'node:os';
+
 import { createEmitter } from '../base/index.js';
 
 const isLinux = platform() === 'linux';
