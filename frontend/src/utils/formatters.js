@@ -12,6 +12,18 @@ export function formatMemory(mib) {
 }
 
 /**
+ * A memory amount out of a limit, both in MiB, as formatMemory writes each: the unit
+ * once when both are in it ("12 / 256 MB", "1.5 / 2 GB"), else both ("512 MB / 2 GB").
+ */
+export function formatMemoryOf(usedMib, limitMib) {
+  const used = formatMemory(usedMib);
+  const limit = formatMemory(limitMib);
+  const [usedNum, usedUnit] = used.split(' ');
+  const [limitNum, limitUnit] = limit.split(' ');
+  return usedUnit && usedUnit === limitUnit ? `${usedNum} / ${limitNum} ${limitUnit}` : `${used} / ${limit}`;
+}
+
+/**
  * Format uptime given in milliseconds (e.g. VM stats).
  */
 export function formatUptimeMs(ms) {

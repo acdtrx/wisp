@@ -29,8 +29,8 @@ export default function VmFigures({ state }) {
       ]}
       meters={[
         { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, percent: stats.cpu?.percent ?? null },
-        { label: 'Disk', value: rate(stats.disk?.readMBs, stats.disk?.writeMBs) },
-        { label: 'Network', value: rate(stats.net?.txMBs, stats.net?.rxMBs) },
+        { label: 'Disk', value: rate(stats.disk?.readMBs, stats.disk?.writeMBs), wide: true },
+        { label: 'Network', value: rate(stats.net?.txMBs, stats.net?.rxMBs), wide: true },
       ]}
     />
   );

@@ -16,6 +16,7 @@
 - **A failure Wisp used to drop silently is logged** — a cleanup that left a folder behind, an unreadable backup folder, a rollback step that failed, a config the mDNS publisher could not read; the journal now says so.
 - **One path holds one host mount** — adding a mount, or moving one, onto another mount's path is refused (409 `MOUNT_DUPLICATE`), and a settings file that holds two mounts on one path stops Wisp's start, naming both.
 - **The password, a backup's manifest and a container run's record are written atomically** — a crash mid-write no longer leaves a truncated file.
+- **A container's memory figure is no longer cut short** — "12 / 256 MB", the unit once when both amounts share it; on a phone the figures wrap instead of being cut.
 - **`config/runtime.env.example` names every setting an operator may set** — the containerd socket, the extra WebSocket origins and the update repository were missing.
 
 ## 2026-11-22

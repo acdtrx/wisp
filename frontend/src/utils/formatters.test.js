@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatBytes, formatMemory, formatRelativeTime } from './formatters.js';
+import { formatBytes, formatMemory, formatMemoryOf, formatRelativeTime } from './formatters.js';
 
 test('a byte count is shown in powers of 1024: one decimal under 100, none from 100 up', () => {
   assert.equal(formatBytes(0), '0 B');
@@ -48,4 +48,12 @@ test('a memory size in MiB is MB below 1 GB, then GB to one decimal, whole witho
   assert.equal(formatMemory(2047), '2 GB');
   assert.equal(formatMemory(Math.round(14.93 * 1024)), '14.9 GB');
   assert.equal(formatMemory(null), '—');
+});
+
+test('a memory amount out of its limit writes the unit once when both share it', () => {
+  assert.equal(formatMemoryOf(12, 256), '12 / 256 MB');
+  assert.equal(formatMemoryOf(1536, 2048), '1.5 / 2 GB');
+  assert.equal(formatMemoryOf(512, 2048), '512 MB / 2 GB');
+  assert.equal(formatMemoryOf(0, 128), '0 / 128 MB');
+  assert.equal(formatMemoryOf(null, 128), '— / 128 MB');
 });

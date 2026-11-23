@@ -1,6 +1,6 @@
 import { liveData } from '../../store/streamStore.js';
 import { useContainerStatsStore } from '../../store/containerStore.js';
-import { formatDecimal, formatLanIpHost, formatMemory, formatUptimeMs } from '../../utils/formatters.js';
+import { formatDecimal, formatLanIpHost, formatMemory, formatMemoryOf, formatUptimeMs } from '../../utils/formatters.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import FiguresRow from '../shared/FiguresRow.jsx';
 
@@ -31,7 +31,7 @@ export default function ContainerFigures({ state }) {
         { label: 'CPU', value: stats ? `${formatDecimal(stats.cpuPercent)}%` : '—', percent: stats?.cpuPercent ?? null },
         {
           label: 'Memory',
-          value: used == null ? '—' : (limit ? `${formatMemory(used)} / ${formatMemory(limit)}` : formatMemory(used)),
+          value: used == null ? '—' : (limit ? formatMemoryOf(used, limit) : formatMemory(used)),
           percent: used != null && limit ? (used / limit) * 100 : null,
         },
       ]}
