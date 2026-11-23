@@ -20,6 +20,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import SettingsEditor from './SettingsEditor.jsx';
 import { pathsForm, pathsProblem, pathsSent, serverForm, serverProblem, serverSent } from './settingsForms.js';
+import PageBody from '../shared/PageBody.jsx';
 
 /**
  * Host → App Config (docs/specs/SETTINGS.md): this server, its storage paths, the
@@ -28,7 +29,7 @@ import { pathsForm, pathsProblem, pathsSent, serverForm, serverProblem, serverSe
 export default function AppConfig() {
   const settings = useRecord(RECORD.SETTINGS);
   return (
-    <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5">
+    <PageBody>
       {settings.data != null && <RecordError record={settings} what="settings" />}
       <ServerGroup record={settings} />
       <StoragePathsGroup record={settings} />
@@ -40,7 +41,7 @@ export default function AppConfig() {
       <SshKeysSettings />
       <OidcSettings />
       <ApiTokensSettings />
-    </div>
+    </PageBody>
   );
 }
 

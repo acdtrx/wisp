@@ -38,6 +38,7 @@ import ErrorBanner from '../shared/ErrorBanner.jsx';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { useBackupsStore } from '../../store/backupsStore.js';
+import PageBody from '../shared/PageBody.jsx';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
@@ -534,7 +535,7 @@ export default function BackupsPanel() {
         </p>
       </div>
 
-      <div className="flex-1 space-y-3 px-4 py-4 lg:px-6 lg:py-5">
+      <PageBody scrolls={false}>
         <RecordError record={settingsRecord} what="settings" />
         <ErrorBanner error={statusError} prefix="Couldn't load the last backup attempts" onDismiss={dismissStatusError} />
         <CommandErrors
@@ -558,7 +559,7 @@ export default function BackupsPanel() {
         ) : (
           visibleGroups.map(renderGroupCard)
         )}
-      </div>
+      </PageBody>
 
       {backupTarget && (
         <BackupModal

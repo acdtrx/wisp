@@ -17,6 +17,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import { formatBytes, formatDecimal } from '../../utils/formatters.js';
 import RecordError from '../shared/RecordError.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import PageBody from '../shared/PageBody.jsx';
 
 /** ACPI thermal zones (`acpitz`); often platform/motherboard, shown in Hardware summary. */
 function isAcpiPlatformThermalZone(zone) {
@@ -371,7 +372,7 @@ export default function HostOverview() {
   const allCores = perCore.map((percent, index) => ({ index, percent }));
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
+    <PageBody>
       {/* CPU */}
       <Card title="CPU" icon={<Cpu size={14} strokeWidth={2} />}>
         <RecordError record={hardwareRecord} what="hardware" className="mb-2" />
@@ -569,7 +570,7 @@ export default function HostOverview() {
         disks={disks}
         nvmeTempByDisk={nvmeTempByDisk}
       />
-    </div>
+    </PageBody>
   );
 }
 

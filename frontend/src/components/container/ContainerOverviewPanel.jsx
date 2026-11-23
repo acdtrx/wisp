@@ -38,6 +38,7 @@ import ContainerStartupGroup from './ContainerStartupGroup.jsx';
 import ContainerStorageGroup from './ContainerStorageGroup.jsx';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import TabSpinner from '../shared/TabSpinner.jsx';
+import PageBody from '../shared/PageBody.jsx';
 
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
@@ -251,8 +252,7 @@ export default function ContainerOverviewPanel({ name }) {
           )}
         </RecordGate>
       ) : (
-        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-6 lg:py-5">
-          <div className="mx-auto max-w-3xl space-y-3">
+          <PageBody narrow>
             <div className="px-1 pb-1">
               <ContainerFigures state={state} />
             </div>
@@ -274,8 +274,7 @@ export default function ContainerOverviewPanel({ name }) {
                 </>
               )}
             </RecordGate>
-          </div>
-        </div>
+          </PageBody>
       )}
 
       <ConfirmDialog

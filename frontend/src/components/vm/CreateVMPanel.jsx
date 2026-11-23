@@ -18,6 +18,7 @@ import { CUSTOM_SIZE, SIZE_PRESETS, coresText, memoryText, withPreset } from './
 import {
   RUNS, createVmBody, defaultVmDraft, driverIso, hostnameFromName, imagesFor, vmDraftProblems, withRuns,
 } from './vmDraft.js';
+import PageBody from '../shared/PageBody.jsx';
 
 const NO_FILES = [];
 const NO_KEYS = [];
@@ -135,7 +136,7 @@ export default function CreateVMPanel() {
         <h1 className="text-sm font-semibold text-text-primary">New VM</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5">
+      <PageBody>
         <form onSubmit={submit} className="mx-auto max-w-2xl space-y-4 rounded-card border border-surface-border bg-surface-card p-4 shadow-card">
           <FormField label="Name" htmlFor="new-vm-name">
             <input
@@ -267,7 +268,7 @@ export default function CreateVMPanel() {
             </button>
           </div>
         </form>
-      </div>
+      </PageBody>
     </div>
   );
 }

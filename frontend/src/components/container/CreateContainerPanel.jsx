@@ -12,6 +12,7 @@ import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/F
 import RadioPills from '../shared/RadioPills.jsx';
 import ContainerImageField from './ContainerImageField.jsx';
 import { containerDraftProblems, createContainerBody, defaultContainerDraft, draftWithApp } from './containerDraft.js';
+import PageBody from '../shared/PageBody.jsx';
 
 const STEP_LABELS = {
   validating: 'Checking…',
@@ -85,7 +86,7 @@ export default function CreateContainerPanel() {
         <h1 className="text-sm font-semibold text-text-primary">New container</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5">
+      <PageBody>
         <form onSubmit={submit} className="mx-auto max-w-xl space-y-4 rounded-card border border-surface-border bg-surface-card p-4 shadow-card">
           <FormField label="Name" htmlFor="new-container-name">
             <input
@@ -145,7 +146,7 @@ export default function CreateContainerPanel() {
             </button>
           </div>
         </form>
-      </div>
+      </PageBody>
     </div>
   );
 }
