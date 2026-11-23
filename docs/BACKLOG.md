@@ -7,6 +7,15 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**AGENTS is behind the shared template in how work is run.** The template (changed
+2026-11-19 and 2026-11-21) defines a feature as one capability with about four
+milestones at most and a milestone as one observable behaviour with about eight criteria
+at most; gives each feature its own builder, review and merge; has the builder send
+back only a contradiction between docs or a choice that changes a spec; and keeps
+worktrees under `.worktrees/`. Wisp took only the template's documentation rule in the
+2026-11-17 plan's last phase (ruled 2026-11-23: the rest after the plan). Wisp's own
+marked parts stay. **Revisit trigger:** before the next feature after that plan.
+
 **Two containers of the same name on two Wisp hosts get the same address.** The CNI DHCP
 daemon keys a lease by the container's name, the network's and the interface's
 (`<name>/wisp-bridge/eth0`), and sends that as its client identity, so the LAN's DHCP
