@@ -114,7 +114,7 @@ The VNC connection is cleanly disconnected when:
 
 ### Error handling
 
-TCP connection errors (QEMU VNC not available, VM not running) cause the WebSocket to be closed with code `1011`. The frontend displays a connection error state.
+A TCP error on the connection to QEMU's VNC port closes the WebSocket with code `1011`; a VM with no VNC port is `4000`, above. The frontend displays a connection error state.
 
 After repeated failed reconnect attempts, the UI shows a message with a Retry action instead of staying blank indefinitely.
 

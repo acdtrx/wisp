@@ -65,7 +65,7 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
   "vtpm": false,
   "virtioRng": true,
   "nestedVirt": false,
-  "nics": [{ "type": "bridge", "source": "br0", "model": "virtio", "mac": "52:54:00:xx:xx:xx", "vlan": null }],
+  "nics": [{ "type": "bridge", "source": "br0", "model": "virtio", "mac": "52:54:00:xx:xx:xx" }],
   "disk": {
     "type": "none | new | existing",
     "sizeGB": 32,
