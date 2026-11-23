@@ -8,11 +8,13 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { autoFocusField } from '../../lib/focus.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import ContainerImageField from './ContainerImageField.jsx';
 import { containerDraftProblems, createContainerBody, defaultContainerDraft, draftWithApp } from './containerDraft.js';
 import PageBody from '../shared/PageBody.jsx';
+import Button, { ButtonLink } from '../shared/Button.jsx';
+import { IconLink } from '../shared/IconButton.jsx';
 
 const STEP_LABELS = {
   validating: 'Checking…',
@@ -74,15 +76,7 @@ export default function CreateContainerPanel() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card px-4">
-        <button
-          type="button"
-          onClick={() => navigate('/host/overview')}
-          className="rounded-md p-2 text-text-muted transition-colors duration-150 hoverable:hover:bg-surface hoverable:hover:text-text-primary lg:p-1"
-          title="Back"
-          aria-label="Back"
-        >
-          <ArrowLeft size={18} aria-hidden />
-        </button>
+        <IconLink to="/host/overview" icon={ArrowLeft} label="Back" size="lg" />
         <h1 className="text-sm font-semibold text-text-primary">New container</h1>
       </div>
 
@@ -137,13 +131,8 @@ export default function CreateContainerPanel() {
                 </span>
               </span>
             )}
-            <button type="button" onClick={() => navigate('/host/overview')} className={formModalNeutralBtn}>
-              Cancel
-            </button>
-            <button type="submit" disabled={!!blocked || creating} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-              {creating && <Loader2 size={14} className="animate-spin" aria-hidden />}
-              Create
-            </button>
+            <ButtonLink to="/host/overview">Cancel</ButtonLink>
+            <Button variant="primary" type="submit" busy={creating} disabled={!!blocked} title={blocked ?? undefined}>Create</Button>
           </div>
         </form>
       </PageBody>

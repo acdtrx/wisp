@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Upload, Trash2, Pencil, Check, X, HardDrive, Disc, FileQuestion, Link, Loader2, Package, Images, RefreshCw } from 'lucide-react';
+import { Upload, Trash2, Pencil, Check, X, HardDrive, Disc, FileQuestion, Link, Package, Images, RefreshCw } from 'lucide-react';
 
 import {
   deleteFile,
@@ -36,6 +36,9 @@ import { formatBytes, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
+import Button from '../shared/Button.jsx';
+import IconButton from '../shared/IconButton.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
 
 const NO_ROWS = [];
 
@@ -111,37 +114,28 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
       )}
       <DataTableTd align="right">
         {mode === 'picker' ? (
-          <button
-            type="button"
-            onClick={() => onSelect?.({ kind: 'oci', name: row.name, digest: row.digest })}
-            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-          >
-            Select
-          </button>
+          <Button variant="primary" onClick={() => onSelect?.({ kind: 'oci', name: row.name, digest: row.digest })}>Select</Button>
         ) : (
           <DataTableRowActions forceVisible={deleting || thisChecking}>
-            <button
-              type="button"
-              onClick={() => onCheckUpdate?.(row)}
-              disabled={anyChecking || deleting}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
+            <IconButton
+              icon={RefreshCw}
+              label={`Check image ${row.name} for updates`}
               title="Check this image for updates"
-              aria-label={`Check image ${row.name} for updates`}
-            >
-              {thisChecking
-                ? <Loader2 size={14} className="animate-spin" aria-hidden />
-                : <RefreshCw size={14} aria-hidden />}
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(row)}
-              disabled={deleting || thisChecking}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-50"
+              size="sm"
+              busy={thisChecking}
+              disabled={anyChecking || deleting}
+              onClick={() => onCheckUpdate?.(row)}
+            />
+            <IconButton
+              icon={Trash2}
+              label={`Delete image ${row.name}`}
               title="Delete"
-              aria-label={`Delete image ${row.name}`}
-            >
-              {deleting ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-            </button>
+              variant="danger"
+              size="sm"
+              busy={deleting}
+              disabled={thisChecking}
+              onClick={() => onDelete(row)}
+            />
           </DataTableRowActions>
         )}
       </DataTableTd>
@@ -210,12 +204,8 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy
               }}
               className="rounded-sm border border-surface-border bg-surface-input px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />
-            <button type="button" onClick={commitRename} className="rounded-sm p-2 lg:p-0.5 text-status-running hover:bg-status-running-soft" title="Confirm rename" aria-label="Confirm rename">
-              <Check size={14} aria-hidden />
-            </button>
-            <button type="button" onClick={cancelRename} className="rounded-sm p-2 lg:p-0.5 text-text-muted hover:bg-surface" title="Cancel rename" aria-label="Cancel rename">
-              <X size={14} aria-hidden />
-            </button>
+            <IconButton icon={Check} label="Confirm rename" variant="positive" size="xs" onClick={commitRename} />
+            <IconButton icon={X} label="Cancel rename" size="xs" onClick={cancelRename} />
           </div>
         ) : (
           <span className="text-sm font-medium text-text-primary">{file.name}</span>
@@ -239,35 +229,18 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy
       )}
       <DataTableTd align="right">
         {mode === 'picker' ? (
-          <button
-            type="button"
-            onClick={() => onSelect(file)}
-            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-          >
-            Select
-          </button>
+          <Button variant="primary" onClick={() => onSelect(file)}>Select</Button>
         ) : (
           <DataTableRowActions forceVisible={editing || busy}>
-            <button
-              type="button"
-              onClick={() => { setEditValue(file.name); setEditing(true); }}
-              disabled={busy}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
+            <IconButton
+              icon={Pencil}
+              label={`Rename ${file.name}`}
               title="Rename"
-              aria-label={`Rename ${file.name}`}
-            >
-              <Pencil size={14} aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(file)}
+              size="sm"
               disabled={busy}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-50"
-              title="Delete"
-              aria-label={`Delete ${file.name}`}
-            >
-              {busy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-            </button>
+              onClick={() => { setEditValue(file.name); setEditing(true); }}
+            />
+            <IconButton icon={Trash2} label={`Delete ${file.name}`} title="Delete" variant="danger" size="sm" busy={busy} onClick={() => onDelete(file)} />
           </DataTableRowActions>
         )}
       </DataTableTd>
@@ -461,57 +434,28 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
 
   const libraryHeaderAction = (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <div className="flex rounded-lg border border-surface-border bg-surface p-0.5">
-        {filterTabs.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            onClick={() => setFilter(f.key)}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors duration-150 ${
-              filter === f.key
-                ? 'bg-surface-card text-text-primary shadow-xs'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <RadioPills
+        variant="segment"
+        label="Type"
+        options={filterTabs.map((f) => ({ value: f.key, label: f.label }))}
+        value={filter}
+        onChange={setFilter}
+      />
       <div className="flex items-center gap-1 border-l border-surface-border pl-3">
         {isEmbedded && isOciView && (
-          <button
-            type="button"
-            onClick={() => startImageUpdateCheck(null)}
+          <IconButton
+            icon={RefreshCw}
+            label="Check all OCI images for updates"
+            variant="neutral"
+            size="sm"
+            busy={check.busy && !checkJob.ref}
             disabled={check.busy}
-            className="inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
-            title="Check all OCI images for updates"
-            aria-label="Check all OCI images for updates"
-          >
-            {check.busy && !checkJob.ref
-              ? <Loader2 size={14} className="animate-spin" aria-hidden />
-              : <RefreshCw size={14} aria-hidden />}
-          </button>
+            onClick={() => startImageUpdateCheck(null)}
+          />
         )}
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileInput} />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="inline-flex items-center justify-center rounded-md bg-accent p-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-50"
-          title="Upload file"
-          aria-label="Upload file"
-        >
-          {uploading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}
-        </button>
-        <button
-          type="button"
-          onClick={() => setUrlModalOpen(true)}
-          className="inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-          title="Download from URL"
-          aria-label="Download from URL"
-        >
-          <Link size={14} aria-hidden />
-        </button>
+        <IconButton icon={Upload} label="Upload file" variant="primary" size="sm" busy={uploading} onClick={() => fileInputRef.current?.click()} />
+        <IconButton icon={Link} label="Download from URL" variant="neutral" size="sm" onClick={() => setUrlModalOpen(true)} />
         <PresetImageDownloadMenu onSelectPreset={handlePresetSelect} />
       </div>
     </div>
@@ -742,14 +686,7 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
               placeholder="https://..."
               className="input-field flex-1"
             />
-            <button
-              type="button"
-              onClick={handleUrlCheck}
-              disabled={urlChecking || !urlInput.trim()}
-              className="rounded-sm border border-surface-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary hover:bg-surface-sidebar disabled:opacity-50"
-            >
-              {urlChecking ? '…' : 'Check'}
-            </button>
+            <Button busy={urlChecking} disabled={!urlInput.trim()} onClick={handleUrlCheck}>Check</Button>
           </div>
           {urlCheckResult?.ok && (
             <div className="mb-3 rounded-sm bg-status-running-soft px-3 py-2 text-xs text-status-running">
@@ -779,22 +716,8 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
             </div>
           )}
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={closeUrlModal}
-              className="rounded-sm border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
-            >
-              {urlDownloading ? 'Close' : 'Cancel'}
-            </button>
-            <button
-              type="button"
-              onClick={handleUrlDownload}
-              disabled={urlDownloading || !urlInput.trim()}
-              className="flex items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {urlDownloading && <Loader2 size={14} className="animate-spin" />}
-              Download
-            </button>
+            <Button onClick={closeUrlModal}>{urlDownloading ? 'Close' : 'Cancel'}</Button>
+            <Button variant="primary" busy={urlDownloading} disabled={!urlInput.trim()} onClick={handleUrlDownload}>Download</Button>
           </div>
         </div>
       </Modal>

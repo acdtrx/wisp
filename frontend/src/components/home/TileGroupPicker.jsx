@@ -7,6 +7,8 @@ import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import IconButton from '../shared/IconButton.jsx';
+import MenuItem from '../shared/MenuItem.jsx';
 
 const NO_GROUPS = [];
 
@@ -16,7 +18,7 @@ const NO_GROUPS = [];
  * clamped to the viewport, above it where it fits), with a "New group…" entry
  * at the bottom.
  */
-export default function TileGroupPicker({ tileId, currentGroupId, className = '' }) {
+export default function TileGroupPicker({ tileId, currentGroupId }) {
   const groups = useHomeStore((s) => s.data?.groups ?? NO_GROUPS);
   const assignTile = useHomeStore((s) => s.assignTile);
   const createGroup = useHomeStore((s) => s.createGroup);
@@ -39,17 +41,14 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
 
   return (
     <div className="relative">
-      <button
+      <IconButton
         ref={anchorRef}
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={className}
-        title="Move to group"
-        aria-label="Move to group"
+        icon={FolderInput}
+        label="Move to group"
+        size="xs"
         aria-expanded={open}
-      >
-        <FolderInput size={13} aria-hidden />
-      </button>
+        onClick={() => setOpen((o) => !o)}
+      />
       {open && createPortal(
         <div
           ref={popRef}
@@ -65,30 +64,20 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
               const isCurrent = (currentGroupId || UNGROUPED_GROUP_ID) === group.id;
               return (
                 <li key={group.id}>
-                  <button
-                    type="button"
+                  <MenuItem
+                    role={undefined}
+                    size="sm"
+                    current={isCurrent}
+                    disabled={busy}
+                    label={group.name}
+                    trail={isCurrent && <Check size={12} className="shrink-0 text-accent" aria-hidden />}
                     onClick={() => pick(group.id)}
-                    disabled={busy || isCurrent}
-                    className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 ${
-                      isCurrent ? 'text-text-muted' : 'text-text-primary hover:bg-surface'
-                    }`}
-                  >
-                    <span className="truncate">{group.name}</span>
-                    {isCurrent && <Check size={12} className="shrink-0 text-accent" aria-hidden />}
-                  </button>
+                  />
                 </li>
               );
             })}
             <li className="border-t border-surface-border">
-              <button
-                type="button"
-                onClick={pickNew}
-                disabled={busy}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors duration-150 hover:bg-surface hover:text-accent-text disabled:opacity-40"
-              >
-                <FolderPlus size={12} className="shrink-0" aria-hidden />
-                <span>New group…</span>
-              </button>
+              <MenuItem role={undefined} size="sm" accent icon={FolderPlus} label="New group…" disabled={busy} onClick={pickNew} />
             </li>
           </ul>
         </div>,

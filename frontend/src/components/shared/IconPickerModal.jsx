@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import Modal from './Modal.jsx';
 import { VM_ICONS } from './vmIcons.jsx';
 import { focusField } from '../../lib/focus.js';
+import RadioPills from './RadioPills.jsx';
 
 const CATEGORIES = ['OS', 'Service', 'Generic'];
 
@@ -72,28 +73,15 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
                   {cat === 'OS' ? 'Operating Systems' : cat === 'Service' ? 'Services' : 'Generic'}
                 </p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {icons.map((icon) => {
-                    const Icon = icon.component;
-                    const isSelected = icon.id === currentIconId;
-                    return (
-                      <button
-                        key={icon.id}
-                        onClick={() => { onSelect(icon.id); onClose(); }}
-                        className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 transition-colors duration-150 ${
-                          isSelected
-                            ? 'bg-accent-soft border border-accent/30 text-accent'
-                            : 'border border-transparent hover:bg-surface text-text-secondary hover:text-text-primary'
-                        }`}
-                      >
-                        <Icon size={20} />
-                        <span className="text-[10px] font-medium leading-tight text-center truncate w-full">
-                          {icon.name}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <RadioPills
+                  variant="card"
+                  className="grid-cols-2 sm:grid-cols-3"
+                  label={cat}
+                  options={icons.map((icon) => ({ value: icon.id, label: icon.name }))}
+                  icons={Object.fromEntries(icons.map((icon) => [icon.id, icon.component]))}
+                  value={currentIconId}
+                  onChange={(id) => { onSelect(id); onClose(); }}
+                />
               </div>
             );
           })}

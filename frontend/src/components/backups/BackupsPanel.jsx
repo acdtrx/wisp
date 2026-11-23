@@ -6,16 +6,7 @@ import {
 import BackupModal from '../shared/BackupModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import RecordError from '../shared/RecordError.jsx';
-import {
-  DataTableScroll,
-  DataTable,
-  dataTableHeadRowClass,
-  dataTableInteractiveRowClass,
-  DataTableRowActions,
-  DataTableTh,
-  DataTableTd,
-  rowActionIconBtn,
-} from '../shared/DataTableChrome.jsx';
+import { DataTableScroll, DataTable, dataTableHeadRowClass, dataTableInteractiveRowClass, DataTableRowActions, DataTableTh, DataTableTd } from '../shared/DataTableChrome.jsx';
 import {
   startBackup,
   restoreBackup,
@@ -39,6 +30,8 @@ import CommandErrors from '../shared/CommandErrors.jsx';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { useBackupsStore } from '../../store/backupsStore.js';
 import PageBody from '../shared/PageBody.jsx';
+import Button from '../shared/Button.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
@@ -388,17 +381,16 @@ export default function BackupsPanel() {
             {group.totalBytes > 0 && <> · {formatBytes(group.totalBytes)}</>}
           </span>
           {group.live && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleOpenBackup(group); }}
-              disabled={backupDisabled}
-              className="flex items-center gap-0.5 rounded-md bg-accent px-2 py-1 text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            <IconButton
+              icon={Plus}
+              kindIcon={Archive}
+              label={`Back up ${group.name} now`}
               title={backupDisabledTitle}
-              aria-label={`Back up ${group.name} now`}
-            >
-              <Plus size={12} aria-hidden />
-              <Archive size={12} aria-hidden />
-            </button>
+              variant="primary"
+              size="sm"
+              disabled={backupDisabled}
+              onClick={(e) => { e.stopPropagation(); handleOpenBackup(group); }}
+            />
           )}
         </div>
 
@@ -446,37 +438,36 @@ export default function BackupsPanel() {
                           <DataTableTd align="right">
                             <DataTableRowActions forceVisible={rowBusy}>
                               {group.kind === 'container' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenInPlace(group, b)}
-                                  disabled={inPlaceDisabled}
-                                  className={`${rowActionIconBtn} disabled:cursor-not-allowed disabled:opacity-40`}
+                                <IconButton
+                                  icon={ArchiveRestore}
+                                  label={`Restore ${group.name} in place from ${b.timestamp}`}
                                   title={inPlaceTitle}
-                                  aria-label={`Restore ${group.name} in place from ${b.timestamp}`}
-                                >
-                                  {inPlace.isBusy(k) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ArchiveRestore size={14} aria-hidden />}
-                                </button>
+                                  variant="neutral"
+                                  size="sm"
+                                  busy={inPlace.isBusy(k)}
+                                  disabled={inPlaceDisabled}
+                                  onClick={() => handleOpenInPlace(group, b)}
+                                />
                               )}
-                              <button
-                                type="button"
-                                onClick={() => { setRestoreTarget({ group, backup: b }); setRestoreName(''); }}
-                                disabled={rowBusy}
-                                className={rowActionIconBtn}
+                              <IconButton
+                                icon={CopyPlus}
+                                label={`Restore ${group.name} backup ${b.timestamp} as new`}
                                 title={group.kind === 'container' ? 'Restore as new container' : 'Restore as new VM'}
-                                aria-label={`Restore ${group.name} backup ${b.timestamp} as new`}
-                              >
-                                <CopyPlus size={14} aria-hidden />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteTarget({ group, backup: b })}
+                                variant="neutral"
+                                size="sm"
                                 disabled={rowBusy}
-                                className={`${rowActionIconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
+                                onClick={() => { setRestoreTarget({ group, backup: b }); setRestoreName(''); }}
+                              />
+                              <IconButton
+                                icon={Trash2}
+                                label={`Delete backup ${b.timestamp} of ${group.name}`}
                                 title="Delete backup"
-                                aria-label={`Delete backup ${b.timestamp} of ${group.name}`}
-                              >
-                                {remove.isBusy(k) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                              </button>
+                                variant="neutral-danger"
+                                size="sm"
+                                busy={remove.isBusy(k)}
+                                disabled={rowBusy}
+                                onClick={() => setDeleteTarget({ group, backup: b })}
+                              />
                             </DataTableRowActions>
                           </DataTableTd>
                         </tr>
@@ -501,21 +492,15 @@ export default function BackupsPanel() {
                   className="input-field mt-2 w-full max-w-xs"
                 />
                 <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setRestoreTarget(null); setRestoreName(''); }}
-                    className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
+                  <Button onClick={() => { setRestoreTarget(null); setRestoreName(''); }}>Cancel</Button>
+                  <Button
+                    variant="primary"
+                    busy={restore.isBusy(backupKey(restoreTarget.backup))}
+                    disabled={!restoreName.trim()}
                     onClick={handleRestoreAsNew}
-                    disabled={!restoreName.trim() || restore.isBusy(backupKey(restoreTarget.backup))}
-                    className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                   >
                     {restore.isBusy(backupKey(restoreTarget.backup)) ? 'Restoring…' : 'Restore'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

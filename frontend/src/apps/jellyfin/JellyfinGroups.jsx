@@ -3,7 +3,7 @@ import { Library, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormField } from '../../components/shared/FormModalChrome.jsx';
-import GroupAction from '../../components/shared/GroupAction.jsx';
+import IconButton from '../../components/shared/IconButton.jsx';
 import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import GroupSwitch from '../../components/shared/GroupSwitch.jsx';
@@ -62,7 +62,7 @@ export default function JellyfinGroups({ config, busy, act, update }) {
     <>
       <Card
         title="Libraries"
-        actions={<GroupAction icon={Plus} kindIcon={Library} variant="add" label="Add a library" reason={appReason} onClick={() => setEditor({ library: null })} />}
+        actions={<IconButton icon={Plus} kindIcon={Library} variant="primary" label="Add a library" reason={appReason} onClick={() => setEditor({ library: null })} />}
       >
         <RecordError record={settings} what="storage mounts" className="mb-2" />
         {libraries.length === 0 && <p className="py-1 text-sm text-text-muted">No libraries.</p>}
@@ -76,8 +76,8 @@ export default function JellyfinGroups({ config, busy, act, update }) {
               detail={`From ${storageLabel(storage, lib.sourceId)}${lib.subPath ? `/${lib.subPath}` : ''}`}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${lib.label}`} reason={appReason} disabled={removing} onClick={() => setEditor({ library: lib.label })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${lib.label}`} reason={appReason} busy={removing} onClick={() => remove(lib.label)} />
+                  <IconButton icon={Pencil} label={`Edit ${lib.label}`} reason={appReason} disabled={removing} onClick={() => setEditor({ library: lib.label })} />
+                  <IconButton icon={Trash2} variant="danger" label={`Remove ${lib.label}`} reason={appReason} busy={removing} onClick={() => remove(lib.label)} />
                 </>
               )}
             />
@@ -87,7 +87,7 @@ export default function JellyfinGroups({ config, busy, act, update }) {
 
       <Card
         title="Published address"
-        actions={<GroupAction icon={Pencil} label="Edit the published address" reason={appReason} onClick={() => setEditor({ address: true })} />}
+        actions={<IconButton icon={Pencil} label="Edit the published address" reason={appReason} onClick={() => setEditor({ address: true })} />}
       >
         <ValueRows rows={[{ label: 'Address', value: ac.publishedUrl || 'Its local name', mono: !!ac.publishedUrl }]} />
         <div className="mt-1 border-t border-surface-border">

@@ -7,6 +7,7 @@ import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import SectionPickerButton from '../sidebar/SectionPickerButton.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 function shortImage(image) {
   if (!image) return '';
@@ -82,34 +83,37 @@ export default function ContainerListItem({ container }) {
       ) : (
         <div className="flex shrink-0 items-center gap-0.5 hoverable:lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 transition-opacity duration-150">
           {isStopped && (
-            <button
-              onClick={(e) => { e.stopPropagation(); startContainer(container.name); }}
-              disabled={!!actionLoading}
-              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
+            <IconButton
+              icon={Play}
+              label="Start"
               title="Start"
-            >
-              <Play size={14} />
-            </button>
+              variant="positive"
+              size="sm"
+              disabled={!!actionLoading}
+              onClick={(e) => { e.stopPropagation(); startContainer(container.name); }}
+            />
           )}
           {(isRunning || restartScheduled) && (
-            <button
-              onClick={(e) => { e.stopPropagation(); stopContainer(container.name); }}
-              disabled={!!actionLoading}
-              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
+            <IconButton
+              icon={Square}
+              label="Stop"
               title={restartScheduled ? 'Stop (cancel the scheduled restart)' : 'Stop'}
-            >
-              <Square size={14} />
-            </button>
+              variant="danger"
+              size="sm"
+              disabled={!!actionLoading}
+              onClick={(e) => { e.stopPropagation(); stopContainer(container.name); }}
+            />
           )}
           {isRunning && (
-            <button
-              onClick={(e) => { e.stopPropagation(); restartContainer(container.name); }}
-              disabled={!!actionLoading}
-              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
+            <IconButton
+              icon={RotateCcw}
+              label="Restart"
               title="Restart"
-            >
-              <RotateCcw size={14} />
-            </button>
+              variant="plain"
+              size="sm"
+              disabled={!!actionLoading}
+              onClick={(e) => { e.stopPropagation(); restartContainer(container.name); }}
+            />
           )}
         </div>
       )}

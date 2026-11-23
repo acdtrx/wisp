@@ -7,7 +7,7 @@ import { RECORD } from '../../store/records.js';
 import { CONNECTION } from '../../store/streamStore.js';
 import { useUsbStore } from '../../store/usbStore.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -55,10 +55,10 @@ export default function VmUsbGroup({ config, busy, act }) {
     <Card
       title="USB devices"
       actions={(
-        <GroupAction
+        <IconButton
           icon={Plus}
           kindIcon={Usb}
-          variant="add"
+          variant="primary"
           label="Attach a USB device"
           reason={reason ?? (hostDevices == null ? 'the host’s devices are loading' : available.length === 0 ? 'no other device on the host' : undefined)}
           onClick={() => setPicking(true)}
@@ -83,7 +83,7 @@ export default function VmUsbGroup({ config, busy, act }) {
                     : (onHost?.name || 'USB device')}
                   detail={[idOf(d), onHost ? `bus ${onHost.bus}, device ${onHost.device}` : null].filter(Boolean).join(' · ')}
                   actions={(
-                    <GroupAction
+                    <IconButton
                       icon={Unplug}
                       variant="danger"
                       label={`Detach ${onHost?.name || idOf(d)}`}

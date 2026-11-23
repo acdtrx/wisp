@@ -4,7 +4,7 @@ import { Network, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
 import NicEditorModal from './NicEditorModal.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -46,7 +46,7 @@ export default function VmNetworkGroup({ config, busy, lockReason, act, update }
     <Card
       title="Network"
       lockReason={lockReason ? 'Stop the VM to change its adapters' : undefined}
-      actions={<GroupAction icon={Plus} kindIcon={Network} variant="add" label="Add an adapter" reason={reason} onClick={() => setEditor({ index: null, opened: null })} />}
+      actions={<IconButton icon={Plus} kindIcon={Network} variant="primary" label="Add an adapter" reason={reason} onClick={() => setEditor({ index: null, opened: null })} />}
     >
       <RecordError record={bridges} what="host bridges" className="mb-2" />
       {nics.length === 0 && <p className="py-1 text-sm text-text-muted">No adapters.</p>}
@@ -57,8 +57,8 @@ export default function VmNetworkGroup({ config, busy, lockReason, act, update }
           detail={[nic.source || 'no bridge', MODEL_LABEL[nic.model] ?? nic.model, nic.mac].filter(Boolean).join(' · ')}
           actions={(
             <>
-              <GroupAction icon={Pencil} label={`Edit adapter ${i + 1}`} reason={reason} onClick={() => setEditor({ index: i, opened: nic })} />
-              <GroupAction
+              <IconButton icon={Pencil} label={`Edit adapter ${i + 1}`} reason={reason} onClick={() => setEditor({ index: i, opened: nic })} />
+              <IconButton
                 icon={Trash2}
                 variant="danger"
                 label={`Remove adapter ${i + 1}`}

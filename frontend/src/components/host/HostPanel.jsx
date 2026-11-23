@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useParams, useNavigate, Navigate } from 'react-router-dom';
-import { Server, Power, RotateCcw, Loader2 } from 'lucide-react';
+import { useParams, Navigate } from 'react-router-dom';
+import { Server, Power, RotateCcw } from 'lucide-react';
 
 import { useStatsStore } from '../../store/statsStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
@@ -14,6 +14,8 @@ import BackupsPanel from '../backups/BackupsPanel.jsx';
 import { hostShutdown, hostReboot } from '../../api/host.js';
 import { errorText } from '../../api/errors.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import Button from '../shared/Button.jsx';
+import Tab from '../shared/Tab.jsx';
 
 const TABS = [
   { id: 'home', label: 'Home' },
@@ -26,30 +28,9 @@ const TABS = [
 
 const VALID_TAB_IDS = new Set(TABS.map((t) => t.id));
 
-function TabButton({ id, label, active, badgeTitle, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onClick(id)}
-      className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
-        active ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
-      }`}
-    >
-      {/* Dot before the label so a partially scrolled tab clips its text, not the badge. */}
-      {badgeTitle && (
-        <span
-          className="flex h-2 w-2 shrink-0 rounded-full bg-status-warning"
-          title={badgeTitle}
-        />
-      )}
-      <span>{label}</span>
-    </button>
-  );
-}
 
 export default function HostPanel() {
   const { tab } = useParams();
-  const navigate = useNavigate();
   const stats = useStatsStore((s) => s.data);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const wispUpdateAvailable = !!stats?.wispUpdate?.available;
@@ -67,8 +48,6 @@ export default function HostPanel() {
   if (!tab || !VALID_TAB_IDS.has(tab)) {
     return <Navigate to="/host/home" replace />;
   }
-
-  const handleTabChange = (id) => navigate(`/host/${id}`);
 
   const softwareReasons = [];
   if (wispUpdateAvailable) softwareReasons.push('Wisp update available');
@@ -111,42 +90,32 @@ export default function HostPanel() {
         </div>
         <div className="order-3 -mx-4 flex w-[calc(100%+2rem)] overflow-x-auto border-t border-surface-border px-2 lg:order-none lg:mx-0 lg:w-auto lg:min-w-0 lg:flex-1 lg:border-t-0 lg:border-l lg:px-0 lg:pl-3">
           {TABS.map(({ id, label }) => (
-            <TabButton
+            <Tab
               key={id}
-              id={id}
-              label={label}
+              to={`/host/${id}`}
               active={tab === id}
-              badgeTitle={id === 'software' ? softwareBadgeTitle : null}
-              onClick={handleTabChange}
-            />
+              dot={id === 'software' && !!softwareBadgeTitle}
+              dotTitle={softwareBadgeTitle}
+            >
+              {label}
+            </Tab>
           ))}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setPowerOffOpen(true)}
+          <Button labelFrom="lg" icon={Power} busy={powerLoading === 'shutdown'} disabled={!!powerLoading} title="Power Off" onClick={() => setPowerOffOpen(true)}>
+            Power Off
+          </Button>
+          <Button
+            labelFrom="lg"
+            icon={RotateCcw}
+            busy={powerLoading === 'restart'}
             disabled={!!powerLoading}
-            className="flex items-center justify-center gap-1.5 rounded-md border border-surface-border p-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40 lg:px-2.5 lg:py-1"
-            title="Power Off"
-            aria-label="Power Off"
-          >
-            {powerLoading === 'shutdown' ? <Loader2 size={18} className="animate-spin" /> : <Power size={18} />}
-            <span className="hidden lg:inline">Power Off</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setRestartOpen(true)}
-            disabled={!!powerLoading}
-            className="relative flex items-center justify-center gap-1.5 rounded-md border border-surface-border p-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40 lg:px-2.5 lg:py-1"
             title={rebootRequired ? `Restart (reboot required: ${rebootReasons.join(', ') || 'kernel update'})` : 'Restart'}
-            aria-label="Restart"
+            badge={rebootRequired && <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-status-warning" />}
+            onClick={() => setRestartOpen(true)}
           >
-            {powerLoading === 'restart' ? <Loader2 size={18} className="animate-spin" /> : <RotateCcw size={18} />}
-            <span className="hidden lg:inline">Restart</span>
-            {rebootRequired && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-status-warning" />
-            )}
-          </button>
+            Restart
+          </Button>
         </div>
       </div>
 

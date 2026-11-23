@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Loader2, Key } from 'lucide-react';
+import { Key } from 'lucide-react';
 
 import { changePassword } from '../../api/auth.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import Button from '../shared/Button.jsx';
 
 export default function PasswordChangeForm() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -77,14 +78,16 @@ export default function PasswordChangeForm() {
           <p className="text-sm text-status-running">Password updated.</p>
         )}
         <ErrorBanner error={change.error} onDismiss={change.dismiss} />
-        <button
+        <Button
+          variant="primary"
+          size="md"
           type="submit"
-          disabled={saving || !currentPassword || !newPassword || !confirmPassword}
-          className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50 transition-colors duration-150"
+          icon={Key}
+          busy={saving}
+          disabled={!currentPassword || !newPassword || !confirmPassword}
         >
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Key size={16} />}
           {saving ? 'Updating…' : 'Change password'}
-        </button>
+        </Button>
       </form>
     </div>
   );

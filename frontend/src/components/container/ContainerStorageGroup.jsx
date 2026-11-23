@@ -11,7 +11,7 @@ import ContainerMountEditorModal from './ContainerMountEditorModal.jsx';
 import MountFileEditorModal from './MountFileEditorModal.jsx';
 import SecretMountContentModal from './SecretMountContentModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -79,7 +79,7 @@ export default function ContainerStorageGroup({ config, busy, act }) {
   );
 
   const addAction = (kind, kindIcon, label) => (
-    <GroupAction icon={Plus} kindIcon={kindIcon} variant="add" label={label} reason={busy} onClick={() => setEditor({ kind, name: null })} />
+    <IconButton icon={Plus} kindIcon={kindIcon} variant="primary" label={label} reason={busy} onClick={() => setEditor({ kind, name: null })} />
   );
 
   return (
@@ -128,8 +128,8 @@ export default function ContainerStorageGroup({ config, busy, act }) {
             actions={(
               <>
                 {m.type === 'file' && (m.secret
-                  ? <GroupAction icon={KeyRound} label="Replace the secret content" reason={reason} onClick={() => setSecretEditor(m)} />
-                  : <GroupAction icon={FileText} label="Open the file" reason={reason} onClick={() => setFileEditor(m.name)} />)}
+                  ? <IconButton icon={KeyRound} label="Replace the secret content" reason={reason} onClick={() => setSecretEditor(m)} />
+                  : <IconButton icon={FileText} label="Open the file" reason={reason} onClick={() => setFileEditor(m.name)} />)}
                 {m.type === 'file' && (
                   <UploadAction icon={Upload} label="Upload a file" reason={reason} busy={rowBusy} onFile={(f) => upload(m, f)} />
                 )}
@@ -143,8 +143,8 @@ export default function ContainerStorageGroup({ config, busy, act }) {
                     onFile={(f) => upload(m, f)}
                   />
                 )}
-                <GroupAction icon={Pencil} label={`Edit ${m.containerPath}`} reason={reason} onClick={() => setEditor({ kind: m.type, name: m.name })} />
-                <GroupAction icon={Trash2} variant="danger" label={`Remove ${m.containerPath}`} reason={busy} busy={rowBusy} onClick={() => askRemove(m)} />
+                <IconButton icon={Pencil} label={`Edit ${m.containerPath}`} reason={reason} onClick={() => setEditor({ kind: m.type, name: m.name })} />
+                <IconButton icon={Trash2} variant="danger" label={`Remove ${m.containerPath}`} reason={busy} busy={rowBusy} onClick={() => askRemove(m)} />
               </>
             )}
           />
@@ -200,7 +200,7 @@ function UploadAction({ icon, label, accept, reason, busy, onFile }) {
   const inputRef = useRef(null);
   return (
     <>
-      <GroupAction icon={icon} label={label} reason={reason} busy={busy} onClick={() => inputRef.current?.click()} />
+      <IconButton icon={icon} label={label} reason={reason} busy={busy} onClick={() => inputRef.current?.click()} />
       <input
         ref={inputRef}
         type="file"

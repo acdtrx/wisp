@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import EnvVarEditorModal, { rowsFromEnv } from './EnvVarEditorModal.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 
@@ -24,7 +24,7 @@ export default function ContainerEnvGroup({ config, busy, act, update }) {
     <Card
       title="Environment"
       actions={(
-        <GroupAction icon={Plus} kindIcon={Braces} variant="add" label="Add variable" reason={busy} onClick={() => setEditor({ key: null })} />
+        <IconButton icon={Plus} kindIcon={Braces} variant="primary" label="Add variable" reason={busy} onClick={() => setEditor({ key: null })} />
       )}
     >
       {rows.length === 0 && <p className="py-1 text-sm text-text-muted">No variables.</p>}
@@ -38,8 +38,8 @@ export default function ContainerEnvGroup({ config, busy, act, update }) {
             detail={row.secret ? (row.isSet ? 'Secret' : 'Secret, not set') : (row.value === '' ? 'Empty' : row.value)}
             actions={(
               <>
-                <GroupAction icon={Pencil} label={`Edit ${row.key}`} reason={busy} disabled={removing} onClick={() => setEditor({ key: row.key })} />
-                <GroupAction icon={Trash2} variant="danger" label={`Remove ${row.key}`} reason={busy} busy={removing} onClick={() => remove(row)} />
+                <IconButton icon={Pencil} label={`Edit ${row.key}`} reason={busy} disabled={removing} onClick={() => setEditor({ key: row.key })} />
+                <IconButton icon={Trash2} variant="danger" label={`Remove ${row.key}`} reason={busy} busy={removing} onClick={() => remove(row)} />
               </>
             )}
           />

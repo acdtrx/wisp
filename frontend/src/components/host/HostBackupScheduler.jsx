@@ -9,7 +9,7 @@ import { RECORD } from '../../store/records.js';
 import { backupDestinations } from '../../utils/backupDestinations.js';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -29,7 +29,7 @@ export default function HostBackupScheduler() {
   return (
     <Card
       title="Scheduled backups"
-      actions={<GroupAction icon={Pencil} label="Edit the backup schedule" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit the backup schedule" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
       <RecordGate record={record} what="settings">
         {(settings) => {

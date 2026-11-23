@@ -8,6 +8,7 @@ import { getHostInfo } from '../../api/host.js';
 import { useThemeStore } from '../../store/themeStore.js';
 import { consoleTheme } from './consoleTheme.js';
 import { errorText, isSessionLost } from '../../api/errors.js';
+import Button from '../shared/Button.jsx';
 
 const MAX_RECONNECT_ATTEMPTS = 12;
 const INITIAL_BACKOFF_MS = 1000;
@@ -367,13 +368,7 @@ export default function ContainerConsole({
       }`}
     >
       <span>{notice.message}</span>
-      <button
-        type="button"
-        onClick={() => connectRef.current()}
-        className="ml-2 rounded-sm border border-surface-border px-2 py-1 text-xs hover:bg-surface"
-      >
-        {ended ? 'Reconnect' : 'Retry'}
-      </button>
+      <Button size="xs" className="ml-2" onClick={() => connectRef.current()}>{ended ? 'Reconnect' : 'Retry'}</Button>
     </div>
   );
 }

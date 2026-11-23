@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Images } from 'lucide-react';
 
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 /**
  * A container image, typed or picked from the image library: the New container form's
@@ -24,16 +25,7 @@ export default function ContainerImageField({ id, value, onChange, disabled = fa
           spellCheck={false}
           className="input-field min-w-0 flex-1 font-mono"
         />
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          disabled={disabled}
-          className="inline-flex shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary transition-colors duration-150 hoverable:hover:bg-surface-sidebar hoverable:hover:text-text-primary disabled:opacity-40"
-          title="Pick from the image library"
-          aria-label="Pick from the image library"
-        >
-          <Images size={15} aria-hidden />
-        </button>
+        <IconButton variant="field" icon={Images} label="Pick from the image library" disabled={disabled} onClick={() => setPickerOpen(true)} />
       </div>
       <ImageLibraryModal
         open={pickerOpen}

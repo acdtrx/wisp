@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X } from 'lucide-react';
 
 import { useAuthStore } from '../../store/authStore.js';
@@ -9,6 +9,7 @@ import BackgroundJobsIndicator from './BackgroundJobsIndicator.jsx';
 import ServerSwitcher from './ServerSwitcher.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import WispGlyph from '../shared/WispGlyph.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 export default function TopBar() {
   const logout = useAuthStore((s) => s.logout);
@@ -27,26 +28,24 @@ export default function TopBar() {
        instead of being squeezed between the topbar clusters. */
     <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 border-b border-surface-border bg-surface-card px-4 pt-safe">
       <div className="flex h-12 shrink-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          className="flex items-center justify-center rounded-md border border-surface-border p-2 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 lg:hidden"
-          title={sidebarOpen ? 'Close workload list' : 'Open workload list'}
-          aria-label={sidebarOpen ? 'Close workload list' : 'Open workload list'}
+        <IconButton
+          icon={sidebarOpen ? X : Menu}
+          label={sidebarOpen ? 'Close workload list' : 'Open workload list'}
+          variant="neutral"
+          size="lg"
+          className="lg:hidden"
           aria-expanded={sidebarOpen}
-        >
-          {sidebarOpen ? <X size={18} aria-hidden /> : <Menu size={18} aria-hidden />}
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate('/host/home')}
+          onClick={toggleSidebar}
+        />
+        <Link
+          to="/host/home"
           className="flex items-center gap-3 rounded-md transition-opacity duration-150 hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           title="Home"
           aria-label="Go to Home"
         >
           <WispGlyph size={22} className="wisp-brand-glow shrink-0" />
           <span className="font-display text-base font-semibold text-text-primary tracking-tight">Wisp</span>
-        </button>
+        </Link>
         <ServerSwitcher />
       </div>
 
@@ -57,15 +56,7 @@ export default function TopBar() {
       <div className="col-start-3 row-start-1 flex shrink-0 items-center gap-1.5">
         <BackgroundJobsIndicator />
         <ThemeToggle />
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <LogOut size={18} aria-hidden />
-        </button>
+        <IconButton icon={LogOut} label="Sign out" variant="neutral" size="lg" onClick={handleLogout} />
       </div>
     </header>
   );

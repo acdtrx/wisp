@@ -1,19 +1,8 @@
 import { useState } from 'react';
-import { Loader2, Plus, Trash2, Network } from 'lucide-react';
+import { Plus, Trash2, Network } from 'lucide-react';
 
 import Card from '../shared/Card.jsx';
-import {
-  DataTableScroll,
-  DataTable,
-  dataTableHeadRowClass,
-  dataTableBodyRowClass,
-  dataTableInteractiveRowClass,
-  DataTableRowActions,
-  DataTableTh,
-  DataTableTd,
-  dataTableEmptyCellClass,
-  rowActionIconBtn,
-} from '../shared/DataTableChrome.jsx';
+import { DataTableScroll, DataTable, dataTableHeadRowClass, dataTableBodyRowClass, dataTableInteractiveRowClass, DataTableRowActions, DataTableTh, DataTableTd, dataTableEmptyCellClass } from '../shared/DataTableChrome.jsx';
 import BridgeCreateModal from './BridgeCreateModal.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { deleteManagedNetworkBridge } from '../../api/host.js';
@@ -21,6 +10,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 const NO_BRIDGES = [];
 
@@ -41,16 +31,7 @@ export default function HostNetworkBridges() {
   const openCreate = () => setCreateOpen(true);
 
   const headerAdd = (
-    <button
-      type="button"
-      onClick={openCreate}
-      className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-      title="Add VLAN bridge"
-      aria-label="Add VLAN bridge"
-    >
-      <Plus size={14} aria-hidden />
-      <Network size={14} aria-hidden />
-    </button>
+    <IconButton icon={Plus} kindIcon={Network} label="Add VLAN bridge" variant="primary" onClick={openCreate} />
   );
 
   return (
@@ -101,16 +82,15 @@ export default function HostNetworkBridges() {
                       <DataTableTd dense className="hidden text-sm text-text-secondary sm:table-cell">{item.present ? 'present' : 'missing'}</DataTableTd>
                       <DataTableTd dense align="right">
                         <DataTableRowActions forceVisible={remove.isBusy(item.name)}>
-                          <button
-                            type="button"
-                            onClick={() => onDelete(item.name)}
-                            disabled={remove.isBusy(item.name)}
-                            className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
+                          <IconButton
+                            icon={Trash2}
+                            label={`Delete bridge ${item.name}`}
                             title={`Delete ${item.name}`}
-                            aria-label={`Delete bridge ${item.name}`}
-                          >
-                            {remove.isBusy(item.name) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                          </button>
+                            variant="neutral-danger"
+                            size="sm"
+                            busy={remove.isBusy(item.name)}
+                            onClick={() => onDelete(item.name)}
+                          />
                         </DataTableRowActions>
                       </DataTableTd>
                     </tr>

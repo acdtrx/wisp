@@ -9,7 +9,7 @@ import { RECORD } from '../../store/records.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import FormModal from '../shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -44,14 +44,14 @@ export default function VmFirstBootGroup({ config, busy, act }) {
       title="First boot setup"
       actions={(
         <>
-          <GroupAction
+          <IconButton
             icon={Pencil}
             label={stored ? 'Edit the first boot setup' : 'Set up first boot'}
             reason={reason ?? (loaded ? undefined : 'the setup is loading')}
             onClick={() => setEditing(true)}
           />
           {stored && (
-            <GroupAction icon={Trash2} variant="danger" label="Remove the first boot setup" reason={reason} busy={removing} onClick={() => setConfirming(true)} />
+            <IconButton icon={Trash2} variant="danger" label="Remove the first boot setup" reason={reason} busy={removing} onClick={() => setConfirming(true)} />
           )}
         </>
       )}
@@ -133,15 +133,12 @@ function SetupEditor({ vmName, stored, onClose }) {
             autoComplete="new-password"
             className="input-field min-w-0 flex-1"
           />
-          <button
-            type="button"
+          <IconButton
+            variant="field"
+            icon={showPassword ? EyeOff : Eye}
+            label={showPassword ? 'Hide the password' : 'Show the password'}
             onClick={() => setShowPassword((v) => !v)}
-            className="inline-flex shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary"
-            title={showPassword ? 'Hide the password' : 'Show the password'}
-            aria-label={showPassword ? 'Hide the password' : 'Show the password'}
-          >
-            {showPassword ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
-          </button>
+          />
         </div>
       </FormField>
       <SshKeyPicker

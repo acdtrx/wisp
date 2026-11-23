@@ -37,12 +37,12 @@ import VmUsbGroup from './VmUsbGroup.jsx';
 import { profileText, takesFirstBootSetup } from './vmForms.js';
 import TabSpinner from '../shared/TabSpinner.jsx';
 import PageBody from '../shared/PageBody.jsx';
+import IconButton from '../shared/IconButton.jsx';
+import { ButtonLink } from '../shared/Button.jsx';
+import Tab from '../shared/Tab.jsx';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
-const headerBtn = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 lg:h-8 lg:w-8';
-const headerBtnPlain = `${headerBtn} border border-surface-border text-text-secondary hoverable:hover:bg-surface hoverable:hover:text-text-primary`;
-const headerBtnPrimary = `${headerBtn} bg-accent text-white hoverable:hover:bg-accent-hover`;
 
 /** Icon colour by VM state. */
 const STATE_ICON_COLOR = {
@@ -70,11 +70,8 @@ const LOCKED = 'stop the VM first';
 
 /** A header action: an icon, busy while its command runs. */
 function HeaderAction({ icon: Icon, label, onClick, reason, loading, primary = false }) {
-  const name = reason ? `${label}: ${reason}` : label;
   return (
-    <button type="button" onClick={onClick} disabled={!!reason || loading} title={name} aria-label={name} className={primary ? headerBtnPrimary : headerBtnPlain}>
-      {loading ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <Icon size={17} aria-hidden />}
-    </button>
+    <IconButton icon={Icon} label={label} reason={reason} busy={loading} variant={primary ? 'primary' : 'neutral'} size="lg" onClick={onClick} />
   );
 }
 
@@ -117,9 +114,7 @@ export default function OverviewPanel({ name }) {
           {() => null}
         </RecordGate>
         {record.status === 'error' && (
-          <button type="button" onClick={() => navigate('/host/overview')} className="text-xs text-text-muted hover:text-text-secondary">
-            Go to Host overview
-          </button>
+          <ButtonLink to="/host/overview" variant="ghost">Go to Host overview</ButtonLink>
         )}
       </div>
     );
@@ -149,17 +144,8 @@ export default function OverviewPanel({ name }) {
     if (await store().deleteVM(name, deleteDisks)) navigate('/host/overview');
   };
 
-  const tabButton = (id, label, extra = '') => (
-    <button
-      type="button"
-      onClick={() => navigate(`/vm/${encodeURIComponent(name)}/${id}`)}
-      aria-current={activeTab === id ? 'page' : undefined}
-      className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${extra} ${
-        activeTab === id ? 'border-accent font-semibold text-accent-text' : 'border-transparent text-text-muted hover:text-text-primary'
-      }`}
-    >
-      {label}
-    </button>
+  const tabButton = (id, label, from) => (
+    <Tab to={`/vm/${encodeURIComponent(name)}/${id}`} active={activeTab === id} from={from}>{label}</Tab>
   );
 
   const moreItems = [
@@ -219,7 +205,7 @@ export default function OverviewPanel({ name }) {
               <HeaderAction icon={RotateCcw} label="Restart" onClick={() => store().rebootVM(name)} reason={busy ?? notRunning} loading={actionLoading === 'reboot'} />
             </>
           )}
-          <MoreMenu items={moreItems} triggerClassName={headerBtnPlain} />
+          <MoreMenu items={moreItems} />
         </div>
       </div>
 

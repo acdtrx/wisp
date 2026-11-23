@@ -10,7 +10,7 @@ import SettingsEditor from '../host/SettingsEditor.jsx';
 import { callbackUrl, oidcForm, oidcProblem, oidcSent, secretOwed, ssoSwitchReason } from '../host/settingsForms.js';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -31,15 +31,7 @@ function RedirectUri({ uri }) {
   return (
     <span className="flex items-start gap-1">
       <span className="min-w-0 select-all break-all font-mono text-[13px]">{uri}</span>
-      <button
-        type="button"
-        onClick={copy}
-        title="Copy the redirect URI"
-        aria-label="Copy the redirect URI"
-        className="-my-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors duration-150 hoverable:hover:bg-accent-soft hoverable:hover:text-accent-text"
-      >
-        {copied ? <Check size={14} className="text-status-running" aria-hidden /> : <Copy size={14} aria-hidden />}
-      </button>
+      <IconButton icon={copied ? Check : Copy} label="Copy the redirect URI" size="sm" onClick={copy} />
     </span>
   );
 }
@@ -58,7 +50,7 @@ export default function OidcSettings() {
   return (
     <Card
       title="Single sign-on"
-      actions={<GroupAction icon={Pencil} label="Edit the SSO provider" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit the SSO provider" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
       <RecordGate record={record} what="settings">
         {(settings) => {

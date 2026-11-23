@@ -6,7 +6,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -23,7 +23,7 @@ export default function HostBackup() {
   return (
     <Card
       title="Backup"
-      actions={<GroupAction icon={Pencil} label="Edit where backups go" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit where backups go" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
       <RecordGate record={record} what="settings">
         {(settings) => {

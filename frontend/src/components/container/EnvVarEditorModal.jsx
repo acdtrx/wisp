@@ -8,9 +8,8 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
+import IconButton from '../shared/IconButton.jsx';
 
-const sideBtn =
-  'flex h-[34px] shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary hover:bg-surface-sidebar transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 // 32 random bytes as hex (same shape as `openssl rand -hex 32`) — hex keeps the
 // value safe for apps with naive env parsing. `getRandomValues` works in
@@ -210,15 +209,7 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
               className="input-field min-w-0 flex-1 font-mono"
             />
             {form.secret && (
-              <button
-                type="button"
-                onClick={requestGenerate}
-                className={sideBtn}
-                title="Generate random value"
-                aria-label="Generate random value"
-              >
-                <Dices size={14} aria-hidden />
-              </button>
+              <IconButton variant="field" icon={Dices} label="Generate random value" onClick={requestGenerate} />
             )}
           </div>
         </FormField>
@@ -262,15 +253,7 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
               onFocus={(e) => e.target.select()}
               className="input-field min-w-0 flex-1 font-mono text-xs text-text-secondary"
             />
-            <button
-              type="button"
-              onClick={copyGenerated}
-              title="Copy new secret"
-              aria-label="Copy new secret"
-              className={sideBtn}
-            >
-              {genCopied ? <Check size={14} className="text-status-running" aria-hidden /> : <Copy size={14} aria-hidden />}
-            </button>
+            <IconButton variant="field" icon={genCopied ? Check : Copy} label="Copy new secret" onClick={copyGenerated} />
           </div>
         </div>
       </ConfirmDialog>

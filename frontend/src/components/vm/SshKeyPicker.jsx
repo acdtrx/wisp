@@ -1,4 +1,4 @@
-import { Loader2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 import { addSshKey } from '../../api/settings.js';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -7,6 +7,7 @@ import { RECORD } from '../../store/records.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import { keyIdentity, listedKey, otherKeyName, otherKeys, picks, tidyKey, toggled } from './sshKeyChoice.js';
+import IconButton from '../shared/IconButton.jsx';
 
 const NO_KEYS = [];
 
@@ -106,16 +107,14 @@ export default function SshKeyPicker({ idPrefix, chosen, onChange, paste, onPast
           spellCheck={false}
           className="input-field min-w-0 flex-1 font-mono"
         />
-        <button
-          type="button"
+        <IconButton
+          variant="field"
+          icon={Plus}
+          label="Add the key to Wisp’s list and pick it"
+          busy={add.busy}
+          disabled={disabled || !paste.trim()}
           onClick={addPasted}
-          disabled={disabled || add.busy || !paste.trim()}
-          className="inline-flex shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary disabled:opacity-40"
-          title="Add the key to Wisp’s list and pick it"
-          aria-label="Add the key to Wisp’s list and pick it"
-        >
-          {add.busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Plus size={15} aria-hidden />}
-        </button>
+        />
       </div>
       <ErrorBanner error={add.error} prefix="Couldn't add the key" onDismiss={add.dismiss} />
     </fieldset>

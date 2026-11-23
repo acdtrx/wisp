@@ -9,7 +9,7 @@ import { RECORD } from '../../store/records.js';
 import { formatCommandLine } from '../../utils/commandLine.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -38,7 +38,7 @@ export default function ContainerAdvancedGroup({ config, busy, update }) {
   return (
     <Card
       title="Advanced"
-      actions={<GroupAction icon={Pencil} label="Edit advanced settings" reason={busy} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit advanced settings" reason={busy} onClick={() => setEditing(true)} />}
     >
       <ValueRows
         rows={[

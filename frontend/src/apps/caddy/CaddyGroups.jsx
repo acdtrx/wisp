@@ -3,7 +3,7 @@ import { Eye, EyeOff, Globe, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../../components/shared/FormModalChrome.jsx';
-import GroupAction from '../../components/shared/GroupAction.jsx';
+import IconButton from '../../components/shared/IconButton.jsx';
 import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
@@ -38,7 +38,7 @@ export default function CaddyGroups({ config, busy, act, update }) {
     <>
       <Card
         title="Sites"
-        actions={<GroupAction icon={Plus} kindIcon={Globe} variant="add" label="Add a site" reason={appReason} onClick={() => setEditor({ site: null })} />}
+        actions={<IconButton icon={Plus} kindIcon={Globe} variant="primary" label="Add a site" reason={appReason} onClick={() => setEditor({ site: null })} />}
       >
         {hosts.length === 0 && <p className="py-1 text-sm text-text-muted">No sites.</p>}
         {hosts.map((h) => {
@@ -50,8 +50,8 @@ export default function CaddyGroups({ config, busy, act, update }) {
               detail={`to ${h.target}`}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${h.subdomain}`} reason={appReason} disabled={removing} onClick={() => setEditor({ site: h.subdomain })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${h.subdomain}`} reason={appReason} busy={removing} onClick={() => remove(h.subdomain)} />
+                  <IconButton icon={Pencil} label={`Edit ${h.subdomain}`} reason={appReason} disabled={removing} onClick={() => setEditor({ site: h.subdomain })} />
+                  <IconButton icon={Trash2} variant="danger" label={`Remove ${h.subdomain}`} reason={appReason} busy={removing} onClick={() => remove(h.subdomain)} />
                 </>
               )}
             />
@@ -61,7 +61,7 @@ export default function CaddyGroups({ config, busy, act, update }) {
 
       <Card
         title="Domain and certificates"
-        actions={<GroupAction icon={Pencil} label="Edit the domain and certificates" reason={appReason} onClick={() => setEditor({ domain: true })} />}
+        actions={<IconButton icon={Pencil} label="Edit the domain and certificates" reason={appReason} onClick={() => setEditor({ domain: true })} />}
       >
         <ValueRows
           rows={[
@@ -149,15 +149,12 @@ function DomainEditor({ config, save, onClose }) {
               autoComplete="new-password"
               className="input-field min-w-0 flex-1"
             />
-            <button
-              type="button"
+            <IconButton
+              variant="field"
+              icon={showToken ? EyeOff : Eye}
+              label={showToken ? 'Hide the token' : 'Show the token'}
               onClick={() => setShowToken((v) => !v)}
-              className="inline-flex shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary"
-              title={showToken ? 'Hide the token' : 'Show the token'}
-              aria-label={showToken ? 'Hide the token' : 'Show the token'}
-            >
-              {showToken ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
-            </button>
+            />
           </div>
         </FormField>
       )}

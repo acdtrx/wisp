@@ -2,6 +2,8 @@ import {
   Power, ClipboardPaste, Maximize2, Camera, Unplug, RefreshCw,
 } from 'lucide-react';
 
+import Button from '../shared/Button.jsx';
+
 export default function ConsoleToolbar({
   onCtrlAltDel,
   onPaste,
@@ -11,65 +13,23 @@ export default function ConsoleToolbar({
   onReconnect,
   connected,
 }) {
-  const baseBtn = 'flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-surface-border bg-surface-card px-4 py-2">
-      <button
-        type="button"
-        onClick={onCtrlAltDel}
-        disabled={!connected}
-        className={baseBtn}
-        title="Send Ctrl+Alt+Del"
-      >
-        <Power size={14} />
-        Ctrl+Alt+Del
-      </button>
-      <button
-        type="button"
-        onClick={onPaste}
-        disabled={!connected}
-        className={baseBtn}
-        title="Paste from clipboard"
-      >
-        <ClipboardPaste size={14} />
-        Paste
-      </button>
-      <button
-        type="button"
-        onClick={onScreenshot}
-        disabled={!connected}
-        className={baseBtn}
-        title="Screenshot"
-      >
-        <Camera size={14} />
-        Screenshot
-      </button>
+      <Button icon={Power} title="Send Ctrl+Alt+Del" onClick={onCtrlAltDel} disabled={!connected}>Ctrl+Alt+Del</Button>
+      <Button icon={ClipboardPaste} title="Paste from clipboard" onClick={onPaste} disabled={!connected}>Paste</Button>
+      <Button icon={Camera} title="Screenshot" onClick={onScreenshot} disabled={!connected}>Screenshot</Button>
 
       <div className="h-4 w-px bg-surface-border" />
 
-      <button
-        type="button"
-        onClick={onFullscreen}
-        className={baseBtn}
-        title="Fullscreen viewport"
-      >
-        <Maximize2 size={14} />
-        Fullscreen
-      </button>
+      <Button icon={Maximize2} title="Fullscreen viewport" onClick={onFullscreen}>Fullscreen</Button>
 
       <div className="h-4 w-px bg-surface-border" />
 
       {connected ? (
-        <button type="button" onClick={onDisconnect} className={baseBtn} title="Disconnect">
-          <Unplug size={14} />
-          Disconnect
-        </button>
+        <Button icon={Unplug} title="Disconnect" onClick={onDisconnect}>Disconnect</Button>
       ) : (
-        <button type="button" onClick={onReconnect} className={baseBtn} title="Reconnect">
-          <RefreshCw size={14} />
-          Reconnect
-        </button>
+        <Button icon={RefreshCw} title="Reconnect" onClick={onReconnect}>Reconnect</Button>
       )}
     </div>
   );

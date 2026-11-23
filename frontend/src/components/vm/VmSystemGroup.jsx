@@ -6,7 +6,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import XMLModal from './XMLModal.jsx';
@@ -14,6 +14,7 @@ import {
   BOOT_DEVICES, CONSOLE, CPU_MODELS, OPERATING_SYSTEMS, VIDEO, expertForm, madeWith, profileText, systemSummary,
   toggledBootDevice,
 } from './vmForms.js';
+import Button from '../shared/Button.jsx';
 
 /**
  * What the VM was made as (its profile) and, in one line, what its settings are.
@@ -28,8 +29,8 @@ export default function VmSystemGroup({ config, busy, lockReason, update }) {
       lockReason={lockReason ? 'Stop the VM to change its settings' : undefined}
       actions={(
         <>
-          <GroupAction icon={Code2} label="View the XML" onClick={() => setOpen('xml')} />
-          <GroupAction icon={SlidersHorizontal} label="Expert settings" reason={busy ?? lockReason} onClick={() => setOpen('expert')} />
+          <IconButton icon={Code2} label="View the XML" onClick={() => setOpen('xml')} />
+          <IconButton icon={SlidersHorizontal} label="Expert settings" reason={busy ?? lockReason} onClick={() => setOpen('expert')} />
         </>
       )}
     >
@@ -71,15 +72,15 @@ function ExpertSettings({ config, update, onClose }) {
             {BOOT_DEVICES.map((d) => {
               const at = form.bootOrder.indexOf(d.value);
               return (
-                <button
+                <Button
                   key={d.value}
-                  type="button"
+                  variant="pill"
+                  selected={at >= 0}
                   aria-pressed={at >= 0}
                   onClick={() => setForm((f) => ({ ...f, bootOrder: toggledBootDevice(f.bootOrder, d.value) }))}
-                  className={`rounded-md border px-2.5 py-1 text-xs font-medium ${at >= 0 ? 'border-accent bg-accent-soft text-accent-text' : 'border-surface-border text-text-muted'}`}
                 >
-                  {at >= 0 && <span className="mr-1">{at + 1}.</span>}{d.label}
-                </button>
+                  {at >= 0 && <span>{at + 1}.</span>}{d.label}
+                </Button>
               );
             })}
           </div>

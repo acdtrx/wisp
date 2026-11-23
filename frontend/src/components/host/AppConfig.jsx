@@ -12,7 +12,7 @@ import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
 import SshKeysSettings from '../settings/SshKeysSettings.jsx';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -52,7 +52,7 @@ function ServerGroup({ record }) {
   return (
     <Card
       title="This server"
-      actions={<GroupAction icon={Pencil} label="Edit the server’s name and URL" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit the server’s name and URL" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
       <RecordGate record={record} what="settings">
         {(settings) => (
@@ -115,7 +115,7 @@ function StoragePathsGroup({ record }) {
   return (
     <Card
       title="Storage paths"
-      actions={<GroupAction icon={Pencil} label="Edit the storage paths" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit the storage paths" reason={record.data ? undefined : 'the settings are loading'} onClick={() => setEditing(true)} />}
     >
       <RecordGate record={record} what="settings">
         {(settings) => (

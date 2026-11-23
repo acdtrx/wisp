@@ -10,7 +10,7 @@ import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { formatBytes, formatMemory } from '../../utils/formatters.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import SshKeyPicker from './SshKeyPicker.jsx';
 import { defaultKeys, keysProblem, sshKeyText } from './sshKeyChoice.js';
@@ -19,6 +19,9 @@ import {
   RUNS, createVmBody, defaultVmDraft, driverIso, hostnameFromName, imagesFor, vmDraftProblems, withRuns,
 } from './vmDraft.js';
 import PageBody from '../shared/PageBody.jsx';
+import Button, { ButtonLink } from '../shared/Button.jsx';
+import IconButton, { IconLink } from '../shared/IconButton.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
 
 const NO_FILES = [];
 const NO_KEYS = [];
@@ -40,25 +43,7 @@ const SIZE_CHOICES = [
 /** A row of choices, each with a line under its name (Runs, Size). */
 function Choices({ label, choices, value, onChange, disabled }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label={label}>
-      {choices.map((c) => {
-        const on = value === c.value;
-        return (
-          <button
-            key={c.value}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            disabled={disabled}
-            onClick={() => onChange(c.value)}
-            className={`rounded-md border px-2.5 py-2 text-left transition-colors duration-150 disabled:opacity-60 ${on ? 'border-accent bg-accent-soft text-accent-text' : 'border-surface-border text-text-secondary hoverable:hover:bg-surface'}`}
-          >
-            <span className="block text-sm font-medium">{c.label}</span>
-            <span className="block text-[11px] text-text-muted">{c.detail}</span>
-          </button>
-        );
-      })}
-    </div>
+    <RadioPills variant="card" className="grid-cols-2 sm:grid-cols-4" label={label} options={choices} value={value} onChange={onChange} disabled={disabled} />
   );
 }
 
@@ -124,15 +109,7 @@ export default function CreateVMPanel() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex min-h-11 shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card px-4">
-        <button
-          type="button"
-          onClick={() => navigate('/host/overview')}
-          className="rounded-md p-2 text-text-muted transition-colors duration-150 hoverable:hover:bg-surface hoverable:hover:text-text-primary lg:p-1"
-          title="Back"
-          aria-label="Back"
-        >
-          <ArrowLeft size={18} aria-hidden />
-        </button>
+        <IconLink to="/host/overview" icon={ArrowLeft} label="Back" size="lg" />
         <h1 className="text-sm font-semibold text-text-primary">New VM</h1>
       </div>
 
@@ -229,15 +206,12 @@ export default function CreateVMPanel() {
                       autoComplete="new-password"
                       className="input-field min-w-0 flex-1"
                     />
-                    <button
-                      type="button"
+                    <IconButton
+                      variant="field"
+                      icon={showPassword ? EyeOff : Eye}
+                      label={showPassword ? 'Hide the password' : 'Show the password'}
                       onClick={() => setShowPassword((v) => !v)}
-                      className="inline-flex shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary"
-                      title={showPassword ? 'Hide the password' : 'Show the password'}
-                      aria-label={showPassword ? 'Hide the password' : 'Show the password'}
-                    >
-                      {showPassword ? <EyeOff size={15} aria-hidden /> : <Eye size={15} aria-hidden />}
-                    </button>
+                    />
                   </div>
                 </FormField>
               </div>
@@ -261,11 +235,8 @@ export default function CreateVMPanel() {
                 <span className="truncate">{STEP_LABELS[step] ?? step}{progress?.percent != null ? ` ${Math.round(progress.percent)}%` : ''}</span>
               </span>
             )}
-            <button type="button" onClick={() => navigate('/host/overview')} className={formModalNeutralBtn}>Cancel</button>
-            <button type="submit" disabled={!!blocked || creating} title={blocked ?? undefined} className={formModalPrimaryBtn}>
-              {creating && <Loader2 size={14} className="animate-spin" aria-hidden />}
-              Create
-            </button>
+            <ButtonLink to="/host/overview">Cancel</ButtonLink>
+            <Button variant="primary" type="submit" busy={creating} disabled={!!blocked} title={blocked ?? undefined}>Create</Button>
           </div>
         </form>
       </PageBody>

@@ -1,6 +1,7 @@
 import { RefreshCw, ServerCrash, WifiOff } from 'lucide-react';
 
 import WispGlyph from './WispGlyph.jsx';
+import Button from './Button.jsx';
 
 /**
  * Full-screen state for a boot that can't reach the backend. Without it the app
@@ -44,14 +45,7 @@ export default function ServerUnreachable({ kind = 'offline', onRetry }) {
               couple of milliseconds, so reflecting its in-flight state here made the
               button flash "Retrying…" on every backoff tick. The footer below already
               says retries are happening; the button only skips the wait. */}
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-          >
-            <RefreshCw size={16} />
-            Retry
-          </button>
+          <Button variant="primary" size="md" icon={RefreshCw} fullWidth className="mt-6" onClick={onRetry}>Retry</Button>
 
           <p className="mt-3 text-xs text-text-muted">
             Retrying automatically. Wisp reconnects on its own once the server is reachable.

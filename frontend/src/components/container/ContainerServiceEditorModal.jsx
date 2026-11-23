@@ -11,6 +11,7 @@ import { FormField } from '../shared/FormModalChrome.jsx';
 import {
   CUSTOM_TYPE, OTHER_PORT, serviceForm, serviceProblem, serviceSent, unannouncedPorts, withPortChoice, withType,
 } from './containerServices.js';
+import IconButton from '../shared/IconButton.jsx';
 
 /**
  * The editor of one service the container announces (`service`; null: a new one). A
@@ -105,15 +106,7 @@ export default function ContainerServiceEditorModal({ config, service, onClose }
       <div>
         <div className="mb-1 flex items-center justify-between">
           <span className="text-xs font-medium text-text-secondary">TXT records</span>
-          <button
-            type="button"
-            onClick={() => setForm((f) => ({ ...f, txt: [...f.txt, { id: rowId(), k: '', v: '' }] }))}
-            className="inline-flex items-center justify-center rounded-md p-2 text-text-muted transition-colors duration-150 hoverable:hover:bg-accent-soft hoverable:hover:text-accent-text lg:p-1"
-            title="Add a TXT record"
-            aria-label="Add a TXT record"
-          >
-            <Plus size={14} aria-hidden />
-          </button>
+          <IconButton icon={Plus} label="Add a TXT record" size="sm" onClick={() => setForm((f) => ({ ...f, txt: [...f.txt, { id: rowId(), k: '', v: '' }] }))} />
         </div>
         {form.txt.length === 0 && <p className="text-xs text-text-muted">No TXT records.</p>}
         <div className="space-y-1.5">
@@ -139,15 +132,7 @@ export default function ContainerServiceEditorModal({ config, service, onClose }
                 autoComplete="off"
                 className="input-field min-w-0 flex-1 font-mono"
               />
-              <button
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, txt: f.txt.filter((x) => x.id !== r.id) }))}
-                className="inline-flex shrink-0 items-center justify-center rounded-md p-2 text-text-muted transition-colors duration-150 hoverable:hover:bg-status-stopped-soft hoverable:hover:text-status-stopped lg:p-1"
-                title="Remove this TXT record"
-                aria-label="Remove this TXT record"
-              >
-                <X size={14} aria-hidden />
-              </button>
+              <IconButton icon={X} label="Remove this TXT record" variant="danger" size="sm" onClick={() => setForm((f) => ({ ...f, txt: f.txt.filter((x) => x.id !== r.id) }))} />
             </div>
           ))}
         </div>

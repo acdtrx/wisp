@@ -11,7 +11,7 @@ import { randomMac } from '../../utils/randomMac.js';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
@@ -50,8 +50,8 @@ export default function ContainerNetworkGroup({ config, busy, locked, act, updat
       lockReason={locked ? 'Stop the container to change its bridge or MAC address' : undefined}
       actions={(
         <>
-          <GroupAction icon={Plus} kindIcon={Radio} variant="add" label="Announce a service" reason={busy ?? localNameOff} onClick={() => setService(null)} />
-          <GroupAction icon={Pencil} label="Edit network" reason={busy ?? (locked ? 'stop the container first' : undefined)} onClick={() => setEditing(true)} />
+          <IconButton icon={Plus} kindIcon={Radio} variant="primary" label="Announce a service" reason={busy ?? localNameOff} onClick={() => setService(null)} />
+          <IconButton icon={Pencil} label="Edit network" reason={busy ?? (locked ? 'stop the container first' : undefined)} onClick={() => setEditing(true)} />
         </>
       )}
     >
@@ -88,8 +88,8 @@ export default function ContainerNetworkGroup({ config, busy, locked, act, updat
                   : s.type}
                 actions={(
                   <>
-                    <GroupAction icon={Pencil} label={`Edit the service on port ${s.port}`} reason={busy ?? localNameOff} disabled={removing} onClick={() => setService(s)} />
-                    <GroupAction icon={Trash2} variant="danger" label={`Remove the service on port ${s.port}`} reason={busy} busy={removing} onClick={() => removeService(s)} />
+                    <IconButton icon={Pencil} label={`Edit the service on port ${s.port}`} reason={busy ?? localNameOff} disabled={removing} onClick={() => setService(s)} />
+                    <IconButton icon={Trash2} variant="danger" label={`Remove the service on port ${s.port}`} reason={busy} busy={removing} onClick={() => removeService(s)} />
                   </>
                 )}
               />
@@ -143,15 +143,7 @@ function NetworkEditor({ config, update, onClose }) {
             autoComplete="off"
             className="input-field min-w-0 flex-1 font-mono"
           />
-          <button
-            type="button"
-            onClick={() => setField('mac', randomMac())}
-            className="inline-flex shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary transition-colors duration-150 hoverable:hover:bg-surface-sidebar"
-            title="A new random MAC address"
-            aria-label="A new random MAC address"
-          >
-            <Shuffle size={15} aria-hidden />
-          </button>
+          <IconButton variant="field" icon={Shuffle} label="A new random MAC address" onClick={() => setField('mac', randomMac())} />
         </div>
       </FormField>
     </FormModal>

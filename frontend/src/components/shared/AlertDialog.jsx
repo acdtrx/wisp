@@ -1,4 +1,5 @@
 import Modal from './Modal.jsx';
+import Button from './Button.jsx';
 
 /**
  * Single-button informational dialog. Drop-in replacement for `alert()`.
@@ -35,12 +36,7 @@ export default function AlertDialog({
           <p className={`${title ? 'mt-2 ' : ''}text-sm text-text-secondary`}>{message}</p>
         ) : null}
         <div className="mt-5 flex justify-end">
-          <button
-            onClick={onClose}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-          >
-            {okLabel}
-          </button>
+          <Button variant="primary" onClick={onClose}>{okLabel}</Button>
         </div>
       </div>
     </Modal>

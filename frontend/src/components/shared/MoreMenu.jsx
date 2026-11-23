@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Ellipsis } from 'lucide-react';
 
 import { usePopover } from '../../lib/popover.js';
+import IconButton from './IconButton.jsx';
+import MenuItem from './MenuItem.jsx';
 
 /**
  * The "More" menu of a page's header: the actions that do not earn a button of their
@@ -10,7 +12,7 @@ import { usePopover } from '../../lib/popover.js';
  * danger? }`; an item with a `reason` is shown disabled with it. Picking an item
  * closes the menu.
  */
-export default function MoreMenu({ items, triggerClassName }) {
+export default function MoreMenu({ items }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
   const popRef = useRef(null);
@@ -38,18 +40,16 @@ export default function MoreMenu({ items, triggerClassName }) {
 
   return (
     <>
-      <button
+      <IconButton
         ref={anchorRef}
-        type="button"
+        icon={Ellipsis}
+        label="More"
+        variant="neutral"
+        size="lg"
         onClick={() => setOpen((v) => !v)}
-        title="More"
-        aria-label="More"
         aria-haspopup="menu"
         aria-expanded={open}
-        className={triggerClassName}
-      >
-        <Ellipsis size={18} aria-hidden />
-      </button>
+      />
       {open && createPortal(
         <div
           ref={popRef}
@@ -63,26 +63,24 @@ export default function MoreMenu({ items, triggerClassName }) {
             <Fragment key={section.map((item) => item.label).join('|')}>
               {i > 0 && <div className="my-1 border-t border-surface-border" role="separator" />}
               {section.map(({ icon: Icon, label, onClick, reason, danger }) => (
-                <button
+                <MenuItem
                   key={label}
-                  type="button"
-                  role="menuitem"
-                  disabled={!!reason}
-                  title={reason}
+                  icon={Icon}
+                  danger={danger}
+                  reason={reason}
+                  label={(
+                    <>
+                      <span className="block">{label}</span>
+                      {reason && <span className="block text-[11px] text-text-muted">{reason}</span>}
+                    </>
+                  )}
                   onClick={() => {
                     /* Back on the trigger first: a dialog the item opens returns focus there. */
                     anchorRef.current?.focus();
                     close();
                     onClick();
                   }}
-                  className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 lg:py-2 ${danger ? 'text-status-stopped hoverable:hover:bg-status-stopped-soft' : 'text-text-primary hoverable:hover:bg-surface'}`}
-                >
-                  <Icon size={15} aria-hidden className={danger ? '' : 'text-text-secondary'} />
-                  <span className="min-w-0">
-                    <span className="block">{label}</span>
-                    {reason && <span className="block text-[11px] text-text-muted">{reason}</span>}
-                  </span>
-                </button>
+                />
               ))}
             </Fragment>
           ))}

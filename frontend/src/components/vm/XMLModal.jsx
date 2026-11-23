@@ -6,6 +6,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
+import Button from '../shared/Button.jsx';
 
 function highlightXml(xml) {
   if (!xml) return null;
@@ -86,13 +87,7 @@ export default function XMLModal({ open, vmName, onClose }) {
       height="tall"
       bodyPadding="none"
       headerExtra={
-        <button
-          onClick={handleCopy}
-          disabled={!xml}
-          className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface transition-colors duration-150"
-        >
-          {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-        </button>
+        <Button size="xs" icon={copied ? Check : Copy} disabled={!xml} onClick={handleCopy}>{copied ? 'Copied' : 'Copy'}</Button>
       }
     >
       <div className="h-full overflow-auto p-4">

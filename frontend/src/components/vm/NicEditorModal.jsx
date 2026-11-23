@@ -8,9 +8,8 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
+import IconButton from '../shared/IconButton.jsx';
 
-const sideBtn =
-  'flex h-[34px] shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary hover:bg-surface-sidebar transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 /* A new NIC starts on the first host bridge with a fresh locally-administered
  * MAC — the same defaults the create-flow draft rows use. */
@@ -104,15 +103,7 @@ function NicEditor({ index, opened, bridges = [], onSubmit, onClose }) {
             spellCheck={false}
             className="input-field min-w-0 flex-1 font-mono"
           />
-          <button
-            type="button"
-            onClick={() => setField('mac', randomMac())}
-            className={sideBtn}
-            title="Randomize MAC"
-            aria-label="Randomize MAC"
-          >
-            <Shuffle size={14} aria-hidden />
-          </button>
+          <IconButton variant="field" icon={Shuffle} label="Randomize MAC" onClick={() => setField('mac', randomMac())} />
         </div>
       </FormField>
     </FormModal>

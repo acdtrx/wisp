@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 import { useLayer, focusIntoLayer } from '../../lib/layers.js';
+import IconButton from './IconButton.jsx';
 
 /* Widths apply from `sm`: below it every modal is a full-width sheet from the bottom. */
 const SIZE_CLASS = {
@@ -115,14 +116,7 @@ export default function Modal({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {headerExtra}
-              <button
-                type="button"
-                onClick={() => onClose?.()}
-                className="rounded-lg p-2 lg:p-1 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-                aria-label="Close"
-              >
-                <X size={16} aria-hidden />
-              </button>
+              <IconButton icon={X} label="Close" size="sm" onClick={() => onClose?.()} />
             </div>
           </div>
         )}

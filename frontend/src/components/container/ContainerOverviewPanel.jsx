@@ -39,12 +39,12 @@ import ContainerStorageGroup from './ContainerStorageGroup.jsx';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import TabSpinner from '../shared/TabSpinner.jsx';
 import PageBody from '../shared/PageBody.jsx';
+import IconButton from '../shared/IconButton.jsx';
+import { ButtonLink } from '../shared/Button.jsx';
+import Tab from '../shared/Tab.jsx';
 
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
-const headerBtn = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 lg:h-8 lg:w-8';
-const headerBtnPlain = `${headerBtn} border border-surface-border text-text-secondary hoverable:hover:bg-surface hoverable:hover:text-text-primary`;
-const headerBtnPrimary = `${headerBtn} bg-accent text-white hoverable:hover:bg-accent-hover`;
 
 const STATE_PILL = {
   running: 'bg-status-running-soft text-status-running',
@@ -54,18 +54,8 @@ const STATE_PILL = {
 
 /** A header action: an icon, busy while its command runs. */
 function HeaderAction({ icon: Icon, label, onClick, reason, loading, primary = false }) {
-  const name = reason ? `${label}: ${reason}` : label;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!!reason || loading}
-      title={name}
-      aria-label={name}
-      className={primary ? headerBtnPrimary : headerBtnPlain}
-    >
-      {loading ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <Icon size={17} aria-hidden />}
-    </button>
+    <IconButton icon={Icon} label={label} reason={reason} busy={loading} variant={primary ? 'primary' : 'neutral'} size="lg" onClick={onClick} />
   );
 }
 
@@ -111,9 +101,7 @@ export default function ContainerOverviewPanel({ name }) {
           {() => null}
         </RecordGate>
         {record.status === 'error' && (
-          <button type="button" onClick={() => navigate('/host/overview')} className="text-xs text-text-muted hover:text-text-secondary">
-            Go to Host overview
-          </button>
+          <ButtonLink to="/host/overview" variant="ghost">Go to Host overview</ButtonLink>
         )}
       </div>
     );
@@ -150,17 +138,8 @@ export default function ContainerOverviewPanel({ name }) {
     act.run(() => ejectContainerApp(name), { key: 'eject', about: "Couldn't eject the app" });
   };
 
-  const tabButton = (id, label, extra = '') => (
-    <button
-      type="button"
-      onClick={() => navigate(`/container/${encodeURIComponent(name)}/${id}`)}
-      aria-current={activeTab === id ? 'page' : undefined}
-      className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${extra} ${
-        activeTab === id ? 'border-accent font-semibold text-accent-text' : 'border-transparent text-text-muted hover:text-text-primary'
-      }`}
-    >
-      {label}
-    </button>
+  const tabButton = (id, label, from) => (
+    <Tab to={`/container/${encodeURIComponent(name)}/${id}`} active={activeTab === id} from={from}>{label}</Tab>
   );
 
   const moreItems = [
@@ -196,7 +175,7 @@ export default function ContainerOverviewPanel({ name }) {
             {tabButton('overview', 'Overview')}
             {tabButton('logs', 'Logs')}
             {/* The console is desktop-only. */}
-            {tabButton('console', 'Console', 'hidden lg:block')}
+            {tabButton('console', 'Console', 'lg')}
           </nav>
         </div>
         <div className="flex w-full shrink-0 items-center justify-end gap-1.5 pb-1 lg:w-auto lg:pb-0">
@@ -221,7 +200,7 @@ export default function ContainerOverviewPanel({ name }) {
           {isRunning && (
             <HeaderAction icon={RotateCcw} label="Restart" onClick={() => store().restartContainer(name)} reason={busy} loading={actionLoading === 'restart'} />
           )}
-          <MoreMenu items={moreItems} triggerClassName={headerBtnPlain} />
+          <MoreMenu items={moreItems} />
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { Disc, Eject, HardDrive, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { attachISO, detachDiskFromVM, ejectISO } from '../../api/vms.js';
 import DiskEditorModal from './DiskEditorModal.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
@@ -45,18 +45,18 @@ export default function VmDisksGroup({ config, busy, lockReason, act }) {
       lockReason={lockReason ? 'Stop the VM to change its disks; CDs work at any time' : undefined}
       actions={(
         <>
-          <GroupAction
+          <IconButton
             icon={Plus}
             kindIcon={HardDrive}
-            variant="add"
+            variant="primary"
             label="Add a disk"
             reason={diskReason ?? (freeDisk ? undefined : 'both disks are in use')}
             onClick={() => setEditor({ slot: freeDisk, editing: false })}
           />
-          <GroupAction
+          <IconButton
             icon={Plus}
             kindIcon={Disc}
-            variant="add"
+            variant="primary"
             label="Insert an ISO"
             reason={reason ?? (freeCd ? undefined : 'both CDs hold an ISO')}
             onClick={() => setPicking(freeCd)}
@@ -72,8 +72,8 @@ export default function VmDisksGroup({ config, busy, lockReason, act }) {
           detail={[d.sizeGiB != null ? `${d.sizeGiB} GB` : null, fileName(d.source), BUS_LABEL[d.bus] ?? d.bus].filter(Boolean).join(' · ')}
           actions={(
             <>
-              <GroupAction icon={Pencil} label={`Edit ${DISK_LABEL[d.slot].toLowerCase()}`} reason={diskReason} onClick={() => setEditor({ slot: d.slot, editing: true, disk: d })} />
-              <GroupAction
+              <IconButton icon={Pencil} label={`Edit ${DISK_LABEL[d.slot].toLowerCase()}`} reason={diskReason} onClick={() => setEditor({ slot: d.slot, editing: true, disk: d })} />
+              <IconButton
                 icon={Trash2}
                 variant="danger"
                 label={`Remove ${DISK_LABEL[d.slot].toLowerCase()} (its file stays in the VM's folder)`}
@@ -92,8 +92,8 @@ export default function VmDisksGroup({ config, busy, lockReason, act }) {
           detail={fileName(c.source)}
           actions={(
             <>
-              <GroupAction icon={Disc} label={`Change the ISO in ${CD_LABEL[c.slot]}`} reason={reason} busy={runs(insertAbout(c.slot))} onClick={() => setPicking(c.slot)} />
-              <GroupAction icon={Eject} label={`Eject ${CD_LABEL[c.slot]}`} reason={reason} busy={runs(ejectAbout(c.slot))} onClick={() => run(() => ejectISO(config.name, c.slot), ejectAbout(c.slot))} />
+              <IconButton icon={Disc} label={`Change the ISO in ${CD_LABEL[c.slot]}`} reason={reason} busy={runs(insertAbout(c.slot))} onClick={() => setPicking(c.slot)} />
+              <IconButton icon={Eject} label={`Eject ${CD_LABEL[c.slot]}`} reason={reason} busy={runs(ejectAbout(c.slot))} onClick={() => run(() => ejectISO(config.name, c.slot), ejectAbout(c.slot))} />
             </>
           )}
         />

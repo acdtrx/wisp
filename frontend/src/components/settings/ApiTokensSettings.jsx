@@ -1,20 +1,9 @@
 import { useState } from 'react';
-import { KeyRound, Plus, Check, X, Trash2, Copy, Loader2 } from 'lucide-react';
+import { KeyRound, Plus, Check, X, Trash2, Copy } from 'lucide-react';
 
 import Card from '../shared/Card.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import {
-  DataTableScroll,
-  DataTable,
-  DataTableTh,
-  DataTableTd,
-  DataTableRowActions,
-  dataTableHeadRowClass,
-  dataTableBodyRowClass,
-  dataTableEmptyCellClass,
-  rowActionIconBtn,
-  rowActionIconBtnPrimary,
-} from '../shared/DataTableChrome.jsx';
+import { DataTableScroll, DataTable, DataTableTh, DataTableTd, DataTableRowActions, dataTableHeadRowClass, dataTableBodyRowClass, dataTableEmptyCellClass } from '../shared/DataTableChrome.jsx';
 import { createApiToken, deleteApiToken } from '../../api/authTokens.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
@@ -22,6 +11,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -95,16 +85,7 @@ export default function ApiTokensSettings() {
   };
 
   const headerAdd = (
-    <button
-      type="button"
-      onClick={openAdd}
-      className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-      title="Create API token"
-      aria-label="Create API token"
-    >
-      <Plus size={14} aria-hidden />
-      <KeyRound size={14} aria-hidden />
-    </button>
+    <IconButton icon={Plus} kindIcon={KeyRound} label="Create API token" variant="primary" onClick={openAdd} />
   );
 
   return (
@@ -123,15 +104,7 @@ export default function ApiTokensSettings() {
               <p className="text-xs font-medium text-text-primary">
                 Token “{minted.label}” created — copy it now, it won’t be shown again.
               </p>
-              <button
-                type="button"
-                onClick={() => setMinted(null)}
-                title="Dismiss"
-                aria-label="Dismiss"
-                className="shrink-0 rounded-md p-2 lg:p-1 text-text-muted hover:bg-surface transition-colors duration-150"
-              >
-                <X size={14} />
-              </button>
+              <IconButton icon={X} label="Dismiss" size="sm" onClick={() => setMinted(null)} />
             </div>
             <div className="mt-2 flex items-center gap-2">
               <input
@@ -141,15 +114,7 @@ export default function ApiTokensSettings() {
                 onFocus={(e) => e.target.select()}
                 className="input-field font-mono text-xs text-text-secondary"
               />
-              <button
-                type="button"
-                onClick={copyToken}
-                title="Copy token"
-                aria-label="Copy token"
-                className="flex h-[34px] shrink-0 items-center gap-1 rounded-md border border-surface-border bg-surface px-2.5 text-xs text-text-secondary hover:bg-surface-sidebar transition-colors duration-150"
-              >
-                {copied ? <Check size={14} className="text-status-running" /> : <Copy size={14} />}
-              </button>
+              <IconButton variant="field" icon={copied ? Check : Copy} label="Copy token" onClick={copyToken} />
             </div>
           </div>
         )}
@@ -196,26 +161,8 @@ export default function ApiTokensSettings() {
                     <DataTableTd dense className="hidden sm:table-cell text-text-muted">—</DataTableTd>
                     <DataTableTd dense align="right">
                       <DataTableRowActions forceVisible>
-                        <button
-                          type="button"
-                          onClick={handleCreate}
-                          disabled={!newLabel.trim() || creating}
-                          title="Create token"
-                          aria-label="Create token"
-                          className={rowActionIconBtnPrimary}
-                        >
-                          {creating ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelAdd}
-                          disabled={creating}
-                          title="Cancel"
-                          aria-label="Cancel"
-                          className={rowActionIconBtn}
-                        >
-                          <X size={14} />
-                        </button>
+                        <IconButton icon={Check} label="Create token" variant="primary" size="sm" busy={creating} disabled={!newLabel.trim()} onClick={handleCreate} />
+                        <IconButton icon={X} label="Cancel" variant="neutral" size="sm" disabled={creating} onClick={cancelAdd} />
                       </DataTableRowActions>
                     </DataTableTd>
                   </tr>
@@ -242,16 +189,7 @@ export default function ApiTokensSettings() {
                       </DataTableTd>
                       <DataTableTd dense align="right">
                         <DataTableRowActions forceVisible>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTarget(t)}
-                            disabled={revoke.isBusy(t.id)}
-                            title="Revoke token"
-                            aria-label="Revoke token"
-                            className={rowActionIconBtn}
-                          >
-                            {revoke.isBusy(t.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          </button>
+                          <IconButton icon={Trash2} label="Revoke token" variant="neutral-danger" size="sm" busy={revoke.isBusy(t.id)} onClick={() => setDeleteTarget(t)} />
                         </DataTableRowActions>
                       </DataTableTd>
                     </tr>

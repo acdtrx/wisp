@@ -6,6 +6,7 @@ import { usePopover } from '../../lib/popover.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useDiscoveryStore } from '../../store/discoveryStore.js';
+import Button from '../shared/Button.jsx';
 
 /**
  * Server name in the top bar. When other Wisp servers are discovered on the
@@ -49,19 +50,18 @@ export default function ServerSwitcher() {
 
   return (
     <div className="relative">
-      <button
+      <Button
         ref={anchorRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 rounded-md text-sm text-text-muted hover:text-text-primary transition-colors duration-150"
+        variant="ghost"
+        iconEnd={ChevronDown}
         title="Other Wisp servers on this network"
         aria-label="Other Wisp servers on this network"
         aria-haspopup="menu"
         aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
       >
         {serverName}
-        <ChevronDown size={12} className="text-text-muted" aria-hidden />
-      </button>
+      </Button>
       {open && createPortal(
         <div
           ref={popRef}

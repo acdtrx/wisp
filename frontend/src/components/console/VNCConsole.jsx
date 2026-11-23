@@ -3,6 +3,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { closeIfNotOpenWithin, consoleWsUrl } from '../../api/console.js';
 import { getHostInfo } from '../../api/host.js';
 import { errorText, isSessionLost } from '../../api/errors.js';
+import Button from '../shared/Button.jsx';
 
 let RFBClass = null;
 const rfbUrl = `${(import.meta.env.BASE_URL || '/').replace(/\/?$/, '')}/vendor/novnc/core/rfb.js`;
@@ -344,13 +345,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
     return (
       <div className="flex h-full items-center justify-center p-4 text-center text-sm text-status-stopped">
         {error}
-        <button
-          type="button"
-          onClick={connect}
-          className="ml-2 rounded-sm border border-surface-border px-2 py-1 text-xs hover:bg-surface"
-        >
-          Retry
-        </button>
+        <Button size="xs" className="ml-2" onClick={connect}>Retry</Button>
       </div>
     );
   }

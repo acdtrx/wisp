@@ -7,6 +7,8 @@ import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import IconButton from '../shared/IconButton.jsx';
+import MenuItem from '../shared/MenuItem.jsx';
 
 /**
  * Tiny popover trigger used inside a workload row in organize mode.
@@ -33,21 +35,18 @@ export default function SectionPickerButton({ type, name, disabled }) {
 
   return (
     <div className="relative">
-      <button
+      <IconButton
         ref={anchorRef}
-        type="button"
+        icon={FolderInput}
+        label="Move to section"
+        size="sm"
+        disabled={disabled}
+        aria-expanded={open}
         onClick={(e) => {
           e.stopPropagation();
           if (!disabled) setOpen((o) => !o);
         }}
-        disabled={disabled}
-        className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
-        title="Move to section"
-        aria-label="Move to section"
-        aria-expanded={open}
-      >
-        <FolderInput size={14} />
-      </button>
+      />
       {open && createPortal(
         <div
           ref={popRef}
@@ -64,32 +63,20 @@ export default function SectionPickerButton({ type, name, disabled }) {
               const isCurrent = (currentSectionId || MAIN_SECTION_ID) === s.id;
               return (
                 <li key={s.id}>
-                  <button
-                    type="button"
+                  <MenuItem
+                    role={undefined}
+                    size="sm"
+                    current={isCurrent}
+                    disabled={busy}
+                    label={s.name}
+                    trail={isCurrent && <Check size={12} className="shrink-0 text-accent" aria-hidden />}
                     onClick={() => pick(s.id)}
-                    disabled={busy || isCurrent}
-                    className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 ${
-                      isCurrent
-                        ? 'text-text-muted'
-                        : 'text-text-primary hover:bg-surface'
-                    }`}
-                  >
-                    <span className="truncate">{s.name}</span>
-                    {isCurrent && <Check size={12} className="shrink-0 text-accent" />}
-                  </button>
+                  />
                 </li>
               );
             })}
             <li className="border-t border-surface-border">
-              <button
-                type="button"
-                onClick={pickNew}
-                disabled={busy}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors duration-150 hover:bg-surface hover:text-accent-text disabled:opacity-40"
-              >
-                <FolderPlus size={12} className="shrink-0" />
-                <span>New section…</span>
-              </button>
+              <MenuItem role={undefined} size="sm" accent icon={FolderPlus} label="New section…" disabled={busy} onClick={pickNew} />
             </li>
           </ul>
         </div>,

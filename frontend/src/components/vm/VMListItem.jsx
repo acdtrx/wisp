@@ -6,6 +6,7 @@ import { useUiStore } from '../../store/uiStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import { formatMemory } from '../../utils/formatters.js';
 import SectionPickerButton from '../sidebar/SectionPickerButton.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 /** Icon color by VM state (matches OverviewPanel title bar). */
 const STATE_ICON_COLOR = {
@@ -83,37 +84,38 @@ export default function VMListItem({ vm }) {
       ) : (
         <div className="flex shrink-0 items-center gap-0.5 hoverable:lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 transition-opacity duration-150">
           {isStopped && (
-            <button
-              onClick={(e) => { e.stopPropagation(); startVM(vm.name); }}
-              disabled={!!actionLoading}
-              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
+            <IconButton
+              icon={Play}
+              label="Start"
               title="Start"
-            >
-              <Play size={14} />
-            </button>
+              variant="positive"
+              size="sm"
+              disabled={!!actionLoading}
+              onClick={(e) => { e.stopPropagation(); startVM(vm.name); }}
+            />
           )}
           {isRunning && (
-            <button
-              onClick={(e) => { e.stopPropagation(); stopVM(vm.name); }}
-              disabled={!!actionLoading}
-              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
+            <IconButton
+              icon={Square}
+              label="Stop"
               title="Stop"
-            >
-              <Square size={14} />
-            </button>
+              variant="danger"
+              size="sm"
+              disabled={!!actionLoading}
+              onClick={(e) => { e.stopPropagation(); stopVM(vm.name); }}
+            />
           )}
           {(isRunning || isPaused) && (
-            <button
-              onClick={(e) => { e.stopPropagation(); rebootVM(vm.name); }}
-              disabled={!!actionLoading || isPaused}
-              className="relative rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
+            <IconButton
+              icon={RotateCcw}
+              label="Reboot"
               title={staleBinary ? 'Reboot (qemu binary updated since VM started)' : 'Reboot'}
-            >
-              <RotateCcw size={14} />
-              {staleBinary && (
-                <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-status-warning" />
-              )}
-            </button>
+              variant="plain"
+              size="sm"
+              disabled={!!actionLoading || isPaused}
+              onClick={(e) => { e.stopPropagation(); rebootVM(vm.name); }}
+              badge={staleBinary && <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-status-warning" />}
+            />
           )}
         </div>
       )}

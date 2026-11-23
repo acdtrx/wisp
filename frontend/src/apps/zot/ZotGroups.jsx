@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
 
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../../components/shared/FormModalChrome.jsx';
-import GroupAction from '../../components/shared/GroupAction.jsx';
+import IconButton from '../../components/shared/IconButton.jsx';
 import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import ValueRows from '../../components/shared/ValueRows.jsx';
@@ -40,7 +40,7 @@ export default function ZotGroups({ config, busy, act, update }) {
     <>
       <Card
         title="Users"
-        actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
+        actions={<IconButton icon={Plus} kindIcon={UserPlus} variant="primary" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
       >
         {users.length === 0 && <p className="py-1 text-sm text-text-muted">{oidc.enabled ? 'No users: sign in with single sign-on.' : 'No users: anyone may push and pull.'}</p>}
         {users.map((u) => {
@@ -52,8 +52,8 @@ export default function ZotGroups({ config, busy, act, update }) {
               detail={u.hasPassword ? 'Password set' : 'No password'}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${u.username}`} reason={appReason} disabled={removing} onClick={() => setEditor({ user: u.username })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${u.username}`} reason={appReason} busy={removing} onClick={() => remove(u.username)} />
+                  <IconButton icon={Pencil} label={`Edit ${u.username}`} reason={appReason} disabled={removing} onClick={() => setEditor({ user: u.username })} />
+                  <IconButton icon={Trash2} variant="danger" label={`Remove ${u.username}`} reason={appReason} busy={removing} onClick={() => remove(u.username)} />
                 </>
               )}
             />
@@ -63,14 +63,14 @@ export default function ZotGroups({ config, busy, act, update }) {
 
       <Card
         title="Address"
-        actions={<GroupAction icon={Pencil} label="Edit the address" reason={appReason} onClick={() => setEditor({ address: true })} />}
+        actions={<IconButton icon={Pencil} label="Edit the address" reason={appReason} onClick={() => setEditor({ address: true })} />}
       >
         <ValueRows rows={[{ label: 'Reached at', value: ac.externalUrl || 'Not set', mono: !!ac.externalUrl }]} />
       </Card>
 
       <Card
         title="Sign-in (SSO)"
-        actions={<GroupAction icon={Pencil} label="Edit sign-in" reason={appReason} onClick={() => setEditor({ sso: true })} />}
+        actions={<IconButton icon={Pencil} label="Edit sign-in" reason={appReason} onClick={() => setEditor({ sso: true })} />}
       >
         <ValueRows
           rows={[

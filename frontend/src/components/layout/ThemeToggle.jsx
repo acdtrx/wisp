@@ -1,6 +1,7 @@
 import { Sun, Moon, Monitor } from 'lucide-react';
 
 import { useThemeStore } from '../../store/themeStore.js';
+import IconButton from '../shared/IconButton.jsx';
 
 const MODES = {
   light: { Icon: Sun, label: 'Theme: light' },
@@ -16,14 +17,6 @@ export default function ThemeToggle() {
   const { Icon, label } = MODES[preference] ?? MODES.system;
 
   return (
-    <button
-      type="button"
-      onClick={cyclePreference}
-      className="flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-      title={label}
-      aria-label={label}
-    >
-      <Icon size={18} aria-hidden />
-    </button>
+    <IconButton icon={Icon} label={label} variant="neutral" size="lg" onClick={cyclePreference} />
   );
 }

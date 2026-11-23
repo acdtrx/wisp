@@ -1,12 +1,13 @@
 import { useState } from 'react';
 
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import { FormField, formModalNeutralBtn } from '../shared/FormModalChrome.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import { putMountFileContent } from '../../api/containers.js';
 import { formatBytes } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import FormModal from '../shared/FormModal.jsx';
+import Button from '../shared/Button.jsx';
 
 /**
  * Write-only editor for a secret file mount (see docs/FRONTEND-RULES.md — the
@@ -50,14 +51,7 @@ function SecretMountContentEditor({ containerName, mount, onClose }) {
         errorPrefix={(key) => (key === 'clear' ? "Couldn't clear the secret" : undefined)}
         onClose={onClose}
         footerStart={isSet && (
-          <button
-            type="button"
-            onClick={() => setConfirmClear(true)}
-            disabled={save.busy}
-            className={`${formModalNeutralBtn} hover:text-status-stopped hover:bg-status-stopped-soft`}
-          >
-            Clear
-          </button>
+          <Button disabled={save.busy} onClick={() => setConfirmClear(true)}>Clear</Button>
         )}
       >
         <p className="rounded-md border border-surface-border bg-surface px-3 py-2 text-xs text-text-secondary">

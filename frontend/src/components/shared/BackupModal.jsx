@@ -7,6 +7,7 @@ import { backupDestinations } from '../../utils/backupDestinations.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { useFollowJob } from '../../hooks/useFollowJob.js';
+import Button from './Button.jsx';
 
 // How long to keep showing "Backup complete." before the modal auto-dismisses.
 // Long enough to be a clear "did it succeed?" signal, short enough that the
@@ -65,7 +66,7 @@ export default function BackupModal({
           <div className="mt-2">
             <RecordGate record={settingsRecord} what="backup destinations">{() => null}</RecordGate>
           </div>
-          <button onClick={onClose} className="mt-4 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium">Cancel</button>
+          <Button className="mt-4" onClick={onClose}>Cancel</Button>
         </div>
       </Modal>
     );
@@ -134,31 +135,12 @@ export default function BackupModal({
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {inProgress ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-surface-border bg-surface px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-sidebar"
-            >
-              Continue in background
-            </button>
+            <Button onClick={onClose}>Continue in background</Button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
-              >
-                {done ? 'Close' : 'Cancel'}
-              </button>
+              <Button onClick={onClose}>{done ? 'Close' : 'Cancel'}</Button>
               {!done && (
-                <button
-                  type="button"
-                  onClick={startBackup}
-                  disabled={selectedIds.length === 0}
-                  className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-                >
-                  Start backup
-                </button>
+                <Button variant="primary" onClick={startBackup} disabled={selectedIds.length === 0}>Start backup</Button>
               )}
             </>
           )}

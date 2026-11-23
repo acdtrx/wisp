@@ -6,7 +6,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -21,7 +21,7 @@ export default function ContainerLimitsGroup({ config, busy, update }) {
   return (
     <Card
       title="Limits and restarts"
-      actions={<GroupAction icon={Pencil} label="Edit limits and restarts" reason={busy} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Edit limits and restarts" reason={busy} onClick={() => setEditing(true)} />}
     >
       <ValueRows
         rows={[

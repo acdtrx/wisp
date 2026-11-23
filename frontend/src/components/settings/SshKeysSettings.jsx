@@ -11,7 +11,7 @@ import CommandErrors from '../shared/CommandErrors.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupItem from '../shared/GroupItem.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -51,8 +51,8 @@ export default function SshKeysSettings() {
       title="SSH keys"
       actions={(
         <>
-          <GroupAction icon={Plus} kindIcon={KeyRound} variant="add" label="Add a key" onClick={() => open('add')} />
-          <GroupAction icon={CloudDownload} label="Import a GitHub user’s keys" onClick={() => open('import')} />
+          <IconButton icon={Plus} kindIcon={KeyRound} variant="primary" label="Add a key" onClick={() => open('add')} />
+          <IconButton icon={CloudDownload} label="Import a GitHub user’s keys" onClick={() => open('import')} />
         </>
       )}
     >
@@ -69,7 +69,7 @@ export default function SshKeysSettings() {
                   detail={`${k.type} · ${k.fingerprint}`}
                   actions={(
                     <>
-                      <GroupAction
+                      <IconButton
                         icon={Star}
                         label={`Default for new VMs: ${k.name}`}
                         pressed={k.default}
@@ -78,8 +78,8 @@ export default function SshKeysSettings() {
                           key: `default:${k.id}`, about: `Couldn't change whether ${k.name} is a default`,
                         })}
                       />
-                      <GroupAction icon={Pencil} label={`Rename ${k.name}`} onClick={() => open({ rename: k })} />
-                      <GroupAction
+                      <IconButton icon={Pencil} label={`Rename ${k.name}`} onClick={() => open({ rename: k })} />
+                      <IconButton
                         icon={Trash2}
                         variant="danger"
                         label={`Remove ${k.name}`}

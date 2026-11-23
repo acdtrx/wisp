@@ -7,6 +7,7 @@ import { useHomeStore } from '../../store/homeStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import FormModal from '../shared/FormModal.jsx';
+import Button from '../shared/Button.jsx';
 
 const DEFAULT_ICON_ID = 'globe';
 
@@ -71,14 +72,7 @@ function ManualLinkEditor({ onClose }) {
           />
         </FormField>
         <FormField label="Icon">
-          <button
-            type="button"
-            onClick={() => setIconPickerOpen(true)}
-            className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-input px-3 py-1.5 text-xs text-text-secondary hover:bg-surface transition-colors duration-150"
-          >
-            <Icon size={16} aria-hidden />
-            <span>{getVmIcon(iconId).name}</span>
-          </button>
+          <Button icon={Icon} onClick={() => setIconPickerOpen(true)}>{getVmIcon(iconId).name}</Button>
         </FormField>
       </FormModal>
       <IconPickerModal

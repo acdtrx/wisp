@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, AlertCircle, RotateCcw, RefreshCw, Loader2 } from 'lucide-react';
+import { Package, AlertCircle, RotateCcw, RefreshCw } from 'lucide-react';
 
 import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
@@ -16,6 +16,8 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
+import IconButton from '../shared/IconButton.jsx';
+import Button from '../shared/Button.jsx';
 
 /**
  * UPDATE_BUSY — apt held by another process, or our own in-flight op blocking
@@ -135,14 +137,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">Reboot required to finish previous upgrade</span>
                 {onRequestRestart && (
-                  <button
-                    type="button"
-                    onClick={onRequestRestart}
-                    className="inline-flex items-center gap-1 rounded-md border border-status-warning/30 bg-surface-card px-2 py-0.5 text-[11px] font-medium text-status-warning hover:bg-status-warning-soft transition-colors duration-150"
-                  >
-                    <RotateCcw size={11} />
-                    Restart now
-                  </button>
+                  <Button size="xs" icon={RotateCcw} onClick={onRequestRestart}>Restart now</Button>
                 )}
               </div>
               {rebootReasons.length > 0 && (
@@ -192,16 +187,7 @@ function PackagesDialog({ onClose, onRefresh, refresh }) {
       onClose={onClose}
       headerAction={
         packages != null && (
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refresh.busy}
-            title="Refresh package list"
-            aria-label="Refresh package list"
-            className="rounded-md border border-surface-border bg-surface-card p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
-          >
-            {refresh.busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-          </button>
+          <IconButton icon={RefreshCw} label="Refresh package list" variant="neutral" size="sm" busy={refresh.busy} onClick={onRefresh} />
         )
       }
     >

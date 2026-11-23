@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
-import { FormField, formModalNeutralBtn } from '../shared/FormModalChrome.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
@@ -10,6 +10,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import FormModal from '../shared/FormModal.jsx';
+import Button from '../shared/Button.jsx';
 
 function emptyForm() {
   const id = randomId();
@@ -128,10 +129,7 @@ function SmbShareEditor({ share = null, onClose, onSaved }) {
       onClose={onClose}
       footerStart={(
         <>
-          <button type="button" onClick={handleCheck} disabled={checking || saving} className={formModalNeutralBtn}>
-            {checking ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
-            Test connection
-          </button>
+          <Button icon={ShieldCheck} busy={checking} disabled={saving} onClick={handleCheck}>Test connection</Button>
           {testPassed && <span className="text-status-running">Connection OK</span>}
         </>
       )}

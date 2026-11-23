@@ -1,32 +1,46 @@
+import Button from './Button.jsx';
+
+/* The group around the options, per look. */
+const GROUP = {
+  pill: 'flex flex-wrap gap-1.5',
+  segment: 'flex rounded-md border border-surface-border bg-surface p-0.5',
+  card: 'grid gap-2',
+};
+
 /**
- * Content-sized radio pills — the app-wide single-choice control (selected =
- * accent wash, same idiom as the Boot Order chips). Replaces the full-width
- * segmented bars: pills size to their labels and wrap instead of stretching.
- * `icons` optionally maps option values to icon components rendered before the
- * label.
+ * The one pick-one control: a radio group of `options` (`{ value, label, detail? }`).
+ * `variant` pill (content-sized pills that wrap), segment (a segmented bar; `size` xs
+ * or sm) or card (a grid of choices, each with its `detail` under the label; the
+ * caller's `className` sets the grid's columns). `icons` maps option values to icon
+ * components drawn before the label. `label` names the group to a screen reader.
  */
-export default function RadioPills({ options, value, onChange, disabled, icons }) {
+export default function RadioPills({
+  options, value, onChange, disabled, icons, variant = 'pill', size = 'sm', label, className = '',
+}) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="radiogroup">
+    <div className={`${GROUP[variant]}${className ? ` ${className}` : ''}`} role="radiogroup" aria-label={label}>
       {options.map((opt) => {
         const Icon = icons?.[opt.value];
+        const on = value === opt.value;
         return (
-          <button
+          <Button
             key={opt.value}
-            type="button"
-            onClick={() => !disabled && onChange(opt.value)}
-            disabled={disabled}
-            aria-checked={value === opt.value}
+            variant={variant}
+            size={size}
+            selected={on}
             role="radio"
-            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border transition-colors duration-150 ${
-              value === opt.value
-                ? 'border-accent bg-accent-soft text-accent-text'
-                : 'border-surface-border text-text-muted hover:text-text-secondary'
-            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+            aria-checked={on}
+            disabled={disabled}
+            icon={variant === 'card' ? undefined : Icon}
+            onClick={() => { if (!disabled) onChange(opt.value); }}
           >
-            {Icon && <Icon size={11} />}
-            {opt.label}
-          </button>
+            {variant === 'card' ? (
+              <>
+                <span className="flex items-center gap-1.5 text-sm font-medium">{Icon && <Icon size={16} aria-hidden />}{opt.label}</span>
+                {opt.detail && <span className="text-[11px] text-text-muted">{opt.detail}</span>}
+              </>
+            ) : opt.label}
+          </Button>
         );
       })}
     </div>

@@ -8,9 +8,7 @@ import HomeTile from './HomeTile.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { useCommand } from '../../hooks/useCommand.js';
-
-const headerBtn =
-  'rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-30 disabled:hover:bg-transparent';
+import IconButton from '../shared/IconButton.jsx';
 
 /**
  * One labelled grid of lanterns. In edit mode the label grows the same inline
@@ -70,25 +68,8 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
               }}
               className="w-36 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-[11px] text-text-primary outline-hidden focus:border-accent"
             />
-            <button
-              type="button"
-              onClick={submitRename}
-              disabled={busy}
-              className={`${headerBtn} hover:text-status-running`}
-              title="Save"
-              aria-label="Save group name"
-            >
-              <Check size={11} aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setRenaming(false)}
-              className={`${headerBtn} hover:text-status-stopped`}
-              title="Cancel"
-              aria-label="Cancel rename"
-            >
-              <X size={11} aria-hidden />
-            </button>
+            <IconButton icon={Check} label="Save group name" title="Save" variant="positive" size="xs" disabled={busy} onClick={submitRename} />
+            <IconButton icon={X} label="Cancel rename" title="Cancel" variant="danger" size="xs" onClick={() => setRenaming(false)} />
           </div>
         ) : (
           <>
@@ -98,46 +79,10 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
             <span className="text-xs text-text-muted/70">{tiles.length}</span>
             {editing && !group.builtin && (
               <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => onMove?.('up')}
-                  disabled={busy || !canMoveUp}
-                  className={headerBtn}
-                  title="Move group up"
-                  aria-label="Move group up"
-                >
-                  <ChevronUp size={11} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onMove?.('down')}
-                  disabled={busy || !canMoveDown}
-                  className={headerBtn}
-                  title="Move group down"
-                  aria-label="Move group down"
-                >
-                  <ChevronDown size={11} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDraftName(group.name); setRenaming(true); }}
-                  disabled={busy}
-                  className={headerBtn}
-                  title="Rename group"
-                  aria-label="Rename group"
-                >
-                  <Pencil size={10} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={busy}
-                  className={`${headerBtn} hover:text-status-stopped`}
-                  title="Delete group"
-                  aria-label="Delete group"
-                >
-                  <Trash2 size={10} aria-hidden />
-                </button>
+                <IconButton icon={ChevronUp} label="Move group up" size="xs" disabled={busy || !canMoveUp} onClick={() => onMove?.('up')} />
+                <IconButton icon={ChevronDown} label="Move group down" size="xs" disabled={busy || !canMoveDown} onClick={() => onMove?.('down')} />
+                <IconButton icon={Pencil} label="Rename group" size="xs" disabled={busy} onClick={() => { setDraftName(group.name); setRenaming(true); }} />
+                <IconButton icon={Trash2} label="Delete group" variant="danger" size="xs" disabled={busy} onClick={() => setConfirmDelete(true)} />
               </div>
             )}
           </>

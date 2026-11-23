@@ -11,6 +11,7 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordError from '../shared/RecordError.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 const NO_RUNS = [];
 
@@ -229,16 +230,7 @@ export default function ContainerLogsPanel({ containerName }) {
               <option key={r.runId} value={r.runId}>{runLabel(r)}</option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={refetchRuns}
-            disabled={runsLoading}
-            className="shrink-0 rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150 disabled:opacity-50"
-            title="Refresh run list"
-            aria-label="Refresh run list"
-          >
-            <RefreshCw size={14} className={runsLoading ? 'animate-spin' : ''} aria-hidden />
-          </button>
+          <IconButton icon={RefreshCw} label="Refresh run list" size="sm" busy={runsLoading} onClick={refetchRuns} />
         </div>
 
         <div className="relative min-w-0 flex-1">
@@ -252,24 +244,8 @@ export default function ContainerLogsPanel({ containerName }) {
           />
         </div>
 
-        <button
-          type="button"
-          onClick={onClear}
-          className="rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
-          title="Clear viewer (does not touch log files)"
-          aria-label="Clear viewer"
-        >
-          <Eraser size={14} aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={onMark}
-          className="rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
-          title="Insert a marker line"
-          aria-label="Insert a marker line"
-        >
-          <MapPin size={14} aria-hidden />
-        </button>
+        <IconButton icon={Eraser} label="Clear viewer" title="Clear viewer (does not touch log files)" size="sm" onClick={onClear} />
+        <IconButton icon={MapPin} label="Insert a marker line" size="sm" onClick={onMark} />
         {downloadHref ? (
           <a
             href={downloadHref}
@@ -281,20 +257,16 @@ export default function ContainerLogsPanel({ containerName }) {
             <Download size={14} aria-hidden />
           </a>
         ) : null}
-        <button
-          type="button"
+        <IconButton
+          icon={ArrowDown}
+          label="Auto-scroll"
+          size="sm"
+          pressed={autoScroll}
           onClick={() => {
             setAutoScroll(true);
             if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
           }}
-          className={`rounded-md p-2 lg:p-1.5 transition-colors duration-150 ${
-            autoScroll ? 'text-accent bg-accent-soft' : 'text-text-muted hover:text-text-secondary'
-          }`}
-          title="Auto-scroll"
-          aria-label="Auto-scroll"
-        >
-          <ArrowDown size={14} aria-hidden />
-        </button>
+        />
         <span className="text-[10px] text-text-muted">{filtered.length} lines</span>
       </div>
 

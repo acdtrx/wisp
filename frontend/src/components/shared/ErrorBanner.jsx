@@ -1,6 +1,8 @@
 import { RefreshCw, X } from 'lucide-react';
 
 import { errorText } from '../../api/errors.js';
+import Button from './Button.jsx';
+import IconButton from './IconButton.jsx';
 
 /**
  * The one way an error is shown inline: a tinted line with the error's text, a
@@ -19,25 +21,12 @@ export default function ErrorBanner({ error, prefix, onDismiss, onRetry, retryin
     >
       <span className="min-w-0 flex-1 break-words">{prefix ? <>{prefix}: {text}</> : text}</span>
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          disabled={retrying}
-          className="inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium hover:underline disabled:opacity-60 disabled:no-underline"
-        >
-          <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} aria-hidden /> {retrying ? 'Retrying…' : 'Retry'}
-        </button>
+        <Button variant="link" size="xs" icon={RefreshCw} busy={retrying} onClick={onRetry}>
+          {retrying ? 'Retrying…' : 'Retry'}
+        </Button>
       )}
       {onDismiss && (
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="shrink-0 rounded-sm p-2 lg:p-0.5 hover:bg-status-stopped/10 transition-colors duration-150"
-          title="Dismiss"
-          aria-label="Dismiss"
-        >
-          <X size={14} aria-hidden />
-        </button>
+        <IconButton icon={X} label="Dismiss" variant="danger" size="xs" onClick={onDismiss} />
       )}
     </div>
   );

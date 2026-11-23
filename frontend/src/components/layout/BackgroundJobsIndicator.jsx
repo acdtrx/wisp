@@ -6,6 +6,7 @@ import { runningJobs, useBackgroundJobsStore } from '../../store/backgroundJobsS
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 /** A row the topic lists as failed shows no text until its stream's replay brings the error. */
 function formatStep(row) {
@@ -74,30 +75,29 @@ export default function BackgroundJobsIndicator() {
 
   return (
     <div className="relative shrink-0">
-      <button
+      <IconButton
         ref={anchorRef}
-        type="button"
-        onClick={() => !isEmpty && setOpen((o) => !o)}
-        disabled={isEmpty}
-        className={`relative flex items-center justify-center rounded-md border border-surface-border p-1.5 transition-colors duration-150 ${
-          isEmpty
-            ? 'cursor-default text-text-muted/60'
-            : 'text-text-secondary hover:bg-surface hover:text-text-primary'
-        }`}
+        icon={ListTodo}
+        label="Background jobs"
         title={isEmpty ? 'No background jobs' : streamError ? `Background jobs — couldn't load the job list: ${streamError}` : 'Background jobs'}
-        aria-label="Background jobs"
+        variant="neutral"
+        size="lg"
+        disabled={isEmpty}
         aria-expanded={open}
-      >
-        <ListTodo size={18} aria-hidden />
-        {streamError && running === 0 && (
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-status-stopped" aria-hidden />
+        onClick={() => !isEmpty && setOpen((o) => !o)}
+        badge={(
+          <>
+            {streamError && running === 0 && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-status-stopped" aria-hidden />
+            )}
+            {running > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
+                {running > 9 ? '9+' : running}
+              </span>
+            )}
+          </>
         )}
-        {running > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
-            {running > 9 ? '9+' : running}
-          </span>
-        )}
-      </button>
+      />
 
       {open && !isEmpty && createPortal(
         <div
@@ -139,15 +139,7 @@ export default function BackgroundJobsIndicator() {
                     )}
                   </div>
                   {row.status !== 'running' && (
-                    <button
-                      type="button"
-                      onClick={() => dismissJob(row.jobId)}
-                      className="shrink-0 rounded-sm p-1 text-text-muted hover:bg-surface hover:text-text-secondary transition-colors duration-150"
-                      title="Dismiss"
-                      aria-label="Dismiss"
-                    >
-                      <X size={13} aria-hidden />
-                    </button>
+                    <IconButton icon={X} label="Dismiss" size="sm" onClick={() => dismissJob(row.jobId)} />
                   )}
                 </div>
               </li>

@@ -1,32 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import {
-  Plus,
-  Trash2,
-  Loader2,
-  Pencil,
-  Plug,
-  Unplug,
-  ShieldCheck,
-  Server,
-  HardDrive,
-  HardDriveDownload,
-} from 'lucide-react';
+import { Plus, Trash2, Pencil, Plug, Unplug, ShieldCheck, Server, HardDrive, HardDriveDownload } from 'lucide-react';
 
 import Card from '../shared/Card.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import {
-  DataTableScroll,
-  DataTable,
-  dataTableHeadRowClass,
-  dataTableBodyRowClass,
-  dataTableInteractiveRowClass,
-  DataTableRowActions,
-  DataTableTh,
-  DataTableTd,
-  dataTableEmptyCellClass,
-  rowActionIconBtn,
-  rowActionIconBtnPrimary,
-} from '../shared/DataTableChrome.jsx';
+import { DataTableScroll, DataTable, dataTableHeadRowClass, dataTableBodyRowClass, dataTableInteractiveRowClass, DataTableRowActions, DataTableTh, DataTableTd, dataTableEmptyCellClass } from '../shared/DataTableChrome.jsx';
 import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
 import { useDiskStore } from '../../store/diskStore.js';
@@ -45,12 +22,9 @@ import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
 import { formatBytes, shortUuid } from '../../utils/formatters.js';
+import IconButton from '../shared/IconButton.jsx';
 
 const NO_STATUS = [];
-
-/* Same geometry as rowActionIconBtn but color-neutral, for tinted (mount/check) states. */
-const tintedActionBtnBase =
-  'inline-flex items-center justify-center rounded-md border p-2 lg:p-1.5 transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 function truncate(s, max) {
   const t = (s || '').trim();
@@ -198,16 +172,7 @@ function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
   };
 
   const headerAdd = (
-    <button
-      type="button"
-      onClick={openCreate}
-      className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-      title="Add SMB share"
-      aria-label="Add SMB share"
-    >
-      <Plus size={14} aria-hidden />
-      <Server size={14} aria-hidden />
-    </button>
+    <IconButton icon={Plus} kindIcon={Server} label="Add SMB share" variant="primary" onClick={openCreate} />
   );
 
   return (
@@ -239,13 +204,6 @@ function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
 
               const check = checkByRow[row.id];
               const checkLoading = connectionTest.isBusy(row.id);
-              const checkBtnClass = checkLoading
-                ? rowActionIconBtn
-                : check?.ok
-                  ? `${tintedActionBtnBase} border-status-running/30 bg-status-running-soft text-status-running hover:bg-status-running-soft`
-                  : check?.error
-                    ? `${tintedActionBtnBase} border-status-stopped/30 bg-status-stopped-soft text-status-stopped hover:bg-status-stopped-soft`
-                    : rowActionIconBtn;
               const checkTitle = checkLoading
                 ? 'Testing…'
                 : check?.ok
@@ -254,25 +212,41 @@ function SmbMountsSection({ smbSaved, mountStatus, rowCommands }) {
                     ? check.error
                     : 'Test SMB connection';
 
-              const mountBtnClass = mounted
-                ? 'border-status-running/30 bg-status-running-soft text-status-running hover:bg-status-running-soft'
-                : 'border-surface-border bg-surface text-text-secondary hover:bg-surface-hover';
 
               const expanded = expandedId === row.id;
               const actionButtons = (
                 <>
-                  <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={rowBusy(row.id)} className={`${tintedActionBtnBase} ${mountBtnClass}`} title={mounted ? 'Unmount share' : 'Mount share'} aria-label={mounted ? 'Unmount share' : 'Mount share'}>
-                    {rowCommands.toggling(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
-                  </button>
-                  <button type="button" onClick={() => handleCheck(row.id)} disabled={rowBusy(row.id)} className={checkBtnClass} title={checkTitle} aria-label={checkTitle}>
-                    {checkLoading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
-                  </button>
-                  <button type="button" onClick={() => openEdit(row)} disabled={rowBusy(row.id)} className={rowActionIconBtn} title="Edit" aria-label="Edit SMB mount">
-                    <Pencil size={14} aria-hidden />
-                  </button>
-                  <button type="button" onClick={() => setConfirmDelete(row)} disabled={rowBusy(row.id)} className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove SMB mount">
-                    {rowCommands.deleting(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                  </button>
+                  <IconButton
+                    icon={mounted ? Unplug : Plug}
+                    label={mounted ? 'Unmount share' : 'Mount share'}
+                    variant="neutral"
+                    size="sm"
+                    tone={mounted ? 'running' : undefined}
+                    busy={rowCommands.toggling(row.id)}
+                    disabled={rowBusy(row.id)}
+                    onClick={() => handleMountToggle(row.id, mounted)}
+                  />
+                  <IconButton
+                    icon={ShieldCheck}
+                    label={checkTitle}
+                    variant="neutral"
+                    size="sm"
+                    tone={checkLoading ? undefined : check?.ok ? 'running' : check?.error ? 'stopped' : undefined}
+                    busy={checkLoading}
+                    disabled={rowBusy(row.id)}
+                    onClick={() => handleCheck(row.id)}
+                  />
+                  <IconButton icon={Pencil} label="Edit SMB mount" title="Edit" variant="neutral" size="sm" disabled={rowBusy(row.id)} onClick={() => openEdit(row)} />
+                  <IconButton
+                    icon={Trash2}
+                    label="Remove SMB mount"
+                    title="Remove"
+                    variant="neutral-danger"
+                    size="sm"
+                    busy={rowCommands.deleting(row.id)}
+                    disabled={rowBusy(row.id)}
+                    onClick={() => setConfirmDelete(row)}
+                  />
                 </>
               );
 
@@ -436,11 +410,6 @@ function RemovableDrivesSection({
                 /* Authoritative mount state comes from the live disk stream (mountedAt), not settings status poll. */
                 const mounted = !!(diskState && diskState.mountedAt === row.mountPath);
 
-                const mountBtnClass = mounted
-                  ? 'border-status-running/30 bg-status-running-soft text-status-running hover:bg-status-running-soft'
-                  : present
-                    ? 'border-surface-border bg-surface text-text-secondary hover:bg-surface-hover'
-                    : 'border-status-stopped/30 bg-status-stopped-soft text-status-stopped hover:bg-status-stopped-soft';
 
                 const expanded = expandedId === row.id;
                 const dot = mounted
@@ -451,16 +420,28 @@ function RemovableDrivesSection({
                 const actionButtons = (
                   <>
                     {present && (
-                      <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={rowBusy(row.id)} className={`${tintedActionBtnBase} ${mountBtnClass}`} title={mounted ? 'Unmount drive' : 'Mount drive'} aria-label={mounted ? 'Unmount drive' : 'Mount drive'}>
-                        {rowCommands.toggling(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
-                      </button>
-                    )}
-                    <button type="button" onClick={() => openEdit(row)} disabled={rowBusy(row.id)} className={rowActionIconBtn} title="Edit" aria-label="Edit drive">
-                      <Pencil size={14} aria-hidden />
-                    </button>
-                    <button type="button" onClick={() => setConfirmDelete(row)} disabled={rowBusy(row.id)} className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove drive">
-                      {rowCommands.deleting(row.id) ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                    </button>
+                        <IconButton
+                          icon={mounted ? Unplug : Plug}
+                          label={mounted ? 'Unmount drive' : 'Mount drive'}
+                          variant="neutral"
+                          size="sm"
+                          tone={mounted ? 'running' : undefined}
+                          busy={rowCommands.toggling(row.id)}
+                          disabled={rowBusy(row.id)}
+                          onClick={() => handleMountToggle(row.id, mounted)}
+                        />
+                      )}
+                      <IconButton icon={Pencil} label="Edit drive" title="Edit" variant="neutral" size="sm" disabled={rowBusy(row.id)} onClick={() => openEdit(row)} />
+                      <IconButton
+                        icon={Trash2}
+                        label="Remove drive"
+                        title="Remove"
+                        variant="neutral-danger"
+                        size="sm"
+                        busy={rowCommands.deleting(row.id)}
+                        disabled={rowBusy(row.id)}
+                        onClick={() => setConfirmDelete(row)}
+                      />
                   </>
                 );
 
@@ -557,22 +538,14 @@ function RemovableDrivesSection({
                       <DataTableTd dense className="hidden text-sm font-mono text-text-muted sm:table-cell">{formatBytes(d.sizeBytes)}</DataTableTd>
                       <DataTableTd dense className="hidden text-xs font-mono text-text-muted sm:table-cell">{d.mountedAt ? truncate(d.mountedAt, 28) : '—'}</DataTableTd>
                       <DataTableTd dense align="right">
-                        <button
-                          type="button"
+                        <IconButton
+                          icon={HardDriveDownload}
+                          label="Adopt drive"
+                          reason={!supported ? `filesystem ${d.fsType || 'unknown'} not supported` : mountedElsewhere ? `already mounted at ${d.mountedAt}` : undefined}
+                          variant="primary"
+                          size="sm"
                           onClick={() => openAdopt(d)}
-                          disabled={!supported || mountedElsewhere}
-                          className={rowActionIconBtnPrimary}
-                          title={
-                            !supported
-                              ? `Filesystem ${d.fsType || 'unknown'} not supported`
-                              : mountedElsewhere
-                                ? `Already mounted at ${d.mountedAt}`
-                                : 'Adopt drive'
-                          }
-                          aria-label="Adopt drive"
-                        >
-                          <HardDriveDownload size={14} aria-hidden />
-                        </button>
+                        />
                       </DataTableTd>
                     </tr>
                   );

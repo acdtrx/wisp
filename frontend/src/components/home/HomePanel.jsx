@@ -10,6 +10,8 @@ import HomeGroup from './HomeGroup.jsx';
 import ManualLinkModal from './ManualLinkModal.jsx';
 import { errorText } from '../../api/errors.js';
 import { CONNECTION } from '../../store/streamStore.js';
+import Button from '../shared/Button.jsx';
+import IconButton from '../shared/IconButton.jsx';
 
 const LIT_STATES = new Set(['running', 'blocked']);
 const NO_TILES = [];
@@ -24,9 +26,6 @@ function greeting(hour) {
 function plural(n, singular, pluralForm) {
   return `${n} ${n === 1 ? singular : pluralForm}`;
 }
-
-const headerBtn =
-  'flex items-center gap-1.5 rounded-md border border-surface-border bg-surface-card px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150';
 
 /**
  * Home — the launcher. First tab of the Host panel and the app's landing page.
@@ -117,29 +116,18 @@ export default function HomePanel() {
           <div className="flex items-center gap-2">
             {editing && (
               <>
-                <button type="button" onClick={() => setAddLinkOpen(true)} className={headerBtn} title="Add link" aria-label="Add link">
-                  <Plus size={13} aria-hidden />
-                  <LinkIcon size={13} aria-hidden />
-                </button>
-                <button type="button" onClick={handleAddGroup} disabled={groupsBusy} className={headerBtn} title="Add group" aria-label="Add group">
-                  <Plus size={13} aria-hidden />
-                  <FolderPlus size={13} aria-hidden />
-                </button>
+                <IconButton icon={Plus} kindIcon={LinkIcon} label="Add link" variant="neutral" onClick={() => setAddLinkOpen(true)} />
+                <IconButton icon={Plus} kindIcon={FolderPlus} label="Add group" variant="neutral" disabled={groupsBusy} onClick={handleAddGroup} />
               </>
             )}
-            <button
-              type="button"
-              onClick={() => setEditing((e) => !e)}
-              className={
-                editing
-                  ? 'flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150'
-                  : headerBtn
-              }
+            <Button
+              variant={editing ? 'primary' : 'neutral'}
+              icon={editing ? Check : Pencil}
               aria-pressed={editing}
+              onClick={() => setEditing((e) => !e)}
             >
-              {editing ? <Check size={13} aria-hidden /> : <Pencil size={13} aria-hidden />}
-              <span>{editing ? 'Done' : 'Edit home'}</span>
-            </button>
+              {editing ? 'Done' : 'Edit home'}
+            </Button>
           </div>
         </header>
 

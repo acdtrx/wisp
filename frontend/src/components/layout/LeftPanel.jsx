@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Plus, Monitor, Search, Server, Box, FolderCog,
   Pencil, Trash2, Check, X, FolderPlus, ChevronUp, ChevronDown,
@@ -22,6 +22,9 @@ import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { errorText } from '../../api/errors.js';
 import { CONNECTION } from '../../store/streamStore.js';
+import Button from '../shared/Button.jsx';
+import IconButton, { IconLink } from '../shared/IconButton.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -94,25 +97,8 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
             }}
             className="w-28 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-[10px] text-text-primary outline-hidden focus:border-accent"
           />
-          <button
-            type="button"
-            onClick={submitRename}
-            disabled={busy}
-            className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-running disabled:opacity-40"
-            title="Save"
-            aria-label="Save"
-          >
-            <Check size={11} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
-            title="Cancel"
-            aria-label="Cancel"
-          >
-            <X size={11} />
-          </button>
+          <IconButton icon={Check} label="Save" variant="positive" size="xs" disabled={busy} onClick={submitRename} />
+          <IconButton icon={X} label="Cancel" variant="danger" size="xs" onClick={() => setEditing(false)} />
         </div>
       ) : (
         <>
@@ -121,46 +107,10 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
           </span>
           {organizeMode && !section.builtin && (
             <div className="flex items-center gap-0.5">
-              <button
-                type="button"
-                onClick={() => onMove?.('up')}
-                disabled={busy || !canMoveUp}
-                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
-                title="Move up"
-                aria-label="Move section up"
-              >
-                <ChevronUp size={11} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onMove?.('down')}
-                disabled={busy || !canMoveDown}
-                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
-                title="Move down"
-                aria-label="Move section down"
-              >
-                <ChevronDown size={11} />
-              </button>
-              <button
-                type="button"
-                onClick={startRename}
-                disabled={busy}
-                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-40"
-                title="Rename section"
-                aria-label="Rename section"
-              >
-                <Pencil size={10} />
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={busy}
-                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped disabled:opacity-40"
-                title="Delete section"
-                aria-label="Delete section"
-              >
-                <Trash2 size={10} />
-              </button>
+              <IconButton icon={ChevronUp} label="Move section up" title="Move up" size="xs" disabled={busy || !canMoveUp} onClick={() => onMove?.('up')} />
+              <IconButton icon={ChevronDown} label="Move section down" title="Move down" size="xs" disabled={busy || !canMoveDown} onClick={() => onMove?.('down')} />
+              <IconButton icon={Pencil} label="Rename section" size="xs" disabled={busy} onClick={startRename} />
+              <IconButton icon={Trash2} label="Delete section" variant="danger" size="xs" disabled={busy} onClick={handleDelete} />
             </div>
           )}
         </>
@@ -337,7 +287,6 @@ export default function LeftPanel() {
   const createAndAssign = useSectionsStore((s) => s.createAndAssign);
   const pendingRenameId = useSectionsStore((s) => s.pendingRenameId);
   const clearPendingRenameId = useSectionsStore((s) => s.clearPendingRenameId);
-  const navigate = useNavigate();
   const location = useLocation();
   const stats = useStatsStore((s) => s.data);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
@@ -431,7 +380,6 @@ export default function LeftPanel() {
 
   const totalCount = vms.length + containers.length;
   const isHostSelected = location.pathname === '/' || location.pathname.startsWith('/host');
-  const openHost = () => navigate('/host/overview');
 
   const handleMoveSection = (id, direction) => {
     /* Build the new order from the user-defined sections only — Main is
@@ -470,9 +418,8 @@ export default function LeftPanel() {
         /* px-safe: the drawer is `fixed`, so AppLayout's inset doesn't reach it. */
         className={`${sidebarOpen ? 'flex' : 'hidden'} outline-hidden fixed top-[calc(3rem+env(safe-area-inset-top))] bottom-0 left-0 z-40 w-full flex-col border-r border-surface-border bg-surface-sidebar px-safe sm:w-[280px] lg:static lg:z-auto lg:flex`}
       >
-      <button
-        type="button"
-        onClick={openHost}
+      <Link
+        to="/host/overview"
         className={`flex h-11 w-full items-center gap-3 px-4 text-left transition-colors duration-150 border-b border-surface-border ${
           isHostSelected ? 'bg-surface-card border-l-2 border-l-accent' : 'hover:bg-surface-card'
         }`}
@@ -498,29 +445,15 @@ export default function LeftPanel() {
             }
           />
         )}
-      </button>
+      </Link>
 
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border">
         <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
           Workloads
         </span>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => navigate('/create/vm')}
-            className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-            title="New VM"
-          >
-            <Plus size={14} />
-            <Server size={12} />
-          </button>
-          <button
-            onClick={() => navigate('/create/container')}
-            className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-            title="New Container"
-          >
-            <Plus size={14} />
-            <Box size={12} />
-          </button>
+          <IconLink to="/create/vm" icon={Plus} kindIcon={Server} label="New VM" variant="primary" size="sm" />
+          <IconLink to="/create/container" icon={Plus} kindIcon={Box} label="New Container" variant="primary" size="sm" />
         </div>
       </div>
 
@@ -537,29 +470,10 @@ export default function LeftPanel() {
             />
           </div>
           <div className="flex items-center justify-between">
-            <div className="flex rounded-md border border-surface-border bg-surface p-0.5">
-              {FILTER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setListFilter(opt.value)}
-                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors duration-150 ${
-                    listFilter === opt.value
-                      ? 'bg-surface-card text-text-primary shadow-xs'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setSortRunningFirst(!sortRunningFirst)}
-              className={`text-[10px] font-medium transition-colors duration-150 ${
-                sortRunningFirst ? 'text-accent-text' : 'text-text-muted hover:text-text-secondary'
-              }`}
-            >
+            <RadioPills variant="segment" size="xs" label="Show" options={FILTER_OPTIONS} value={listFilter} onChange={setListFilter} />
+            <Button variant="ghost" size="xs" aria-pressed={sortRunningFirst} onClick={() => setSortRunningFirst(!sortRunningFirst)}>
               {sortRunningFirst ? '● Running first' : '○ Alphabetical'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -658,20 +572,16 @@ export default function LeftPanel() {
       {/* Bottom-flush in the mobile drawer: pad past the home indicator so Organize
           isn't sitting in the strip. Base 0.5rem is the desktop `py-2` half. */}
       <div className="flex border-t border-surface-border px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-        <button
-          type="button"
-          onClick={() => setOrganizeMode(!organizeMode)}
-          className={`flex w-full items-center justify-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors duration-150 ${
-            organizeMode
-              ? 'bg-accent text-white hover:bg-accent-hover'
-              : 'text-text-secondary hover:bg-surface-card hover:text-text-primary'
-          }`}
-          title={organizeMode ? 'Done organizing' : 'Organize sections'}
+        <Button
+          variant={organizeMode ? 'primary' : 'ghost'}
+          icon={FolderCog}
+          fullWidth
           aria-pressed={organizeMode}
+          title={organizeMode ? 'Done organizing' : 'Organize sections'}
+          onClick={() => setOrganizeMode(!organizeMode)}
         >
-          <FolderCog size={14} />
-          <span>{organizeMode ? 'Done' : 'Organize'}</span>
-        </button>
+          {organizeMode ? 'Done' : 'Organize'}
+        </Button>
       </div>
       <AlertDialog
         open={!!sectionsCommand.errors[0]}

@@ -10,6 +10,7 @@ import WispGlyph from '../components/shared/WispGlyph.jsx';
 import { autoFocusField } from '../lib/focus.js';
 import { useCommand } from '../hooks/useCommand.js';
 import ErrorBanner from '../components/shared/ErrorBanner.jsx';
+import Button from '../components/shared/Button.jsx';
 
 // Messages shown when the browser returns from an SSO attempt or a sign-out.
 // The presence of the `?sso=` marker is also what stops the auto-redirect
@@ -116,13 +117,9 @@ export default function Login() {
 
             <ErrorBanner className="mt-2" error={signIn.error} onDismiss={signIn.dismiss} />
 
-            <button
-              type="submit"
-              disabled={loading || !password}
-              className="mt-4 w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-            >
+            <Button variant="primary" size="md" type="submit" fullWidth className="mt-4" disabled={loading || !password}>
               {loading ? 'Signing in…' : 'Sign in'}
-            </button>
+            </Button>
           </form>
 
           {oidcEnabled && (
@@ -132,14 +129,9 @@ export default function Login() {
                 <span className="text-[11px] uppercase tracking-wider text-text-muted">or</span>
                 <div className="h-px flex-1 bg-surface-border" />
               </div>
-              <button
-                type="button"
-                onClick={() => { window.location.href = OIDC_LOGIN_URL; }}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-surface-border bg-surface px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface-sidebar transition-colors duration-150"
-              >
-                <LogIn size={16} />
+              <Button size="md" icon={LogIn} fullWidth onClick={() => { window.location.href = OIDC_LOGIN_URL; }}>
                 Sign in with SSO
-              </button>
+              </Button>
             </>
           )}
         </div>

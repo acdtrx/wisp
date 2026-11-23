@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight, Settings, Eye, EyeOff, Pencil, Check, X,
   Trash2, ChevronLeft, ChevronRight, AlertTriangle,
@@ -14,11 +13,9 @@ import { useCommand } from '../../hooks/useCommand.js';
 import TileGroupPicker from './TileGroupPicker.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import IconButton, { IconLink } from '../shared/IconButton.jsx';
 
 const LIT_STATES = new Set(['running', 'blocked']);
-
-const editBtn =
-  'rounded-sm p-1 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-30 disabled:hover:bg-transparent';
 
 /**
  * One lantern. A tile is a link first: the whole card opens the service in a new
@@ -31,7 +28,6 @@ const editBtn =
  * proxied host on another machine, a manual link) shows no state at all.
  */
 export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveRight, index }) {
-  const navigate = useNavigate();
   const setTileOverride = useHomeStore((s) => s.setTileOverride);
   const assignTile = useHomeStore((s) => s.assignTile);
   const updateManualTile = useHomeStore((s) => s.updateManualTile);
@@ -67,11 +63,6 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
     );
   };
 
-  const openWorkload = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigate(`/${tile.workload.type}/${encodeURIComponent(tile.workload.name)}`);
-  };
 
   const iconWellClass = lit
     ? 'home-lantern-lit text-accent-text animate-[wisp-breathe_4.2s_ease-in-out_infinite] motion-reduce:animate-none'
@@ -89,15 +80,11 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
   const body = (
     <>
       {editing ? (
-        <button
-          type="button"
-          onClick={() => setIconPickerOpen(true)}
-          className={`grid size-[42px] shrink-0 cursor-pointer place-items-center rounded-[10px] transition-shadow duration-150 hover:ring-2 hover:ring-accent ${iconWellClass}`}
-          title="Change icon"
-          aria-label="Change icon"
-        >
-          <Icon size={21} aria-hidden />
-        </button>
+        <IconButton variant="bare" label="Change icon" onClick={() => setIconPickerOpen(true)}>
+          <span className={`grid size-[42px] place-items-center rounded-[10px] transition-shadow duration-150 hover:ring-2 hover:ring-accent ${iconWellClass}`}>
+            <Icon size={21} aria-hidden />
+          </span>
+        </IconButton>
       ) : (
         <span className={`grid size-[42px] shrink-0 place-items-center rounded-[10px] ${iconWellClass}`}>
           <Icon size={21} aria-hidden />
@@ -118,24 +105,8 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
               }}
               className="min-w-0 flex-1 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />
-            <button
-              type="button"
-              onClick={submitRename}
-              className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-running"
-              title="Save"
-              aria-label="Save name"
-            >
-              <Check size={12} aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setRenaming(false)}
-              className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
-              title="Cancel"
-              aria-label="Cancel rename"
-            >
-              <X size={12} aria-hidden />
-            </button>
+            <IconButton icon={Check} label="Save name" title="Save" variant="positive" size="xs" onClick={submitRename} />
+            <IconButton icon={X} label="Cancel rename" title="Cancel" variant="danger" size="xs" onClick={() => setRenaming(false)} />
           </span>
         ) : (
           <span className="flex items-center gap-1.5">
@@ -177,62 +148,37 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
         <div className={`${cardClass} flex-col items-stretch gap-2`}>
           <div className="flex items-center gap-3">{body}</div>
           <div className="flex items-center gap-0.5 border-t border-surface-border pt-2">
-            <button
-              type="button"
+            <IconButton
+              icon={tile.hidden ? EyeOff : Eye}
+              label={tile.hidden ? 'Show tile' : 'Hide tile'}
+              size="xs"
+              disabled={busy}
               onClick={() => run('hide', () => setTileOverride({ tileId: tile.id, hidden: !tile.hidden }))}
-              disabled={busy}
-              className={editBtn}
-              title={tile.hidden ? 'Show tile' : 'Hide tile'}
-              aria-label={tile.hidden ? 'Show tile' : 'Hide tile'}
-            >
-              {tile.hidden ? <EyeOff size={13} aria-hidden /> : <Eye size={13} aria-hidden />}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setDraftName(tile.name); setRenaming(true); }}
-              disabled={busy}
-              className={editBtn}
-              title="Rename tile"
-              aria-label="Rename tile"
-            >
-              <Pencil size={13} aria-hidden />
-            </button>
-            <TileGroupPicker tileId={tile.id} currentGroupId={groupId} className={editBtn} />
+            />
+            <IconButton icon={Pencil} label="Rename tile" size="xs" disabled={busy} onClick={() => { setDraftName(tile.name); setRenaming(true); }} />
+            <TileGroupPicker tileId={tile.id} currentGroupId={groupId} />
             {groupId !== UNGROUPED_GROUP_ID && (
               <>
-                <button
-                  type="button"
-                  onClick={() => run('move', () => assignTile({ tileId: tile.id, groupId, index: index - 1 }))}
-                  disabled={busy || !canMoveLeft}
-                  className={editBtn}
+                <IconButton
+                  icon={ChevronLeft}
+                  label="Move tile earlier"
                   title="Move earlier"
-                  aria-label="Move tile earlier"
-                >
-                  <ChevronLeft size={13} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => run('move', () => assignTile({ tileId: tile.id, groupId, index: index + 1 }))}
-                  disabled={busy || !canMoveRight}
-                  className={editBtn}
+                  size="xs"
+                  disabled={busy || !canMoveLeft}
+                  onClick={() => run('move', () => assignTile({ tileId: tile.id, groupId, index: index - 1 }))}
+                />
+                <IconButton
+                  icon={ChevronRight}
+                  label="Move tile later"
                   title="Move later"
-                  aria-label="Move tile later"
-                >
-                  <ChevronRight size={13} aria-hidden />
-                </button>
+                  size="xs"
+                  disabled={busy || !canMoveRight}
+                  onClick={() => run('move', () => assignTile({ tileId: tile.id, groupId, index: index + 1 }))}
+                />
               </>
             )}
             {tile.kind === 'manual' && (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                disabled={busy}
-                className={`${editBtn} ml-auto hover:text-status-stopped`}
-                title="Remove link"
-                aria-label="Remove link"
-              >
-                <Trash2 size={13} aria-hidden />
-              </button>
+              <IconButton icon={Trash2} label="Remove link" variant="danger" size="xs" className="ml-auto" disabled={busy} onClick={() => setConfirmDelete(true)} />
             )}
           </div>
           {tile.conflicts?.length > 0 && (
@@ -273,15 +219,14 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
           from the card's outer edge, exactly where the notch's axis lands from
           inside the 1px border. */}
       {!editing && !external && (
-        <button
-          type="button"
-          onClick={openWorkload}
-          className="absolute top-1/2 right-[15px] grid size-7 -translate-y-1/2 place-items-center rounded-[7px] border border-surface-border bg-surface-card text-text-muted transition-colors duration-150 hover:border-accent hover:text-accent-text"
-          title={`Manage ${tile.workload.name} in Wisp`}
-          aria-label={`Manage ${tile.workload.name} in Wisp`}
-        >
-          <Settings size={14} aria-hidden />
-        </button>
+        <IconLink
+          to={`/${tile.workload.type}/${encodeURIComponent(tile.workload.name)}`}
+          icon={Settings}
+          label={`Manage ${tile.workload.name} in Wisp`}
+          variant="neutral"
+          size="sm"
+          className="absolute top-1/2 right-[15px] -translate-y-1/2"
+        />
       )}
 
       <IconPickerModal

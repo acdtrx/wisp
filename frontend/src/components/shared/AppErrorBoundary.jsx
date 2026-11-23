@@ -2,6 +2,7 @@ import { Component } from 'react';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 
 import WispGlyph from './WispGlyph.jsx';
+import Button from './Button.jsx';
 
 /**
  * Top-level render-error boundary. Without it any throw during render unmounts
@@ -44,14 +45,7 @@ export default class AppErrorBoundary extends Component {
               <p className="mt-3 break-words font-mono text-xs text-text-muted">{message}</p>
             )}
 
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors duration-150"
-            >
-              <RefreshCw size={16} />
-              Reload
-            </button>
+            <Button variant="primary" size="md" icon={RefreshCw} fullWidth className="mt-6" onClick={() => window.location.reload()}>Reload</Button>
           </div>
         </div>
       </div>

@@ -6,7 +6,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { FormField } from '../shared/FormModalChrome.jsx';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import ContainerImageField from './ContainerImageField.jsx';
@@ -18,7 +18,7 @@ export default function ContainerImageGroup({ config, busy, update }) {
   return (
     <Card
       title="Image"
-      actions={<GroupAction icon={Pencil} label="Change image" reason={busy} onClick={() => setEditing(true)} />}
+      actions={<IconButton icon={Pencil} label="Change image" reason={busy} onClick={() => setEditing(true)} />}
     >
       <ValueRows
         rows={[

@@ -4,7 +4,7 @@ import { Folder, Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
 import ConfirmDialog from '../../components/shared/ConfirmDialog.jsx';
 import FormModal from '../../components/shared/FormModal.jsx';
 import { FormCheckbox, FormField } from '../../components/shared/FormModalChrome.jsx';
-import GroupAction from '../../components/shared/GroupAction.jsx';
+import IconButton from '../../components/shared/IconButton.jsx';
 import Card from '../../components/shared/Card.jsx';
 import GroupItem from '../../components/shared/GroupItem.jsx';
 import RecordError from '../../components/shared/RecordError.jsx';
@@ -85,7 +85,7 @@ export default function TinySambaGroups({ config, busy, act, update }) {
     <>
       <Card
         title="Shares"
-        actions={<GroupAction icon={Plus} kindIcon={Folder} variant="add" label="Add a share" reason={appReason} onClick={() => setEditor({ share: null })} />}
+        actions={<IconButton icon={Plus} kindIcon={Folder} variant="primary" label="Add a share" reason={appReason} onClick={() => setEditor({ share: null })} />}
       >
         <RecordError record={settings} what="storage mounts" className="mb-2" />
         {shares.length === 0 && <p className="py-1 text-sm text-text-muted">No shares.</p>}
@@ -102,8 +102,8 @@ export default function TinySambaGroups({ config, busy, act, update }) {
               detail={`${where} · ${who}`}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${s.name}`} reason={appReason} disabled={removing} onClick={() => setEditor({ share: s.name })} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove ${s.name}`} reason={appReason} busy={removing} onClick={() => askRemoveShare(s.name)} />
+                  <IconButton icon={Pencil} label={`Edit ${s.name}`} reason={appReason} disabled={removing} onClick={() => setEditor({ share: s.name })} />
+                  <IconButton icon={Trash2} variant="danger" label={`Remove ${s.name}`} reason={appReason} busy={removing} onClick={() => askRemoveShare(s.name)} />
                 </>
               )}
             />
@@ -113,7 +113,7 @@ export default function TinySambaGroups({ config, busy, act, update }) {
 
       <Card
         title="Users"
-        actions={<GroupAction icon={Plus} kindIcon={UserPlus} variant="add" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
+        actions={<IconButton icon={Plus} kindIcon={UserPlus} variant="primary" label="Add a user" reason={appReason} onClick={() => setEditor({ user: null })} />}
       >
         {users.length === 0 && <p className="py-1 text-sm text-text-muted">No users.</p>}
         {users.map((u) => {
@@ -126,8 +126,8 @@ export default function TinySambaGroups({ config, busy, act, update }) {
               detail={u.password?.isSet ? 'Password set' : 'No password'}
               actions={(
                 <>
-                  <GroupAction icon={Pencil} label={`Edit ${u.name}`} reason={appReason} disabled={removing} onClick={() => setEditor({ user: u.name })} />
-                  <GroupAction
+                  <IconButton icon={Pencil} label={`Edit ${u.name}`} reason={appReason} disabled={removing} onClick={() => setEditor({ user: u.name })} />
+                  <IconButton
                     icon={Trash2}
                     variant="danger"
                     label={`Remove ${u.name}`}
@@ -144,7 +144,7 @@ export default function TinySambaGroups({ config, busy, act, update }) {
 
       <Card
         title="Server"
-        actions={<GroupAction icon={Pencil} label="Edit the server" reason={appReason} onClick={() => setEditor({ server: true })} />}
+        actions={<IconButton icon={Pencil} label="Edit the server" reason={appReason} onClick={() => setEditor({ server: true })} />}
       >
         <ValueRows
           rows={[

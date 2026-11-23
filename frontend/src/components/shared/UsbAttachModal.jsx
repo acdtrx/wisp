@@ -1,4 +1,4 @@
-import { Loader2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 import Modal from './Modal.jsx';
 import {
@@ -12,9 +12,7 @@ import {
   dataTableHeadRowClass,
   dataTableInteractiveRowClass,
 } from './DataTableChrome.jsx';
-
-const attachIconBtn =
-  'inline-flex items-center justify-center rounded-md bg-accent p-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+import IconButton from './IconButton.jsx';
 
 /**
  * @param {object} props
@@ -73,16 +71,16 @@ export default function UsbAttachModal({ open, onClose, devices, onAttach, isBus
                       </DataTableTd>
                       <DataTableTd dense align="right">
                         <DataTableRowActions forceVisible={loading}>
-                          <button
-                            type="button"
-                            onClick={() => onAttach(dev.vendorId, dev.productId)}
-                            disabled={anyBusy}
-                            className={attachIconBtn}
+                          <IconButton
+                            icon={Plus}
+                            label={`Attach ${dev.name}`}
                             title="Attach"
-                            aria-label={`Attach ${dev.name}`}
-                          >
-                            {loading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Plus size={14} aria-hidden />}
-                          </button>
+                            variant="primary"
+                            size="sm"
+                            busy={loading}
+                            disabled={anyBusy}
+                            onClick={() => onAttach(dev.vendorId, dev.productId)}
+                          />
                         </DataTableRowActions>
                       </DataTableTd>
                     </tr>

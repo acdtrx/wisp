@@ -4,6 +4,8 @@ import { ChevronDown, CloudDownload } from 'lucide-react';
 
 import { usePopover } from '../../lib/popover.js';
 import { getVmIcon } from '../shared/vmIcons.jsx';
+import IconButton from '../shared/IconButton.jsx';
+import MenuItem from '../shared/MenuItem.jsx';
 
 const PRESETS = [
   { id: 'ubuntu', label: 'Ubuntu Server (cloud)', iconId: 'ubuntu' },
@@ -22,19 +24,20 @@ export default function PresetImageDownloadMenu({ onSelectPreset }) {
 
   return (
     <div className="relative">
-      <button
+      <IconButton
         ref={anchorRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center gap-0.5 rounded-md border border-surface-border px-1.5 py-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-        title="Download preset image"
-        aria-label="Download preset image"
+        label="Download preset image"
+        variant="neutral"
+        size="sm"
         aria-haspopup="menu"
         aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
       >
-        <CloudDownload size={14} aria-hidden />
-        <ChevronDown size={12} className="text-text-muted" aria-hidden />
-      </button>
+        <span className="inline-flex items-center gap-0.5">
+          <CloudDownload size={14} aria-hidden />
+          <ChevronDown size={12} className="text-text-muted" aria-hidden />
+        </span>
+      </IconButton>
       {open && createPortal(
         <div
           ref={popRef}
@@ -46,21 +49,15 @@ export default function PresetImageDownloadMenu({ onSelectPreset }) {
           {PRESETS.map((p) => {
             const Icon = getVmIcon(p.iconId).component;
             return (
-              <button
+              <MenuItem
                 key={p.id}
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-primary hover:bg-surface"
+                icon={Icon}
+                label={p.label}
                 onClick={() => {
                   onSelectPreset(p.id);
                   close();
                 }}
-              >
-                <span className="shrink-0 text-text-secondary" aria-hidden>
-                  <Icon size={16} />
-                </span>
-                {p.label}
-              </button>
+              />
             );
           })}
         </div>,

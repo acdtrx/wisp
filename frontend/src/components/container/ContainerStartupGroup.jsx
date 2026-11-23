@@ -6,7 +6,7 @@ import { useBackupsStore } from '../../store/backupsStore.js';
 import { RECORD } from '../../store/records.js';
 import { backupDestinations } from '../../utils/backupDestinations.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
-import GroupAction from '../shared/GroupAction.jsx';
+import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
@@ -45,7 +45,7 @@ export default function ContainerStartupGroup({ config, busy, backupReason, act,
   return (
     <Card
       title="Start-up and backups"
-      actions={<GroupAction icon={Archive} label="Back up now" reason={backupReason} onClick={onBackUp} />}
+      actions={<IconButton icon={Archive} label="Back up now" reason={backupReason} onClick={onBackUp} />}
     >
       <GroupSwitch
         label="Start with the host"
