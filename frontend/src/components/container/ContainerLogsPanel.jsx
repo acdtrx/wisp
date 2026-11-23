@@ -263,6 +263,12 @@ export default function ContainerLogsPanel({ containerName }) {
           size="sm"
           pressed={autoScroll}
           onClick={() => {
+            /* A toggle: on follows the end (scrolling up turns it off, scrolling to
+               the end turns it on again). */
+            if (autoScroll) {
+              setAutoScroll(false);
+              return;
+            }
             setAutoScroll(true);
             if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
           }}

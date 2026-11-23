@@ -471,7 +471,7 @@ export default function LeftPanel() {
           </div>
           <div className="flex items-center justify-between">
             <RadioPills variant="segment" size="xs" label="Show" options={FILTER_OPTIONS} value={listFilter} onChange={setListFilter} />
-            <Button variant="ghost" size="xs" aria-pressed={sortRunningFirst} onClick={() => setSortRunningFirst(!sortRunningFirst)}>
+            <Button variant="ghost" size="xs" onClick={() => setSortRunningFirst(!sortRunningFirst)}>
               {sortRunningFirst ? '● Running first' : '○ Alphabetical'}
             </Button>
           </div>

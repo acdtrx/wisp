@@ -51,7 +51,7 @@ function SecretMountContentEditor({ containerName, mount, onClose }) {
         errorPrefix={(key) => (key === 'clear' ? "Couldn't clear the secret" : undefined)}
         onClose={onClose}
         footerStart={isSet && (
-          <Button disabled={save.busy} onClick={() => setConfirmClear(true)}>Clear</Button>
+          <Button variant="neutral-danger" disabled={save.busy} onClick={() => setConfirmClear(true)}>Clear</Button>
         )}
       >
         <p className="rounded-md border border-surface-border bg-surface px-3 py-2 text-xs text-text-secondary">

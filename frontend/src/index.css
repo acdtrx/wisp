@@ -198,6 +198,13 @@
   :root[data-theme='dark'] ::file-selector-button {
     border-color: var(--color-surface-border);
   }
+
+  /* An enabled button shows the pointer, as a link does: set once here for every
+     button primitive (Tailwind 4's preflight leaves buttons the default arrow). A
+     disabled one shows not-allowed, from its primitive. */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /* The letterbox around the VM framebuffer. noVNC builds its own screen element

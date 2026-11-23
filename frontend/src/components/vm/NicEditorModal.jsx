@@ -103,7 +103,7 @@ function NicEditor({ index, opened, bridges = [], onSubmit, onClose }) {
             spellCheck={false}
             className="input-field min-w-0 flex-1 font-mono"
           />
-          <IconButton variant="field" icon={Shuffle} label="Randomize MAC" onClick={() => setField('mac', randomMac())} />
+          <IconButton variant="field" icon={Shuffle} label="Randomize MAC" className="self-stretch" onClick={() => setField('mac', randomMac())} />
         </div>
       </FormField>
     </FormModal>

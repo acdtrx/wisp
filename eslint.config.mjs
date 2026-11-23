@@ -5,7 +5,7 @@
  * is an error: every effect states its dependencies honestly, and one that cannot is
  * rewritten (the form hook owns what the sections' effects used to keep by hand).
  *
- * A raw `<button>` outside the button primitives is refused (RAW_BUTTON below).
+ * A raw button outside the button primitives is refused (RAW_BUTTON_SELECTORS below).
  * `wisp/catch-says-why` (scripts/eslint-rules/) refuses a catch that drops its error
  * without a comment that says why.
  *
@@ -79,14 +79,21 @@ const WIRE_NAME_SELECTORS = [
 ];
 
 /**
- * A button is one of the primitives (docs/FRONTEND-RULES.md, Design): no raw `<button>`
- * in the frontend outside the files that implement them, listed below. A link that
- * only navigates is a `<Link>` (Tab, ButtonLink, IconLink).
+ * A button is one of the primitives (docs/FRONTEND-RULES.md, Design): no raw button in
+ * the frontend outside the files that implement them, listed below. Raw is a JSX
+ * `<button>`, a `createElement('button')`, or an `<input>` of type button, submit or
+ * reset. A link that only navigates is a `<Link>` (Tab, ButtonLink, IconLink).
  */
-const RAW_BUTTON = {
-  selector: 'JSXOpeningElement[name.name="button"]',
-  message: 'A button is a primitive: use Button, IconButton, MenuItem, Tab or RadioPills (components/shared/).',
-};
+const RAW_BUTTON_MESSAGE = 'A button is a primitive: use Button, IconButton, CopyButton, MenuItem, Tab or RadioPills (components/shared/).';
+const RAW_BUTTON_SELECTORS = [
+  'JSXOpeningElement[name.name="button"]',
+  'CallExpression[callee.property.name="createElement"] > Literal.arguments:first-child[value="button"]',
+  'CallExpression[callee.name="createElement"] > Literal.arguments:first-child[value="button"]',
+  'JSXOpeningElement[name.name="input"] > JSXAttribute[name.name="type"][value.value=/^(?:button|submit|reset)$/]',
+].map((selector) => ({ selector, message: RAW_BUTTON_MESSAGE }));
+/* The frontend's selectors; the button primitives take the same list less the raw-button
+   ones, so a selector added to it later holds there too. */
+const FRONTEND_SELECTORS = [...WIRE_NAME_SELECTORS, ...RAW_BUTTON_SELECTORS];
 const BUTTON_PRIMITIVES = [
   'frontend/src/components/shared/Button.jsx',
   'frontend/src/components/shared/IconButton.jsx',
@@ -149,7 +156,7 @@ export default [
      * reads the row's value where the hook's was meant. */
     rules: {
       ...correctness,
-      'no-restricted-syntax': ['error', ...WIRE_NAME_SELECTORS, RAW_BUTTON],
+      'no-restricted-syntax': ['error', ...FRONTEND_SELECTORS],
       'no-shadow': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
@@ -158,7 +165,7 @@ export default [
   {
     // The button primitives are the one place a raw <button> is written.
     files: BUTTON_PRIMITIVES,
-    rules: { 'no-restricted-syntax': ['error', ...WIRE_NAME_SELECTORS] },
+    rules: { 'no-restricted-syntax': ['error', ...FRONTEND_SELECTORS.filter((selector) => !RAW_BUTTON_SELECTORS.includes(selector))] },
   },
   {
     // The unit tests and their browser stand-ins run under Node.

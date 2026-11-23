@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy, Pencil } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 
 import { updateOidcSettings } from '../../api/settings.js';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -15,23 +15,14 @@ import Card from '../shared/Card.jsx';
 import GroupSwitch from '../shared/GroupSwitch.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
+import CopyButton from '../shared/CopyButton.jsx';
 
 /** The callback URL, with a copy action: what the provider is told before anything else. */
 function RedirectUri({ uri }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(uri);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked (insecure context): the text is selectable anyway */
-    }
-  };
   return (
     <span className="flex items-start gap-1">
       <span className="min-w-0 select-all break-all font-mono text-[13px]">{uri}</span>
-      <IconButton icon={copied ? Check : Copy} label="Copy the redirect URI" size="sm" onClick={copy} />
+      <CopyButton text={uri} label="Copy the redirect URI" />
     </span>
   );
 }

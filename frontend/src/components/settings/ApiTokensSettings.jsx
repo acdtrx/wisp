@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyRound, Plus, Check, X, Trash2, Copy } from 'lucide-react';
+import { KeyRound, Plus, Check, X, Trash2 } from 'lucide-react';
 
 import Card from '../shared/Card.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -12,6 +12,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import IconButton from '../shared/IconButton.jsx';
+import CopyButton from '../shared/CopyButton.jsx';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -38,7 +39,6 @@ export default function ApiTokensSettings() {
   const creating = create.busy;
   // { label, token } — shown once after a successful create, until dismissed.
   const [minted, setMinted] = useState(null);
-  const [copied, setCopied] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const openAdd = () => {
@@ -58,7 +58,6 @@ export default function ApiTokensSettings() {
     create.run(() => createApiToken({ label: newLabel.trim(), scope: newScope }), {
       onDone: (created) => {
         setMinted({ label: created.label, token: created.token });
-        setCopied(false);
         setAdding(false);
         setNewLabel('');
       },
@@ -71,17 +70,6 @@ export default function ApiTokensSettings() {
     const { id } = deleteTarget;
     setDeleteTarget(null);
     revoke.run(() => deleteApiToken(id), { key: id });
-  };
-
-  const copyToken = async () => {
-    if (!minted) return;
-    try {
-      await navigator.clipboard.writeText(minted.token);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked (insecure context) — the field is selectable anyway */
-    }
   };
 
   const headerAdd = (
@@ -114,7 +102,7 @@ export default function ApiTokensSettings() {
                 onFocus={(e) => e.target.select()}
                 className="input-field font-mono text-xs text-text-secondary"
               />
-              <IconButton variant="field" icon={copied ? Check : Copy} label="Copy token" onClick={copyToken} />
+              <CopyButton text={minted.token} label="Copy token" variant="field" className="self-stretch" />
             </div>
           </div>
         )}

@@ -74,8 +74,7 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
                   {cat === 'OS' ? 'Operating Systems' : cat === 'Service' ? 'Services' : 'Generic'}
                 </p>
                 <RadioPills
-                  variant="card"
-                  className="grid-cols-2 sm:grid-cols-3"
+                  variant="tile"
                   label={cat}
                   options={icons.map((icon) => ({ value: icon.id, label: icon.name }))}
                   icons={Object.fromEntries(icons.map((icon) => [icon.id, icon.component]))}

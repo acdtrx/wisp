@@ -54,6 +54,7 @@ export default function ServerSwitcher() {
         ref={anchorRef}
         variant="ghost"
         iconEnd={ChevronDown}
+        className="-mx-3"
         title="Other Wisp servers on this network"
         aria-label="Other Wisp servers on this network"
         aria-haspopup="menu"

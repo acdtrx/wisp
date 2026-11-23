@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 
 /*
  * The one text button (docs/FRONTEND-RULES.md, Design): its look comes from `variant`
- * and `size`, never from the caller's classes, which place it only (margin, flex or
- * grid position, width).
+ * and `size`, never from the caller's classes. `className` is placement only (position,
+ * margin, flex or grid self-placement, width), and the primitive sets none of those
+ * itself: two classes for one property resolve by their order in the CSS, not in the
+ * string, so a primitive's own `relative` could beat a caller's `absolute`. Only a
+ * button that draws a `badge` is `relative`, for the badge.
  */
-const BASE = 'relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium transition-colors duration-150 '
+const BASE = 'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium transition-colors duration-150 '
   + 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent '
   + 'disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -27,6 +30,9 @@ const ACTION = {
   neutral: 'justify-center border border-surface-border bg-surface-card text-text-secondary hoverable:hover:bg-surface hoverable:hover:text-text-primary',
   danger: 'justify-center bg-status-stopped text-white dark:text-surface hoverable:hover:bg-status-stopped/90',
   ghost: 'justify-center text-text-muted hoverable:hover:bg-surface hoverable:hover:text-text-secondary',
+  /* A text button that removes or clears something, outside a dialog's confirm:
+     neutral at rest, red on hover (as IconButton's). */
+  'neutral-danger': 'justify-center border border-surface-border bg-surface-card text-text-secondary hoverable:hover:bg-status-stopped-soft hoverable:hover:text-status-stopped',
 };
 
 /*
@@ -43,6 +49,9 @@ const CHOICE = {
   card: (on) => `min-w-0 flex-col items-start! gap-0! whitespace-normal! rounded-md border px-2.5 py-2 text-left ${on
     ? 'border-accent bg-accent-soft text-accent-text'
     : 'border-surface-border text-text-secondary hoverable:hover:bg-surface'}`,
+  tile: (on) => `min-w-0 flex-col justify-center gap-1! whitespace-normal! rounded-lg border px-2 py-2.5 ${on
+    ? 'border-accent/30 bg-accent-soft text-accent'
+    : 'border-transparent text-text-secondary hoverable:hover:bg-surface hoverable:hover:text-text-primary'}`,
 };
 
 /** The classes of a button's look. */
@@ -57,19 +66,28 @@ function buttonClasses({ variant = 'neutral', size = 'sm', selected = false, ful
   return `${BASE} ${look}${fullWidth ? ' w-full justify-center' : ''}`;
 }
 
-/** A link that only navigates, with a text button's look (`variant`, `size`, `icon`). */
-export function ButtonLink({ to, variant = 'neutral', size = 'sm', icon: Icon, className = '', children }) {
+/** An icon inside a button: hidden from a screen reader by its wrapper, so an SVG that
+ *  ignores `aria-hidden` (the brand icons) is hidden too. */
+function Glyph({ icon: Icon, size, className }) {
   return (
-    <Link to={to} className={`${buttonClasses({ variant, size })}${className ? ` ${className}` : ''}`}>
-      {Icon && <Icon size={ICON_SIZE[size] ?? 14} aria-hidden />}
+    <span aria-hidden className="inline-flex shrink-0">
+      <Icon size={size} className={className} />
+    </span>
+  );
+}
+
+/** A link that only navigates, with a text button's look (`variant`, `size`). */
+export function ButtonLink({ to, variant = 'neutral', size = 'sm', className = '', children, ...rest }) {
+  return (
+    <Link to={to} className={`${buttonClasses({ variant, size })}${className ? ` ${className}` : ''}`} {...rest}>
       {children}
     </Link>
   );
 }
 
 /**
- * A button with a text label: `variant` primary | neutral | danger | ghost |
- * link, or a choice look (pill | segment | card, with `selected`); `size` xs | sm | md.
+ * A button with a text label: `variant` primary | neutral | neutral-danger | danger |
+ * ghost | link, or a choice look (pill | segment | card | tile, with `selected`); `size` xs | sm | md.
  * `icon` (and `iconEnd`) are lucide components; `busy` shows a spinner in the icon's
  * place and turns the button off. `labelFrom="lg"` shows the label only from that
  * breakpoint (the icon alone below it, the label then its accessible name). `badge` is
@@ -86,12 +104,12 @@ export default function Button({
       type={type}
       disabled={disabled || busy}
       aria-label={labelFrom && typeof children === 'string' ? children : undefined}
-      className={`${buttonClasses({ variant, size, selected, fullWidth, labelFrom })}${className ? ` ${className}` : ''}`}
+      className={`${buttonClasses({ variant, size, selected, fullWidth, labelFrom })}${badge ? ' relative' : ''}${className ? ` ${className}` : ''}`}
       {...rest}
     >
-      {busy ? <Loader2 size={iconSize} className="animate-spin" aria-hidden /> : Icon && <Icon size={iconSize} aria-hidden />}
+      {busy ? <Glyph icon={Loader2} size={iconSize} className="animate-spin" /> : Icon && <Glyph icon={Icon} size={iconSize} />}
       {label}
-      {IconEnd && <IconEnd size={iconSize - 2} aria-hidden />}
+      {IconEnd && <Glyph icon={IconEnd} size={iconSize - 2} />}
       {badge}
     </button>
   );

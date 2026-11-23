@@ -64,7 +64,6 @@ export default function SectionPickerButton({ type, name, disabled }) {
               return (
                 <li key={s.id}>
                   <MenuItem
-                    role={undefined}
                     size="sm"
                     current={isCurrent}
                     disabled={busy}
@@ -76,7 +75,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
               );
             })}
             <li className="border-t border-surface-border">
-              <MenuItem role={undefined} size="sm" accent icon={FolderPlus} label="New section…" disabled={busy} onClick={pickNew} />
+              <MenuItem size="sm" accent icon={FolderPlus} label="New section…" disabled={busy} onClick={pickNew} />
             </li>
           </ul>
         </div>,

@@ -65,6 +65,7 @@ export default function MoreMenu({ items }) {
               {section.map(({ icon: Icon, label, onClick, reason, danger }) => (
                 <MenuItem
                   key={label}
+                  role="menuitem"
                   icon={Icon}
                   danger={danger}
                   reason={reason}

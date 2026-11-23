@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy, Dices } from 'lucide-react';
+import { Dices } from 'lucide-react';
 
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { FormCheckbox, FormField } from '../shared/FormModalChrome.jsx';
@@ -9,6 +9,7 @@ import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
 import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import IconButton from '../shared/IconButton.jsx';
+import CopyButton from '../shared/CopyButton.jsx';
 
 
 // 32 random bytes as hex (same shape as `openssl rand -hex 32`) — hex keeps the
@@ -118,7 +119,6 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
   const blocked = Object.values(problems)[0] ?? null;
   /* The generate-secret confirm, `{ value, replacing }`. */
   const [pendingGenerate, setPendingGenerate] = useState(null);
-  const [genCopied, setGenCopied] = useState(false);
 
   const trimmedKey = form.key.trim();
   const canSave = !blocked && (!isEdit || dirty) && !saving;
@@ -128,7 +128,6 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
   const renamingStoredSecret = isEdit && !!form.secret && !!row?.isSet && trimmedKey !== rowKey;
 
   const requestGenerate = () => {
-    setGenCopied(false);
     setPendingGenerate({
       value: generateSecretValue(),
       replacing: (isEdit && !!row?.isSet) || form.valueTouched || form.value.trim() !== '',
@@ -141,17 +140,6 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
     if (!pendingGenerate) return;
     setForm((f) => ({ ...f, value: pendingGenerate.value, valueTouched: true }));
     setPendingGenerate(null);
-  };
-
-  const copyGenerated = async () => {
-    if (!pendingGenerate) return;
-    try {
-      await navigator.clipboard.writeText(pendingGenerate.value);
-      setGenCopied(true);
-      setTimeout(() => setGenCopied(false), 1500);
-    } catch {
-      /* clipboard blocked (insecure context) — the field is selectable anyway */
-    }
   };
 
   const handleSave = () => {
@@ -209,7 +197,7 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
               className="input-field min-w-0 flex-1 font-mono"
             />
             {form.secret && (
-              <IconButton variant="field" icon={Dices} label="Generate random value" onClick={requestGenerate} />
+              <IconButton variant="field" icon={Dices} label="Generate random value" className="self-stretch" onClick={requestGenerate} />
             )}
           </div>
         </FormField>
@@ -253,7 +241,7 @@ function EnvVarEditor({ env, rowKey: openedKey, onSubmit, onClose }) {
               onFocus={(e) => e.target.select()}
               className="input-field min-w-0 flex-1 font-mono text-xs text-text-secondary"
             />
-            <IconButton variant="field" icon={genCopied ? Check : Copy} label="Copy new secret" onClick={copyGenerated} />
+            <CopyButton text={pendingGenerate.value} label="Copy new secret" variant="field" className="self-stretch" />
           </div>
         </div>
       </ConfirmDialog>

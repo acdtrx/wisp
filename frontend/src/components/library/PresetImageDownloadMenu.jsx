@@ -51,6 +51,7 @@ export default function PresetImageDownloadMenu({ onSelectPreset }) {
             return (
               <MenuItem
                 key={p.id}
+                role="menuitem"
                 icon={Icon}
                 label={p.label}
                 onClick={() => {

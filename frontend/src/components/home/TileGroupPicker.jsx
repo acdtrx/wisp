@@ -65,7 +65,6 @@ export default function TileGroupPicker({ tileId, currentGroupId }) {
               return (
                 <li key={group.id}>
                   <MenuItem
-                    role={undefined}
                     size="sm"
                     current={isCurrent}
                     disabled={busy}
@@ -77,7 +76,7 @@ export default function TileGroupPicker({ tileId, currentGroupId }) {
               );
             })}
             <li className="border-t border-surface-border">
-              <MenuItem role={undefined} size="sm" accent icon={FolderPlus} label="New group…" disabled={busy} onClick={pickNew} />
+              <MenuItem size="sm" accent icon={FolderPlus} label="New group…" disabled={busy} onClick={pickNew} />
             </li>
           </ul>
         </div>,
