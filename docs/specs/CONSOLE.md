@@ -56,7 +56,7 @@ Limitations:
 
 The VNC console viewport fills the available space below the toolbar. The VM display is scaled to fit the viewport.
 
-**Console colours follow the theme** *(settled 2026-08-25)*. The terminal well is dark in **both** themes, in a shade of its own per theme. The container terminal repaints **live** on a theme flip — no reconnect, no lost scrollback. ANSI colours stay on xterm's defaults. The remote framebuffer is whatever the guest renders.
+**Console colours follow the theme** *(settled 2026-08-25)*. The terminal well is dark in **both** themes, in a shade of its own per theme. The container terminal repaints **live** on a theme flip — no reconnect, no lost scrollback. ANSI colours stay on xterm's defaults. The noVNC letterbox is recoloured in dark; light keeps noVNC's own default. The remote framebuffer is whatever the guest renders.
 
 If the server closes the proxy before the VNC session is up with `4000` `vnc unavailable` (the VM has no VNC port yet — QEMU briefly reports `-1` after start/resume — or libvirt is not connected), the client treats it as transient and retries with backoff up to the attempt cap. No close code the server sends is final. An upgrade refused with a `400` (a bad name, which a URL the client builds from the VM list does not have) reaches the client as a `1006` close, like any refused upgrade, and is handled as one (Auto-reconnect, below): the session check passes, so it retries with backoff until the attempt cap, then shows the lost-connection error with Retry.
 

@@ -31,7 +31,9 @@ Both work at any time and act at once: no Save.
 - **Running VM:** the device is hot-plugged or hot-unplugged, and the change is also written to the VM's saved definition.
 - **Stopped VM:** the device is added to or removed from the saved definition only; an added device is attached when the VM starts.
 
-**A device unplugged from the host while attached is not detached automatically**: the operator decides. Detach still works on a missing device and clears it from the VM's definition.
+**A device unplugged from the host while attached is not detached automatically**: the operator decides. Its row then shows a warning and "Not on the host now" in place of its name. Detach still works on a missing device and clears it from the VM's definition.
+
+The Attach dialog lists only the host's devices that are not attached to the VM yet, and closes when one is chosen.
 
 ## Validation
 

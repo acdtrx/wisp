@@ -34,16 +34,28 @@ Each app has a registry entry: a label, a description, a default image, and whet
 
 What an app's module provides, and the rule each part carries:
 
-- **A default `appConfig`** for a new container. It may derive from the container's name (tiny-samba's `server.netbiosName`).
-- **Validation** (`validateAppConfig`), which normalizes and throws `INVALID_APP_CONFIG`. **Any module with a secret must merge it forward from the stored config**: secrets are masked on output, so a form that doesn't retype one omits it. Never trust a secret (or a password hash) that arrives from the client when the stored config already has one.
-- **The derived config** (`generateDerivedConfig`): the env, mounts, devices and file-mount contents, which replace the container's on every save. It may return a transformed `appConfig` (zot stores hashed passwords back into it).
-- **Mount renames** (`getMountRenames`, optional): the mounts the app means to rename in this save. Needed by any app whose derived mount names come from user-editable fields: without it a rename reads as "drop the old mount, add a new one" and the old mount's data is deleted. With it, Local data moves to the new name.
-- **Masked secrets** (`maskSecrets`) for API responses.
-- **Secret file mounts** (`getSecretMountNames`, optional): the file mounts whose generated content is a secret. **An app that writes a secret into a file mount must list it**; listed files are write-only on every surface (see [Mount content routes](#mount-content-routes)) and written `0600` on the host.
-- **A reload command** (`getReloadCommand`, optional), run inside the running container to apply a new config. Without one, a save on a running container needs a restart.
-- **`requiresRestartForChange`** (optional): true when the change includes fields the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). The save then sets `pendingRestart` and reports `requiresRestart: true` even after a successful reload.
+- **A default `appConfig`** for a new container (`getDefaultAppConfig(context?) → appConfig`, `context` being `{ containerName }`). It may derive from the container's name (tiny-samba's `server.netbiosName`).
+- **Validation** (`validateAppConfig(appConfig, oldAppConfig) → appConfig`; `oldAppConfig` is `null` on create), which normalizes and throws `INVALID_APP_CONFIG`. **Any module with a secret must merge it forward from the stored config**: secrets are masked on output, so a form that doesn't retype one omits it. Never trust a secret (or a password hash) that arrives from the client when the stored config already has one.
+- **The derived config** (`generateDerivedConfig(appConfig)`, shape below): the env, mounts and file-mount contents, which replace the container's on every save, and devices, when the app derives them. It may return a transformed `appConfig` (zot stores hashed passwords back into it).
+- **Mount renames** (`getMountRenames(newAppConfig, oldAppConfig) → { oldMountName: newMountName }`, optional): the mounts the app means to rename in this save. It is given the raw incoming appConfig, after validation. Needed by any app whose derived mount names come from user-editable fields: without it a rename reads as "drop the old mount, add a new one" and the old mount's data is deleted. With it, Local data moves to the new name.
+- **Masked secrets** (`maskSecrets(appConfig) → appConfig`) for API responses.
+- **Secret file mounts** (`getSecretMountNames(appConfig) → string[]`, optional; pure and synchronous, because it runs on every detail read): the file mounts whose generated content is a secret. **An app that writes a secret into a file mount must list it**; listed files are write-only on every surface (see [Mount content routes](#mount-content-routes)) and written `0600` on the host.
+- **A reload command** (`getReloadCommand() → string[] | null`, optional), run inside the running container to apply a new config; `null` when the app has no live reload. Without one, a save on a running container needs a restart.
+- **`requiresRestartForChange(oldAppConfig, newAppConfig) → boolean`** (optional): true when the change includes fields the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). The save then sets `pendingRestart` and reports `requiresRestart: true` even after a successful reload.
 - **`agentWritableAppConfigFields`** (optional): the top-level appConfig keys the MCP `update_app_config` tool may change (see [MCP.md](MCP.md)). Absent or empty = the app is not agent-configurable. Never list secrets, certificate identity, or auth settings. The UI/REST surface is unaffected.
 - **Published links** (`getPublishedLinks`, optional), below.
+
+### generateDerivedConfig return shape
+
+```js
+{
+  env: { KEY: { value: string, secret?: boolean } },        // replaces config.env entirely
+  mounts: [{ type, name, containerPath, readonly }],         // replaces config.mounts entirely
+  mountContents: { mountName: 'file content string' },       // written to files/<mountName>
+  devices: [...],                                            // optional: replaces config.devices when present
+  appConfig: {...},                                          // optional: a transformed appConfig to store
+}
+```
 
 ### getPublishedLinks
 
@@ -70,13 +82,13 @@ Body gains optional fields: `app` (string, validated against registry) and `appC
 
 ### POST /api/containers/:name/eject — Eject
 
-Its own command, under the container's lock (settled 2026-11-20). Eject converts an app container to a generic container: `metadata.app` and `metadata.appConfig` are removed; env, mounts, devices and files are all preserved and become directly editable. The mounts the app declared secret are first given a stored `secret: true`, so their content stays write-only once the module no longer speaks for them. This is a one-way operation. A generic container is left as it is.
+Its own command, under the container's lock (settled 2026-11-20). Eject converts an app container to a generic container: `metadata.app` and `metadata.appConfig` are removed; env, mounts, devices and files are all preserved and become directly editable. The mounts the app declared secret are first given a stored `secret: true` (no restart), so their content stays write-only once the module no longer speaks for them. This is a one-way operation. A generic container is left as it is.
 
 ### Mount content routes
 
 An app container's mounts belong to its app module: every save writes the whole `mounts` list and regenerates the file contents from `appConfig`. Two separate rules, both for every caller (settled 2026-10-16):
 
-- **Writes are refused.** `PUT …/content`, `POST …/file`, `POST …/zip`, `POST …/init`, `DELETE …/data`, and row `PATCH` / `DELETE /mounts/:mountName` on a mount of a container whose `metadata.app` resolves to a registered module → `APP_CONFIG_ONLY` (422), as is every `POST /mounts` on such a container (settled 2026-11-12). An unregistered `metadata.app` owns no mounts (the UI shows the generic Mounts section for it too).
+- **Writes are refused.** `PUT …/content`, `POST …/file`, `POST …/zip`, `POST …/init`, `DELETE …/data`, and row `PATCH` / `DELETE /mounts/:mountName` on a mount of a container whose `metadata.app` resolves to a registered module → `APP_CONFIG_ONLY` (422), as is every `POST /mounts` on such a container: the next app save would drop a hand-added mount and delete its data (settled 2026-11-12). An unregistered `metadata.app` owns no mounts (the UI shows the generic Mounts section for it too).
 - **Reads follow the secret rule.** `GET …/content` is refused (403 `CONTAINER_MOUNT_SECRET`) for a secret file mount — a stored `secret: true`, **or** a name the app module declares secret — and allowed otherwise, so non-secret app files (Caddy's `Caddyfile`, tiny-samba's `config.yaml`, zot's `config.json` without OIDC) are readable. The app's declaration is read from the stored appConfig on every request: app containers carry no stored flag. Container detail and MCP `get_container` mark the same mounts `secret: true` with `isSet` / `sizeBytes` ([CONTAINERS.md § Secret file mounts](CONTAINERS.md#secret-file-mounts)).
 
 ### Error Codes
@@ -95,14 +107,14 @@ keep-stored way.
 
 ## Live Reload
 
-What an `appConfig` save does on a running container:
+What an `appConfig` save does on a running container. The save's result is `{ requiresRestart, reloaded? }`: MCP's `update_app_config` returns it. On a container that is not running there is no reload and no flag, and the result is `{ requiresRestart: false }`.
 
 - **The app's reload command is run** inside the container when the app has one. Apps without one always set `pendingRestart` instead.
-- **Accepted** (exit 0): the answer carries `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app's `requiresRestartForChange` says so, or the mount layout changed, or the persist flagged a restart because the normalized mounts or devices changed (an unchanged save flags nothing, settled 2026-11-12).
+- **Accepted** (exit 0): the result is `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app's `requiresRestartForChange` says so, or the mount layout changed, or the persist flagged a restart because the normalized mounts or devices changed (an unchanged save flags nothing, settled 2026-11-12).
 - **Refused** (non-zero exit): the save is **rolled back** — the persisted config (metadata/env/mounts/devices) and the mount file contents return to what they were, renames are reversed (data moves back), mounts only the rejected config had lose the backing stores this save created, and the restart-required flag is restored exactly as it was before the save (settled 2026-11-12) — then `APP_RELOAD_FAILED` (422). The app kept serving its previous config, so the rollback keeps the disk in step with what runs. The detail keeps the output's lines that look like errors, and otherwise its **tail**. If the rollback itself fails, the error detail says so and the persisted config may not match the running app.
-- **The exec itself fails** for a non-app reason (e.g. command not found): `pendingRestart` is set and the answer is `{ requiresRestart: true }` — no rollback; the app never judged the config.
+- **The exec itself fails** for a non-app reason (e.g. command not found): `pendingRestart` is set and the result is `{ requiresRestart: true }` — no rollback; the app never judged the config.
 - **Mount layout is not reloadable.** Live reload covers *file contents* but not *bind mount layout*: when the mounts' type, name, container path, read-only flag, source, sub-path or tmpfs size differ, `pendingRestart` is set even if the reload command returned exit 0.
-- **Env vars never reload.** A running process keeps the environment it was started with, so on any env difference (name + value; the `secret` flag is presentation-only) the reload is **skipped entirely** and `pendingRestart` is set.
+- **Env vars never reload.** A running process keeps the environment it was started with, so on any env difference (name + value; the `secret` flag is presentation-only) the reload is **skipped entirely** and `pendingRestart` is set. A reload there would fail, not just do nothing: the new files refer to env the running process lacks (Caddy rejects its config, `APP_RELOAD_FAILED`).
 - **A dropped mount's data is deleted only once the config that dropped it stands** (settled 2026-10-16): every outcome that keeps the new config deletes it, and the `APP_RELOAD_FAILED` rollback does not, so a rejected save never costs data.
 
 ---
@@ -166,7 +178,7 @@ What an `appConfig` save does on a running container:
 }
 ```
 
-- `users[]` — htpasswd authentication entries. Passwords are hashed with SHA-512 crypt on save; only hashes are stored in `appConfig`. Masked in API responses as `{ username, hasPassword }`.
+- `users[]` — htpasswd authentication entries. Passwords are hashed with SHA-512 crypt on save (zot accepts `$6$` hashes, though its docs say bcrypt only); only hashes are stored in `appConfig`. Masked in API responses as `{ username, hasPassword }`.
 - `externalUrl` — the address browsers reach the registry on. **Required when `oidc.enabled`:** zot builds the OIDC `redirect_uri` from it.
 - `oidc` — OpenID Connect sign-on for the registry's web UI. `clientSecret` is masked in API responses as `{ isSet: boolean }`. `usernameClaim` picks the ID-token claim that becomes the user's identity; defaults to `preferred_username` (zot's own default is `email`).
 - `sessionKeys` — session cookie HMAC + AES keys, minted on first enable and **never returned by the API**, so browser sessions survive a restart (Wisp restarts zot on every config save). Cleared when OIDC is disabled, so re-enabling mints fresh keys.
@@ -186,7 +198,7 @@ They are the same user **iff the strings are equal** — which is what `username
 
 **The IdP is a hard startup dependency.** With the IdP unreachable when zot starts, zot exits: the whole registry is down, not just SSO, and htpasswd cannot help. An IdP that goes down while zot is running leaves htpasswd basic auth working. Wisp restarts the container on every appConfig save, and on host boot via autostart: if the IdP is another container on the same host, mind the ordering.
 
-`docker login` cannot follow an OIDC redirect, so an SSO-only identity needs an **API key** (`zak_…`, minted in the web UI, used as the basic-auth password). Wisp therefore sets `http.auth.apikey: true` whenever OIDC is on.
+`docker login` cannot follow an OIDC redirect, so an SSO-only identity needs an **API key** (`zak_…`, minted in the web UI, used as the basic-auth password). Wisp therefore sets `http.auth.apikey: true` whenever OIDC is on: zot does not enable it by itself. `extensions.search` is always on, because API keys live in the MetaDB it provides.
 
 The redirect URI to register with the provider is `<externalUrl>/zot/auth/callback/oidc`. The provider key is `oidc`, zot's generic one.
 
