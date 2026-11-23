@@ -400,6 +400,14 @@ export async function getRawMounts() {
   return fromFile.mounts;
 }
 
+/** Refuse a mount path another mount already has (both in their canonical stored form). */
+function assertMountPathFree(mounts, mountPath, ownId) {
+  const other = mounts.find((m) => m.id !== ownId && m.mountPath === mountPath);
+  if (other) {
+    throw createAppError('MOUNT_DUPLICATE', `Mount "${other.label || other.id}" already uses ${mountPath}`);
+  }
+}
+
 function mountEntryFromBody(body, id) {
   const type = body.type === 'smb' || body.type === 'disk' ? body.type : null;
   if (!type) {
@@ -444,6 +452,7 @@ export async function addMount(body) {
       throw createAppError('MOUNT_DUPLICATE', `Mount "${id}" already exists`);
     }
     const entry = mountEntryFromBody(body, id);
+    assertMountPathFree(existing, entry.mountPath, id);
     return { ...fromFile, mounts: [...existing, entry] };
   });
   announceMountsChange();
@@ -468,7 +477,10 @@ export async function updateMount(mountId, body) {
     if (body.label !== undefined) {
       cur.label = typeof body.label === 'string' ? body.label.trim() : '';
     }
-    if (body.mountPath !== undefined) cur.mountPath = checkMountPath(body.mountPath);
+    if (body.mountPath !== undefined) {
+      cur.mountPath = checkMountPath(body.mountPath);
+      assertMountPathFree(list, cur.mountPath, mountId);
+    }
     if (body.autoMount !== undefined) {
       cur.autoMount = body.autoMount !== false;
     }
