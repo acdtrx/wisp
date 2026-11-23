@@ -356,7 +356,8 @@ checks and the unit tests below for what they cover:
     migrations (§16).
   - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules
     only, a topic, change kind or job kind written as a string outside
-    `shared/wireNames.js`, and a handler that drops its error without saying why (§5). Inline ESLint comments are not honoured, and one left in the
+    `shared/wireNames.js`, a handler that drops its error without saying why (§5), and
+    a raw button outside the button primitives (FRONTEND-RULES, Buttons). Inline ESLint comments are not honoured, and one left in the
     code fails the check: an allowance is a reviewed line in `eslint.config.mjs`.
   - the shell check: `bash -n` and `shellcheck` over every shell script. shellcheck is
     required (settled 2026-11-22): the check fails without it. An inline

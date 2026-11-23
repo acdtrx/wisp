@@ -33,8 +33,8 @@
 
 ### The client
 
-- The URL is the source of truth for the active view and tab: tab buttons and list items
-  navigate rather than set store state, so a refresh restores the same view (routes:
+- The URL is the source of truth for the active view and tab: tabs and list items are links
+  rather than setters of store state, so a refresh restores the same view (routes:
   [`specs/UI.md`](specs/UI.md), View Switching).
 - **How server state reaches a view**, three ways: a store that mirrors a topic of the
   events stream (the lists, sections, home, stats, jobs); a record, read with

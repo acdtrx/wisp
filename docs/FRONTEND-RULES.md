@@ -187,6 +187,18 @@ Body and UI text use the system stack (`system-ui, -apple-system, sans-serif`): 
 
 Conventions for a page's cards, for repeating rows, and for every modal. The screens themselves are [`specs/UI.md`](specs/UI.md).
 
+### Buttons
+
+- **Every button is a primitive** (settled 2026-11-23): a text button, an icon button, a tab, a menu item, or one choice of a pick-one set. A raw `<button>` exists only inside the primitives' own files, and `npm run check` holds that.
+- **The look comes from the primitive's variant and size.** A caller's `className` is placement only (position, margin, flex or grid self-placement, width), and a primitive sets none of those itself: two classes for one property resolve by their order in the CSS, not in the string.
+- **Variants say what the action does:** primary for the commit of a form or a dialog, neutral for the rest, danger (filled) for the confirm of a destroy, and neutral at rest with a red hover for an action that removes or clears something outside a confirm. A button takes no tone from the notice it sits in.
+- **A control that only navigates is a link** with the same look, so it opens in a new tab like any link. Tabs are links.
+- **Pressed** is the accent wash with accent text, on a control that toggles, with `aria-pressed`. A control whose label changes with its state is not pressed.
+- **Disabled** keeps its reason as its `title`. **Busy** disables the control and shows a spinner in it.
+- **An icon-only control names itself** by `title` and `aria-label`; the primitive hides the icon itself from a screen reader.
+- **Copy** is one shared button: it shows a check in the running tone and says "Copied" for a moment.
+- The pointer cursor on an enabled button is set once, in the base styles.
+
 ### Cards
 
 - A page's content sits in cards, all through the one shared card: a title in sentence case (with an optional icon, and an optional help icon for a description the user can ignore), the card's actions as icon buttons at the right of its header, and its content.

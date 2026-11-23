@@ -94,7 +94,7 @@
   parse. ESLint
   covers `shared/` too, and holds the wire's names: `no-restricted-syntax` selectors
   built from `shared/wireNames.js` refuse a topic, change kind or job kind written as
-  a string.
+  a string, and others a raw button outside the button primitives.
   `npm run check` runs them, ESLint and the unit tests, and the release workflow and
   `scripts/release.sh` run it. What each covers, and when to run it:
   `CODING-RULES.md` §14. The frontend build checks the client's imports.
