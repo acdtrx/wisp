@@ -32,7 +32,7 @@ import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
+import { formatBytes, formatRelativeTime } from '../../utils/formatters.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import CommandErrors from '../shared/CommandErrors.jsx';
@@ -384,7 +384,7 @@ export default function BackupsPanel() {
           )}
           <span className="whitespace-nowrap text-[11px] text-text-muted">
             {group.backups.length} {group.backups.length === 1 ? 'backup' : 'backups'}
-            {group.totalBytes > 0 && <> · {formatSize(group.totalBytes)}</>}
+            {group.totalBytes > 0 && <> · {formatBytes(group.totalBytes)}</>}
           </span>
           {group.live && (
             <button
@@ -441,7 +441,7 @@ export default function BackupsPanel() {
                           </DataTableTd>
                           <DataTableTd><OriginBadge origin={b.origin} /></DataTableTd>
                           <DataTableTd><DestinationBadge label={b.destinationLabel} /></DataTableTd>
-                          <DataTableTd className="text-sm text-text-secondary">{b.sizeBytes != null ? formatSize(b.sizeBytes) : '—'}</DataTableTd>
+                          <DataTableTd className="text-sm text-text-secondary">{b.sizeBytes != null ? formatBytes(b.sizeBytes) : '—'}</DataTableTd>
                           <DataTableTd align="right">
                             <DataTableRowActions forceVisible={rowBusy}>
                               {group.kind === 'container' && (

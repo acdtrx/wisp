@@ -20,17 +20,7 @@ import {
   installWispUpdate,
 } from '../../api/updates.js';
 import { CLIENT_CODES } from '../../api/errors.js';
-
-function formatRelativeTime(isoString) {
-  if (!isoString) return null;
-  const diffMs = Date.now() - new Date(isoString).getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return `${Math.floor(diffHr / 24)}d ago`;
-}
+import { formatRelativeTime } from '../../utils/formatters.js';
 
 const POLL_INTERVAL_MS = 5_000;
 const SLOW_AFTER_FAILED_POLLS = 12; // 12 × 5s = 1 min of "backend not responding"
@@ -224,7 +214,7 @@ export default function WispUpdateSection() {
   }, [installing, restarting, installTarget]);
 
   const releaseUrl = repo && latest ? `https://github.com/${repo}/releases/tag/v${latest}` : null;
-  const publishedLabel = formatRelativeTime(publishedAt);
+  const publishedLabel = publishedAt ? formatRelativeTime(publishedAt) : null;
 
   /* A command's error shows in the card's error slot, a failed read of the status as
    * the status record's error (a failed read of the settings is the page's notice). */

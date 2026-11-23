@@ -5,21 +5,13 @@ import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { checkForUpdates, performUpgrade } from '../../api/host.js';
 import { errorText } from '../../api/errors.js';
-import { formatRelativeTime } from '../../utils/formatters.js';
+import { formatBytes, formatRelativeTime } from '../../utils/formatters.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import RecordError from '../shared/RecordError.jsx';
-
-function formatBytes(b) {
-  if (!b || b <= 0) return null;
-  if (b < 1000) return `${b} B`;
-  if (b < 1_000_000) return `${(b / 1000).toFixed(1)} kB`;
-  if (b < 1_000_000_000) return `${(b / 1_000_000).toFixed(1)} MB`;
-  return `${(b / 1_000_000_000).toFixed(2)} GB`;
-}
 
 /**
  * UPDATE_BUSY — apt held by another process, or our own in-flight op blocking

@@ -15,14 +15,11 @@ import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import { changedFields } from '../../hooks/editorValues.js';
+import { shortUuid } from '../../utils/formatters.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
 export const SUPPORTED_FSTYPES = ['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3'];
-
-function shortUuid(u) {
-  return u ? u.slice(0, 8) : '';
-}
 
 function sanitizeForLabel(s) {
   return (s || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);

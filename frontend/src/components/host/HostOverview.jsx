@@ -14,16 +14,9 @@ import { useStatsStore } from '../../store/statsStore.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import RecordGate from '../shared/RecordGate.jsx';
-import { formatDecimal } from '../../utils/formatters.js';
+import { formatBytes, formatDecimal } from '../../utils/formatters.js';
 import RecordError from '../shared/RecordError.jsx';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
-
-function formatBytes(bytes) {
-  if (bytes >= 1024 ** 4) return `${formatDecimal(bytes / 1024 ** 4)} TB`;
-  if (bytes >= 1024 ** 3) return `${formatDecimal(bytes / 1024 ** 3)} GB`;
-  if (bytes >= 1024 ** 2) return `${formatDecimal(bytes / 1024 ** 2)} MB`;
-  return `${bytes} B`;
-}
 
 /** ACPI thermal zones (`acpitz`); often platform/motherboard, shown in Hardware summary. */
 function isAcpiPlatformThermalZone(zone) {

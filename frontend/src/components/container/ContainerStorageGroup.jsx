@@ -6,7 +6,7 @@ import {
 import { removeContainerMount, uploadMountFile, uploadMountZip } from '../../api/containers.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { RECORD } from '../../store/records.js';
-import { formatSize } from '../../utils/formatters.js';
+import { formatBytes } from '../../utils/formatters.js';
 import ContainerMountEditorModal from '../sections/ContainerMountEditorModal.jsx';
 import MountFileEditorModal from '../sections/MountFileEditorModal.jsx';
 import SecretMountContentModal from '../sections/SecretMountContentModal.jsx';
@@ -46,11 +46,11 @@ export default function ContainerStorageGroup({ config, busy, act }) {
 
   const sizeOf = (m) => {
     if (m.type === 'tmpfs') return `${m.sizeMiB ?? 64} MiB`;
-    if (m.secret) return m.sizeBytes != null ? formatSize(m.sizeBytes) : null;
+    if (m.secret) return m.sizeBytes != null ? formatBytes(m.sizeBytes) : null;
     if (usage.data == null) return usage.status === 'loading' ? '…' : null;
     const u = usageByName.get(m.name);
     if (!u || u.sizeBytes == null) return null;
-    return `${formatSize(u.sizeBytes)}${u.partial ? '+' : ''}`;
+    return `${formatBytes(u.sizeBytes)}${u.partial ? '+' : ''}`;
   };
 
   const whereOf = (m) => {

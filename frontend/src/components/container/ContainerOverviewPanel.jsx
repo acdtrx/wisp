@@ -37,6 +37,7 @@ import ContainerNetworkGroup from './ContainerNetworkGroup.jsx';
 import ContainerStartupGroup from './ContainerStartupGroup.jsx';
 import ContainerStorageGroup from './ContainerStorageGroup.jsx';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
+import TabSpinner from '../shared/TabSpinner.jsx';
 
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
@@ -49,14 +50,6 @@ const STATE_PILL = {
   paused: 'bg-status-warning-soft text-status-warning',
   pausing: 'bg-status-warning-soft text-status-warning',
 };
-
-function TabSpinner() {
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <Loader2 size={24} className="animate-spin text-text-muted" />
-    </div>
-  );
-}
 
 /** A header action: an icon, busy while its command runs. */
 function HeaderAction({ icon: Icon, label, onClick, reason, loading, primary = false }) {

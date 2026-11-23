@@ -9,7 +9,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { putMountFileContent } from '../../api/containers.js';
-import { formatSize } from '../../utils/formatters.js';
+import { formatBytes } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
 import CommandErrors from '../shared/CommandErrors.jsx';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -44,7 +44,7 @@ function SecretMountContentEditor({ open, containerName, mount, onClose }) {
   const isSet = !!mount?.isSet;
   const canSave = text !== '' && !save.busy;
   const status = isSet
-    ? `Set${Number.isFinite(mount?.sizeBytes) ? ` · ${formatSize(mount.sizeBytes)}` : ''} — the current content is never shown.`
+    ? `Set${Number.isFinite(mount?.sizeBytes) ? ` · ${formatBytes(mount.sizeBytes)}` : ''} — the current content is never shown.`
     : 'Not set — the file is empty.';
 
   return (

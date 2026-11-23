@@ -8,7 +8,7 @@ import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
-import { formatSize } from '../../utils/formatters.js';
+import { formatBytes } from '../../utils/formatters.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
 import RecordError from '../shared/RecordError.jsx';
@@ -173,7 +173,7 @@ export default function CreateVMPanel() {
           >
             <select id="new-vm-image" value={effective.image} onChange={(e) => set('image', e.target.value)} disabled={creating} className="input-field">
               <option value="">{libraryRecord.data == null ? 'Loading the library…' : 'Pick an image'}</option>
-              {images.map((f) => <option key={f.name} value={f.name}>{f.name}{f.size ? ` · ${formatSize(f.size)}` : ''}</option>)}
+              {images.map((f) => <option key={f.name} value={f.name}>{f.name}{f.size ? ` · ${formatBytes(f.size)}` : ''}</option>)}
             </select>
           </FormField>
 

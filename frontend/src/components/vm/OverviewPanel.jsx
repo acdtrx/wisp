@@ -35,6 +35,7 @@ import VmSizeGroup from './VmSizeGroup.jsx';
 import VmSystemGroup from './VmSystemGroup.jsx';
 import VmUsbGroup from './VmUsbGroup.jsx';
 import { profileText, takesFirstBootSetup } from './vmForms.js';
+import TabSpinner from '../shared/TabSpinner.jsx';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
@@ -65,14 +66,6 @@ const STATE_PILL = {
 const STATE_TEXT = { shutoff: 'Stopped', nostate: 'Stopped', shutdown: 'Shutting down', pmsuspended: 'Suspended', blocked: 'Running' };
 
 const LOCKED = 'stop the VM first';
-
-function TabSpinner() {
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <Loader2 size={24} className="animate-spin text-text-muted" />
-    </div>
-  );
-}
 
 /** A header action: an icon, busy while its command runs. */
 function HeaderAction({ icon: Icon, label, onClick, reason, loading, primary = false }) {

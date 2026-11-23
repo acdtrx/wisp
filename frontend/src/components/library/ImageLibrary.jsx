@@ -32,7 +32,7 @@ import {
   DataTableTh,
   DataTableTd,
 } from '../shared/DataTableChrome.jsx';
-import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
+import { formatBytes, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
@@ -95,7 +95,7 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
         <div className="mt-1 flex items-center gap-2 sm:hidden">
           <OciTypeBadge />
           <span className="text-xs font-normal text-text-muted">
-            {formatSize(row.size)} · {formatRelativeTime(row.updated)}
+            {formatBytes(row.size)} · {formatRelativeTime(row.updated)}
           </span>
         </div>
       </DataTableTd>
@@ -105,7 +105,7 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
       {!compactPicker && (
         <DataTableTd className="hidden font-mono text-xs text-text-secondary sm:table-cell">{shortDigest(row.digest)}</DataTableTd>
       )}
-      <DataTableTd className="hidden text-sm text-text-secondary sm:table-cell">{formatSize(row.size)}</DataTableTd>
+      <DataTableTd className="hidden text-sm text-text-secondary sm:table-cell">{formatBytes(row.size)}</DataTableTd>
       {!compactPicker && (
         <DataTableTd className="hidden text-sm text-text-muted sm:table-cell">{formatRelativeTime(row.updated)}</DataTableTd>
       )}
@@ -223,7 +223,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy
         <div className="mt-1 flex items-center gap-2 sm:hidden">
           <TypeBadge type={file.type} />
           <span className="text-xs text-text-muted">
-            {formatSize(file.size)} · {formatRelativeTime(file.modified)}
+            {formatBytes(file.size)} · {formatRelativeTime(file.modified)}
           </span>
         </div>
       </DataTableTd>
@@ -233,7 +233,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy
       {!compactPicker && (
         <DataTableTd className="hidden font-mono text-xs text-text-muted sm:table-cell">—</DataTableTd>
       )}
-      <DataTableTd className="hidden text-sm text-text-secondary sm:table-cell">{formatSize(file.size)}</DataTableTd>
+      <DataTableTd className="hidden text-sm text-text-secondary sm:table-cell">{formatBytes(file.size)}</DataTableTd>
       {!compactPicker && (
         <DataTableTd className="hidden text-sm text-text-muted sm:table-cell">{formatRelativeTime(file.modified)}</DataTableTd>
       )}

@@ -21,14 +21,22 @@ export function formatUptimeMs(ms) {
   return `${minutes}m`;
 }
 
-export function formatSize(bytes) {
+/**
+ * A byte count for display, in powers of 1024: one decimal under 10, whole above
+ * (`512 B`, `1.5 KB`, `20 GB`). Zero is `0 B`; a missing or invalid count is `—`.
+ */
+export function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const val = bytes / Math.pow(1024, i);
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / 1024 ** i;
+  if (i === 0) return `${Math.round(val)} B`;
   return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
 }
 
+/** How long ago an ISO time was (`just now`, `5m ago`, `3h ago`, `2d ago`), its date
+ *  after 30 days; `—` for a missing or invalid time. */
 export function formatRelativeTime(isoString) {
   if (isoString == null || isoString === '') return '—';
   const parsed = new Date(isoString).getTime();
@@ -57,4 +65,9 @@ export function formatLanIpHost(cidrOrIp) {
   if (cidrOrIp == null || cidrOrIp === '') return '';
   const s = String(cidrOrIp);
   return s.includes('/') ? s.replace(/\/\d+$/, '') : s;
+}
+
+/** A filesystem UUID's first eight characters, the part a person tells drives apart by. */
+export function shortUuid(uuid) {
+  return uuid ? uuid.slice(0, 8) : '';
 }

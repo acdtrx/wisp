@@ -42,6 +42,7 @@ import { useCommand } from '../../hooks/useCommand.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { errorText } from '../../api/errors.js';
+import { formatBytes, shortUuid } from '../../utils/formatters.js';
 
 const NO_STATUS = [];
 
@@ -53,22 +54,6 @@ function truncate(s, max) {
   const t = (s || '').trim();
   if (t.length <= max) return t || '—';
   return `${t.slice(0, max - 1)}…`;
-}
-
-function formatBytes(n) {
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-  let v = n;
-  let u = 0;
-  while (v >= 1024 && u < units.length - 1) {
-    v /= 1024;
-    u += 1;
-  }
-  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
-}
-
-function shortUuid(u) {
-  return u ? u.slice(0, 8) : '';
 }
 
 export default function HostStorage() {

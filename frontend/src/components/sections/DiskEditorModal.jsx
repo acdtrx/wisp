@@ -13,7 +13,7 @@ import {
   createDiskOnVM,
   resizeDisk,
 } from '../../api/vms.js';
-import { formatSize } from '../../utils/formatters.js';
+import { formatBytes } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -76,7 +76,7 @@ function LibraryDiskSelect({ value, onChange }) {
         <option value="">{loading ? 'Loading…' : library.data == null ? 'Library unavailable' : images.length ? 'Select…' : 'No disk images in the library'}</option>
         {images.map((file) => (
           <option key={file.name} value={file.name}>
-            {`${file.name} · ${formatSize(file.size)}`}
+            {`${file.name} · ${formatBytes(file.size)}`}
           </option>
         ))}
       </select>
