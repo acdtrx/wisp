@@ -13,9 +13,10 @@ export const PERCENT_SLOT = '99.9%';
  * address), each with its whole text as its title; a `keep` item (the uptime) is never cut.
  *
  * `live`, what moves, follows: `{ label, value, slot, unit?, percent? }`, a small label
- * before each value. The value sits in a slot as wide as `slot`, the widest text of its
- * usual range, so a change of digits moves nothing; a longer value grows the slot and is
- * never cut. `unit` is written small after it, and `percent` draws a meter beside it.
+ * before each value. The value sits at the end of a slot as wide as `slot`, the widest
+ * text of its usual range, so a change of digits moves nothing and the value stays by
+ * its unit and meter; a longer value grows the slot and is never cut. `unit` is written
+ * small after it, and `percent` draws a meter beside it.
  *
  * On a desktop the two share one row that never wraps: the live figures keep their width
  * at the right, the identity line takes what is left. On a phone they are two lines, the
@@ -62,7 +63,7 @@ export default function FiguresRow({ identity = [], live = [], stoppedText }) {
             >
               <dt className="text-xs text-text-muted">{f.label}</dt>
               <dd className={`flex items-baseline text-[13.5px] font-semibold tabular-nums text-text-primary sm:text-sm ${f.percent != null ? 'grow sm:grow-0' : ''}`}>
-                <span className="inline-grid">
+                <span className="inline-grid justify-items-end">
                   <span aria-hidden className="invisible col-start-1 row-start-1">{f.slot}</span>
                   <span className="col-start-1 row-start-1">{f.value}</span>
                 </span>
