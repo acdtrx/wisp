@@ -1,15 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatBytes, formatRelativeTime } from './formatters.js';
+import { formatBytes, formatMemory, formatRelativeTime } from './formatters.js';
 
-test('a byte count is shown in powers of 1024, one decimal under 10', () => {
+test('a byte count is shown in powers of 1024: one decimal under 100, none from 100 up', () => {
   assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBytes(0.4), '0 B');
+  assert.equal(formatBytes(0.6), '1 B');
   assert.equal(formatBytes(512), '512 B');
   assert.equal(formatBytes(1536), '1.5 KB');
-  assert.equal(formatBytes(20 * 1024 ** 3), '20 GB');
-  assert.equal(formatBytes(9.96 * 1024 ** 2), '10.0 MB');
+  assert.equal(formatBytes(14.9 * 1024 ** 3), '14.9 GB');
+  assert.equal(formatBytes(85.7 * 1024 ** 2), '85.7 MB');
+  assert.equal(formatBytes(937 * 1024 ** 3), '937 GB');
+  assert.equal(formatBytes(6.1 * 1024 ** 3), '6.1 GB');
+  assert.equal(formatBytes(20 * 1024 ** 3), '20.0 GB');
   assert.equal(formatBytes(3 * 1024 ** 5), '3072 TB');
+});
+
+test('the decimals are chosen after rounding, and 1024 rolls to the next unit', () => {
+  assert.equal(formatBytes(99.96 * 1024 ** 2), '100 MB');
+  assert.equal(formatBytes(99.94 * 1024 ** 2), '99.9 MB');
+  assert.equal(formatBytes(1023.6), '1.0 KB');
+  assert.equal(formatBytes(1023.7 * 1024 ** 2), '1.0 GB');
+  assert.equal(formatBytes(1023.4 * 1024), '1023 KB');
 });
 
 test('a missing or invalid byte count is a dash', () => {
@@ -26,4 +39,13 @@ test('a time is shown as how long ago it was, then as its date after 30 days', (
   assert.equal(formatRelativeTime(old), new Date(old).toLocaleDateString());
   assert.equal(formatRelativeTime(null), '—');
   assert.equal(formatRelativeTime('not a time'), '—');
+});
+
+test('a memory size in MiB is MB below 1 GB, then GB to one decimal, whole without ".0"', () => {
+  assert.equal(formatMemory(512), '512 MB');
+  assert.equal(formatMemory(1536), '1.5 GB');
+  assert.equal(formatMemory(2048), '2 GB');
+  assert.equal(formatMemory(2047), '2 GB');
+  assert.equal(formatMemory(Math.round(14.93 * 1024)), '14.9 GB');
+  assert.equal(formatMemory(null), '—');
 });

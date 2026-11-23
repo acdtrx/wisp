@@ -8,13 +8,13 @@ import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
-import { formatBytes } from '../../utils/formatters.js';
+import { formatBytes, formatMemory } from '../../utils/formatters.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import SshKeyPicker from './SshKeyPicker.jsx';
 import { defaultKeys, keysProblem, sshKeyText } from './sshKeyChoice.js';
-import { CUSTOM_SIZE, SIZE_PRESETS, coresText, memoryText, withPreset } from './vmForms.js';
+import { CUSTOM_SIZE, SIZE_PRESETS, coresText, withPreset } from './vmForms.js';
 import {
   RUNS, createVmBody, defaultVmDraft, driverIso, hostnameFromName, imagesFor, vmDraftProblems, withRuns,
 } from './vmDraft.js';
@@ -33,7 +33,7 @@ const STEP_LABELS = {
 };
 
 const SIZE_CHOICES = [
-  ...SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label, detail: `${coresText(p.vcpus)}, ${memoryText(p.memoryMiB)}` })),
+  ...SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label, detail: `${coresText(p.vcpus)}, ${formatMemory(p.memoryMiB)}` })),
   { value: CUSTOM_SIZE, label: 'Custom', detail: 'Your own' },
 ];
 

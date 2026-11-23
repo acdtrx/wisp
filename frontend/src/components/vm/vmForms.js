@@ -13,14 +13,6 @@ export const SIZE_PRESETS = [
 ];
 export const CUSTOM_SIZE = 'custom';
 
-/** What a memory size says on the page: GB to one decimal, or MB below 1 GB. */
-export function memoryText(mib) {
-  if (mib == null) return '—';
-  if (mib < 1024) return `${mib} MB`;
-  const gb = mib / 1024;
-  return `${Number.isInteger(gb) ? gb : Math.round(gb * 10) / 10} GB`;
-}
-
 export const coresText = (n) => `${n} ${n === 1 ? 'core' : 'cores'}`;
 
 /** The size form: the preset the stored size matches, else custom; memory typed in GB. */

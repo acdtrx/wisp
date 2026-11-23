@@ -2,9 +2,13 @@
  * Shared formatting helpers for display.
  */
 
+/** A memory size given in MiB: MB below 1 GB, then GB to one decimal, a whole number
+ *  without ".0" (`512 MB`, `1.5 GB`, `8 GB`); `—` for a missing size. */
 export function formatMemory(mib) {
-  if (mib >= 1024) return `${(mib / 1024).toFixed(mib % 1024 === 0 ? 0 : 1)} GB`;
-  return `${mib} MB`;
+  if (!Number.isFinite(mib) || mib < 0) return '—';
+  if (mib < 1024) return `${Math.round(mib)} MB`;
+  const gb = Math.round((mib / 1024) * 10) / 10;
+  return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
 }
 
 /**
@@ -21,18 +25,30 @@ export function formatUptimeMs(ms) {
   return `${minutes}m`;
 }
 
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+/** A value in a unit as shown: whole bytes; otherwise one decimal under 100, none from 100 up. */
+function shownIn(value, unit) {
+  if (unit === 0) return String(Math.round(value));
+  const tenths = Math.round(value * 10) / 10;
+  return tenths < 100 ? tenths.toFixed(1) : String(Math.round(value));
+}
+
 /**
- * A byte count for display, in powers of 1024: one decimal under 10, whole above
- * (`512 B`, `1.5 KB`, `20 GB`). Zero is `0 B`; a missing or invalid count is `—`.
+ * A byte count for display, in powers of 1024: whole bytes, then one decimal under 100
+ * and none from 100 up (`512 B`, `1.5 KB`, `14.9 GB`, `937 GB`). The decimals are chosen
+ * after rounding, and a value that rounds to 1024 is shown in the next unit, so there is
+ * never `100.0 MB` nor `1024 MB`. A missing or invalid count is `—`.
  */
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const val = bytes / 1024 ** i;
-  if (i === 0) return `${Math.round(val)} B`;
-  return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+  let unit = 0;
+  let value = bytes;
+  while (unit < BYTE_UNITS.length - 1 && Number(shownIn(value, unit)) >= 1024) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${shownIn(value, unit)} ${BYTE_UNITS[unit]}`;
 }
 
 /** How long ago an ISO time was (`just now`, `5m ago`, `3h ago`, `2d ago`), its date

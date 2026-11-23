@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 import { changedFields } from '../../hooks/editorValues.js';
 import {
-  expertForm, madeWith, memoryText, nicsForApi, profileText, sizeForm, sizeProblems, sizeSent, systemSummary, takesFirstBootSetup,
+  expertForm, madeWith, nicsForApi, profileText, sizeForm, sizeProblems, sizeSent, systemSummary, takesFirstBootSetup,
   toggledBootDevice, withPreset,
 } from './vmForms.js';
 import { PROFILE_NAMES, VM_PROFILES } from '../../../../backend/src/lib/vmProfiles.js';
@@ -35,12 +35,6 @@ test('a size the server refuses is a problem', () => {
   assert.ok(sizeProblems({ preset: 'custom', vcpus: '2', memoryGB: '' }).memoryGB);
   assert.ok(sizeProblems({ preset: 'custom', vcpus: '2', memoryGB: '0.1' }).memoryGB);
   assert.deepEqual(sizeProblems(sizeForm(vm)), {});
-});
-
-test('memory reads in GB or MB', () => {
-  assert.equal(memoryText(2048), '2 GB');
-  assert.equal(memoryText(1536), '1.5 GB');
-  assert.equal(memoryText(512), '512 MB');
 });
 
 test('expert settings: firmware and machine type are shown, never sent; one change sends that alone', () => {

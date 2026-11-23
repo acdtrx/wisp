@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 
-import { changedFields } from '../../hooks/editorValues.js';
+import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useEditor } from '../../hooks/useEditor.js';
 import FormModal from '../shared/FormModal.jsx';
@@ -9,8 +9,9 @@ import { FormField } from '../shared/FormModalChrome.jsx';
 import GroupAction from '../shared/GroupAction.jsx';
 import Card from '../shared/Card.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
+import { formatMemory } from '../../utils/formatters.js';
 import {
-  CUSTOM_SIZE, SIZE_PRESETS, coresText, memoryText, sizeForm, sizeProblems, sizeSent, withPreset,
+  CUSTOM_SIZE, SIZE_PRESETS, coresText, sizeForm, sizeProblems, sizeSent, withPreset,
 } from './vmForms.js';
 
 /** The VM's cores and memory: a preset or a custom size, changed while it is shut off. */
@@ -25,7 +26,7 @@ export default function VmSizeGroup({ config, busy, lockReason, update }) {
       <ValueRows
         rows={[
           { label: 'CPU', value: coresText(config.vcpus ?? 1) },
-          { label: 'Memory', value: memoryText(config.memoryMiB) },
+          { label: 'Memory', value: formatMemory(config.memoryMiB) },
         ]}
       />
       {editing && <SizeEditor config={config} update={update} onClose={() => setEditing(false)} />}
@@ -34,7 +35,7 @@ export default function VmSizeGroup({ config, busy, lockReason, update }) {
 }
 
 const PRESET_CHOICES = [
-  ...SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label, detail: `${coresText(p.vcpus)}, ${memoryText(p.memoryMiB)}` })),
+  ...SIZE_PRESETS.map((p) => ({ value: p.value, label: p.label, detail: `${coresText(p.vcpus)}, ${formatMemory(p.memoryMiB)}` })),
   { value: CUSTOM_SIZE, label: 'Custom', detail: 'Your own' },
 ];
 
@@ -42,7 +43,7 @@ function SizeEditor({ config, update, onClose }) {
   const { form, start, setForm, setField, dirty } = useEditor(() => sizeForm(config));
   const save = useCommand();
   const problems = sizeProblems(form);
-  const blocked = Object.values(problems)[0] ?? (dirty ? null : 'Nothing changed');
+  const blocked = Object.values(problems)[0] ?? (dirty ? null : NOTHING_CHANGED);
   return (
     <FormModal
       title="Size"
