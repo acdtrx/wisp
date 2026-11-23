@@ -5,12 +5,13 @@ import ErrorBanner from '../shared/ErrorBanner.jsx';
 import FiguresRow from '../shared/FiguresRow.jsx';
 
 const PAUSED = new Set(['paused', 'pmsuspended']);
-const rate = (up, down) => `↑${formatDecimal(up)} ↓${formatDecimal(down)} MB/s`;
+const rate = (up, down) => `↑${formatDecimal(up)} ↓${formatDecimal(down)}`;
 
 /**
  * The running VM's figures, as its stats stream carries them: address and host name
- * (from the guest agent, when it answers), uptime, CPU, disk and network rates. A stats
- * read that failed shows its error in their place until the next good frame.
+ * (from the guest agent, when it answers: left out until it does) and uptime, then CPU
+ * and the disk and network rates, in MB/s. A stats read that failed shows its error in
+ * their place until the next good frame.
  */
 export default function VmFigures({ state }) {
   const stats = useVmStatsStore(liveData);
@@ -20,17 +21,18 @@ export default function VmFigures({ state }) {
     const text = PAUSED.has(state) ? 'Paused' : state === 'shutoff' || state === 'nostate' ? 'Stopped' : `State: ${state ?? 'unknown'}`;
     return <FiguresRow stoppedText={text} />;
   }
+  const uptime = formatUptimeMs(stats.uptime);
   return (
     <FiguresRow
-      facts={[
-        { label: 'Address', value: stats.guestIp || '—', mono: true },
-        { label: 'Host name', value: stats.guestHostname || '—', mono: true },
-        { label: 'Uptime', value: formatUptimeMs(stats.uptime) },
+      identity={[
+        { label: 'Address', value: stats.guestIp, mono: true },
+        { label: 'Host name', value: stats.guestHostname, name: true },
+        { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up' },
       ]}
-      meters={[
-        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, percent: stats.cpu?.percent ?? null },
-        { label: 'Disk', value: rate(stats.disk?.readMBs, stats.disk?.writeMBs), wide: true },
-        { label: 'Network', value: rate(stats.net?.txMBs, stats.net?.rxMBs), wide: true },
+      live={[
+        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, percent: stats.cpu?.percent ?? null, narrowMeter: true },
+        { label: 'Disk', value: rate(stats.disk?.readMBs, stats.disk?.writeMBs) },
+        { label: 'Net', value: rate(stats.net?.txMBs, stats.net?.rxMBs), unit: 'MB/s' },
       ]}
     />
   );

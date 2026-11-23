@@ -17,7 +17,7 @@
 - **One path holds one host mount** — adding a mount, or moving one, onto another mount's path is refused (409 `MOUNT_DUPLICATE`), and a settings file that holds two mounts on one path stops Wisp's start, naming both.
 - **The password, a backup's manifest and a container run's record are written atomically** — a crash mid-write no longer leaves a truncated file.
 - **A network link whose speed is unknown shows a dash** on the Host overview, not "-1 Mbps".
-- **A container's memory figure is no longer cut short** — "12 / 256 MB", the unit once when both amounts share it; on a phone the figures wrap instead of being cut.
+- **A workload's figures are one row** — the address, the name and the uptime as one quiet line, then the live figures with their labels: CPU and memory for a container ("7 / 256 MB", the unit once when both amounts share it), CPU and the disk and network rates for a VM. A value Wisp does not have yet is left out, and only a long name is ever cut.
 - **`config/runtime.env.example` names every setting an operator may set** — the containerd socket, the extra WebSocket origins and the update repository were missing.
 
 ## 2026-11-22

@@ -1,41 +1,62 @@
 /**
- * A running workload's figures in a row of cells (`facts`, then `meters`:
- * `{ label, value, mono?, percent?, wide? }`, a `percent` drawing a small bar under the
- * value). From `sm` each cell has a fixed width, so a changing number moves nothing; a
- * `wide` cell is for a value as long as two amounts. On a phone the two sets are two
- * centred rows whose cells take their value's width and wrap, so no figure is cut.
- * Only a name, which has no longest value, is cut, its whole text on hover.
- * Not running, the row is `stoppedText` alone.
+ * A running workload's figures, in one row (docs/specs/UI-VM.md and UI-CONTAINER.md,
+ * Figures). `identity`, what does not move, is one line without labels, a middle dot
+ * between its items: `{ label, value, mono?, name?, prefix? }`, `label` its accessible
+ * name, `name` the one item that may be cut (its whole text on hover), `prefix` a word
+ * shown before the value ("up"). An item without a value is left out with its dot.
+ * `live`, what moves, follows with a label before each value: `{ label, value, unit?,
+ * percent?, narrowMeter? }`, `unit` written small after the value, `percent` a meter
+ * beside it (`narrowMeter` on a phone). On a desktop the two share one row, the live
+ * figures at the right, and move to a second line when they do not fit; on a phone they
+ * are two lines, the live figures spread under a hairline. Not running, the row is
+ * `stoppedText` alone.
  */
-export default function FiguresRow({ facts = [], meters = [], stoppedText }) {
+export default function FiguresRow({ identity = [], live = [], stoppedText }) {
   if (stoppedText) {
     return <p className="px-0.5 text-center text-sm text-text-muted sm:text-left">{stoppedText}</p>;
   }
+  const known = identity.filter((item) => item.value);
+  const figures = live.filter((f) => f.value);
   return (
-    <dl className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-y-3">
-      <Cells cells={facts} />
-      <Cells cells={meters} />
-    </dl>
-  );
-}
-
-function Cells({ cells }) {
-  if (cells.length === 0) return null;
-  return (
-    <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-center sm:flex-nowrap sm:justify-start sm:gap-0 sm:text-left">
-      {cells.map((c) => (
-        <div key={c.label} className={`min-w-0 max-w-full px-0.5 sm:shrink-0 ${c.wide ? 'sm:w-[12.5rem]' : 'sm:w-[9.25rem]'}`}>
-          <dt className="text-xs text-text-muted">{c.label}</dt>
-          <dd className={`truncate font-semibold tabular-nums text-text-primary ${c.mono ? 'font-mono text-[13px]' : 'text-sm'}`} title={typeof c.value === 'string' ? c.value : undefined}>
-            {c.value}
-          </dd>
-          {c.percent != null && (
-            <div className="mx-auto mt-1 h-1.5 w-16 overflow-hidden rounded-full bg-surface-border sm:mx-0" aria-hidden>
-              <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, Math.max(0, c.percent))}%` }} />
+    <div className="flex flex-col gap-2 px-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-6">
+      {known.length > 0 && (
+        <p className="flex min-w-0 items-baseline gap-2 overflow-hidden whitespace-nowrap text-[13.5px] text-text-secondary">
+          {known.map((item, i) => (
+            <span key={item.label} className={`flex items-baseline gap-2 ${item.name ? 'min-w-0' : 'shrink-0'}`}>
+              {i > 0 && <span aria-hidden className="text-text-muted">·</span>}
+              <span
+                className={`tabular-nums ${item.name ? 'min-w-0 truncate' : ''} ${item.mono ? 'font-mono text-[13px] font-semibold text-text-primary' : ''}`}
+                title={item.name ? item.value : undefined}
+              >
+                <span className="sr-only">{item.label} </span>
+                {item.prefix && <span aria-hidden>{item.prefix} </span>}
+                {item.value}
+              </span>
+            </span>
+          ))}
+        </p>
+      )}
+      {figures.length > 0 && (
+        <dl className="flex flex-wrap items-baseline justify-between gap-x-2.5 gap-y-1.5 whitespace-nowrap border-t border-surface-border pt-2 sm:shrink-0 sm:flex-nowrap sm:justify-start sm:gap-5 sm:border-0 sm:pt-0">
+          {figures.map((f) => (
+            <div key={f.label} className="flex items-baseline gap-1.5">
+              <dt className="text-xs text-text-muted">{f.label}</dt>
+              <dd className="text-[13.5px] font-semibold tabular-nums text-text-primary sm:text-sm">
+                {f.value}
+                {f.unit && <span className="ml-1 text-[11px] font-medium text-text-muted">{f.unit}</span>}
+              </dd>
+              {f.percent != null && (
+                <span
+                  aria-hidden
+                  className={`h-1.5 self-center overflow-hidden rounded-full bg-surface-border sm:w-10 ${f.narrowMeter ? 'w-7' : 'w-10'}`}
+                >
+                  <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.min(100, Math.max(0, f.percent))}%` }} />
+                </span>
+              )}
             </div>
-          )}
-        </div>
-      ))}
+          ))}
+        </dl>
+      )}
     </div>
   );
 }
