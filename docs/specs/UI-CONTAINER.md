@@ -15,9 +15,12 @@ act) are in `FRONTEND-RULES.md`, Data. Settled 2026-11-21.
 - **Figures**, in one row under the header while the container runs (settled
   2026-11-23), as the stats stream carries them. First what does not move, as one line
   without labels: the address, the local name, and "up" with the uptime. Then the live
-  figures, each with its label: CPU and memory, a meter beside each. A value Wisp does
-  not have is left out of the line; a name too long is cut, its whole text on hover.
-  Stopped, the row says so.
+  figures, each with its label: CPU and memory, a meter beside each, memory's only when
+  the container has a limit. The row never wraps, and no label moves when a figure
+  changes: when the row is full the local name is cut first, then the address, the
+  whole text on hover; the uptime and the live figures are never cut. A value Wisp does
+  not have is left out of the line. Stopped or paused, the row says so ("Stopped",
+  "Paused").
 - **Groups**, in the order below. Each is a card: a title, its values as text, and its
   actions as icons.
 - A container that is gone shows the gone page ([UI.md](UI.md), View Switching).

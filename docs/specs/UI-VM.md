@@ -16,9 +16,10 @@ the shared components are in [UI.md](UI.md); the three shapes (view, edit, act) 
   the stats stream carries them. First what does not move, as one line without labels:
   the address, the host name, and "up" with the uptime. Then the live figures, each
   with its label: CPU with a meter beside it, and the disk and network rates, their
-  unit written once. A value Wisp does not have is left out of the line; a name too
-  long is cut, its whole text on hover. Stopped or paused, the row says so ("Stopped",
-  "Paused").
+  unit written once. The row never wraps, and no label moves when a figure changes:
+  when the row is full the host name is cut first, then the address, the whole text on
+  hover; the uptime and the live figures are never cut. A value Wisp does not have is
+  left out of the line. Stopped or paused, the row says so ("Stopped", "Paused").
 - **Groups**, in the order below. Each is a card: a title, its values as text, and its
   actions as icons.
 - A VM that is gone shows the gone page ([UI.md](UI.md), View Switching).
