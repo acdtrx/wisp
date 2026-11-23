@@ -241,6 +241,6 @@ The migrations are the files in `backend/migrations/`; each names what it brings
 
 ## Timeouts
 
-(settled 2026-11-12, CODING-RULES §6.) The GitHub releases API: **30 s** per request, its DNS lookup and body included. The release tarball download (through the SSRF guard): connect **10 s**, response headers **30 s**, and **120 s** between body chunks — an idle bound, no total (settled 2026-11-13). Unpacking it: **60 s** without progress (tar's checkpoints), no total (settled 2026-11-13). Starting `wisp-updater.service` **15 s**.
+(settled 2026-11-12, CODING-RULES §6.) The GitHub releases API: **30 s** per request, its DNS lookup and body included. The release tarball download (through the SSRF guard) has a library download's bounds ([IMAGE-LIBRARY.md](IMAGE-LIBRARY.md)): an idle bound, no total (settled 2026-11-13). Unpacking it: **60 s** without progress (tar's checkpoints), no total (settled 2026-11-13). Starting `wisp-updater.service` **15 s**.
 
 The install runs as a server job (settled 2026-11-13), its progress (download, verify, unpack) on the job's stream until Wisp restarts. In setup's backend-dependencies step, which the updater runs, `npm ci` is stopped after **10 min** without output (it logs each fetch), under the unit's **30 min** backstop (settled 2026-11-13); `npm ci` runs in a process group of its own, and the stall kills the whole group.

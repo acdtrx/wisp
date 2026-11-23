@@ -53,13 +53,7 @@ shut off, with a small lock by its title; the disabled action says "stop the VM 
 
 ## States
 
-- A group whose data is loading shows a skeleton; one whose read failed shows the error
-  with Retry ([UI.md](UI.md)).
-- An empty list says so in a line ("None attached.").
-- A form's Save is busy until the server answers; a failure shows in the form, which
-  stays open. An action's failure shows in the page's error display.
-- While a job runs on the VM (a backup, a start), what the server would refuse is
-  disabled and says which job.
+As on every workload page ([UI.md](UI.md#workload-pages)).
 
 ## New VM
 
@@ -84,5 +78,4 @@ opens the new VM, if the user is still on the form.
 
 ## Phones
 
-The same groups in one column. The figures are centred, in two rows. A form opens as a
-sheet from the bottom. Every action stays visible: none hides behind a hover.
+As on every workload page ([UI.md](UI.md#workload-pages)).

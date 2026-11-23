@@ -42,6 +42,11 @@ Everything else can be changed while it runs.
   `{ name }`; the page then moves to the new name.
 - A secret variable or file is write-only: its form starts empty and keeps the stored
   value unless one is typed.
+- **A secret file mount** (settled 2026-10-16): its content is never shown or fetched,
+  and its row says whether a content is set. In place of the file editor the row offers
+  Replace secret content (an empty editor whose Save writes the content) with a Clear
+  behind a confirm; Upload stays. Unchecking Secret in the mount's form empties the
+  stored file, and the form says so.
 - **An action that deletes stored data asks first** and names what goes: removing a
   mount whose folder or file lives on this host. A memory folder, or a mount kept on a
   storage share, is removed without asking: its data is not touched.
@@ -81,13 +86,7 @@ The Logs tab shows one run at a time, following it as lines arrive.
 
 ## States
 
-- A group whose data is loading shows a skeleton; one whose read failed shows the error
-  with Retry ([UI.md](UI.md)).
-- An empty list says so in a line ("No variables.").
-- A form's Save is busy until the server answers; a failure shows in the form, which
-  stays open. An action's failure shows in the page's error display.
-- While a job runs on the container (a backup, a start), what the server would refuse is
-  disabled and says which job.
+As on every workload page ([UI.md](UI.md#workload-pages)).
 
 ## New container
 
@@ -98,5 +97,4 @@ start, and opens its page if the user is still on the form.
 
 ## Phones
 
-The same groups in one column. The figures are centred, in two rows. A form opens as a
-sheet from the bottom. Every action stays visible: none hides behind a hover.
+As on every workload page ([UI.md](UI.md#workload-pages)).

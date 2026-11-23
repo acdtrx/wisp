@@ -117,6 +117,26 @@ VM/container selection is derived from the URL. A page shows the workload its UR
 
 ---
 
+## Workload pages
+
+What the VM page ([UI-VM.md](UI-VM.md)) and the container page
+([UI-CONTAINER.md](UI-CONTAINER.md)) share.
+
+**States**
+
+- A group whose data is loading shows a skeleton; one whose read failed shows the error
+  with Retry.
+- An empty list says so in a line ("None attached.", "No variables.").
+- A form's Save is busy until the server answers; a failure shows in the form, which
+  stays open. An action's failure shows in the page's error display.
+- While a job runs on the workload (a backup, a start), what the server would refuse is
+  disabled and says which job.
+
+**Phones**
+
+The same groups in one column. The figures are centred, in two rows. A form opens as a
+sheet from the bottom. Every action stays visible: none hides behind a hover.
+
 ## Login Page
 
 Centered card with:

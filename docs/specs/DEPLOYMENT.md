@@ -110,7 +110,7 @@ Afterwards the host has:
 - Wisp's directories under `/var/lib/wisp` and `/mnt/wisp`;
 - libvirt with its default NAT network not autostarting;
 - containerd with Wisp's namespace;
-- the CNI plugins, with `cni-dhcp.service`;
+- the CNI plugins, with `cni-dhcp.service`; the downloaded tarball is checked against a SHA-256 pinned in the setup script, per architecture, not against the `.sha256` beside it in the same release;
 - the container DNS stub (below);
 - avahi with `publish-aaaa-on-ipv4=no`;
 - the privileged `wisp-*` helpers and their sudoers rules;
@@ -199,7 +199,7 @@ A host left unreachable is fixed at the console, as root, from the newest direct
 
 The next run of setup then makes the bridge again.
 
-**An update makes the bridge on a host that has none** — a host installed before setup made bridges — through the same step, from `wisp-updater.service`, so the update goes on while the address moves to the bridge, and completes and reports done.
+**An update runs the same step**, from `wisp-updater.service`: on a host whose uplink has no bridge it makes one, and the update goes on while the address moves to the bridge, and completes and reports done.
 
 ## Manual upgrade
 

@@ -6,7 +6,7 @@ Wisp uses **`config/`** at the project (install) root for persistent data: optio
 
 If this file exists, the backend parses `KEY=value` lines (comments and blank lines ignored) **only for keys not already set** in the process environment. Systemd uses `EnvironmentFile=-<install>/config/runtime.env` (leading `-` means the file may be absent).
 
-**Read strictly** (settled 2026-11-12, CODING-RULES §4): startup fails, naming the line or key, on a line that isn't `KEY=value` (an `export` prefix included), a key set twice, a `WISP_*` key not in the table below, or a `WISP_*` value that fails its check. Keys outside `WISP_*` are left alone — systemd shares the file. An empty value means unset. The start applies the same checks before its state migrations run, skipping only the lines setting the retired `WISP_BACKEND_PORT` / `WISP_FRONTEND_PORT`, which migration `0007` removes; after the migrations it parses the file strictly again. `wispctl`, `install.sh` and `wisp-updater` check `WISP_PORT` the same way.
+**Read strictly** (settled 2026-11-12, CODING-RULES §4): startup fails, naming the line or key, on a line that isn't `KEY=value` (an `export` prefix included), a key set twice, a `WISP_*` key not in the table below, or a `WISP_*` value that fails its check. Keys outside `WISP_*` are left alone — systemd shares the file. An empty value means unset. The start applies the same checks before its state migrations run, skipping only the lines setting the retired `WISP_BACKEND_PORT` / `WISP_FRONTEND_PORT`, which migration `0007` removes; after the migrations it parses the file strictly again. The installer reads `WISP_PORT` the same way.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

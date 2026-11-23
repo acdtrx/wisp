@@ -201,7 +201,7 @@ The count and the package list of the last check are kept in memory only: a back
 
 ### Error codes
 
-`UPDATE_BUSY` (409) and `UPDATE_CHECK_UNAVAILABLE` (503, script missing or sudo refused): [ERROR-HANDLING.md](ERROR-HANDLING.md#codes).
+`UPDATE_BUSY` (409) and `UPDATE_CHECK_UNAVAILABLE` (503: the helper is missing, failed, or went silent past its bound): [ERROR-HANDLING.md](ERROR-HANDLING.md#codes).
 
 `wisp-os-update` uses apt (Wisp hosts run Debian or Ubuntu).
 

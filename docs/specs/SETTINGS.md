@@ -1,6 +1,6 @@
 # Settings
 
-Settings are split across the Host panel: **App Config** tab (application-wide configuration and password change), **Host Mgmt** tab (network bridge management, **Storage** for SMB/CIFS shares and adopted removable drives, and **Backup** for local path plus optional mount used for VM backups) and **Software** tab (OS updates). Host information is in the **Overview** tab.
+Settings are split across the Host panel: **App Config** tab (application-wide configuration and password change), **Host Mgmt** tab (network bridge management, **Storage** for SMB/CIFS shares and adopted removable drives, and **Backup** for local path plus optional mount used for backups) and **Software** tab (OS updates). Host information is in the **Overview** tab.
 
 ## Settings Fields
 

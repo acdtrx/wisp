@@ -446,10 +446,10 @@ The client gives the errors it makes itself codes of its own, never sent by the 
 
 How an error is shown and how long it stays: `docs/FRONTEND-RULES.md`, Errors.
 
-- **A workload's action error** (start, stop, save, …) shows in a bar below the VM
-  header, on every tab. It remains until the user dismisses it or starts another VM
-  header action: the error is cleared when that new action **begins**, not only after it
-  succeeds.
+- **A workload's action error** (start, stop, save, …) shows in a bar below the
+  workload's header (a VM's or a container's), on every tab. It remains until the user
+  dismisses it or starts another action on that workload: the error is cleared when that
+  new action **begins**, not only after it succeeds.
 - **A card's own error** (a failed read, or a failed action of that card) shows within
   the card, below its header.
 - **A job's error** shows inline in its progress area.
