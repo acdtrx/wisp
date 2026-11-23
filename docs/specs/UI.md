@@ -134,7 +134,7 @@ What the VM page ([UI-VM.md](UI-VM.md)) and the container page
 
 **Phones**
 
-The same groups in one column. The figures are centred, in two rows. A form opens as a
+The same groups in one column. The figures are two lines: the address, name and uptime, then the live figures. A form opens as a
 sheet from the bottom. Every action stays visible: none hides behind a hover.
 
 ## Login Page

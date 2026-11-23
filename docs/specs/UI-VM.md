@@ -12,9 +12,13 @@ the shared components are in [UI.md](UI.md); the three shapes (view, edit, act) 
   Restart reboots the guest, which keeps the running settings: so while a saved change
   waits (or the host's QEMU was replaced) the header says "Stop and start to apply".
   Back up now needs the VM shut off.
-- **Figures**, in a row under the header while the VM runs: address, host name, uptime,
-  CPU, disk and network rates, as the stats stream carries them. Each sits in a cell of
-  fixed width. Stopped or paused, the row says so ("Stopped", "Paused").
+- **Figures**, in one row under the header while the VM runs (settled 2026-11-23), as
+  the stats stream carries them. First what does not move, as one line without labels:
+  the address, the host name, and "up" with the uptime. Then the live figures, each
+  with its label: CPU with a meter beside it, and the disk and network rates, their
+  unit written once. A value Wisp does not have is left out of the line; a name too
+  long is cut, its whole text on hover. Stopped or paused, the row says so ("Stopped",
+  "Paused").
 - **Groups**, in the order below. Each is a card: a title, its values as text, and its
   actions as icons.
 - A VM that is gone shows the gone page ([UI.md](UI.md), View Switching).

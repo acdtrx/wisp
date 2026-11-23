@@ -12,9 +12,12 @@ act) are in `FRONTEND-RULES.md`, Data. Settled 2026-11-21.
   container Eject. "Restart to apply" shows while a saved change waits for the next
   start. While the restart policy has a restart scheduled, the header says when and
   its Stop cancels it.
-- **Figures**, in a row under the header while the container runs: address, local name,
-  uptime, CPU, memory, as the stats stream carries them. Each sits in a cell of fixed
-  width. Stopped, the row says so.
+- **Figures**, in one row under the header while the container runs (settled
+  2026-11-23), as the stats stream carries them. First what does not move, as one line
+  without labels: the address, the local name, and "up" with the uptime. Then the live
+  figures, each with its label: CPU and memory, a meter beside each. A value Wisp does
+  not have is left out of the line; a name too long is cut, its whole text on hover.
+  Stopped, the row says so.
 - **Groups**, in the order below. Each is a card: a title, its values as text, and its
   actions as icons.
 - A container that is gone shows the gone page ([UI.md](UI.md), View Switching).
