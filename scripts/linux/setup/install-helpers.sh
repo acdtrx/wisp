@@ -5,7 +5,7 @@
 # the install tree; the packages the helpers run (dmidecode, smartmontools,
 # cifs-utils, rsync) come from the packages step.
 #
-# Exactly this release's set (docs/specs/DEPLOYMENT.md, Privileged helpers):
+# Exactly this release's set (docs/specs/DEPLOYMENT.md, The helpers):
 # setup owns every wisp-* entry in /usr/local/bin and /etc/sudoers.d, and
 # removes any its set does not hold, an earlier release's, after the set is in
 # place. The helpers are the folder: every backend/scripts/wisp-* that starts

@@ -6,6 +6,7 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
+import { containerState } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { writeJsonAtomic } from '../../base/index.js';
 
@@ -56,8 +57,9 @@ export async function readLibraryDigestMap() {
 export async function writeImageMeta(data) {
   try {
     await writeJsonAtomic(imageMetaPath(), data);
-  } catch {
-    /* best-effort: sidecar is a cache, not critical state */
+  } catch (err) {
+    /* The sidecar is a cache, rebuilt by the next pull: the caller goes on without it. */
+    containerState.logger?.warn?.({ err }, 'Could not write the image metadata cache');
   }
 }
 

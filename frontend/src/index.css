@@ -294,7 +294,7 @@
    Every colour below is derived from the palette tokens above — the glow, the
    motes, and the canvas wash are the accent at varying strengths, nothing new.
    Motion is applied from the components as `animate-[…]` so Tailwind's
-   `motion-reduce:animate-none` can switch it off (docs/specs/UI.md § Home).
+   `motion-reduce:animate-none` can switch it off (docs/specs/UI-HOST.md, Tab: Home).
 
    Light and dark are two settings of one system, not two designs: the theme
    only changes which way each mix goes. Light *lifts toward white* — the wash

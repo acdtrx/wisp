@@ -92,7 +92,7 @@ export default function WispUpdateSection() {
   const runningJobCount = useRunningJobCount();
 
   /* The configured update channel lives in settings; the check result never
-   * echoes it back (see spec/UPDATES.md). */
+   * echoes it back (see docs/specs/UPDATES.md). */
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const channel = settingsRecord.data?.updateChannel ?? 'stable';
   /* The channel just chosen, shown until the settings reload carries it. */

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The release-shaped tree into the install folder, by the one rule of what an
-# install keeps (docs/specs/DEPLOYMENT.md), for an install and an update alike:
+# install keeps (docs/specs/UPDATES.md, the keep rule), for an install and an update alike:
 # config/ holds the host's own files, which an install never deletes or
 # overwrites, and the tree's *.example files; everything else in the install
 # folder is the tree's, replaced, and removed when the tree no longer has it.

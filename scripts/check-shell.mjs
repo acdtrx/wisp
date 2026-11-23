@@ -26,7 +26,7 @@
  * tracked file's mode is git's, an untracked one's the file's own.
  *
  * And the helpers folder holds only helpers (docs/specs/DEPLOYMENT.md,
- * Privileged helpers): every file directly in backend/scripts/ is a
+ * The helpers): every file directly in backend/scripts/ is a
  * `wisp-<name>` that starts with a bash shebang (a helper, or the updater) or
  * the one shared file, wisp-helper-lib.sh. Setup installs every such script as
  * a root command with a sudo rule, so nothing else may sit there.
