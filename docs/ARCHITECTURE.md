@@ -29,8 +29,7 @@
   stops what starts jobs on its own (the hourly checks, the backup scheduler), cuts the
   interruptible jobs, ends the open streams, disconnects the managers and exits within a
   bounded time. An
-  unhandled rejection or exception is logged and ends the process (settled 2026-11-15:
-  restored from the template).
+  unhandled rejection or exception is logged and ends the process (settled 2026-11-15).
 
 ### The client
 
@@ -55,16 +54,15 @@ launched from a phone's home screen there is no browser chrome to show a "cannot
 page. The service worker keeps the app shell so a launch always boots React.
 
 - **Navigations** are network-first with a 4 s timeout, falling back to the cached shell,
-  then to a self-contained HTML page. Never cache-first: `wisp-updater` swaps
-  `frontend/dist/` in place, and a cache-first shell would pin the user to a stale build.
+  then to a self-contained HTML page. Never cache-first: an update replaces
+  `frontend/dist/`, and a cache-first shell would pin the user to a stale build.
 - **`/assets/*`** is cache-first: Vite content-hashes those names.
 - **`/api`, `/ws`, `/vendor`** are never intercepted: API responses must not be served
   stale, streams must not pass through a cache, and noVNC is unhashed.
 - The eager chunk graph is precached on `install`, resolved at build time from Vite's
-  build manifest (`frontend/scripts/generate-sw-precache.js`): browsers may serve
-  subresources from their own HTTP cache without a fetch event, which would leave the
-  worker's cache too sparse for an offline launch. Cache names carry a build id, so
-  `activate` purges the previous build's entries.
+  build manifest: a browser may serve subresources from its own HTTP cache without a
+  fetch event, which would leave the worker's cache too sparse for an offline launch.
+  Cache names carry a build id, so `activate` purges the previous build's entries.
 - Service workers need a secure context: on a plain-HTTP install registration is skipped
   and Wisp runs without the offline shell
   ([`specs/CONFIGURATION.md`](specs/CONFIGURATION.md#reverse-proxy--https-trustedproxies)).
@@ -89,8 +87,7 @@ page. The service worker keeps the app shell so a launch always boots React.
   mounts in `container.json` (both `0600`), the cloud-init password as a hash in
   `cloud-init.json`. The API never returns one, only a flag that it is on file, and an
   edit that omits or blanks a secret keeps the stored one; each secret's exact rules are
-  in its spec (settled 2026-11-15: kept over the template's one `secrets.json`, whose
-  edits clear a secret they don't carry).
+  in its spec (settled 2026-11-15: kept over the template's one `secrets.json`).
 - Write JSON state atomically (`writeJsonAtomic`: stage, fsync, rename); boot removes
   orphan temp files a crash left mid-rename.
 - What an earlier release wrote is brought to the current shape by state migrations, which
@@ -124,8 +121,7 @@ page. The service worker keeps the app shell so a launch always boots React.
 
 There is no central bus: each manager and module publishes its own events, and the
 stream to the client (Transport) subscribes like any other consumer (settled 2026-11-15:
-kept over the template's one in-memory bus; the per-facade surfaces below serve every
-consumer, and nothing has called for more).
+kept over the template's one in-memory bus).
 
 - **Events are push, not pull**: subscribe-and-replay surfaces on each facade — they fire
   only on change, replay the current state to a new subscriber, and keep platform
@@ -133,66 +129,36 @@ consumer, and nothing has called for more).
 - **Manager network events** feed the app glue that publishes containers' `.local`
   names, and the triggers of avahi's stuck-probe recovery. Wisp publishes no name for a
   VM: the guest announces its own.
-  - `containerManager.subscribeContainerNetworkChange(handler)` — `(name, snapshot)`,
-    with `{ state, ip, ip6 }` while running on a bridge and `null` when stopped or
-    removed. The manager writes new addresses into `container.json` before firing: it
-    owns the durable record, the glue only reacts. It replays on subscribe, so glue
-    that starts after the manager still catches up. The macOS stub never fires.
-  - Every A-record registration lives in the reconciler
-    (`lib/containerMdnsReconciler.js`); the managers make none.
-  - The interfaces Wisp removes, with no replay:
-    `containerManager.subscribeContainerNetnsRemoved(handler)` — `(name)` after Wisp
-    deleted a container's netns, its veth with it — and
-    `vmManager.subscribeVMStopped(handler)` — `(name)` after libvirt reported that a
-    VM's QEMU process ended, its taps removed, for every stop (`name` null when the
-    VM list does not know the domain). On each, `lib/mdnsProbeRecovery.js`
-    re-publishes every entry group still probing, since avahi 0.8 strands a group
-    probing on a removed interface. The macOS stubs never fire.
+  - A container's network change carries `{ state, ip, ip6 }` while it runs on a bridge
+    and `null` when stopped or removed. The manager writes new addresses into
+    `container.json` before firing: it owns the durable record, the glue only reacts.
+    It replays on subscribe, so glue that starts after the manager still catches up.
+  - Every A-record registration lives in the one reconciler; the managers make none.
+  - Two events have no replay: a container's netns removed, and a VM stopped (its taps
+    removed). On each, every entry group still probing is published again, since avahi
+    0.8 strands a group probing on a removed interface.
 - **Record change cues** feed the `changes` topic (Transport). Unlike the surfaces
   above they fire per write, not per difference, and never replay: a cue to read the
   record again, not its state. A write that changed nothing still fires, and one
   change can fire twice (cloud-init's own cue after vmManager's).
-  - `vmManager.subscribeVMChange(handler)` — `(name)` after each successful config,
-    disk, CD-ROM, USB, graphics-listen, restart-flag or Wisp-pref write through the
-    facade,
-    hot-plug included (libvirt sends no `DomainEvent` for it), under the new name after
-    a rename.
-    Create, delete and restore don't fire: the VM list carries them. Out-of-band
-    changes (`virsh edit`) fire nothing. The macOS stub never fires.
-  - `containerManager.subscribeContainerChange(handler)` — `(name)` after every
-    `container.json` write (config, mounts, services, the restart flag, a rename under
-    the new name, the network probe's address) and every write of a mount's content
-    (upload, zip extract, content edit, init, data delete, file mode). The macOS stub
-    never fires.
-  - `lib/cloudInit.js` `subscribeCloudInitChange(handler)` — `(vmName)` after a VM's
-    cloud-init config is saved, disabled or removed.
-  - `lib/settings.js` `subscribeSettingsChange(handler)` — after every write that
-    changes what `GET /api/settings` returns.
-  - `lib/settings.js` `subscribeMountsChange(handler)` — after every host mount add,
-    edit and removal, on top of the settings cue.
-  - `storage.subscribeMountStateChange(handler)` — after every successful disk or SMB
-    mount and unmount, the auto-mounts included.
-  - `networking.subscribeNetworkBridgesChange(handler)` — when a managed bridge create or
-    delete settles, a failed one included (netplan may have written part of it).
-  - `vmManager.subscribeVMBackupDeleted(handler)` and
-    `containerManager.subscribeContainerBackupDeleted(handler)` — after a backup was
-    deleted by any caller (the routes, the scheduler's retention); `lib/backupStatus.js`
-    passes them on to the `backups` topic, which carries every backup-list cue.
-  - `containerManager.subscribeImagesChange(handler)` — on containerd's
-    `/images/create`, `/images/update` and `/images/delete` in the `wisp` namespace:
-    every pull, update and delete, outside ones included, and once more when the event
-    stream resubscribes (events missed meanwhile). The macOS stub never fires.
-  - `library.subscribeLibraryChange(handler)` — after every upload, rename, delete and
-    finished download into the library, and after a failed upload or download removed
-    its partial file.
-  - `lib/apiTokens.js` `subscribeApiTokensChange(handler)` — after a token is created or
-    revoked.
-  - `lib/wispUpdate.js` `subscribeWispUpdateChange(handler)` — after every self-update
-    check settles (manual, hourly, failed): each rewrites the cached status.
+  - A VM's cue fires after each successful write through the facade (config, disk,
+    CD-ROM, USB, graphics, the restart flag, a Wisp pref), hot-plug included (libvirt
+    sends no event for it), under the new name after a rename. Create, delete and
+    restore don't fire: the VM list carries them. Out-of-band changes (`virsh edit`)
+    fire nothing.
+  - A container's cue fires after every `container.json` write and every write of a
+    mount's content.
+  - The other cues: a VM's cloud-init, the settings, the host mounts and their mount
+    state, the managed bridges (a failed create or delete included: netplan may have
+    written part of it), a deleted backup (by any caller, retention included), the
+    containerd images (every pull, update and delete, outside ones included, and once
+    more when the event stream resubscribes), the library's files, the API tokens and
+    the self-update status.
+  - The macOS stubs never fire.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` calls each
   manager's `configure()` with its paths and callbacks (`resolveMount`,
-  `tryAcquireOperationLock`) before any route registers. **One logger** (settled 2026-11-22): the start's logger
-  is the only one. Every fenced module (the managers, `host`, `mdns`, `networking`,
+  `tryAcquireOperationLock`) before any route registers. **One logger** (settled
+  2026-11-22): the start's logger is the only one. Every fenced module (the managers, `host`, `mdns`, `networking`,
   `storage`) gets it the same way, `configure({ logger })`, never by importing one or
   at connect; the glue reads it from `lib/log.js`, which the start sets first. No code
   writes to `console`. The start's state migrations
@@ -215,8 +181,8 @@ consumer, and nothing has called for more).
   `containers`, `sections`, `discovery`, `home`, `backups`, `jobs` and `changes` (references to
   saved records no other topic carries, which a client showing them GETs again). One
   connection, not one per feed, because browsers cap plain HTTP/1.1 at 6 connections per
-  origin: a new always-on feed is a new topic, never a new endpoint
-  ([`specs/API.md`](specs/API.md), Events stream).
+  origin: a new always-on feed is a new topic, never a new endpoint. The topics and
+  their payloads: [`specs/API.md`](specs/API.md), Events stream.
 - **Each connect opens with the current state**: a new subscriber gets each topic's last
   frame, and the client replaces its list with it, so one reconnect replaces any stale
   state. `changes` is the exception: its frames are references, not state, and are not
@@ -224,16 +190,14 @@ consumer, and nothing has called for more).
   GET what it shows.
 - **A topic's frame is its whole current state** `[PROJECT]`, on connect and on every
   change, and a topic may be shaped for the screen that shows it (`home`) (settled
-  2026-11-15: kept over the template's one-record events and "records, not screens";
-  with one user the lists are small). `changes` is the exception: it carries a reference
+  2026-11-15: kept over the template's one-record events). `changes` is the exception: it carries a reference
   to the changed record, which a client showing it GETs ([`specs/API.md`](specs/API.md),
   `changes` topic payload).
 - **What one view needs gets a scoped stream** `[PROJECT]`, open only while the view is
   on screen: per-workload stats and logs, the disk and USB streams. **Job progress**
   streams emit until the job completes or fails, then close. No repeated-GET polling for
   live data (settled 2026-11-15: kept over the template's by-reference GETs and its one
-  connection per tab; logs, live stats and job progress are streams by nature, and the
-  scoped ones stay few enough for HTTP/1.1's six connections per origin).
+  connection per tab).
 - **A stream that goes quiet is reopened**: the server writes a `: keepalive` comment
   every 25 s; the client re-arms a 60 s read watchdog on every chunk and reconnects with
   backoff when it fires. A frozen page can't run its watchdog, so every stream also
@@ -251,7 +215,7 @@ consumer, and nothing has called for more).
   reaches clients as events on the records they follow. A request that changes no state,
   such as a check or a preview, answers with its result; so does a secret shown only
   once. An instant command, a settings save included, answers with the ack too, never
-  its result (settled 2026-11-15, sharpening the template line restored 2026-11-13).
+  its result (settled 2026-11-15).
 - **Consoles are WebSockets under `/ws`**: VNC bridges the browser to QEMU's VNC port over
   TCP on `127.0.0.1` ([`specs/CONSOLE.md`](specs/CONSOLE.md)); the container shell drives
   containerd's exec with a PTY. Both authenticate with the session cookie the browser
@@ -283,7 +247,7 @@ consumer, and nothing has called for more).
   imports nothing of Wisp's: the change emitter and the privileged runner
   (CODING-RULES §7, shared homes). The fences between them are CODING-RULES
   §7: one caller per external system, and managers free of Wisp glue. The import graph
-  stays acyclic, enforced by a lint (settled 2026-11-15: restored from the template).
+  stays acyclic, enforced by a lint (settled 2026-11-15).
 - `frontend/src/`: `api/` (the fetch wrappers and the SSE client), `store/` (one Zustand
   store per subsystem), `components/` by domain, `apps/` (container-app config UIs),
   `pages/`, `hooks/`, `lib/`, `utils/`.
