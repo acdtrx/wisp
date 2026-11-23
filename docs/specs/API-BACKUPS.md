@@ -9,10 +9,10 @@ VM and container backups: lists, restore, delete. Shared contracts (access level
 Start a backup job (kind `vm-backup`), on `GET /api/jobs/:jobId/progress`. It holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) for the whole job; the attempt is recorded before `done` or the job's `error` — a record `{ at, ok, origin, destinationIds, timestamp? }`, a failure's with its error body (`error`, the code, and `detail`), pushed on the [`backups` topic](API.md#backups-topic-payload) ([BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)).
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
-- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422** `BACKUP_DEST_UNKNOWN`.
+- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted. Any other id returns **422** `BACKUP_DEST_UNKNOWN`.
 - **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes)'s [ack](API.md#background-jobs) (kind `vm-backup`); `title` is e.g. `Backup <vmName>`; `done` result: `{ timestamp }` — the (last destination's) backup folder name (e.g. `2026-05-08T06-30-00`)
 - **404:** `VM_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked under the lock before the job is created; the manager re-checks inside the job); `VM_BUSY` — another operation on this VM (start, backup, delete, an edit) is running
+- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked under the lock before the job is created); `VM_BUSY` — another operation on this VM (start, backup, delete, an edit) is running
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
@@ -39,7 +39,7 @@ List all backups across configured destinations. The backup is identified by the
 ]
 ```
 
-`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete. `origin` is `"manual"` or `"scheduled"`, as the manifest records it — every VM backup is `"manual"` (there is no VM scheduler); state migration `0007-repair-config-and-records` wrote `"manual"` into the manifests of backups taken before the field existed ([UPDATES.md § State migrations](UPDATES.md#state-migrations)). A backup that sat on a backup mount unmounted when `0007` ran has no `origin`; the UI shows it as manual, and retention never prunes it.
+`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete. `origin` is `"manual"` or `"scheduled"`, as the manifest records it — every VM backup is `"manual"` (there is no VM scheduler). A backup whose manifest has no `origin` is shown as manual, and retention never prunes it.
 
 ### POST /api/backups/restore · `admin`
 
@@ -64,7 +64,7 @@ Delete a backup.
 
 ### POST /api/containers/:name/backup · `admin`
 
-Start a container backup job (kind `container-backup`), on `GET /api/jobs/:jobId/progress`. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution (shared `lib/backupDestinations.js` helper), same SMB auto-mount behavior. The container does **not** need to be stopped: a running container is paused (cgroup freezer) for the duration of the archive and resumed automatically; stopped/created containers are archived cold. Manual backups record `origin: "manual"` in the manifest. Details in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
+Start a container backup job (kind `container-backup`), on `GET /api/jobs/:jobId/progress`. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution, same SMB auto-mount behavior. The container does **not** need to be stopped: a running container is paused (cgroup freezer) for the duration of the archive and resumed automatically; stopped/created containers are archived cold. Manual backups record `origin: "manual"` in the manifest. Details in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes)'s [ack](API.md#background-jobs) (kind `container-backup`); `title` is `Backup <name>`; `done` result: `{ timestamp }` — the last destination's backup folder name. The attempt is recorded before `done` or `error`, as for a VM.
@@ -97,7 +97,7 @@ List all container backups across currently-usable destinations. Container backu
 ]
 ```
 
-`origin` is `"manual"` or `"scheduled"`, as the manifest records it; state migration `0007-repair-config-and-records` wrote `"manual"` into the manifests of backups taken before the field existed ([UPDATES.md § State migrations](UPDATES.md#state-migrations)). A backup that sat on a backup mount unmounted when `0007` ran has no `origin`; the UI shows it as manual, and retention never prunes it.
+`origin` is `"manual"` or `"scheduled"`, as the manifest records it. A backup whose manifest has no `origin` is shown as manual, and retention never prunes it.
 
 ### POST /api/container-backups/restore · `admin`
 
