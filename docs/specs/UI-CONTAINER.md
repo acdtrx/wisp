@@ -66,6 +66,19 @@ changed. An app container shows neither Environment nor Storage: the app owns bo
   does saving a share's form when the edit moves it off this host.
 - A password or token field in a form is empty and keeps the stored one unless typed.
 
+## Logs
+
+The Logs tab shows one run at a time, following it as lines arrive.
+
+- A **run picker**, newest first: a green dot for the running one, red for a run that
+  ended with a non-zero exit, grey for a clean exit. The list of runs is read again when
+  the container's state changes.
+- A filter input, and icon actions: **Clear** the viewer (in the browser only: it does
+  not touch the files), **Mark** (inserts a divider line with an optional label),
+  **Download** (the selected run's log file), **Auto-scroll**.
+- The requests: the runs list, the logs stream and the run-log download
+  ([API-CONTAINERS.md](API-CONTAINERS.md)).
+
 ## States
 
 - A group whose data is loading shows a skeleton; one whose read failed shows the error
@@ -79,7 +92,8 @@ changed. An app container shows neither Environment nor Storage: the app owns bo
 ## New container
 
 One form, its own page: the name, and either an image or one of the apps (which fills in
-its image). Create leaves the container stopped, so it can be set up before its first
+its image). The image is typed, or picked with Browse from the image library's OCI
+images; a picked image's name is taken as it is listed. Create leaves the container stopped, so it can be set up before its first
 start, and opens its page if the user is still on the form.
 
 ## Phones
