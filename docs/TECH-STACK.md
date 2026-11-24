@@ -1,6 +1,6 @@
 # Tech Stack
 
-> What Wisp is built with, and why. When the project deviates, edit the section in place
+> What Wisp is built with. When the project deviates, edit the section in place
 > (`AGENTS.md`, Documentation): this file describes the project's actual stack, not a menu.
 
 ## Server

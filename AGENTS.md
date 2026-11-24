@@ -9,7 +9,7 @@
 >   design;
 > - `docs/CODING-RULES.md` — how code is written, tested and debugged (§12: the language
 >   rules);
-> - `docs/TECH-STACK.md` — what it is built with, and why;
+> - `docs/TECH-STACK.md` — what it is built with;
 > - `docs/ARCHITECTURE.md` — the system's shape: boundaries, data flow, where state
 >   lives, how it runs;
 > - `docs/FRONTEND-RULES.md` — how UI code is written, and the project's design;
@@ -93,6 +93,12 @@ build; a **builder** builds one feature; a **reviewer** reviews one.
    the findings to the same builder. Builder: fix each finding or add it to the backlog.
    Design session: then remove the feature file, merge and tag (Git).
 
+**Bring requirements that pull against each other to the user**, before building one
+around the other: name both, the simpler design, and what it gives up. Do the same for
+old behaviour that a rewrite would keep at the cost of a mechanism of its own, when no
+spec asks for it. Whoever finds it raises it: the builder sends it back (step 3), the
+reviewer reports it, and the design session asks the user before another round.
+
 ## Review
 
 Have each feature reviewed before its merge, by a fresh subagent. Give it the branch,
@@ -104,11 +110,17 @@ report only on the change and what it affects: the whole app is an audit's job
 (`docs/reviews/`). Give each finding its file and line. Mark as a blocker a finding that
 breaks an acceptance criterion or a spec.
 
-Have the same reviewer check a blocker's fix; review nothing else twice. Without
-subagents, ask the user to run the review in a fresh session, given the same.
+Have the same reviewer check the blockers' fixes; review nothing else twice. If that
+check finds a blocker, an old one or a new one, stop: bring the issue behind the findings
+to the user instead of starting a third round. Without subagents, ask the user to run the
+review in a fresh session, given the same.
 
 ## Scope
 
+- **The specs are the user's; the code is yours.** Within the work's scope, change
+  whatever the work needs rather than working around the code you find, and when asked
+  to rewrite, rewrite. Keep a behaviour because a spec asks for it, never because the
+  code has it.
 - Leave unrelated code alone: add what you find to `docs/BACKLOG.md`, never fix or
   refactor it in passing. The user can also ask to "add this to the backlog".
 - YAGNI: build what the task requires, nothing speculative.
@@ -122,10 +134,10 @@ truth, and a doc that mirrors it goes stale.
   record what was agreed with the user. Never edit them to match what was built: fix the
   code or raise the divergence with the user, and change a spec only once the user
   agrees.
-- **Record a decision as a fact, in the doc that owns its topic** (see the header),
-  tagged `(settled YYYY-MM-DD)`. Put its reasoning, and what was rejected, in the commit
-  message. Keep a reason in the doc only where a reader would otherwise undo the
-  decision, in one clause. Keep no decision log. Record only what settles a spec or a
+- **Record a decision as a fact, in the doc that owns its topic** (see the header). Put
+  its reasoning, and what was rejected, in the commit message: the commit dates it. Keep
+  a reason in the doc only where a reader would otherwise undo the decision, in one
+  clause. Keep no decision log. Record only what settles a spec or a
   change: an idea turned down goes nowhere, unless the user asks for a backlog entry.
 
 What each doc holds:
