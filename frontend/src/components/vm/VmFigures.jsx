@@ -32,12 +32,29 @@ function RateSlot() {
 }
 
 /**
+ * A phone's shorter form of two rates: their sum, one number in MB/s, its unit said to a
+ * screen reader. A direction the stream lacks counts as 0.0, as a single rate shows it.
+ */
+function phoneRate(up, down) {
+  return {
+    value: (
+      <>
+        {formatDecimal((up ?? 0) + (down ?? 0))}
+        <span className="sr-only"> MB/s</span>
+      </>
+    ),
+    slot: '99.9',
+  };
+}
+
+/**
  * The VM's figures, by its state: paused or stopped, the row says so; running, its
  * stats stream's figures as far as the stream has them (none before its first frame);
  * another state, its figures while the stream has them, else the state's word:
  * address and host name (from the guest agent, when it answers: left out until it
- * does) and uptime, then CPU and the disk and network rates. A stats read that failed
- * shows its error in their place until the next good frame.
+ * does) and uptime, then CPU and the disk and network rates: each way under its arrow,
+ * and on a phone, whose one line holds no more, both ways summed into one number. A
+ * stats read that failed shows its error in their place until the next good frame.
  */
 export default function VmFigures({ state }) {
   const stats = useVmStatsStore(liveData);
@@ -55,16 +72,18 @@ export default function VmFigures({ state }) {
         { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up', keep: true },
       ]}
       live={[
-        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, slot: PERCENT_SLOT, percent: stats.cpu?.percent ?? null, ownPhoneLine: true },
+        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, slot: PERCENT_SLOT, percent: stats.cpu?.percent ?? null },
         {
           label: 'Disk',
           value: <Rate up={stats.disk?.readMBs} down={stats.disk?.writeMBs} words={['read', 'write']} />,
           slot: <RateSlot />,
+          phone: phoneRate(stats.disk?.readMBs, stats.disk?.writeMBs),
         },
         {
           label: 'Net',
           value: <Rate up={stats.net?.txMBs} down={stats.net?.rxMBs} words={['sent', 'received']} />,
           slot: <RateSlot />,
+          phone: phoneRate(stats.net?.txMBs, stats.net?.rxMBs),
           unit: <span aria-hidden>MB/s</span>,
         },
       ]}
