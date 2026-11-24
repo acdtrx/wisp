@@ -77,8 +77,8 @@ build; a **builder** builds one feature; a **reviewer** reviews one.
    Order them so each builds on those merged before it.
 2. **One builder per feature.** Design session: for each feature in order, start a fresh
    subagent and name the feature and its worktree (Git); it reads this file and follows
-   it. Wait for its report: never poll it, never stop it for taking long. Start the next
-   builder after the merge. Without subagents, build in your own session.
+   it. Wait for its report: never stop it for taking long. Start the next builder after
+   the merge. Without subagents, build in your own session.
 3. **Settle what blocks; decide the rest.** Builder: read the feature, its specs and the
    code it touches. Before building, send back only a contradiction between the docs or
    a choice that changes a spec, each with a recommendation. Decide everything else and
