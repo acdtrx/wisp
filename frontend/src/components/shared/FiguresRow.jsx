@@ -13,17 +13,16 @@ export const PERCENT_SLOT = '99.9%';
  * address), each with its whole text as its title; a `keep` item (the uptime) is never cut.
  *
  * `live`, what moves, follows: `{ label, value, slot, unit?, percent?, phone? }`, a
- * small label before each value. The value sits at the end of a slot as wide as
- * `slot`, the widest text of its usual range, so a change of digits moves nothing and the
- * value stays by its unit and meter; a longer value grows the slot and is never cut.
- * `unit` is written small after it, and `percent` draws a meter beside it. `phone`, a
- * shorter `{ value, slot }`, takes the value's place below `sm`; the form not shown is
- * not displayed, so a screen reader hears only the one seen.
+ * small label before each value. The value sits at the end of a slot as wide as `slot`,
+ * the widest text of its usual range, so a change of digits moves nothing and the value
+ * stays by its unit and meter; a longer value grows the slot and is never cut. `unit` is
+ * written small after it, and `percent` draws a meter beside it from `sm` up, never on a
+ * phone. `phone`, a shorter `{ value, slot }`, takes the value's place below `sm`; the
+ * form not shown is not displayed, so a screen reader hears only the one seen.
  *
  * On a desktop the two share one row that never wraps: the live figures keep their width
  * at the right, the identity line takes what is left. On a phone they are two lines, the
- * live figures under a hairline, spread across it; there a meter takes only the room the
- * line has left, down to none, and the line wraps only when its words alone do not fit.
+ * live figures under a hairline, spread across it, wrapping only when they do not fit.
  * Not running, the row is `stoppedText` alone.
  */
 export default function FiguresRow({ identity = [], live = [], stoppedText }) {
@@ -61,20 +60,16 @@ export default function FiguresRow({ identity = [], live = [], stoppedText }) {
           {figures.map((f, i) => (
             <div
               key={f.label}
-              className={`flex grow basis-[min-content] items-baseline gap-1.5 sm:grow-0 sm:basis-auto ${i > 0 ? 'justify-end sm:justify-start' : ''}`}
+              className={`flex grow items-baseline gap-1.5 sm:grow-0 ${i > 0 ? 'justify-end sm:justify-start' : ''}`}
             >
               <dt className="text-xs text-text-muted">{f.label}</dt>
-              <dd className={`flex items-baseline text-[13.5px] font-semibold tabular-nums text-text-primary sm:text-sm ${f.percent != null ? 'grow sm:grow-0' : ''}`}>
+              <dd className="flex items-baseline text-[13.5px] font-semibold tabular-nums text-text-primary sm:text-sm">
                 <Slot slot={f.slot} value={f.value} className={f.phone ? 'hidden sm:inline-grid' : 'inline-grid'} />
                 {f.phone && <Slot slot={f.phone.slot} value={f.phone.value} className="inline-grid sm:hidden" />}
                 {f.unit && <span className="ml-1 text-[11px] font-medium text-text-muted">{f.unit}</span>}
                 {f.percent != null && (
-                  /* The space before the bar is the meter's own, so a meter given no
-                     room leaves none. */
-                  <span aria-hidden className="flex min-w-0 max-w-[46px] grow basis-0 self-center sm:w-[46px] sm:grow-0 sm:basis-auto">
-                    <span className="ml-[min(6px,13%)] h-1.5 min-w-0 max-w-10 grow overflow-hidden rounded-full bg-surface-border">
-                      <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.min(100, Math.max(0, f.percent))}%` }} />
-                    </span>
+                  <span aria-hidden className="ml-1.5 hidden h-1.5 w-10 shrink-0 self-center overflow-hidden rounded-full bg-surface-border sm:block">
+                    <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.min(100, Math.max(0, f.percent))}%` }} />
                   </span>
                 )}
               </dd>
