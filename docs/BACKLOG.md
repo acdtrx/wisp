@@ -500,17 +500,40 @@ help text is needed on a phone or tablet.
 check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers them.
 **Revisit trigger:** a symlinked library entry is picked and refused.
 
-**The Host pages run the full width where the workload pages sit in a column.** A VM's
-and a container's page hold their cards to a centred column (`PageBody`'s `narrow`,
-768 px); Host Overview, Host Mgmt, Software, App Config, Backups and the two create
-pages spread across the window, so the app changes shape between a workload and the
-host. The user narrowed the window on the Host pages and they still looked right
-(2026-11-24), so the column should suit them. Shape: one width for every page, which
-makes `narrow` the only behaviour and removes the prop; a read of the wide tables
-(network, hardware, storage, backups, the image library) and of Software's two cards
-side by side at that width, and of whether 768 px is the width or the tables want a
-wider one for all pages; the page specs and FRONTEND-RULES say the width once.
-**Revisit trigger:** the next frontend work, or before the stable 2.9.0.
+**Pages come in four widths.** A VM's and a container's page hold their cards to a
+centred column (`PageBody`'s `narrow`, 768 px); the New VM form is 672 px (`max-w-2xl`)
+and the New container form 576 px (`max-w-xl`), both narrower than a workload's cards;
+Host Overview, Host Mgmt, Software, App Config and Backups run the full width. So the
+app changes shape from page to page. The user's read after browsing 2.9.0-beta.2
+(2026-11-24): one width for every page, the create forms included; the Host pages still
+looked right in a narrowed window, though some may be tight; 768 px may be a little
+narrow, but much wider and a workload's label and value sit too far apart. Shape: one
+column width, set once in `PageBody` (no `narrow` prop, no width of a form's own), picked
+by reading the workload cards and the widest Host tables (network, hardware, storage,
+backups, the image library, Software's two cards side by side) at a few candidates; the
+page specs and FRONTEND-RULES say the width once. **Revisit trigger:** the next frontend
+session, or before the stable 2.9.0.
+
+**On a phone the figures are spread unevenly.** Seen by the user on an iPhone
+(2.9.0-beta.2, 2026-11-24). A container's live line puts CPU at the left edge and
+Memory at the right edge with the line's whole width between them. A VM's puts Disk
+starting at the middle, not centred, so CPU has too much room and Disk and Net sit
+close. The identity line above is packed at the left (address, name, uptime with dots)
+while the line under it is spread. The user's shape: the identity line spread like a
+VM's live line, the address at the left, the name in the middle, the uptime at the
+right; a VM's three live figures evenly placed, Disk centred; a container's two brought
+together (Memory beside CPU, or both about the middle), not pushed to the edges. The
+rule that no label moves with a live value stays (reserved widths). Touches
+`FiguresRow.jsx` below `sm` only, and the Phones line of `docs/specs/UI.md`.
+**Revisit trigger:** the next frontend session.
+
+**On an iPhone the top of the page fades out.** The top bar (the menu button, the logo,
+the server name and the three buttons at the right) looks dimmed, as under a dark
+gradient that starts behind the status bar, in the dark theme on 2.9.0-beta.2 (the
+user's screenshots, 2026-11-24). Cause not looked into: the page is laid out under the
+status bar (`viewport-fit=cover`, the safe-area paddings in `index.css`), so the
+browser's own edge effect over that area is the first thing to rule out, then the top
+bar's background and `theme-color`. **Revisit trigger:** the next frontend session.
 
 **The decimal formatter writes "0.0" for a number it does not have.** `formatDecimal`
 answers "0.0" for `null`, so a missing rate, percent or temperature reads as a zero in
