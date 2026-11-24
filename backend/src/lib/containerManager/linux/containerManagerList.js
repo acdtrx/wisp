@@ -371,14 +371,14 @@ export async function getContainerConfig(name) {
 
   const task = await getTaskState(name);
   const state = task ? containerTaskStatusToUi(task) : 'stopped';
-  const pid = task ? Number(task.pid) || 0 : 0;
+  const pid = Number(task?.pid) || null;
 
-  let uptime = 0;
+  // Null, never zero, for what the container does not have: an uptime unless it
+  // runs, a pid without a task.
+  let uptime = null;
   if (state === 'running') {
-    const fromProc = pid ? await processUptimeMsFromProc(pid) : null;
-    if (fromProc != null) {
-      uptime = fromProc;
-    } else if (containerState.containerStartTimes.has(name)) {
+    uptime = pid ? await processUptimeMsFromProc(pid) : null;
+    if (uptime == null && containerState.containerStartTimes.has(name)) {
       uptime = Date.now() - containerState.containerStartTimes.get(name);
     }
   }

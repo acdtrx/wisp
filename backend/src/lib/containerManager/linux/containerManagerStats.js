@@ -11,21 +11,17 @@ import { processUptimeMsFromProc } from './procUptime.js';
 const prevStats = new Map();
 
 /**
- * Get stats for a running container.
+ * A container's state and figures. The figures are sampled only while it runs: in any
+ * other state they are null, never zeros, and `pid` is null when it has no task.
  */
 export async function getContainerStats(name) {
   const task = await getTaskState(name);
   const state = containerTaskStatusToUi(task);
+  const pid = Number(task?.pid) || null;
 
   if (state !== 'running') {
     prevStats.delete(name);
-    return {
-      state,
-      cpuPercent: 0,
-      memoryUsageMiB: 0,
-      uptime: 0,
-      pid: Number(task?.pid) || 0,
-    };
+    return { state, cpuPercent: null, memoryUsageMiB: null, uptime: null, pid };
   }
 
   // A Metrics call that fails fails the read: the figures are missing, never zeros.
@@ -56,16 +52,10 @@ export async function getContainerStats(name) {
     }
   }
 
-  const pidNum = Number(task?.pid) || 0;
-  let uptime = 0;
-  if (pidNum) {
-    const fromProc = await processUptimeMsFromProc(pidNum);
-    if (fromProc != null) {
-      uptime = fromProc;
-    } else {
-      const startTime = containerState.containerStartTimes.get(name);
-      uptime = startTime ? Date.now() - startTime : 0;
-    }
+  let uptime = pid ? await processUptimeMsFromProc(pid) : null;
+  if (uptime == null) {
+    const startTime = containerState.containerStartTimes.get(name);
+    uptime = startTime ? Date.now() - startTime : null;
   }
 
   return {
@@ -73,6 +63,6 @@ export async function getContainerStats(name) {
     cpuPercent: Math.round(cpuPercent * 10) / 10,
     memoryUsageMiB,
     uptime,
-    pid: pidNum,
+    pid,
   };
 }

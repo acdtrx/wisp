@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 - **The New VM and New container forms are as wide as a workload's page** — both were narrower, each by a different amount.
+- **A container that is not running reports no figures, not zeros** — its stats stream answers `null` for CPU, memory and uptime in any state but running, as a stopped VM's does; its detail, which MCP's `get_container` reads, answers `null` for the uptime and, without a task, the pid.
 - **A figure Wisp does not have shows a dash, not "0.0"** — a rate, a percent or a temperature in the top bar and the Host overview; on a workload's page a CPU figure the stream lacks is left out, like its memory.
 
 ## 2026-11-23

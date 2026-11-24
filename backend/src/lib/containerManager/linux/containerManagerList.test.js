@@ -71,7 +71,9 @@ mock.module(url('./containerManagerRestartPolicy.js'), {
   },
 });
 
-const { listContainers, refreshContainerListCache, subscribeContainerListChange } = await import('./containerManagerList.js');
+const {
+  getContainerConfig, listContainers, refreshContainerListCache, subscribeContainerListChange,
+} = await import('./containerManagerList.js');
 
 /** Each announcement the subscribers got: a list's names and states, or null for an error. */
 const frames = [];
@@ -123,4 +125,13 @@ test('a directory without container.json is not a container; a malformed one fai
   writeFileSync(join(root, 'c', 'container.json'), '{');
   await refreshContainerListCache();
   await assert.rejects(listContainers());
+});
+
+test('a container that is not running has no uptime, and no pid without a task: null, never zero', async () => {
+  create('c');
+  const stopped = await getContainerConfig('c');
+  assert.deepEqual([stopped.state, stopped.pid, stopped.uptime], ['stopped', null, null]);
+  containerd.tasks.set('c', 'PAUSED');
+  const paused = await getContainerConfig('c');
+  assert.deepEqual([paused.state, paused.pid, paused.uptime], ['paused', 1, null]);
 });

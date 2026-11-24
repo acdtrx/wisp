@@ -459,14 +459,6 @@ disc of a VM that runs Wisp, say) shows in Host Mgmt's Detected drives with an A
 is off and a UUID cut short, and nothing says why. **Revisit trigger:** a user asks what
 the row is for.
 
-**A container that is not running sends zeros for its figures.** Its stats stream answers
-`cpuPercent: 0`, `memoryUsageMiB: 0` and `uptime: 0` for any state but running (a paused
-one, during a backup, among them), where a VM's sends `null`; the page no longer shows
-them (it shows figures only while the container runs), but the wire still says a paused
-container uses no memory (found by the figures row's review, 2026-11-23). Shape: `null`
-for the three, in the response schema too, and a read of what else takes the stream
-(MCP). **Revisit trigger:** the next change to the container stats stream.
-
 ## Frontend
 
 **Sidebar: manual within-section workload ordering.** A third sort mode alongside

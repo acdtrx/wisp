@@ -249,8 +249,8 @@ const containerDetailSchema = {
       properties: { app: { type: 'string' }, appConfig: appConfigSchema },
     }),
     mdnsHostname: { type: ['string', 'null'] },
-    pid: { type: 'integer' },
-    uptime: { type: 'number' },
+    pid: { type: ['integer', 'null'] },
+    uptime: { type: ['number', 'null'] },
   },
   additionalProperties: false,
 };
