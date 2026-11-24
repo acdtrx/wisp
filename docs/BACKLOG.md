@@ -634,12 +634,3 @@ it is large enough that an agent reading it for a single area loads all of it: a
 137 KB before the docs and rule sweep cut it. Shape: a shared core file plus one file
 per area, content moved unchanged, links fixed across the docs. **Revisit trigger:** the
 next feature that works in that spec, if it is still above about 60 KB.
-
-**AGENTS is behind the shared template in how work is run.** The template (changed
-2026-11-19 and 2026-11-21) defines a feature as one capability with about four
-milestones at most and a milestone as one observable behaviour with about eight criteria
-at most; gives each feature its own builder, review and merge; has the builder send
-back only a contradiction between docs or a choice that changes a spec; and keeps
-worktrees under `.worktrees/`. Wisp took only the template's documentation rule in the
-2026-11-17 plan's last phase (ruled 2026-11-23: the rest after the plan). Wisp's own
-marked parts stay. **Revisit trigger:** before the next feature after that plan.
