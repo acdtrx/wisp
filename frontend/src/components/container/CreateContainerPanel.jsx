@@ -80,8 +80,8 @@ export default function CreateContainerPanel() {
         <h1 className="text-sm font-semibold text-text-primary">New container</h1>
       </div>
 
-      <PageBody>
-        <form onSubmit={submit} className="mx-auto max-w-xl space-y-4 rounded-card border border-surface-border bg-surface-card p-4 shadow-card">
+      <PageBody narrow>
+        <form onSubmit={submit} className="space-y-4 rounded-card border border-surface-border bg-surface-card p-4 shadow-card">
           <FormField label="Name" htmlFor="new-container-name">
             <input
               id="new-container-name"

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-24
+
+### Bug Fixes
+- **The New VM and New container forms are as wide as a workload's page** — both were narrower, each by a different amount.
+
 ## 2026-11-23
 
 ### New Features

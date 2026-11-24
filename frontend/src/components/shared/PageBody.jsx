@@ -1,7 +1,7 @@
 /**
  * A page's content under its header: the one set of gutters every page's cards stack
  * in (docs/FRONTEND-RULES.md, Cards). `narrow` holds the content to a centred column
- * (the workload pages); `scrolls` is false where the page scrolls as a whole, its
+ * (the workload pages and the create forms); `scrolls` is false where the page scrolls as a whole, its
  * header with it.
  */
 export default function PageBody({ narrow = false, scrolls = true, children }) {

@@ -500,19 +500,17 @@ help text is needed on a phone or tablet.
 check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers them.
 **Revisit trigger:** a symlinked library entry is picked and refused.
 
-**Pages come in four widths.** A VM's and a container's page hold their cards to a
-centred column (`PageBody`'s `narrow`, 768 px); the New VM form is 672 px (`max-w-2xl`)
-and the New container form 576 px (`max-w-xl`), both narrower than a workload's cards;
+**Pages come in two widths.** A VM's and a container's page, and the New VM and New
+container forms, hold their content to a centred column (`PageBody`'s `narrow`, 768 px);
 Host Overview, Host Mgmt, Software, App Config and Backups run the full width. So the
-app changes shape from page to page. The user's read after browsing 2.9.0-beta.2
-(2026-11-24): one width for every page, the create forms included; the Host pages still
-looked right in a narrowed window, though some may be tight; 768 px may be a little
-narrow, but much wider and a workload's label and value sit too far apart. Shape: one
-column width, set once in `PageBody` (no `narrow` prop, no width of a form's own), picked
-by reading the workload cards and the widest Host tables (network, hardware, storage,
-backups, the image library, Software's two cards side by side) at a few candidates; the
-page specs and FRONTEND-RULES say the width once. **Revisit trigger:** the next frontend
-session, or before the stable 2.9.0.
+app changes shape between a workload and the host. The user's read after browsing
+2.9.0-beta.2 (2026-11-24): one width for every page; the Host pages still looked right
+in a narrowed window, though some may be tight; 768 px may be a little narrow, but much
+wider and a workload's label and value sit too far apart. Shape: one column width, set
+once in `PageBody` (no `narrow` prop), picked by reading the workload cards and the
+widest Host tables (network, hardware, storage, backups, the image library, Software's
+two cards side by side) at a few candidates; the page specs and FRONTEND-RULES say the
+width once. **Revisit trigger:** the next frontend session, or before the stable 2.9.0.
 
 **On a phone the figures are spread unevenly.** Seen by the user on an iPhone
 (2.9.0-beta.2, 2026-11-24). A container's live line puts CPU at the left edge and
