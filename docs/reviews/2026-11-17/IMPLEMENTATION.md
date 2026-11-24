@@ -414,7 +414,9 @@ ifupdown host; a learned IPv6 address from a real DHCPv6 server or router advert
 ### 8. Docs and the rule sweep
 
 Done 2026-11-23, merged to `main` from `anchor/docs-and-rule-sweep`, as one feature in
-six milestones, each reviewed once.
+six milestones, each reviewed once. The figures row was first merged on the design
+session's read alone; its review, run after the user's yes, found the row following its
+live values and a paused VM showing figures, and the row was rebuilt and agreed again.
 
 - **Facts first.** The 12 contradictions between docs settled by the code; `web/` and
   the review folders `2026-04-28`, `2026-10-16` and `2026-11-12` removed; the backlog
@@ -437,6 +439,12 @@ six milestones, each reviewed once.
 - **The release** ships what a host runs, from a list (478 files; no `docs/`, agents'
   instructions, development scripts, tests or fixtures); the README rewritten and
   every claim checked; seven pictures from a made-up demo host.
+- **A workload's figures are one row**, redone once the pictures showed them: a line of
+  identity (address, name, uptime), then the live figures, a meter beside CPU and
+  memory. No line break and no label follows a live value: each value has a reserved
+  width, the row never wraps on a desktop (the name is cut first, then the address),
+  and a phone shows two lines without meters, a VM's disk and network as one number
+  each. Paused, a VM and a container both say so.
 
 Chosen by the user: delete all three old review folders; a release holds only what a
 host runs; the pictures from a demo host, without the Home page; Node 26; a decision is
@@ -444,7 +452,10 @@ recorded as a fact with its reasoning in the commit (the shared template's rule,
 now; the rest of the newer template is a backlog entry); JavaScript may read a
 breakpoint only for the sidebar; a second host mount on a path is refused, on add, on
 edit and at start, with no migration; a Jellyfin section in CUSTOM-APPS; the rule docs
-as trimmed; the README with a Developing section.
+as trimmed; the README with a Developing section; the figures row as the third of
+three mockups, after turning down the first build (a meter under each value, two rows
+of three on a desktop); on a phone one number for disk and one for network, and no
+meters.
 
 Observed on throwaway VMs on the test host: a fresh install from the staged tarball on
 Node 26; the hand update from the `v2.8.0-beta.1` tree (Node 24 to 26, the seven
@@ -457,7 +468,9 @@ upgrade; a restore of a backup made before profiles. Not reached, and left in th
 backlog: the source checks still read code with a hand lexer (only the import order
 moved to a parse); the Home Assistant OS download; the vendored noVNC is in a release
 twice; detected drives list a disc Wisp cannot adopt; the Caddy app needs an image the
-user must build; AGENTS is behind the shared template in how work is run. Left as it
+user must build; AGENTS is behind the shared template in how work is run; a container
+that is not running sends zeros for its figures; the decimal formatter writes "0.0" for
+a number it does not have. Left as it
 is: the secret mount's "secret, not set" wording, which no rule names any more.
 
 ## Targets
@@ -489,7 +502,7 @@ Counted again at the close (2026-11-23).
 | Docs | 13.4k lines | 9.3k lines (15.1k before this phase) |
 | First read (the seven header files) | 113 KB | 105.5 KB |
 | Largest spec | 129 KB | 85.8 KB (CONTAINERS) |
-| Backlog entries | 58 | 74 |
+| Backlog entries | 58 | 77 |
 | Frontend main chunk | 357 kB (90 gzip) | 294 kB (85 gzip), plus a 299 kB vendor chunk (94 gzip) |
 
 `main` is about 680 commits ahead of the audit's commit, none pushed.
