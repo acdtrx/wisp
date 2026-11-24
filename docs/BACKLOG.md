@@ -197,6 +197,15 @@ boot's, and setup's container-dns step's, which renders the container DNS stub â
 the bridge is deleted in the UI. The helper should take back its file when the apply
 fails. **Revisit trigger:** a VLAN bridge create that fails at its apply.
 
+**A paused container's stats stream has no local name.** Seen on tini (2026-11-24): with
+a running container's task paused (`ctr tasks pause`, outside Wisp), its stats stream
+sent `mdnsHostname: null` while `ip` stayed, and the name was back on resume. Not looked
+into: whether the name is withdrawn from Avahi or only missing from the stream, and
+whether a backup's pause, the one pause Wisp makes itself, does the same; if both, a
+container's `.local` name stops resolving for the length of each backup's archive.
+**Revisit trigger:** a container's `.local` name fails to resolve during its backup, or
+the next change to the container mDNS reconciler.
+
 ## VMs and first boot setup
 
 **A VM rename does not rebuild its cloud-init seed.** The seed ISO keeps the hostname it
