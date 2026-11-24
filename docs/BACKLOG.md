@@ -500,6 +500,18 @@ help text is needed on a phone or tablet.
 check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers them.
 **Revisit trigger:** a symlinked library entry is picked and refused.
 
+**The Host pages run the full width where the workload pages sit in a column.** A VM's
+and a container's page hold their cards to a centred column (`PageBody`'s `narrow`,
+768 px); Host Overview, Host Mgmt, Software, App Config, Backups and the two create
+pages spread across the window, so the app changes shape between a workload and the
+host. The user narrowed the window on the Host pages and they still looked right
+(2026-11-24), so the column should suit them. Shape: one width for every page, which
+makes `narrow` the only behaviour and removes the prop; a read of the wide tables
+(network, hardware, storage, backups, the image library) and of Software's two cards
+side by side at that width, and of whether 768 px is the width or the tables want a
+wider one for all pages; the page specs and FRONTEND-RULES say the width once.
+**Revisit trigger:** the next frontend work, or before the stable 2.9.0.
+
 **The decimal formatter writes "0.0" for a number it does not have.** `formatDecimal`
 answers "0.0" for `null`, so a missing rate, percent or temperature reads as a zero in
 the top bar, the Host overview and a workload's figures, where sizes show a dash (found
