@@ -134,7 +134,7 @@ What the VM page ([UI-VM.md](UI-VM.md)) and the container page
 
 **Phones**
 
-The same groups in one column. The figures are lines: the address, name and uptime, then the live figures, a container's on one line and a VM's on two (CPU with its meter across the first, the rates on the second). A form opens as a
+The same groups in one column. The figures are two lines: the address, name and uptime, then the live figures, without meters; a VM's disk and network rates are one number each there, both directions summed. A form opens as a
 sheet from the bottom. Every action stays visible: none hides behind a hover.
 
 ## Login Page
