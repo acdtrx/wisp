@@ -500,6 +500,13 @@ help text is needed on a phone or tablet.
 check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers them.
 **Revisit trigger:** a symlinked library entry is picked and refused.
 
+**The decimal formatter writes "0.0" for a number it does not have.** `formatDecimal`
+answers "0.0" for `null`, so a missing rate, percent or temperature reads as a zero in
+the top bar, the Host overview and a workload's figures, where sizes show a dash (found
+by the figures row's fix round, 2026-11-23). Shape: a dash for a missing number, and a
+read of each caller for a value it guards itself. **Revisit trigger:** a figure reads
+zero where the host or the stream had none, or the next change to the formatters.
+
 ## Backend robustness and outbound requests
 
 **Other wraps pass an inner Wisp error's message as its raw cause.** The five wraps of a
