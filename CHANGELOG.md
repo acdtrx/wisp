@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 - **The New VM and New container forms are as wide as a workload's page** — both were narrower, each by a different amount.
+- **A figure Wisp does not have shows a dash, not "0.0"** — a rate, a percent or a temperature in the top bar and the Host overview; on a workload's page a CPU figure the stream lacks is left out, like its memory.
 
 ## 2026-11-23
 

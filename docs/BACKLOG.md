@@ -533,12 +533,10 @@ status bar (`viewport-fit=cover`, the safe-area paddings in `index.css`), so the
 browser's own edge effect over that area is the first thing to rule out, then the top
 bar's background and `theme-color`. **Revisit trigger:** the next frontend session.
 
-**The decimal formatter writes "0.0" for a number it does not have.** `formatDecimal`
-answers "0.0" for `null`, so a missing rate, percent or temperature reads as a zero in
-the top bar, the Host overview and a workload's figures, where sizes show a dash (found
-by the figures row's fix round, 2026-11-23). Shape: a dash for a missing number, and a
-read of each caller for a value it guards itself. **Revisit trigger:** a figure reads
-zero where the host or the stream had none, or the next change to the formatters.
+**The New VM form's Image field reads "Loading the library…" after the library's read
+failed.** Its first option tells loading from loaded by the data alone, so under the
+failed read's error and its Retry the field still says it is loading (seen on the dev
+stack, 2026-11-24). **Revisit trigger:** the next change to the New VM form.
 
 ## Backend robustness and outbound requests
 

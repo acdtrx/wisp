@@ -426,7 +426,7 @@ export default function HostOverview() {
             <span><span className="text-text-muted">Total:</span> {formatBytes(memory.totalGB * 1024 ** 3)}</span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent shrink-0" aria-hidden />
-              <span className="text-text-muted">Used:</span> {formatBytes(memory.usedBytes ?? 0)} ({formatDecimal(memory.usagePercent ?? 0)}%)
+              <span className="text-text-muted">Used:</span> {formatBytes(memory.usedBytes)} ({formatDecimal(memory.usagePercent)}%)
             </span>
             {(memory.cachedBytes ?? 0) > 0 && (
               <span className="flex items-center gap-1">

@@ -81,9 +81,9 @@ export function formatRelativeTime(isoString) {
   return new Date(isoString).toLocaleDateString();
 }
 
-/** Format a number to one decimal place, or '0.0' if null/undefined. */
+/** A number to one decimal place (`0.0`, `18.5`); `—` for a missing or invalid one. */
 export function formatDecimal(n) {
-  return n != null ? n.toFixed(1) : '0.0';
+  return Number.isFinite(n) ? n.toFixed(1) : '—';
 }
 
 /**

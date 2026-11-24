@@ -46,7 +46,7 @@ export default function HostStatsBar({ embedded = false }) {
       />
       <StatPill
         label="RAM"
-        value={`${stats.memory.allocatedGB == null ? '—' : formatDecimal(stats.memory.allocatedGB)}/${formatDecimal(stats.memory.totalGB)} GB`}
+        value={`${formatDecimal(stats.memory.allocatedGB)}/${formatDecimal(stats.memory.totalGB)} GB`}
         percent={stats.memory.usagePercent}
       />
       <StatPill

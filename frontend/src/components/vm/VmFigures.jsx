@@ -33,13 +33,14 @@ function RateSlot() {
 
 /**
  * A phone's shorter form of two rates: their sum, one number in MB/s, its unit said to a
- * screen reader. A direction the stream lacks counts as 0.0, as a single rate shows it.
+ * screen reader. With a direction the stream lacks there is no sum: a dash, as a single
+ * rate shows it.
  */
 function phoneRate(up, down) {
   return {
     value: (
       <>
-        {formatDecimal((up ?? 0) + (down ?? 0))}
+        {formatDecimal(up == null || down == null ? null : up + down)}
         <span className="sr-only"> MB/s</span>
       </>
     ),
@@ -63,6 +64,7 @@ export default function VmFigures({ state }) {
   if (PAUSED.has(state)) return <FiguresRow stoppedText="Paused" />;
   if (STOPPED.has(state)) return <FiguresRow stoppedText="Stopped" />;
   if (!stats?.active) return state === 'running' ? <FiguresRow /> : <FiguresRow stoppedText={`State: ${state ?? 'unknown'}`} />;
+  const cpu = stats.cpu?.percent ?? null;
   const uptime = formatUptimeMs(stats.uptime);
   return (
     <FiguresRow
@@ -72,7 +74,7 @@ export default function VmFigures({ state }) {
         { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up', keep: true },
       ]}
       live={[
-        { label: 'CPU', value: `${formatDecimal(stats.cpu?.percent)}%`, slot: PERCENT_SLOT, percent: stats.cpu?.percent ?? null },
+        { label: 'CPU', value: cpu == null ? null : `${formatDecimal(cpu)}%`, slot: PERCENT_SLOT, percent: cpu },
         {
           label: 'Disk',
           value: <Rate up={stats.disk?.readMBs} down={stats.disk?.writeMBs} words={['read', 'write']} />,

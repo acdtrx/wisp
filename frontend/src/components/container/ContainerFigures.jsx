@@ -25,6 +25,7 @@ export default function ContainerFigures({ state }) {
   if (state !== 'running') return <FiguresRow stoppedText={`State: ${state ?? 'unknown'}`} />;
   if (!stats) return <FiguresRow />;
 
+  const cpu = stats.cpuPercent ?? null;
   const used = stats.memoryUsageMiB ?? null;
   const limit = stats.memoryLimitMiB || null;
   const uptime = formatUptimeMs(stats.uptime);
@@ -36,7 +37,7 @@ export default function ContainerFigures({ state }) {
         { label: 'Uptime', value: uptime === '—' ? null : uptime, prefix: 'up', keep: true },
       ]}
       live={[
-        { label: 'CPU', value: `${formatDecimal(stats.cpuPercent)}%`, slot: PERCENT_SLOT, percent: stats.cpuPercent ?? null },
+        { label: 'CPU', value: cpu == null ? null : `${formatDecimal(cpu)}%`, slot: PERCENT_SLOT, percent: cpu },
         {
           label: 'Memory',
           value: used == null ? null : limit ? formatMemoryOf(used, limit) : formatMemory(used),

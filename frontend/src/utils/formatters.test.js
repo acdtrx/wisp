@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatBytes, formatMemory, formatMemoryOf, formatRelativeTime } from './formatters.js';
+import { formatBytes, formatDecimal, formatMemory, formatMemoryOf, formatRelativeTime } from './formatters.js';
 
 test('a byte count is shown in powers of 1024: one decimal under 100, none from 100 up', () => {
   assert.equal(formatBytes(0), '0 B');
@@ -56,4 +56,11 @@ test('a memory amount out of its limit writes the unit once when both share it',
   assert.equal(formatMemoryOf(512, 2048), '512 MB / 2 GB');
   assert.equal(formatMemoryOf(0, 128), '0 / 128 MB');
   assert.equal(formatMemoryOf(null, 128), '— / 128 MB');
+});
+
+test('a number is shown to one decimal, a missing or invalid one as a dash', () => {
+  assert.equal(formatDecimal(0), '0.0');
+  assert.equal(formatDecimal(18.46), '18.5');
+  assert.equal(formatDecimal(100), '100.0');
+  for (const value of [null, undefined, Number.NaN, Infinity, '12']) assert.equal(formatDecimal(value), '—');
 });
