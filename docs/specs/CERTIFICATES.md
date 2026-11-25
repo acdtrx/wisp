@@ -42,9 +42,10 @@ Let's Encrypt is not contacted by a save that fails here. The check does not pro
 token may edit records: a token that can only read fails the job, with Cloudflare's
 message.
 
-**What a save starts.** The first save, and a save that changes the domain, start the
-[job](#the-job) that gets the certificate. A save that changes only the token stores it
-and starts nothing.
+**What a save starts.** A save starts the [job](#the-job) whenever Wisp holds no
+certificate for the saved domain: the first save, a changed domain, and a token
+corrected after an attempt that failed. A save that changes only the token while Wisp
+holds the domain's certificate stores it and starts nothing.
 
 **After a domain change the old certificate keeps serving** until the new one is issued:
 the apps serve under the domain of the certificate Wisp holds, not the one asked for.

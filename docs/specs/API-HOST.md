@@ -404,8 +404,9 @@ write, and the end of every attempt, is announced as `{ kind: "certificate" }` o
   stored one; with none stored it is required (**422** `INVALID_SETTINGS`). The
   [checks](CERTIFICATES.md#the-certificate-setting) run first: **422**
   `INVALID_SETTINGS`, `CERTIFICATE_TOKEN_REJECTED`, `CERTIFICATE_ZONE_NOT_FOUND`;
-  **502** `CERTIFICATE_DNS_UNAVAILABLE`. A first save, or a changed domain, starts the
-  `certificate-issue` job, which clients see on the `jobs` topic; the route does not
+  **502** `CERTIFICATE_DNS_UNAVAILABLE`. A save while Wisp holds no certificate for the
+  saved domain (a first save, a changed domain, a token corrected after a failed
+  attempt) starts the `certificate-issue` job, which clients see on the `jobs` topic; the route does not
   wait for it.
 - **`DELETE /api/settings/certificate`** · `admin` → **204**: the setting, the
   certificate and its key are gone, and the apps are delivered that. **204** too when
