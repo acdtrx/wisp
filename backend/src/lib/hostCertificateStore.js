@@ -81,8 +81,24 @@ export async function readStore() {
     cached = emptyStore();
     return cached;
   }
-  cached = parseStore(JSON.parse(raw));
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`certificate.json: not JSON (${err.message})`);
+  }
+  cached = parseStore(data);
   return cached;
+}
+
+/**
+ * The start's strict read of the file (CODING-RULES §4), with the other stored
+ * config: one that is not what Wisp writes stops the start, naming it, rather
+ * than failing every read later (the stats topic among them). Once read, only
+ * this module's writes change it.
+ */
+export async function checkCertificateStore() {
+  await readStore();
 }
 
 let storeLock = Promise.resolve();

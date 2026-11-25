@@ -29,6 +29,7 @@ import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
 import { startCertificateChecks, stopCertificateChecks } from './lib/hostCertificate.js';
+import { checkCertificateStore } from './lib/hostCertificateStore.js';
 import { cancelInterruptibleJobs, refuseNewJobs } from './lib/jobs/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
@@ -128,13 +129,14 @@ function checkConfigLocation() {
 /**
  * The checks stored state must pass once the migrations have run (CODING-RULES
  * §4): runtime.env strictly, retired keys included; wisp-config.json through
- * the strict schema; the password file; WISP_DEFAULT_BRIDGE naming a host
- * bridge. Throws the first problem, naming it.
+ * the strict schema; the password file; certificate.json; WISP_DEFAULT_BRIDGE
+ * naming a host bridge. Throws the first problem, naming it.
  */
 async function checkStoredConfig() {
   checkRuntimeEnvFile(projectRoot);
   getConfigSync();
   checkPasswordFile();
+  await checkCertificateStore();
   const bridgeProblem = await checkDefaultBridgeOverride();
   if (bridgeProblem) throw createAppError('DEFAULT_BRIDGE_INVALID', bridgeProblem);
 }
