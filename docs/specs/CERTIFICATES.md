@@ -12,8 +12,8 @@ app containers that serve HTTPS. The Caddy app is the one that uses it today
 - **One certificate per host**, for `<domain>` and `*.<domain>`. Every app that uses it
   serves names under that one domain.
 - **No ACME library** ([TECH-STACK.md](../TECH-STACK.md)): the client is Wisp's own, on
-  Node's `crypto`. The one thing Node cannot build, the signing request, is built by
-  `openssl req`. It follows the standard (RFC 8555), never what Let's Encrypt happens to
+  Node's `crypto`, the signing request included: Node has no API for one, so Wisp
+  encodes its one fixed shape itself, and the key never leaves the process. It follows the standard (RFC 8555), never what Let's Encrypt happens to
   do today: it reads each order's and authorization's status and waits on it, takes the
   URLs the directory gives, and hands on the chain exactly as delivered.
 - **Nothing depends on a fixed lifetime.** Every date Wisp acts on is computed from the

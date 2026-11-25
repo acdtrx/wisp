@@ -63,10 +63,9 @@ that first throws each code:
 - **The client is Wisp's own**, with no package (`TECH-STACK.md`). It is written to
   RFC 8555: it polls statuses, retries a `badNonce`, honours `Retry-After`, and never
   relies on a step being instant.
-- **The signing request.** If Node 26 can build one, it does. If not, it is built by
-  `openssl req`, the key on stdin: a new use of a binary already on the exec allowlist
-  (`CODING-RULES.md` §7), which the user agreed to. The builder says which before
-  building; the design session writes the allowlist's line.
+- **The signing request is built in Node**, by Wisp's own encoding of its one fixed
+  shape, signed with Node's `crypto`: no exec, no temporary file. The unit tests check
+  the request with `openssl`.
 - **Outbound HTTP has a module named for it.** The two fetches move from
   `lib/downloads` to `lib/outbound`, which holds nothing else; `lib/downloads` keeps the
   image downloads, built on it. The requests that speak the certificate authority's and
