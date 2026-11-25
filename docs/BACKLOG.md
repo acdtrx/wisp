@@ -564,6 +564,12 @@ Assistant OS, or the next work on the library presets.
 
 ## Checks, tests, development
 
+**A helper refusal test can hit the 10 s test timeout under load.** `wisp-mount.test.js`'s
+"a credentials file of another user is refused" timed out once in a full `npm run check`
+on the Mac (exit `null`, not 64) while other test files ran beside it, and passed alone
+(found in the host-certificate build, 2026-11-25). **Revisit trigger:** it fails again, or
+any helper test times out in the release workflow.
+
 **No check refuses a duplicate JSX prop.** A component given the same prop twice keeps
 the last one silently: that is how a doubled `saveDisabledReason` on the VM General card
 let its Save on while its CPU or RAM had a problem (found in the frontend data flow
