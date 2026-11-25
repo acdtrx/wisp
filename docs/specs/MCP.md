@@ -71,7 +71,7 @@ Each app module may export `agentWritableAppConfigFields` — the top-level appC
 | `zot-registry` | — none | users/passwords, OIDC, `externalUrl`, session keys |
 | `jellyfin`, `tiny-samba` | — none | everything |
 
-The typical agent flow for exposing a freshly deployed service: `get_container` on the Caddy container → append a `{ subdomain, target }` row to `appConfig.hosts` → `update_app_config` with the full modified array → Caddy live-reloads.
+The typical agent flow for exposing a freshly deployed service: `get_container` on the Caddy container → append a `{ subdomain, target }` row to `appConfig.hosts` → `update_app_config` with the full modified array → Caddy live-reloads; when the container needs a restart the result says `requiresRestart: true` instead, and the restart applies the change.
 
 ## Client registration
 
