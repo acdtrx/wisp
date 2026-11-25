@@ -22,6 +22,8 @@ let cloudflare;
 const started = [];
 /** What the stood-in issue does: resolves a certificate, or throws. */
 let issue;
+/** Each call of the stood-in record removal. */
+const removedRecords = [];
 
 mock.module(new URL('./outbound/index.js', import.meta.url).href, {
   exports: { ssrfSafeFetch: async (url, init) => cloudflare(url, init) },
@@ -32,7 +34,10 @@ mock.module(new URL('./certificates/index.js', import.meta.url).href, {
   exports: {
     findZone: realCertificates.findZone,
     describeChain: realCertificates.describeChain,
-    removeTxtRecords: async () => [],
+    removeTxtRecords: async (token, records) => {
+      removedRecords.push({ token, records });
+      return [];
+    },
     issueCertificate: (opts) => issue(opts),
   },
 });
@@ -51,6 +56,7 @@ mock.module(new URL('./jobs/index.js', import.meta.url).href, {
 
 const { createAppError, errorStatus } = await import('./appErrors.js');
 const certificate = await import('./hostCertificate.js');
+const store = await import('./hostCertificateStore.js');
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {}, child() { return silentLog; } };
 
@@ -216,4 +222,60 @@ test('a job whose setting was removed while it ran stores nothing', async () => 
   await assert.rejects(runStartedJob(), { code: 'CERTIFICATE_NOT_FOUND' });
   assert.equal((await certificate.getCertificateRecord()).certificate, null);
   assert.ok(!readFileSync(storeFile, 'utf8').includes('PRIVATE KEY'));
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+const T0 = Date.parse('2026-11-25T10:00:00.000Z');
+const held = (days, domain = 'example.com') => ({
+  domain, validFrom: new Date(T0).toISOString(), validUntil: new Date(T0 + days * DAY).toISOString(),
+});
+
+test('the check: nothing before two thirds of the lifetime, the job after it, the job when Wisp holds no certificate for the stored domain', () => {
+  const setting = { domain: 'example.com', cloudflareApiToken: TOKEN };
+  for (const days of [90, 6]) {
+    const cert = held(days);
+    const twoThirds = T0 + (days * DAY * 2) / 3;
+    assert.equal(certificate.checkDecision(setting, cert, T0 + DAY / 24), 'wait', `${days} days, at the start`);
+    assert.equal(certificate.checkDecision(setting, cert, twoThirds - 60_000), 'wait', `${days} days, just before two thirds`);
+    assert.equal(certificate.checkDecision(setting, cert, twoThirds), 'issue', `${days} days, at two thirds`);
+    assert.equal(certificate.checkDecision(setting, cert, T0 + days * DAY + DAY), 'issue', `${days} days, expired`);
+  }
+  assert.equal(certificate.checkDecision(setting, null, T0), 'issue', 'no certificate: a first attempt failed');
+  assert.equal(certificate.checkDecision(setting, held(90, 'old.example.com'), T0), 'issue', 'a domain change');
+  assert.equal(certificate.checkDecision(null, held(90), T0), 'none');
+  assert.equal(certificate.renewAt(held(90).validFrom, held(90).validUntil), new Date(T0 + 60 * DAY).toISOString());
+});
+
+test('a renewal that fails leaves the certificate held and flags the host; the next that succeeds clears it', async () => {
+  await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: TOKEN }, silentLog);
+  issue = async () => ISSUED;
+  await runStartedJob();
+  await certificate.startCertificateIssueJob(silentLog);
+  issue = async () => { throw createAppError('CERTIFICATE_ISSUE_FAILED', 'The certificate could not be got, at the step "validate"', 'unauthorized'); };
+  await assert.rejects(runStartedJob(), { code: 'CERTIFICATE_ISSUE_FAILED' });
+  const record = await certificate.getCertificateRecord();
+  assert.equal(record.certificate.validUntil, ISSUED.validUntil, 'the old certificate still serves');
+  assert.equal(record.lastAttempt.error.error, 'CERTIFICATE_ISSUE_FAILED');
+  assert.equal(await certificate.isCertificateFailed(), true);
+
+  issue = async () => ({ ...ISSUED, validUntil: '2027-03-01T10:00:00.000Z', serial: '02' });
+  await runStartedJob();
+  assert.equal(await certificate.isCertificateFailed(), false);
+  assert.equal((await certificate.getCertificateRecord()).certificate.validUntil, '2027-03-01T10:00:00.000Z');
+});
+
+test('the records a cut job left in the zone are removed by the next job first, with the setting\'s token', async () => {
+  await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: TOKEN }, silentLog);
+  const left = [{ zoneId: 'z1', recordId: 'rec-1' }, { zoneId: 'z1', recordId: 'rec-2' }];
+  await store.updateStore((s) => ({ ...s, txtRecords: left }));
+  removedRecords.length = 0;
+  let seenAtIssue = null;
+  issue = async () => {
+    seenAtIssue = (await store.readStore()).txtRecords;
+    return ISSUED;
+  };
+  await runStartedJob();
+  assert.deepEqual(removedRecords, [{ token: TOKEN, records: left }]);
+  assert.deepEqual(seenAtIssue, [], 'removed before the new order');
+  assert.deepEqual((await store.readStore()).txtRecords, []);
 });

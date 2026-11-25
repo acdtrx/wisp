@@ -6,6 +6,7 @@
 - **Wisp gets the host's certificate itself** — a domain and a Cloudflare API token in Host → App Config → Certificate give the host a Let's Encrypt certificate for the domain and every name directly under it, by the DNS challenge; Wisp renews it, and the Host row and the App Config tab show a dot while an attempt failed.
 - **The Caddy app serves its sites with it, on the stock `caddy` image** — its config is the sites alone, under the certificate's domain; a new certificate reaches a running Caddy without a restart.
 - **Existing Caddy containers move to Wisp's certificate** — the update takes the domain and the token of the first Caddy container (by name) into the certificate setting; each Caddy container keeps serving with its own certificate until Wisp's first delivery, then needs one restart, and can be moved to the stock image with **Use the app's image** in its Image group.
+- **The certificate renews itself** — a check at every start and once an hour renews it past two thirds of its lifetime, tries a failed attempt again an hour later, and gives an app container whose files are not the current certificate (a busy one, one restored from a backup) the one Wisp holds.
 - **Use the app's image** — an app container whose image is not its app's own gets it back in one click.
 
 ### Bug Fixes

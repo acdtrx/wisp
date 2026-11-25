@@ -28,6 +28,7 @@ import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from '
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
+import { startCertificateChecks, stopCertificateChecks } from './lib/hostCertificate.js';
 import { cancelInterruptibleJobs, refuseNewJobs } from './lib/jobs/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
@@ -217,6 +218,7 @@ async function main() {
   startUsbMonitor();
 
   startHourlyUpdateChecks(app.log);
+  startCertificateChecks(app.log);
   startWispUpdateChecker(app.log);
   startContainerBackupScheduler(app.log);
 }
@@ -248,6 +250,7 @@ async function shutdown(signal) {
   // app.close(), so the starter refuses them; then what starts jobs on its own stops.
   refuseNewJobs();
   stopHourlyUpdateChecks();
+  stopCertificateChecks();
   stopWispUpdateChecker();
   stopContainerBackupScheduler();
   // Then the interruptible jobs, while their streams are open: a client

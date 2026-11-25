@@ -9,10 +9,10 @@ import { checkCertificateDomain } from './configSchema.js';
 import { getRawCertificateSetting, writeCertificateSetting } from './settings.js';
 import { createAppError, errorBody } from './appErrors.js';
 import { createEmitter } from './base/index.js';
-import { readStore, updateStore } from './hostCertificateStore.js';
+import { getHeldCertificate, readStore, updateStore } from './hostCertificateStore.js';
 import { findZone, issueCertificate, removeTxtRecords } from './certificates/index.js';
 import { startJob, titleForCertificateIssue, whenJobEnds } from './jobs/index.js';
-import { getContainerConfig, listContainers } from './containerManager/index.js';
+import { getContainerConfig, getMountFileTextContent, listContainers } from './containerManager/index.js';
 import { usesHostCertificate } from './containerApps/index.js';
 import { deliverHostCertificate } from './containerOperations.js';
 import { log } from './log.js';
@@ -33,7 +33,7 @@ const certificateChange = createEmitter('certificate: change', log);
 export const subscribeCertificateChange = certificateChange.subscribe;
 
 /** When a renewal is due: two thirds of the certificate's own lifetime. */
-function renewAt(validFrom, validUntil) {
+export function renewAt(validFrom, validUntil) {
   const from = Date.parse(validFrom);
   return new Date(from + ((Date.parse(validUntil) - from) * 2) / 3).toISOString();
 }
@@ -60,17 +60,44 @@ export async function isCertificateFailed() {
 
 // ── delivery ─────────────────────────────────────────────────────────────────
 
+/** A file mount's content, or empty when the container has no such mount or file. */
+async function mountText(config, mountName) {
+  if (!(Array.isArray(config.mounts) ? config.mounts : []).some((m) => m?.name === mountName)) return '';
+  try {
+    return (await getMountFileTextContent(config.name, mountName)).content;
+  } catch (err) {
+    if (err?.code === 'CONTAINER_MOUNT_SOURCE_MISSING') return '';
+    throw err;
+  }
+}
+
+/**
+ * Whether a container's certificate files are the certificate Wisp holds: the
+ * chain and the key, compared as files, both empty when it holds none. A
+ * container without the mounts (made before the host's certificate) holds
+ * none, so it is left alone until Wisp holds one.
+ */
+async function holdsCertificate(config, certificate) {
+  return (await mountText(config, 'tls-cert')) === (certificate?.chain ?? '')
+    && (await mountText(config, 'tls-key')) === (certificate?.key ?? '');
+}
+
 /**
  * Deliver the certificate Wisp holds (or none) to every app container that
- * uses it (CERTIFICATES.md, Delivery): each one's own config save. A busy
- * container is skipped and a failed save logged: the next check delivers to
- * both. `trigger` names what asked, for the log.
+ * uses it (CERTIFICATES.md, Delivery): each one's own config save. With
+ * `onlyStale`, only to those whose files are not that certificate (the
+ * check). A busy container is skipped and a failed save logged: the next check
+ * delivers to both. `trigger` names what asked, for the log.
  */
-export async function deliverToAppContainers(trigger, deliveryLog) {
+export async function deliverToAppContainers(trigger, deliveryLog, { onlyStale = false } = {}) {
+  const certificate = onlyStale ? await getHeldCertificate() : null;
   const names = [];
   for (const { name } of await listContainers()) {
     try {
-      if (usesHostCertificate(await getContainerConfig(name))) names.push(name);
+      const config = await getContainerConfig(name);
+      if (!usesHostCertificate(config)) continue;
+      if (onlyStale && await holdsCertificate(config, certificate)) continue;
+      names.push(name);
     } catch (err) {
       deliveryLog.warn({ container: name, code: err?.code, err: err?.message }, 'The host certificate could not be delivered: the container could not be read');
     }
@@ -92,6 +119,66 @@ export async function deliverToAppContainers(trigger, deliveryLog) {
     }
   }
   return outcome;
+}
+
+// ── the check ────────────────────────────────────────────────────────────────
+
+/**
+ * What the check does for `setting` and the `certificate` Wisp holds, at
+ * `now` (epoch ms): `issue` when Wisp holds no certificate for the stored
+ * domain, or the one it holds is past two thirds of its own lifetime; else
+ * `wait`; `none` with no setting.
+ */
+export function checkDecision(setting, certificate, now) {
+  if (!setting) return 'none';
+  if (!certificate || certificate.domain !== setting.domain) return 'issue';
+  return now >= Date.parse(renewAt(certificate.validFrom, certificate.validUntil)) ? 'issue' : 'wait';
+}
+
+/**
+ * The check (CERTIFICATES.md, Renewal): start the job when it is due, and
+ * deliver to every app container whose files are not the certificate Wisp
+ * holds. Logs what triggered it and what it did.
+ */
+export async function runCertificateCheck(trigger, checkLog) {
+  const setting = await getRawCertificateSetting();
+  const { certificate } = await readStore();
+  const decision = checkDecision(setting, certificate, Date.now());
+  let job = null;
+  if (decision === 'issue') job = await startIssueJob(setting, checkLog);
+  const delivery = await deliverToAppContainers(`check (${trigger})`, checkLog, { onlyStale: true });
+  checkLog.info({
+    trigger,
+    decision,
+    jobId: job?.jobId ?? null,
+    renewAt: certificate ? renewAt(certificate.validFrom, certificate.validUntil) : null,
+    delivered: delivery.delivered,
+    skipped: delivery.skipped,
+    failed: delivery.failed,
+  }, decision === 'issue' ? 'Certificate check: the job is started' : 'Certificate check: nothing is due');
+}
+
+const HOURLY_MS = 60 * 60 * 1000;
+/** The first check, at the start: shortly after it, once the boot work is done. */
+const FIRST_CHECK_DELAY_MS = 10_000;
+let checkTimers = null;
+
+/** Idempotent: the check at the start, then once an hour. */
+export function startCertificateChecks(appLog) {
+  if (checkTimers) return;
+  const run = (trigger) => () => {
+    const checkLog = appLog.child({ trigger });
+    runCertificateCheck(trigger, checkLog).catch((err) => checkLog.warn({ code: err?.code, err: err?.message }, 'Certificate check failed'));
+  };
+  checkTimers = { first: setTimeout(run('start'), FIRST_CHECK_DELAY_MS), hourly: setInterval(run('hourly'), HOURLY_MS) };
+}
+
+/** Clear the timers; a running job is cut with the other interruptible jobs. */
+export function stopCertificateChecks() {
+  if (!checkTimers) return;
+  clearTimeout(checkTimers.first);
+  clearInterval(checkTimers.hourly);
+  checkTimers = null;
 }
 
 // ── the job ──────────────────────────────────────────────────────────────────
