@@ -60,14 +60,14 @@ Every such fetch holds three invariants:
 
 1. **Single DNS resolve.** The host is resolved once and the fetch is refused if any returned address is private/loopback/CGNAT/multicast/reserved, or IPv6 unique-local/link-local/site-local (`fec0::/10`)/multicast. An IPv6 address that wraps an IPv4 one — IPv4-mapped (`::ffff:0:0/96`), IPv4-translated (`::ffff:0:0:0/96`), IPv4-compatible (`::/96`), NAT64 (`64:ff9b::/96`) or 6to4 (`2002::/16`) — is judged by the IPv4 address it carries; local-use NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and an address that does not parse are refused.
 2. **DNS-pinned connection.** The connection is pinned to exactly the resolved addresses: a second lookup at connect time would allow a rebinding bypass.
-3. **Each redirect re-checked.** No redirect is followed automatically; each `Location` is resolved and pinned again. Up to 5 redirects are followed.
+3. **Each redirect re-checked.** No redirect is followed automatically; each `Location` is resolved and pinned again. Up to 5 redirects are followed. A redirect from `https` to `http` is refused. A request that carries a credential (an `Authorization` header) or a body follows none: its 3xx is the answer, so neither is ever sent on to another address.
 
 This applies to:
 - `POST /api/library/download` (user-supplied URL)
 - the URL check
 - the Ubuntu cloud, Arch cloud, and HAOS preset downloads (so a hostile mirror cannot redirect to a private IP).
 
-Outside the library, the GitHub keys lookup ([SETTINGS.md](SETTINGS.md), SSH keys) and the self-update's requests to GitHub ([UPDATES.md](UPDATES.md)) go through it too. The one outbound request that does not is to the operator's OIDC issuer, which may be on the LAN ([AUTH.md → OIDC / SSO login](AUTH.md#oidc--sso-login)).
+Outside the library, the GitHub keys lookup ([SETTINGS.md](SETTINGS.md), SSH keys), the self-update's requests to GitHub ([UPDATES.md](UPDATES.md)) and the certificate's requests to the certificate authority and to Cloudflare ([CERTIFICATES.md](CERTIFICATES.md)) go through it too. The one outbound request that does not is to the operator's OIDC issuer, which may be on the LAN ([AUTH.md → OIDC / SSO login](AUTH.md#oidc--sso-login)).
 
 2. **Preset downloads** — Three server-side presets: **Ubuntu Server** (latest LTS cloud image), **Arch Linux** (latest x86_64 cloud qcow2 from pkgbuild mirrors), and **Home Assistant OS** (latest HAOS QEMU image, xz-decompressed to qcow2; after the download's progress events, one `decompressing` event marks the indeterminate xz phase). Each returns a job ID, through the matching `POST /api/library/download-*` route.
 

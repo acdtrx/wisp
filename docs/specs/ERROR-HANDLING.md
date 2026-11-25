@@ -246,7 +246,7 @@ Each code a client can receive, with its status.
 | `BACKUP_DEST_NONE` | 422 | No backup destination was given or configured |
 | `HASH_FAILED` | 422 | The password could not be hashed for cloud-init |
 | `INVALID_URL` | 422 | The URL is not an HTTP or HTTPS URL |
-| `SSRF_BLOCKED` | 422 | The URL resolves to a private, loopback or reserved address, or redirects too often |
+| `SSRF_BLOCKED` | 422 | The URL resolves to a private, loopback or reserved address, redirects too often, or redirects from `https` to `http` |
 | `DNS_FAILED` | 422 | The URL's host does not resolve |
 | `DOWNLOAD_FAILED` | 422 | The download failed |
 | `NO_BODY` | 422 | The download answered without a body |
