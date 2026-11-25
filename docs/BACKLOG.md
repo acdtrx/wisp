@@ -375,6 +375,12 @@ containers on a Mac.
 
 ## Backups
 
+**Deleting a container's last backup leaves its empty folder.** After `DELETE
+/api/container-backups` removed a container's only backup, `/var/lib/wisp/backups/containers/<name>/`
+stayed, empty (seen on tini, 2026-11-25, in the host-certificate verification). **Revisit
+trigger:** a listing or a retention pass that trips on an empty folder, or a user who notices
+them.
+
 **Restore in place can't repair a container whose `container.json` is missing or corrupt.**
 The restore route checks the container against `listContainers`, which skips a directory
 without a readable `container.json`, so it answers 404; and the safety backup taken before
