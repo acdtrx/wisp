@@ -59,7 +59,9 @@ is kept. Nothing is revoked.
 Getting a certificate is one job kind, `certificate-issue`, for the first certificate and
 for every renewal ([API.md → Background jobs](API.md#background-jobs)). It has no subject.
 It is shared: a start while one runs answers that job. It is interruptible: a shutdown
-cuts it, and the [check](#renewal) at the next start runs it again.
+cuts it, and the [check](#renewal) at the next start runs it again when it is still due
+(no certificate for the domain, past two thirds, or a failed last attempt). A cut
+**Renew now** on a certificate that is not due is not run again.
 
 What it does, each a `step` of its progress:
 
