@@ -19,7 +19,8 @@ function cloudflareMessage(data, status) {
     .map((e) => (e && typeof e === 'object' ? [e.code, e.message].filter(Boolean).join(' ') : String(e)))
     .filter(Boolean)
     .join('; ');
-  return text || `HTTP ${status}`;
+  // One line: the detail shows Cloudflare's words, never a layout of its own.
+  return text.replace(/\s+/g, ' ').trim() || `HTTP ${status}`;
 }
 
 /**

@@ -54,7 +54,8 @@ function problemError(what, res, problem) {
       if (sub?.detail) parts.push(`${sub.identifier?.value ?? ''} ${sub.detail}`.trim());
     }
   }
-  const cause = parts.length ? parts.join(': ') : `HTTP ${res.status}`;
+  // One line: the detail shows the authority's words, never a layout of its own.
+  const cause = parts.length ? parts.join(': ').replace(/\s+/g, ' ').trim() : `HTTP ${res.status}`;
   return createAppError('CERTIFICATE_ISSUE_FAILED', `The certificate authority refused ${what}`, cause);
 }
 

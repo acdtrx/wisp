@@ -114,7 +114,9 @@ export async function issueCertificate({ domain, token, directoryUrl, account, o
         const settled = await acme.waitForAuthorization(url);
         if (settled?.status !== 'valid') {
           const failed = Array.isArray(settled?.challenges) ? settled.challenges.find((c) => c?.error) : null;
-          const why = failed?.error ? [failed.error.type, failed.error.detail].filter(Boolean).join(': ') : settled?.status;
+          const why = failed?.error
+            ? [failed.error.type, failed.error.detail].filter(Boolean).join(': ').replace(/\s+/g, ' ').trim()
+            : settled?.status;
           throw createAppError('CERTIFICATE_ISSUE_FAILED', `The certificate authority did not validate ${settled?.identifier?.value ?? domain}`, why);
         }
       }
@@ -130,7 +132,7 @@ export async function issueCertificate({ domain, token, directoryUrl, account, o
     const keyPem = certKey.export({ type: 'pkcs8', format: 'pem' });
     let issued = ready;
     if (ready.status === 'ready') {
-      const csr = await buildSigningRequest(domain, keyPem);
+      const csr = buildSigningRequest(domain, certKey);
       await acme.finalize(ready.finalize, csr);
       issued = await acme.waitForOrderIssued(orderUrl);
     }

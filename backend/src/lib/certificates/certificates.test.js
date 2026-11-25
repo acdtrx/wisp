@@ -174,7 +174,7 @@ function authority(url, init) {
   }
   if (url === `${CA}/finalize/1`) {
     const csr = Buffer.from(payload.csr, 'base64url');
-    const text = execFileSync('openssl', ['req', '-inform', 'DER', '-noout', '-text'], { input: csr }).toString();
+    const text = execFileSync('openssl', ['req', '-inform', 'DER', '-noout', '-text', '-verify'], { input: csr, stdio: ['pipe', 'pipe', 'ignore'] }).toString();
     assert.match(text, /DNS:example\.com, DNS:\*\.example\.com|DNS:home\.example\.com, DNS:\*\.home\.example\.com/);
     world.cert = execFileSync('openssl', [
       'x509', '-req', '-inform', 'DER', '-in', '/dev/stdin', '-CA', path.join(dir, 'ca.pem'), '-CAkey', path.join(dir, 'ca.key'),
