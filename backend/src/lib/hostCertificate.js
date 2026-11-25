@@ -124,14 +124,16 @@ export async function deliverToAppContainers(trigger, deliveryLog, { onlyStale =
 // ── the check ────────────────────────────────────────────────────────────────
 
 /**
- * What the check does for `setting` and the `certificate` Wisp holds, at
- * `now` (epoch ms): `issue` when Wisp holds no certificate for the stored
- * domain, or the one it holds is past two thirds of its own lifetime; else
- * `wait`; `none` with no setting.
+ * What the check does for `setting`, the `certificate` Wisp holds and its
+ * `lastAttempt`, at `now` (epoch ms): `issue` when Wisp holds no certificate
+ * for the stored domain, the one it holds is past two thirds of its own
+ * lifetime, or the last attempt failed (tried again by the next check, a Renew
+ * now's included); else `wait`; `none` with no setting.
  */
-export function checkDecision(setting, certificate, now) {
+export function checkDecision(setting, certificate, lastAttempt, now) {
   if (!setting) return 'none';
   if (!certificate || certificate.domain !== setting.domain) return 'issue';
+  if (lastAttempt?.error) return 'issue';
   return now >= Date.parse(renewAt(certificate.validFrom, certificate.validUntil)) ? 'issue' : 'wait';
 }
 
@@ -142,8 +144,8 @@ export function checkDecision(setting, certificate, now) {
  */
 export async function runCertificateCheck(trigger, checkLog) {
   const setting = await getRawCertificateSetting();
-  const { certificate } = await readStore();
-  const decision = checkDecision(setting, certificate, Date.now());
+  const { certificate, lastAttempt } = await readStore();
+  const decision = checkDecision(setting, certificate, lastAttempt, Date.now());
   let job = null;
   if (decision === 'issue') job = await startIssueJob(setting, checkLog);
   const delivery = await deliverToAppContainers(`check (${trigger})`, checkLog, { onlyStale: true });

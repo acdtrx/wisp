@@ -230,19 +230,22 @@ const held = (days, domain = 'example.com') => ({
   domain, validFrom: new Date(T0).toISOString(), validUntil: new Date(T0 + days * DAY).toISOString(),
 });
 
-test('the check: nothing before two thirds of the lifetime, the job after it, the job when Wisp holds no certificate for the stored domain', () => {
+test('the check: nothing before two thirds of the lifetime, the job after it, the job when Wisp holds no certificate for the stored domain or the last attempt failed', () => {
   const setting = { domain: 'example.com', cloudflareApiToken: TOKEN };
   for (const days of [90, 6]) {
     const cert = held(days);
     const twoThirds = T0 + (days * DAY * 2) / 3;
-    assert.equal(certificate.checkDecision(setting, cert, T0 + DAY / 24), 'wait', `${days} days, at the start`);
-    assert.equal(certificate.checkDecision(setting, cert, twoThirds - 60_000), 'wait', `${days} days, just before two thirds`);
-    assert.equal(certificate.checkDecision(setting, cert, twoThirds), 'issue', `${days} days, at two thirds`);
-    assert.equal(certificate.checkDecision(setting, cert, T0 + days * DAY + DAY), 'issue', `${days} days, expired`);
+    assert.equal(certificate.checkDecision(setting, cert, null, T0 + DAY / 24), 'wait', `${days} days, at the start`);
+    assert.equal(certificate.checkDecision(setting, cert, null, twoThirds - 60_000), 'wait', `${days} days, just before two thirds`);
+    assert.equal(certificate.checkDecision(setting, cert, null, twoThirds), 'issue', `${days} days, at two thirds`);
+    assert.equal(certificate.checkDecision(setting, cert, null, T0 + days * DAY + DAY), 'issue', `${days} days, expired`);
   }
-  assert.equal(certificate.checkDecision(setting, null, T0), 'issue', 'no certificate: a first attempt failed');
-  assert.equal(certificate.checkDecision(setting, held(90, 'old.example.com'), T0), 'issue', 'a domain change');
-  assert.equal(certificate.checkDecision(null, held(90), T0), 'none');
+  assert.equal(certificate.checkDecision(setting, null, null, T0), 'issue', 'no certificate: a first attempt failed');
+  assert.equal(certificate.checkDecision(setting, held(90, 'old.example.com'), null, T0), 'issue', 'a domain change');
+  assert.equal(certificate.checkDecision(null, held(90), null, T0), 'none');
+  const failed = { at: new Date(T0).toISOString(), error: { error: 'CERTIFICATE_ISSUE_FAILED', detail: 'x' } };
+  assert.equal(certificate.checkDecision(setting, held(90), failed, T0 + DAY), 'issue', 'a failed attempt is tried again by the next check');
+  assert.equal(certificate.checkDecision(setting, held(90), { at: failed.at, error: null }, T0 + DAY), 'wait');
   assert.equal(certificate.renewAt(held(90).validFrom, held(90).validUntil), new Date(T0 + 60 * DAY).toISOString());
 });
 
