@@ -7,7 +7,7 @@
  */
 import { checkCertificateDomain } from './configSchema.js';
 import { getRawCertificateSetting, writeCertificateSetting } from './settings.js';
-import { createAppError, errorBody } from './appErrors.js';
+import { createAppError, errorBody, wrapAppError } from './appErrors.js';
 import { createEmitter } from './base/index.js';
 import { getHeldCertificate, readStore, updateStore } from './hostCertificateStore.js';
 import { findZone, issueCertificate, removeTxtRecords } from './certificates/index.js';
@@ -221,28 +221,44 @@ async function startIssueJob(setting, jobLog) {
   return ack;
 }
 
-async function runIssueJob({ domain, token, report, signal, jobLog }) {
-  const before = await readStore();
-  let leftover = before.txtRecords;
-  if (leftover.length > 0) {
-    leftover = await removeTxtRecords(token, leftover);
-    await updateStore((s) => ({ ...s, txtRecords: leftover }));
-    jobLog.info({ removed: before.txtRecords.length - leftover.length, left: leftover.length }, 'Removed the TXT records an earlier certificate job left');
-  }
+/**
+ * The job's own failure (CERTIFICATES.md, The job): whatever stopped it, its
+ * error is CERTIFICATE_ISSUE_FAILED naming the step it was at, the cause in
+ * one line. The certificate client's failures already are; a store write that
+ * fails, or a setting removed under the job, become one here.
+ */
+function jobFailure(step, err) {
+  if (err?.code === 'CERTIFICATE_ISSUE_FAILED') return err;
+  return wrapAppError('CERTIFICATE_ISSUE_FAILED', `The certificate could not be got, at the step "${step}"`, err);
+}
 
+async function runIssueJob({ domain, token, report, signal, jobLog }) {
+  let step = 'account';
   try {
+    const before = await readStore();
+    let leftover = before.txtRecords;
+    if (leftover.length > 0) {
+      leftover = await removeTxtRecords(token, leftover);
+      await updateStore((s) => ({ ...s, txtRecords: leftover }));
+      jobLog.info({ removed: before.txtRecords.length - leftover.length, left: leftover.length }, 'Removed the TXT records an earlier certificate job left');
+    }
+
     const issued = await issueCertificate({
       domain,
       token,
       directoryUrl: acmeDirectory(),
       account: before.account,
       onAccount: (account) => updateStore((s) => ({ ...s, account })),
-      onStep: (step) => report({ step }),
+      onStep: (name) => {
+        step = name;
+        report({ step: name });
+      },
       onRecords: (records) => updateStore((s) => ({ ...s, txtRecords: [...leftover, ...records] })),
       signal,
     });
 
-    report({ step: 'deliver' });
+    step = 'deliver';
+    report({ step });
     let stored = false;
     await updateStore(async (s) => {
       // Under the store's lock: a removal of the setting either lands before
@@ -256,7 +272,7 @@ async function runIssueJob({ domain, token, report, signal, jobLog }) {
       };
     });
     if (!stored) {
-      throw createAppError('CERTIFICATE_NOT_FOUND', 'The certificate setting was removed while its job ran');
+      throw createAppError('CERTIFICATE_ISSUE_FAILED', `The certificate could not be got, at the step "${step}": the certificate setting was removed while the job ran`);
     }
     certificateChange.emit();
     jobLog.info({ domain, validUntil: issued.validUntil, serial: issued.serial }, 'The host certificate was stored');
@@ -267,13 +283,18 @@ async function runIssueJob({ domain, token, report, signal, jobLog }) {
     });
     return { domain, validUntil: issued.validUntil };
   } catch (err) {
-    if (!signal?.aborted && err?.code !== 'CERTIFICATE_NOT_FOUND') {
+    if (signal?.aborted) throw err;
+    const failure = jobFailure(step, err);
+    try {
+      // With the setting gone the attempt is not recorded: there is nothing it was for.
       await updateStore(async (s) => ((await getRawCertificateSetting())
-        ? { ...s, lastAttempt: { at: new Date().toISOString(), error: errorBody(err) } }
+        ? { ...s, lastAttempt: { at: new Date().toISOString(), error: errorBody(failure) } }
         : null));
       certificateChange.emit();
+    } catch (recordErr) {
+      jobLog.warn({ code: recordErr?.code, err: recordErr?.message }, 'The failed certificate attempt could not be recorded');
     }
-    throw err;
+    throw failure;
   }
 }
 

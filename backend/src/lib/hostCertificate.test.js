@@ -7,7 +7,7 @@
  */
 import { after, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -54,7 +54,7 @@ mock.module(new URL('./jobs/index.js', import.meta.url).href, {
   },
 });
 
-const { createAppError, errorStatus } = await import('./appErrors.js');
+const { createAppError, errorBody, errorStatus } = await import('./appErrors.js');
 const certificate = await import('./hostCertificate.js');
 const store = await import('./hostCertificateStore.js');
 
@@ -213,15 +213,42 @@ test('a removal leaves no domain, no certificate and no key, and keeps the accou
   assert.equal(await certificate.isCertificateFailed(), false);
 });
 
-test('a job whose setting was removed while it ran stores nothing', async () => {
+test('a job whose setting was removed while it ran fails as the job, stores nothing and records no attempt', async () => {
   await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: TOKEN }, silentLog);
   issue = async () => {
     await certificate.removeCertificateSetting(silentLog);
     return ISSUED;
   };
-  await assert.rejects(runStartedJob(), { code: 'CERTIFICATE_NOT_FOUND' });
-  assert.equal((await certificate.getCertificateRecord()).certificate, null);
+  await assert.rejects(runStartedJob(), (err) => {
+    assert.equal(err.code, 'CERTIFICATE_ISSUE_FAILED');
+    assert.match(err.message, /step "deliver"/);
+    assert.match(err.message, /setting was removed/);
+    return true;
+  });
+  const record = await certificate.getCertificateRecord();
+  assert.equal(record.certificate, null);
+  assert.equal(record.lastAttempt, null);
   assert.ok(!readFileSync(storeFile, 'utf8').includes('PRIVATE KEY'));
+});
+
+test('a store write that fails ends the job as CERTIFICATE_ISSUE_FAILED naming the step, in one line', { skip: process.getuid?.() === 0 && 'root writes through the read-only folder' }, async () => {
+  await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: TOKEN }, silentLog);
+  issue = async () => {
+    chmodSync(dir, 0o500); // the store's atomic write cannot make its temporary file
+    return ISSUED;
+  };
+  try {
+    await assert.rejects(runStartedJob(), (err) => {
+      assert.equal(err.code, 'CERTIFICATE_ISSUE_FAILED');
+      assert.match(err.message, /step "deliver"/);
+      const { detail } = errorBody(err);
+      assert.ok(!detail.includes('\n'), 'one line');
+      return true;
+    });
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+  assert.equal((await certificate.getCertificateRecord()).certificate, null);
 });
 
 const DAY = 24 * 60 * 60 * 1000;
