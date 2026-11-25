@@ -47,7 +47,7 @@ mock.module('node:dns/promises', {
   exports: { lookup: async () => [{ address: '203.0.113.7', family: 4 }] },
 });
 
-const { ssrfSafeFetch } = await import('./downloadFromUrl.js');
+const { ssrfSafeFetch } = await import('./ssrfSafeFetch.js');
 
 const CHUNKS = 5;
 const CHUNK = 'x'.repeat(1000);

@@ -21,7 +21,8 @@ import { promisify } from 'node:util';
 
 import { createAppError } from './appErrors.js';
 import { getSettings } from './settings.js';
-import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
+import { writeResponseToFile } from './downloads/index.js';
+import { ssrfSafeFetch } from './outbound/index.js';
 import { createStallWatchdog, stallMinutes, killProcessGroup } from './storage/index.js';
 import { createEmitter, runPrivileged } from './base/index.js';
 import { log } from './log.js';

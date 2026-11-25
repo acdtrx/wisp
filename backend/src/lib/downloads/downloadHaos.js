@@ -11,7 +11,8 @@ import { pipeline } from 'node:stream/promises';
 
 import { ensureImageDir } from '../paths.js';
 import { openUniqueFile } from './downloadUtils.js';
-import { downloadWithProgress, ssrfSafeFetch } from './downloadFromUrl.js';
+import { ssrfSafeFetch } from '../outbound/index.js';
+import { downloadWithProgress } from './downloadFromUrl.js';
 import { createAppError } from '../appErrors.js';
 import { createStallWatchdog, stallMinutes } from '../storage/index.js';
 

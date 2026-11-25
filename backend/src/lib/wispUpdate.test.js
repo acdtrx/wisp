@@ -15,11 +15,11 @@ import { createAppError } from './appErrors.js';
 
 let answer;
 
+mock.module(new URL('./outbound/index.js', import.meta.url).href, {
+  exports: { ssrfSafeFetch: async (_url, init) => answer(init) },
+});
 mock.module(new URL('./downloads/index.js', import.meta.url).href, {
-  exports: {
-    ssrfSafeFetch: async (_url, init) => answer(init),
-    writeResponseToFile: async () => 0,
-  },
+  exports: { writeResponseToFile: async () => 0 },
 });
 mock.module(new URL('./settings.js', import.meta.url).href, {
   exports: { getSettings: async () => ({ updateChannel: 'stable' }) },

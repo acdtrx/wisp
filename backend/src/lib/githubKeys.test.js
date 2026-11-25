@@ -12,7 +12,7 @@ import { createAppError } from './appErrors.js';
 const requests = [];
 let answer;
 
-mock.module(new URL('./downloads/index.js', import.meta.url).href, {
+mock.module(new URL('./outbound/index.js', import.meta.url).href, {
   exports: {
     ssrfSafeFetch: async (url, init) => {
       requests.push({ url, init });

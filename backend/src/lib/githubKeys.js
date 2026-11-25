@@ -3,7 +3,7 @@
  * (docs/specs/SETTINGS.md, SSH keys).
  */
 import { createAppError, wrapAppError } from './appErrors.js';
-import { ssrfSafeFetch } from './downloads/index.js';
+import { ssrfSafeFetch } from './outbound/index.js';
 
 /** One small text reply: 10 s over its DNS lookup, the request and the body. */
 const GITHUB_KEYS_TIMEOUT_MS = 10_000;

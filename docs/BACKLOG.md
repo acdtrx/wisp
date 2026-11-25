@@ -550,7 +550,7 @@ is redacted like a tool's (found while fixing the five, 2026-11-20). **Revisit t
 a detail whose redacted cause hides a path or name the operator needed.
 
 **The SSRF guard follows a downgrade, and sends the caller's headers to every hop.**
-`ssrfSafeFetch` (`backend/src/lib/downloads/downloadFromUrl.js`) follows a redirect from
+`ssrfSafeFetch` (`backend/src/lib/outbound/ssrfSafeFetch.js`) follows a redirect from
 `https` to `http`, so a mirror's (or a path attacker's, past the first hop) redirect can
 downgrade a library download to plain HTTP; and it passes the caller's `init.headers` to
 each hop, another host's included. Today the headers are only `User-Agent` and `Accept`,

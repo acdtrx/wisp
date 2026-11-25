@@ -5,8 +5,8 @@
 import { fetch as undiciFetch } from 'undici';
 
 import { createAppError } from '../appErrors.js';
-import { isAllowedUrl } from './downloadFromUrl.js';
-import { limitBody } from './downloadUtils.js';
+import { isAllowedUrl } from './ssrfSafeFetch.js';
+import { limitBody } from './limitBody.js';
 
 /** Discovery, a JWKS, a token exchange: one short round trip each, its body included. */
 const OPERATOR_REQUEST_TIMEOUT_MS = 10_000;

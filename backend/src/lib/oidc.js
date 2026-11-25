@@ -19,7 +19,7 @@
 import { createHash, createPublicKey, verify as cryptoVerify, randomBytes } from 'node:crypto';
 
 import { createAppError, wrapAppError } from './appErrors.js';
-import { fetchOperatorEndpoint } from './downloads/index.js';
+import { fetchOperatorEndpoint } from './outbound/index.js';
 
 // Discovery + JWKS rarely change; cache to avoid a round-trip per login.
 const DISCOVERY_TTL_MS = 60 * 60 * 1000; // 1h

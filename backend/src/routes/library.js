@@ -9,7 +9,8 @@ import {
   TITLE_LIBRARY_HAOS,
   TITLE_LIBRARY_UBUNTU_CLOUD,
 } from '../lib/jobs/index.js';
-import { checkUrl, isAllowedUrl } from '../lib/downloads/index.js';
+import { checkUrl } from '../lib/downloads/index.js';
+import { isAllowedUrl } from '../lib/outbound/index.js';
 import {
   listLibraryFiles,
   saveLibraryUpload,

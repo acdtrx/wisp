@@ -42,10 +42,9 @@
  *
  *   8. Outbound HTTP has one home (CODING-RULES §7): over the same files,
  *      comments stripped, none but the two files that implement its two
- *      fetches (lib/downloads/downloadFromUrl.js for ssrfSafeFetch,
- *      lib/downloads/operatorEndpoint.js for fetchOperatorEndpoint) — the rest
- *      of lib/downloads/ included, since a public source goes through
- *      ssrfSafeFetch like any other
+ *      fetches (lib/outbound/ssrfSafeFetch.js for ssrfSafeFetch,
+ *      lib/outbound/operatorEndpoint.js for fetchOperatorEndpoint) — the rest
+ *      of lib/outbound/ included
  *      - calls the global fetch: a `fetch(` or `fetch?.(` that is no
  *        property's (`x.fetch(` is another object's), or the global object's
  *        `fetch` taken as a property (`globalThis.fetch`, `global?.fetch`,
@@ -67,7 +66,7 @@
  *
  *   9. Who may use the operator fetch (CODING-RULES §9): `fetchOperatorEndpoint`,
  *      which allows private and loopback addresses, is named (imported, or
- *      reached as a property) only in lib/downloads/ and lib/oidc.js — the OIDC
+ *      reached as a property) only in lib/outbound/ and lib/oidc.js — the OIDC
  *      issuer is the one endpoint only the operator sets. A new caller is a
  *      reviewed EXCEPTIONS line with the specifier `fetchOperatorEndpoint`.
  *      Known limit: a computed property name (`d['fetch' + 'Operator…']`).
@@ -116,7 +115,7 @@
  * another name (`const s = r`) or called through `r.call(…)` / `r.apply(…)`
  * is not followed, nor is any property access other than `<object>.name(`.
  * Rule 8's misses are listed with it; it also reports a method named `fetch(`
- * defined in an object or a class outside lib/downloads/.
+ * defined in an object or a class outside lib/outbound/.
  * A new import between two files already in CYCLE_GROUP can close another
  * cycle through an excepted edge and pass: such cycles go when the excepted
  * edges do, and the search without those edges still catches the rest.
@@ -140,8 +139,8 @@ const PACKAGE_FENCES = {
   '@grpc/grpc-js': [`${LIB}/containerManager/linux/`],
   '@grpc/proto-loader': [`${LIB}/containerManager/linux/`],
   protobufjs: [`${LIB}/containerManager/linux/`],
-  // The two fetch helpers alone: every other request, inside lib/downloads/ too, goes through them.
-  undici: [`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`],
+  // The two fetch helpers alone: every other request, inside lib/outbound/ too, goes through them.
+  undici: [`${LIB}/outbound/ssrfSafeFetch.js`, `${LIB}/outbound/operatorEndpoint.js`],
 };
 
 const STRICT_MANAGERS = ['vmManager', 'containerManager'];
@@ -152,7 +151,7 @@ const SHARED = 'shared/';
 const LOCK_MODULES = [`${LIB}/vmOperationLock.js`, `${LIB}/containerOperationLock.js`];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
 /** Rules 8 and 9: the one home of outbound HTTP. */
-const FETCH_HOME = `${LIB}/downloads/`;
+const FETCH_HOME = `${LIB}/outbound/`;
 /**
  * Rule 8: inside that home, the two files that implement its two fetches —
  * the only ones that may call the global fetch, open a WebSocket client or
@@ -166,13 +165,13 @@ const PRIVILEGED_RUNNER = `${LIB}/base/privileged.js`;
 const SUDO_LITERAL = /(['"`])sudo\1/g;
 /** Rule 12: a console call. */
 const CONSOLE_CALL = /(?<![\w$./-])console\s*(?:\?\.|\.)/g;
-const FETCH_HELPERS = new Set([`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`]);
+const FETCH_HELPERS = new Set([`${LIB}/outbound/ssrfSafeFetch.js`, `${LIB}/outbound/operatorEndpoint.js`]);
 const GLOBAL_FETCH = /(?<![\w$.])fetch\s*(?:\?\.\s*)?\(|(?<![\w$.])(?:globalThis|global)\s*(?:\?\.\s*|\.\s*)(?:fetch\b|\[\s*(['"`])fetch\1\s*\])|(?<![\w$.])(?:globalThis|global)\s*\[\s*(['"`])fetch\2\s*\]/g;
 const WEBSOCKET_CLIENT = /(?<![\w$.])new\s+(?:[\w$]+\s*(?:\?\.|\.)\s*)*WebSocket\s*\(/g;
 const HTTP_CLIENT_MODULES = new Set(['http', 'https', 'http2']);
 /** What a static import of an HTTP module may name: a server, never a client. */
 const HTTP_SERVER_NAMES = new Set(['createServer', 'createSecureServer']);
-/** Rule 9: the operator fetch, and the files that may name it beside lib/downloads/. */
+/** Rule 9: the operator fetch, and the files that may name it beside lib/outbound/. */
 const OPERATOR_FETCH = /(?<![\w$])fetchOperatorEndpoint(?![\w$])/g;
 const OPERATOR_FETCH_USERS = new Set([`${LIB}/oidc.js`]);
 /** The carved modules a strict manager may import (CODING-RULES §7). */
@@ -191,7 +190,7 @@ const EXCEPTIONS = [
     reason: 'loads each migration file from the migrations directory it lists',
   },
   {
-    file: 'backend/src/lib/downloads/ssrfSafeFetch.test.js',
+    file: 'backend/src/lib/outbound/ssrfSafeFetch.test.js',
     specifier: 'undici',
     reason: "the test of ssrfSafeFetch's per-hop Agent replaces undici with a module mock",
   },
@@ -520,15 +519,15 @@ async function main() {
     const lineAt = (index) => source.slice(0, index).split('\n').length;
     const outsideFetchHome = !fileRel.startsWith(FETCH_HOME);
     const notAFetchHelper = !FETCH_HELPERS.has(fileRel);
-    const viaDownloads = 'outbound HTTP, which goes through lib/downloads: ssrfSafeFetch, or fetchOperatorEndpoint for an endpoint only the operator sets';
+    const viaOutbound = 'outbound HTTP, which goes through lib/outbound: ssrfSafeFetch, or fetchOperatorEndpoint for an endpoint only the operator sets';
     if (notAFetchHelper && !isExcepted('fetch')) {
       for (const m of code.matchAll(GLOBAL_FETCH)) {
-        violations.push(`${fileRel}:${lineAt(m.index)} fetch — the global fetch is ${viaDownloads} (CODING-RULES §7)`);
+        violations.push(`${fileRel}:${lineAt(m.index)} fetch — the global fetch is ${viaOutbound} (CODING-RULES §7)`);
       }
     }
     if (notAFetchHelper && !isExcepted('WebSocket')) {
       for (const m of code.matchAll(WEBSOCKET_CLIENT)) {
-        violations.push(`${fileRel}:${lineAt(m.index)} WebSocket — a WebSocket client is ${viaDownloads} (CODING-RULES §7)`);
+        violations.push(`${fileRel}:${lineAt(m.index)} WebSocket — a WebSocket client is ${viaOutbound} (CODING-RULES §7)`);
       }
     }
     if (!fileRel.startsWith(BASE_DIR) && !isExcepted('emitter')) {
@@ -578,7 +577,7 @@ async function main() {
           const names = /^\{([^}]*)\}$/.exec((clause ?? '').trim())?.[1]
             .split(',').map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
           if (!names?.length || !names.every((n) => HTTP_SERVER_NAMES.has(n))) {
-            report(`Node's HTTP client is ${viaDownloads}; outside it, import only createServer / createSecureServer`);
+            report(`Node's HTTP client is ${viaOutbound}; outside it, import only createServer / createSecureServer`);
           }
           continue;
         }
@@ -675,7 +674,7 @@ async function main() {
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   const runnerSummary = 'only the backend runs the state migrations';
   const homesSummary = 'no hand-written emitter outside lib/base/, no console in the backend, sudo only in lib/base/privileged.js';
-  const fetchSummary = 'no global fetch, HTTP client import or WebSocket client outside lib/downloads/, and the operator fetch only in lib/oidc.js';
+  const fetchSummary = 'no global fetch, HTTP client import or WebSocket client outside lib/outbound/, and the operator fetch only in lib/oidc.js';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);

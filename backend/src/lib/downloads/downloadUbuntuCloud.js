@@ -5,7 +5,8 @@
  */
 
 import { ensureImageDir } from '../paths.js';
-import { downloadToUniqueFile, ssrfSafeFetch } from './downloadFromUrl.js';
+import { ssrfSafeFetch } from '../outbound/index.js';
+import { downloadToUniqueFile } from './downloadFromUrl.js';
 
 const SIMPLESTREAMS_URL =
   'https://cloud-images.ubuntu.com/releases/streams/v1/com.ubuntu.cloud:released:download.json';
