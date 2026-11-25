@@ -549,16 +549,6 @@ pipeline's own `BACKUP_RESTORE_FAILED`. The detail is right but the inner Wisp m
 is redacted like a tool's (found while fixing the five, 2026-11-20). **Revisit trigger:**
 a detail whose redacted cause hides a path or name the operator needed.
 
-**The SSRF guard follows a downgrade, and sends the caller's headers to every hop.**
-`ssrfSafeFetch` (`backend/src/lib/outbound/ssrfSafeFetch.js`) follows a redirect from
-`https` to `http`, so a mirror's (or a path attacker's, past the first hop) redirect can
-downgrade a library download to plain HTTP; and it passes the caller's `init.headers` to
-each hop, another host's included. Today the headers are only `User-Agent` and `Accept`,
-and nothing checks a downloaded image against a digest (found 2026-11-20, with the
-outbound-HTTP review). **Revisit trigger:** a caller of `ssrfSafeFetch` sends a header
-that carries a credential (a token for GitHub's API, a registry login), or a library
-download is expected to be authenticated by its transport.
-
 **Watchdogs fire up to 15 s late.** `createStallWatchdog` checks every
 `min(15 s, stallMs / 4)`, so a 60 s or 90 s bound fires up to 15 s after it is reached.
 **Revisit trigger:** a bound's precision starts to matter (a caller's bound that must end

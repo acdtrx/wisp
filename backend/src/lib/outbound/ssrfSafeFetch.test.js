@@ -4,11 +4,16 @@
  * answer a public address, so the guard lets the request out, and each Agent
  * the fetch makes connects to the stub instead. Each Agent is closed, and the
  * last one only once the caller has read the body; a body is bounded when
- * the caller asks, and a redirect's is cancelled, never read.
+ * the caller asks, and a redirect's is cancelled, never read. A redirect is
+ * not followed for a request with a credential or a body, nor from https to
+ * http (the https stub's certificate is made by openssl for the run).
  */
 import { after, before, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { createServer } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 
 import * as undici from 'undici';
 
@@ -23,7 +28,8 @@ function stubLookup(_hostname, opts, cb) {
 
 class RecordingAgent extends undici.Agent {
   constructor(opts) {
-    super({ ...opts, connect: { ...opts.connect, lookup: stubLookup } });
+    // The https stub's certificate is its own: trusted here, for the stub alone.
+    super({ ...opts, connect: { ...opts.connect, lookup: stubLookup, rejectUnauthorized: false } });
     let resolveClosed;
     this.record = { closeCalled: false, closed: false, whenClosed: new Promise((r) => { resolveClosed = r; }) };
     this.resolveClosed = resolveClosed;
@@ -52,6 +58,8 @@ const { ssrfSafeFetch } = await import('./ssrfSafeFetch.js');
 const CHUNKS = 5;
 const CHUNK = 'x'.repeat(1000);
 let server;
+let tlsServer;
+let tlsPort;
 /** Whether `/endless-redirect`'s body was cut before it ended. */
 const endlessRedirectCut = Promise.withResolvers();
 
@@ -88,11 +96,22 @@ before(async () => {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   ({ port } = server.address());
+
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const key = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const cert = execFileSync('openssl', ['req', '-new', '-x509', '-key', '/dev/stdin', '-subj', '/CN=stub.test', '-days', '1'], { input: key });
+  tlsServer = createTlsServer({ key, cert }, (req, res) => {
+    res.writeHead(302, { location: `http://stub.test:${port}/slow` });
+    res.end();
+  });
+  await new Promise((resolve) => tlsServer.listen(0, '127.0.0.1', resolve));
+  ({ port: tlsPort } = tlsServer.address());
 });
 
 after(async () => {
   server.closeAllConnections();
-  await new Promise((resolve) => server.close(resolve));
+  tlsServer.closeAllConnections();
+  await Promise.all([server, tlsServer].map((s) => new Promise((resolve) => s.close(resolve))));
 });
 
 test('each hop closes its Agent, and the last closes only after the body is read, in full', async () => {
@@ -135,4 +154,18 @@ test("a redirect's body is cancelled, not read, and its Agent closed", async () 
   assert.equal(agents.length, 2);
   await agents[0].whenClosed;
   assert.equal((await res.text()).length, CHUNKS * CHUNK.length);
+});
+
+test('a request with an Authorization header or a body gets the redirect as its answer', async () => {
+  agents.length = 0;
+  const withToken = await ssrfSafeFetch(`http://stub.test:${port}/redirect`, { headers: { Authorization: 'Bearer t' } });
+  assert.equal(withToken.status, 302);
+  assert.equal(withToken.headers.get('location'), '/slow');
+  const withBody = await ssrfSafeFetch(`http://stub.test:${port}/redirect`, { method: 'POST', body: '{}' });
+  assert.equal(withBody.status, 302);
+  assert.equal(agents.length, 2);
+});
+
+test('a redirect from https to http is refused', async () => {
+  await assert.rejects(ssrfSafeFetch(`https://stub.test:${tlsPort}/`), (err) => err.code === 'SSRF_BLOCKED' && /https to http/.test(err.message));
 });

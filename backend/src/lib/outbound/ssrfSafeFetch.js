@@ -255,7 +255,10 @@ function untilAborted(promise, signal) {
  * Fetch with manual redirect handling. Each Location target is re-validated by
  * `assertUrlNotPrivate` and DNS-pinned to a fresh undici Agent — one per hop,
  * since its lookup answers that hop's addresses whatever the host. Up to
- * `MAX_REDIRECTS` redirects are followed.
+ * `MAX_REDIRECTS` redirects are followed, never one from `https` to `http`
+ * (SSRF_BLOCKED). A request that carries a body or an `Authorization` header
+ * follows none: its 3xx is the answer, so a credential or a signed payload
+ * reaches only the URL the caller named.
  *
  * Each hop's Agent is closed as soon as its answer's headers are in: undici's
  * close is graceful, so the request in flight — its body, read by the caller
@@ -267,6 +270,7 @@ function untilAborted(promise, signal) {
  * (web ReadableStream) can be piped.
  */
 export async function ssrfSafeFetch(urlStr, { maxBodyBytes, ...init } = {}) {
+  const followsRedirects = init.body == null && !new Headers(init.headers).has('authorization');
   let currentUrl = urlStr;
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     // The caller's signal bounds the DNS lookup too, not only the request.
@@ -286,16 +290,19 @@ export async function ssrfSafeFetch(urlStr, { maxBodyBytes, ...init } = {}) {
       });
     }
 
-    if (res.status >= 300 && res.status < 400) {
+    if (followsRedirects && res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
       if (!location) {
         return limitBody(res, maxBodyBytes); // 3xx without Location — the answer as is
       }
-      const next = new URL(location, currentUrl).toString();
+      const next = new URL(location, currentUrl);
       // Cancelled, never read: a redirect's body has no bound, and its
       // Agent's close completes once the request is gone.
       try { await res.body?.cancel(); } catch { /* the hop is abandoned either way */ }
-      currentUrl = next;
+      if (new URL(currentUrl).protocol === 'https:' && next.protocol === 'http:') {
+        throw createAppError('SSRF_BLOCKED', 'Refused a redirect from https to http');
+      }
+      currentUrl = next.toString();
       continue;
     }
     return limitBody(res, maxBodyBytes);
