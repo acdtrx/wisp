@@ -110,12 +110,11 @@ keep-stored way.
 
 What an `appConfig` save does on a running container. The save's result is `{ requiresRestart, reloaded? }`: MCP's `update_app_config` returns it. On a container that is not running there is no reload and no flag, and the result is `{ requiresRestart: false }`.
 
-- **The app's reload command is run** inside the container when the app has one. Apps without one always set `pendingRestart` instead.
-- **Accepted** (exit 0): the result is `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app's `requiresRestartForChange` says so, or the mount layout changed, or the persist flagged a restart because the normalized mounts or devices changed (an unchanged save flags nothing, settled 2026-11-12).
+- **The app's reload command is run** inside the container when the app has one, unless the container needs a restart (next). Apps without one always set `pendingRestart` instead.
+- **A container that needs a restart is not reloaded.** The reload is skipped when the save changes what the task was started with — the env (name + value; the `secret` flag is presentation-only), the mount layout (a mount's type, name, container path, read-only flag, source, sub-path or tmpfs size) or the devices — and when the container is already flagged restart required. The save is stored, `pendingRestart` is set or stays, and the result is `{ requiresRestart: true }`: everything is applied by the restart. The running task lacks what the new files were written for (a mount, a variable), so a reload there would fail and roll the save back, not just do nothing.
+- **Accepted** (exit 0): the result is `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app's `requiresRestartForChange` says so.
 - **Refused** (non-zero exit): the save is **rolled back** — the persisted config (metadata/env/mounts/devices) and the mount file contents return to what they were, renames are reversed (data moves back), mounts only the rejected config had lose the backing stores this save created, and the restart-required flag is restored exactly as it was before the save (settled 2026-11-12) — then `APP_RELOAD_FAILED` (422). The app kept serving its previous config, so the rollback keeps the disk in step with what runs. The detail keeps the output's lines that look like errors, and otherwise its **tail**. If the rollback itself fails, the error detail says so and the persisted config may not match the running app.
 - **The exec itself fails** for a non-app reason (e.g. command not found): `pendingRestart` is set and the result is `{ requiresRestart: true }` — no rollback; the app never judged the config.
-- **Mount layout is not reloadable.** Live reload covers *file contents* but not *bind mount layout*: when the mounts' type, name, container path, read-only flag, source, sub-path or tmpfs size differ, `pendingRestart` is set even if the reload command returned exit 0.
-- **Env vars never reload.** A running process keeps the environment it was started with, so on any env difference (name + value; the `secret` flag is presentation-only) the reload is **skipped entirely** and `pendingRestart` is set. A reload there would fail, not just do nothing: the new files refer to env the running process lacks (Caddy rejects its config, `APP_RELOAD_FAILED`).
 - **A dropped mount's data is deleted only once the config that dropped it stands** (settled 2026-10-16): every outcome that keeps the new config deletes it, and the `APP_RELOAD_FAILED` rollback does not, so a rejected save never costs data.
 
 ---
@@ -165,7 +164,7 @@ Such a container held its own `domain`, `email`, `cloudflareDnsEnabled` and
   removes the four fields. Its env, mounts, Caddyfile and image are left as they were,
   so it keeps serving with its own certificate, across a restart too.
 - **At Wisp's first delivery** to it, its env, mounts and Caddyfile are rewritten, and
-  it is flagged restart required (its env and mount layout change).
+  it is flagged restart required (its mount layout changes).
 - **After that one restart**, at a time the user chooses, it serves Wisp's certificate.
   Wisp never changes its image: the one it has serves Wisp's certificate as well, and
   the user moves it to the stock image with the Image group's **Use the app's image**
