@@ -81,6 +81,14 @@ export function formatRelativeTime(isoString) {
   return new Date(isoString).toLocaleDateString();
 }
 
+/** A day as the page shows it (`28 Jan 2027` in an English locale); `—` for a missing or invalid time. */
+export function formatDay(isoString) {
+  if (isoString == null || isoString === '') return '—';
+  const parsed = new Date(isoString);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 /** A number to one decimal place (`0.0`, `18.5`); `—` for a missing or invalid one. */
 export function formatDecimal(n) {
   return Number.isFinite(n) ? n.toFixed(1) : '—';

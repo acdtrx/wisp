@@ -8,7 +8,7 @@ import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
-import { formatRelativeTime } from '../../utils/formatters.js';
+import { formatDay, formatRelativeTime } from '../../utils/formatters.js';
 import SettingsEditor from '../host/SettingsEditor.jsx';
 import { certificateBody, certificateForm, certificateProblem, certificateSent } from '../host/settingsForms.js';
 import Card from '../shared/Card.jsx';
@@ -32,8 +32,6 @@ const STEP_TEXT = {
   deliver: 'storing it',
 };
 
-const formatDate = (iso) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-
 /** The certificate's state: getting it, the one Wisp holds, the last attempt's failure. */
 function CertificateState({ record, jobRunning, step }) {
   const { certificate, lastAttempt } = record;
@@ -47,8 +45,8 @@ function CertificateState({ record, jobRunning, step }) {
       )}
       {certificate ? (
         <p className="text-text-secondary">
-          Valid until <span className="text-text-primary">{formatDate(certificate.validUntil)}</span>,
-          renewing around {formatDate(certificate.renewAt)}
+          Valid until <span className="text-text-primary">{formatDay(certificate.validUntil)}</span>,
+          renewing around {formatDay(certificate.renewAt)}
           {certificate.domain !== record.domain && (
             <>; it is for <span className="font-mono text-[13px]">{certificate.domain}</span> and serves until the new domain’s is issued</>
           )}

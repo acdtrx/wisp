@@ -14,13 +14,12 @@ import { useEditor } from '../../hooks/useEditor.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
+import { formatDay } from '../../utils/formatters.js';
 import { siteForm, siteName, siteProblem, withSite, withoutSite } from './caddyConfig.js';
 import { NOTHING_CHANGED } from '../../hooks/editorValues.js';
 
 const appConfigOf = (config) => config.metadata?.appConfig ?? {};
 const removeAbout = (sub) => `Couldn't remove the site ${sub}`;
-
-const formatDate = (iso) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
 /**
  * The Caddy reverse proxy's own groups: its sites (each saved or removed on its own,
@@ -77,7 +76,7 @@ export default function CaddyGroups({ config, busy, act, update }) {
             <ValueRows
               rows={[
                 { label: 'Domain', value: record.certificate.domain, mono: true },
-                { label: 'Valid until', value: formatDate(record.certificate.validUntil) },
+                { label: 'Valid until', value: formatDay(record.certificate.validUntil) },
               ]}
             />
           ) : (
