@@ -153,7 +153,9 @@ topic whenever the setting is saved or removed or an attempt ends.
 - Everything Wisp obtained: `config/certificate.json`, mode `0600`, one record written
   atomically: the account's key and URL, the chain and its key, the dates, the last
   attempt, and the TXT records still to remove. An install and an update keep it
-  ([UPDATES.md](UPDATES.md), the keep rule).
+  ([UPDATES.md](UPDATES.md), the keep rule). It is read strictly at the start, like the
+  settings ([CONFIGURATION.md → Strict reading](CONFIGURATION.md#strict-reading)): a
+  file that is not what Wisp writes stops the start, naming the file and the key.
 - An app container's copy is in its own files, like any file mount, so a container backup
   holds the certificate's key.
 
