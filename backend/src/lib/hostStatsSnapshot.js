@@ -13,6 +13,7 @@ import {
 import { getRunningVMAllocations, getHostHardware, pingLibvirt } from './vmManager/index.js';
 import { getRunningContainerCount } from './containerManager/index.js';
 import { getCachedStatus as getWispUpdateStatus } from './wispUpdate.js';
+import { isCertificateFailed } from './hostCertificate.js';
 
 /**
  * A figure read from a workload list, or null when the list could not be read:
@@ -35,6 +36,7 @@ export async function buildHostStatsPayload() {
   const vms = await fromList(getRunningVMAllocations);
   const runningContainers = await fromList(getRunningContainerCount);
   const reboot = await getRebootSignal();
+  const certificateFailed = await isCertificateFailed();
 
   return {
     cpu: {
@@ -85,6 +87,7 @@ export async function buildHostStatsPayload() {
     updateOperationInProgress: isUpdateOperationInProgress(),
     rebootRequired: reboot.required,
     rebootReasons: reboot.reasons,
+    certificateFailed,
     wispUpdate: (() => {
       const s = getWispUpdateStatus();
       return {

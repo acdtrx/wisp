@@ -1,6 +1,7 @@
 /*
  * The forms a mount is stored in: a mountPath in canonical form, a share as
- * //host/share[/folder] — the forms wisp-mount takes.
+ * //host/share[/folder] — the forms wisp-mount takes; and the certificate
+ * setting's.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,4 +40,20 @@ test('the strict read takes a mountPath only in canonical form', () => {
   const config = (mountPath) => ({ mounts: [{ id: 'a', type: 'disk', label: 'USB', mountPath, uuid: 'abcd-1234' }] });
   assert.equal(parseWispConfig(config('/mnt/wisp/usb')).mounts[0].mountPath, '/mnt/wisp/usb');
   assert.throws(() => parseWispConfig(config('/mnt/wisp/usb/')), /mountPath must be stored in canonical form \("\/mnt\/wisp\/usb"\)/);
+});
+
+test('the certificate setting is read strictly: null, or a lowercase domain and a token', () => {
+  assert.equal(parseWispConfig({}).certificate, null);
+  assert.equal(parseWispConfig({ certificate: null }).certificate, null);
+  const setting = { domain: 'home.example.com', cloudflareApiToken: 't' };
+  assert.deepEqual(parseWispConfig({ certificate: setting }).certificate, setting);
+  for (const bad of [
+    { domain: 'Home.example.com', cloudflareApiToken: 't' },
+    { domain: '*.example.com', cloudflareApiToken: 't' },
+    { domain: 'example.com', cloudflareApiToken: '' },
+    { domain: 'example.com' },
+    { domain: 'example.com', cloudflareApiToken: 't', email: 'a@b' },
+  ]) {
+    assert.equal(refused(() => parseWispConfig({ certificate: bad })), 'CONFIG_INVALID', JSON.stringify(bad));
+  }
 });

@@ -22,6 +22,7 @@ config/runtime.env
 config/wisp-password
 config/backup-status.json
 config/migrations.json
+config/certificate.json
 
 # Claude Code working directory (personal settings + runtime artifacts).
 # Carve out exceptions (e.g. !.claude/settings.json) if shared content

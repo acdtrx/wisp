@@ -344,8 +344,10 @@ async function persistSettings(state) {
     trustedProxies: state.trustedProxies,
     apiTokens: state.apiTokens,
     sshKeys: state.sshKeys,
+    certificate: state.certificate,
   });
-  // 0600: the file holds secrets (SMB passwords, OIDC client secret). Without an
+  // 0600: the file holds secrets (SMB passwords, OIDC client secret, the
+  // certificate's Cloudflare token). Without an
   // explicit mode the atomic temp file lands at the umask default (usually 0644),
   // silently widening the config back to world-readable on every save.
   await writeJsonAtomic(CONFIG_PATH, toWrite, { mode: 0o600 });
@@ -391,6 +393,30 @@ export async function getRawApiTokens() {
 export async function getRawHomepage() {
   const fromFile = await readSettingsFile();
   return fromFile.homepage;
+}
+
+/**
+ * The host certificate's setting as stored, its token included, or null.
+ * Server-side only: the certificate glue (lib/hostCertificate.js) reads it and
+ * answers the record without the token. Never part of getSettings().
+ */
+export async function getRawCertificateSetting() {
+  const fromFile = await readSettingsFile();
+  return fromFile.certificate;
+}
+
+/**
+ * Write the certificate setting through `mutate(current) → next` (null
+ * removes it) under the settings write lock. It is not among what
+ * getSettings() returns, so no settings cue: the certificate glue announces
+ * its own. Resolves the setting as written.
+ */
+export async function writeCertificateSetting(mutate) {
+  const written = await writeSettingsUnderLock(async (fromFile) => ({
+    ...fromFile,
+    certificate: await mutate(fromFile.certificate),
+  }));
+  return written.certificate;
 }
 
 /**

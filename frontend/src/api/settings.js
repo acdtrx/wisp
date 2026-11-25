@@ -14,6 +14,26 @@ export async function updateOidcSettings(body) {
   await api('/api/settings/oidc', { method: 'PATCH', body });
 }
 
+/** The host's certificate: its setting without the token, the certificate Wisp holds, the last attempt. */
+export function getCertificate({ signal } = {}) {
+  return api('/api/settings/certificate', { signal });
+}
+
+/** `{ domain, cloudflareApiToken? }`. Answers 204: the record arrives on the `certificate` cue. */
+export async function saveCertificate(body) {
+  await api('/api/settings/certificate', { method: 'PUT', body });
+}
+
+/** Answers 204, like `saveCertificate`. */
+export async function removeCertificate() {
+  await api('/api/settings/certificate', { method: 'DELETE' });
+}
+
+/** A job: answers `{ jobId, kind, title, subject }`. */
+export function renewCertificate() {
+  return api('/api/settings/certificate/renew', { method: 'POST' });
+}
+
 /** Answers `201 { id }`: the key arrives with the settings (the `settings` cue). */
 export function addSshKey(body) {
   return api('/api/settings/ssh-keys', { method: 'POST', body });

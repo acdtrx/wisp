@@ -20,6 +20,7 @@
     "LIBRARY": "library",
     "IMAGES": "images",
     "TOKENS": "tokens",
+    "CERTIFICATE": "certificate",
     "WISP_UPDATE": "wisp-update"
   },
   "JOB_KIND": {
@@ -51,6 +52,7 @@
     "NETWORK_BRIDGE_DELETE": "network-bridge-delete",
     "MOUNT_UNMOUNT": "mount-unmount",
     "MOUNT_DELETE": "mount-delete",
+    "CERTIFICATE_ISSUE": "certificate-issue",
     "SELF_UPDATE": "self-update"
   }
 }

@@ -36,6 +36,7 @@ export default function HostPanel() {
   const wispUpdateAvailable = !!stats?.wispUpdate?.available;
   const rebootRequired = !!stats?.rebootRequired;
   const rebootReasons = stats?.rebootReasons ?? [];
+  const certificateFailed = !!stats?.certificateFailed;
 
   const [powerOffOpen, setPowerOffOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -59,6 +60,9 @@ export default function HostPanel() {
     softwareReasons.push(`Reboot required${detail}`);
   }
   const softwareBadgeTitle = softwareReasons.length > 0 ? softwareReasons.join(' · ') : null;
+  const appConfigBadgeTitle = certificateFailed ? 'The host certificate could not be got or renewed' : null;
+  const tabDot = { software: softwareBadgeTitle, 'app-config': appConfigBadgeTitle };
+  const headerBadgeTitle = [softwareBadgeTitle, appConfigBadgeTitle].filter(Boolean).join(' · ') || null;
 
   /* The confirm closes at once; the button shows the command in flight. */
   const runPower = (key, send, closeConfirm) => {
@@ -77,12 +81,12 @@ export default function HostPanel() {
         <div className="flex min-h-11 min-w-0 items-center gap-3 lg:min-h-0">
           <div className="relative shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
             <Server size={18} />
-            {/* First-view badge for phones, where the Software tab may sit scrolled
+            {/* First-view badge for phones, where a badged tab may sit scrolled
               * out of the strip. Desktop shows the whole strip, so the tab dot serves. */}
-            {softwareBadgeTitle && (
+            {headerBadgeTitle && (
               <span
                 className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-warning lg:hidden"
-                title={softwareBadgeTitle}
+                title={headerBadgeTitle}
               />
             )}
           </div>
@@ -94,8 +98,8 @@ export default function HostPanel() {
               key={id}
               to={`/host/${id}`}
               active={tab === id}
-              dot={id === 'software' && !!softwareBadgeTitle}
-              dotTitle={softwareBadgeTitle}
+              dot={!!tabDot[id]}
+              dotTitle={tabDot[id] ?? undefined}
             >
               {label}
             </Tab>

@@ -51,6 +51,7 @@ export const titleForBridgeDelete = (name) => `Delete bridge ${name}`;
 export const titleForUnmount = (label) => `Unmount ${label}`;
 export const titleForMountDelete = (label) => `Remove ${label}`;
 export const titleForSelfUpdate = (version) => `Update Wisp to ${version}`;
+export const titleForCertificateIssue = (domain) => `Certificate for ${domain}`;
 export const titleForContainerStart = (name) => `Start ${name}`;
 export const titleForContainerStop = (name) => `Stop ${name}`;
 export const titleForContainerRestart = (name) => `Restart ${name}`;

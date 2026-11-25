@@ -16,6 +16,7 @@ import { subscribeApiTokensChange } from '../lib/apiTokens.js';
 import { subscribeNetworkBridgesChange } from '../lib/networking/index.js';
 import { subscribeLibraryChange } from '../lib/library/index.js';
 import { subscribeWispUpdateChange } from '../lib/wispUpdate.js';
+import { subscribeCertificateChange } from '../lib/hostCertificate.js';
 import { listJobs, subscribeJobsChange } from '../lib/jobs/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
@@ -179,6 +180,7 @@ export default async function eventsRoutes(fastify) {
         subscribeImagesChange(() => { sendChange({ kind: CHANGE_KIND.IMAGES }); }),
         subscribeLibraryChange(() => { sendChange({ kind: CHANGE_KIND.LIBRARY }); }),
         subscribeWispUpdateChange(() => { sendChange({ kind: CHANGE_KIND.WISP_UPDATE }); }),
+        subscribeCertificateChange(() => { sendChange({ kind: CHANGE_KIND.CERTIFICATE }); }),
       ];
 
       onSSEClose(reply, () => {

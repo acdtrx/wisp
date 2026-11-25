@@ -40,6 +40,7 @@ export {
   titleForUnmount,
   titleForMountDelete,
   titleForSelfUpdate,
+  titleForCertificateIssue,
   titleForContainerStart,
   titleForContainerStop,
   titleForContainerRestart,

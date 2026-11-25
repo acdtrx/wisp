@@ -30,6 +30,7 @@ export const CHANGE_KIND = Object.freeze({
   LIBRARY: 'library',
   IMAGES: 'images',
   TOKENS: 'tokens',
+  CERTIFICATE: 'certificate',
   WISP_UPDATE: 'wisp-update',
 });
 
@@ -63,5 +64,6 @@ export const JOB_KIND = Object.freeze({
   NETWORK_BRIDGE_DELETE: 'network-bridge-delete',
   MOUNT_UNMOUNT: 'mount-unmount',
   MOUNT_DELETE: 'mount-delete',
+  CERTIFICATE_ISSUE: 'certificate-issue',
   SELF_UPDATE: 'self-update',
 });

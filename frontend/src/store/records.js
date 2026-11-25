@@ -21,6 +21,7 @@ export const RECORD = Object.freeze({
   CONTAINER_RUNS: 'container-runs',
   MOUNT_FILE_CONTENT: 'mount-file-content',
   SETTINGS: 'settings',
+  CERTIFICATE: 'certificate',
   HOST_MOUNT_STATUS: 'host-mount-status',
   NETWORK_BRIDGES: 'managed-network-bridges',
   HOST_BRIDGES: 'host-bridges',
@@ -93,6 +94,7 @@ export const RECORD_KINDS = {
     cues: [],
   },
   [RECORD.SETTINGS]: { singleton: true, fetch: (_, o) => settingsApi.getSettings(o), cues: [kindChange(CHANGE_KIND.SETTINGS)] },
+  [RECORD.CERTIFICATE]: { singleton: true, fetch: (_, o) => settingsApi.getCertificate(o), cues: [kindChange(CHANGE_KIND.CERTIFICATE)] },
   [RECORD.HOST_MOUNT_STATUS]: { singleton: true, fetch: (_, o) => settingsApi.getMountStatus(o), cues: [kindChange(CHANGE_KIND.HOST_MOUNTS)] },
   [RECORD.NETWORK_BRIDGES]: {
     singleton: true, fetch: (_, o) => hostApi.listManagedNetworkBridges(o), cues: [kindChange(CHANGE_KIND.NETWORK_BRIDGES)],

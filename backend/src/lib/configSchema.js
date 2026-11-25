@@ -39,6 +39,8 @@ export const UNGROUPED_GROUP_ID = 'ungrouped';
 export const MAX_NAME = 64;
 /** Home tile ids (a derived tile's id is its URL) and manual tile URLs. */
 export const MAX_URL = 2048;
+/** 253, a DNS name's longest, less `_acme-challenge.`, which the challenge puts before it. */
+export const MAX_CERTIFICATE_DOMAIN = 253 - '_acme-challenge.'.length;
 
 export const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
 const BACKUP_SCHEDULE_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -52,7 +54,7 @@ const TOP_KEYS = new Set([
   '_comment', // the shipped example's note; never written back
   'serverName', ...PATH_KEYS, 'mounts', 'backupMountId', 'backupSchedule', 'sections',
   'assignments', 'homepage', 'discoveryEnabled', 'advertisedUrl', 'updateChannel', 'oidc',
-  'trustedProxies', 'apiTokens', 'sshKeys',
+  'trustedProxies', 'apiTokens', 'sshKeys', 'certificate',
 ]);
 const MOUNT_KEYS = {
   smb: new Set(['id', 'type', 'label', 'mountPath', 'autoMount', 'share', 'username', 'password']),
@@ -82,6 +84,7 @@ export function defaultConfig() {
     trustedProxies: [],
     apiTokens: [],
     sshKeys: [],
+    certificate: null,
   };
 }
 
@@ -180,6 +183,26 @@ export function checkAdvertisedUrl(value) {
     throw createAppError('INVALID_URL', 'advertisedUrl must be at most 251 bytes (mDNS TXT record limit)');
   }
   return trimmed;
+}
+
+/**
+ * The host certificate's domain (docs/specs/CERTIFICATES.md): lowercase DNS
+ * labels, at least two, no scheme, wildcard or trailing dot, and short enough
+ * that `_acme-challenge.<domain>` is still a name. Answers it trimmed and
+ * lowercased; throws INVALID_SETTINGS.
+ */
+export function checkCertificateDomain(value) {
+  if (typeof value !== 'string') throw createAppError('INVALID_SETTINGS', 'The domain must be a string');
+  const domain = value.trim().toLowerCase();
+  const label = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+  const labels = domain.split('.');
+  if (labels.length < 2 || !labels.every((l) => label.test(l)) || domain.length > MAX_CERTIFICATE_DOMAIN) {
+    throw createAppError(
+      'INVALID_SETTINGS',
+      `"${domain}" is not a domain: give DNS labels like home.example.com, with no scheme, wildcard or trailing dot`,
+    );
+  }
+  return domain;
 }
 
 /** Only fully-configured OIDC may be enabled. A disabled or blank config is fine. */
@@ -557,6 +580,18 @@ function parseApiTokens(arr) {
   });
 }
 
+/** The certificate setting: null, or a checked domain and a token. */
+function parseCertificate(src) {
+  if (src === null) return null;
+  expectObject(src, 'certificate');
+  rejectUnknownKeys(src, new Set(['domain', 'cloudflareApiToken']), 'certificate');
+  const domain = at('certificate.domain', () => checkCertificateDomain(src.domain));
+  if (domain !== src.domain) throw configInvalid('certificate.domain', 'must be lowercase, with no surrounding blanks');
+  const token = expectString(src.cloudflareApiToken, 'certificate.cloudflareApiToken');
+  if (!token) throw configInvalid('certificate.cloudflareApiToken', 'must not be empty');
+  return { domain, cloudflareApiToken: token };
+}
+
 /** Wisp's SSH keys: each a valid public key, held once, under a unique id. */
 function parseSshKeys(arr) {
   const list = expectArray(arr, 'sshKeys');
@@ -640,6 +675,7 @@ export function parseWispConfig(data) {
   if (data.trustedProxies !== undefined) out.trustedProxies = parseTrustedProxyList(data.trustedProxies);
   if (data.apiTokens !== undefined) out.apiTokens = parseApiTokens(data.apiTokens);
   if (data.sshKeys !== undefined) out.sshKeys = parseSshKeys(data.sshKeys);
+  if (data.certificate !== undefined) out.certificate = parseCertificate(data.certificate);
   return out;
 }
 

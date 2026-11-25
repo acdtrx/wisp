@@ -190,6 +190,7 @@ Each code a client can receive, with its status.
 | `TOKEN_NOT_FOUND` | 404 | No API token with that id |
 | `SSH_KEY_NOT_FOUND` | 404 | No key with that id in Wisp's list |
 | `GITHUB_KEYS_NOT_FOUND` | 404 | GitHub answered 404 for that user: no such user |
+| `CERTIFICATE_NOT_FOUND` | 404 | The host has no certificate setting to renew |
 | `METHOD_NOT_ALLOWED` | 405 | The path takes another method (`GET` or `DELETE /mcp`) |
 | `PAYLOAD_TOO_LARGE` | 413 | The body, or the multipart parts, exceed their limit |
 | `UPLOAD_TOO_LARGE` | 413 | The upload exceeds its size limit |
@@ -256,6 +257,8 @@ Each code a client can receive, with its status.
 | `INVALID_OIDC` | 422 | The SSO settings are incomplete or invalid |
 | `INVALID_BACKUP_SCHEDULE` | 422 | The backup schedule is invalid |
 | `INVALID_SETTINGS` | 422 | A settings value is invalid |
+| `CERTIFICATE_TOKEN_REJECTED` | 422 | Cloudflare refused the API token of the certificate setting |
+| `CERTIFICATE_ZONE_NOT_FOUND` | 422 | The token sees no Cloudflare zone that holds the certificate's domain |
 | `TOKEN_INVALID` | 422 | The API token request is invalid (label, scope) |
 | `INVALID_APP_CONFIG` | 422 | The app container's configuration is invalid |
 | `APP_CONFIG_ONLY` | 422 | An app container is configured through its app config, not this field or mount |
@@ -302,6 +305,8 @@ Each code a client can receive, with its status.
 | `GITHUB_API` | 500 | GitHub's release API answered wrongly |
 | `NO_ASSET` | 500 | The release has no tarball asset |
 | `GITHUB_KEYS_UNAVAILABLE` | 502 | GitHub could not be asked for the user's keys, or answered neither 2xx nor 404 |
+| `CERTIFICATE_DNS_UNAVAILABLE` | 502 | Cloudflare could not be asked about the certificate's domain |
+| `CERTIFICATE_ISSUE_FAILED` | 502 | The certificate job failed; the detail names the step and carries the certificate authority's or Cloudflare's message. A job's error only |
 | `NO_CONNECTION` | 503 | libvirt is not connected |
 | `NO_CONTAINERD` | 503 | containerd is not reachable |
 | `NO_PASSWORD_CONFIGURED` | 503 | `config/wisp-password` is missing |

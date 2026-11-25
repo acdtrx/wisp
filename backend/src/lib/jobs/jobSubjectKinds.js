@@ -39,6 +39,7 @@ export const SUBJECT_KINDS = {
   [K.NETWORK_BRIDGE_DELETE]: null,
   [K.MOUNT_UNMOUNT]: null,
   [K.MOUNT_DELETE]: null,
+  [K.CERTIFICATE_ISSUE]: null,
   [K.SELF_UPDATE]: null,
 };
 

@@ -44,6 +44,7 @@ export const ERROR_STATUS = Object.freeze({
   TOKEN_NOT_FOUND: 404,
   SSH_KEY_NOT_FOUND: 404,
   GITHUB_KEYS_NOT_FOUND: 404,
+  CERTIFICATE_NOT_FOUND: 404,
 
   // 405 / 413 / 414 / 415: the framework refuses the request's form.
   METHOD_NOT_ALLOWED: 405,
@@ -116,6 +117,8 @@ export const ERROR_STATUS = Object.freeze({
   INVALID_OIDC: 422,
   INVALID_BACKUP_SCHEDULE: 422,
   INVALID_SETTINGS: 422,
+  CERTIFICATE_TOKEN_REJECTED: 422,
+  CERTIFICATE_ZONE_NOT_FOUND: 422,
   TOKEN_INVALID: 422,
   INVALID_APP_CONFIG: 422,
   APP_CONFIG_ONLY: 422,
@@ -168,6 +171,8 @@ export const ERROR_STATUS = Object.freeze({
 
   // 502: an outside service answered wrongly.
   GITHUB_KEYS_UNAVAILABLE: 502,
+  CERTIFICATE_DNS_UNAVAILABLE: 502,
+  CERTIFICATE_ISSUE_FAILED: 502,
 
   // 503: something the server needs is not available.
   NO_CONNECTION: 503,

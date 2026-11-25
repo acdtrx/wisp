@@ -17,6 +17,7 @@ const WISP_KEYS = {
   WISP_ALLOWED_WS_ORIGINS: checkOriginList,
   WISP_UPDATE_REPO: checkRepo,
   WISP_ROUTE_ACCESS_REPORT: checkFlag,
+  WISP_ACME_DIRECTORY: checkHttpsUrl,
 };
 
 /**
@@ -68,6 +69,14 @@ function checkOriginList(v) {
 
 function checkRepo(v) {
   return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(v) ? null : 'must be <owner>/<repo>';
+}
+
+function checkHttpsUrl(v) {
+  let url = null;
+  try {
+    url = new URL(v);
+  } catch { /* not a URL — reported below */ }
+  return url?.protocol === 'https:' ? null : 'must be an https URL';
 }
 
 function checkFlag(v) {

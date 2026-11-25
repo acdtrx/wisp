@@ -126,6 +126,32 @@ export function secretOwed(form, settings) {
 export const oidcProblem = (form, settings) => urlProblem(form.issuer, 'issuer URL')
   ?? (secretOwed(form, settings) && !form.clientSecret ? 'Re-enter the client secret when changing the issuer or client ID.' : null);
 
+// ─── Certificate ────────────────────────────────
+
+/** The token's field starts empty: it is write-only, and empty keeps the stored one. */
+export const certificateForm = (record) => ({ domain: record.domain ?? '', cloudflareApiToken: '' });
+
+export const certificateSent = (form) => ({ domain: trim(form.domain).toLowerCase(), cloudflareApiToken: trim(form.cloudflareApiToken) });
+
+export function certificateProblem(form, record) {
+  const domain = trim(form.domain);
+  if (!domain) return 'Give the domain, e.g. home.example.com.';
+  if (/^[a-z]+:\/\//i.test(domain) || domain.includes('*') || domain.endsWith('.') || !domain.includes('.')) {
+    return 'The domain is a name like home.example.com: no scheme, no wildcard, no trailing dot.';
+  }
+  if (!record.tokenSet && !trim(form.cloudflareApiToken)) return 'A Cloudflare API token is required.';
+  return null;
+}
+
+/**
+ * The save's request: the setting is written whole, so the domain goes with every save;
+ * the token only when one was typed (empty keeps the stored one).
+ */
+export function certificateBody(form) {
+  const { domain, cloudflareApiToken } = certificateSent(form);
+  return cloudflareApiToken ? { domain, cloudflareApiToken } : { domain };
+}
+
 /** Why the SSO switch cannot turn on, or null: it needs the issuer, client ID and secret stored. */
 export function ssoSwitchReason(settings) {
   const oidc = settings.oidc ?? {};

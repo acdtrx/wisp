@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  backupForm, backupProblem, backupSent, callbackUrl, changedSent, keepText, mountText, oidcForm, oidcProblem, oidcSent,
+  backupForm, certificateBody, certificateForm, certificateProblem, backupProblem, backupSent, callbackUrl, changedSent, keepText, mountText, oidcForm, oidcProblem, oidcSent,
   pathsForm, pathsProblem, pathsSent, scheduleForm, scheduleOf, scheduleProblem, scheduleSent, serverForm, serverProblem,
   serverSent, ssoSwitchReason,
 } from './settingsForms.js';
@@ -75,4 +75,20 @@ test('single sign-on: the secret write-only and owed again for a new issuer or c
 test('the callback URL is on the advertised URL’s origin, else on the page’s', () => {
   assert.equal(callbackUrl('https://wisp.example.com/some/path', 'http://tini:8080'), 'https://wisp.example.com/api/auth/oidc/callback');
   assert.equal(callbackUrl(null, 'http://tini:8080'), 'http://tini:8080/api/auth/oidc/callback');
+});
+
+test('certificate: the token starts empty and is sent only when typed; the domain goes with every save', () => {
+  const record = { domain: 'home.example.com', tokenSet: true, certificate: null, lastAttempt: null };
+  const start = certificateForm(record);
+  assert.deepEqual(start, { domain: 'home.example.com', cloudflareApiToken: '' });
+  assert.deepEqual(certificateBody(start), { domain: 'home.example.com' });
+  assert.deepEqual(certificateBody({ domain: ' Lab.Example.com ', cloudflareApiToken: ' t ' }), { domain: 'lab.example.com', cloudflareApiToken: 't' });
+  assert.equal(certificateProblem(start, record), null);
+  assert.match(certificateProblem({ domain: '', cloudflareApiToken: '' }, record), /Give the domain/);
+  for (const domain of ['https://example.com', '*.example.com', 'example.com.', 'example']) {
+    assert.match(certificateProblem({ domain, cloudflareApiToken: '' }, record), /no scheme/, domain);
+  }
+  const none = { domain: null, tokenSet: false, certificate: null, lastAttempt: null };
+  assert.deepEqual(certificateForm(none), { domain: '', cloudflareApiToken: '' });
+  assert.match(certificateProblem({ domain: 'example.com', cloudflareApiToken: '' }, none), /token is required/);
 });

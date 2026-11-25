@@ -291,6 +291,12 @@ export default function LeftPanel() {
   const stats = useStatsStore((s) => s.data);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const wispUpdateAvailable = !!stats?.wispUpdate?.available;
+  const certificateFailed = !!stats?.certificateFailed;
+  const hostBadgeTitle = [
+    wispUpdateAvailable && 'Wisp update available',
+    pendingUpdates > 0 && `${pendingUpdates} OS package update(s) available`,
+    certificateFailed && 'The host certificate could not be got or renewed',
+  ].filter(Boolean).join(' · ');
 
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
@@ -433,17 +439,8 @@ export default function LeftPanel() {
             </p>
           )}
         </div>
-        {(pendingUpdates > 0 || wispUpdateAvailable) && (
-          <span
-            className="flex h-2 w-2 shrink-0 rounded-full bg-status-warning"
-            title={
-              wispUpdateAvailable && pendingUpdates > 0
-                ? `Wisp update available · ${pendingUpdates} OS package update(s)`
-                : wispUpdateAvailable
-                  ? 'Wisp update available'
-                  : `${pendingUpdates} OS package update(s) available`
-            }
-          />
+        {hostBadgeTitle && (
+          <span className="flex h-2 w-2 shrink-0 rounded-full bg-status-warning" title={hostBadgeTitle} />
         )}
       </Link>
 

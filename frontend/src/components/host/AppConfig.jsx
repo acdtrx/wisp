@@ -7,6 +7,7 @@ import { useRecord } from '../../hooks/useRecord.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
+import CertificateSettings from '../settings/CertificateSettings.jsx';
 import OidcSettings from '../settings/OidcSettings.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
 import SshKeysSettings from '../settings/SshKeysSettings.jsx';
@@ -24,7 +25,8 @@ import PageBody from '../shared/PageBody.jsx';
 
 /**
  * Host → App Config (docs/specs/SETTINGS.md): this server, its storage paths, the
- * password, SSH keys, single sign-on and API tokens, each a group of its own.
+ * password, SSH keys, single sign-on, the host's certificate and API tokens, each a
+ * group of its own.
  */
 export default function AppConfig() {
   const settings = useRecord(RECORD.SETTINGS);
@@ -40,6 +42,7 @@ export default function AppConfig() {
       </Card>
       <SshKeysSettings />
       <OidcSettings />
+      <CertificateSettings />
       <ApiTokensSettings />
     </PageBody>
   );
