@@ -23,15 +23,28 @@ function cloudflareMessage(data, status) {
   return text.replace(/\s+/g, ' ').trim() || `HTTP ${status}`;
 }
 
+/** Cloudflare's error codes that say the request's credential is refused, whatever the status. */
+const AUTH_ERROR_CODES = new Set([6003, 6111, 9106, 9109, 10000]);
+
+/** Whether a refusal is of the token: 401 or 403, or a 400 Cloudflare explains by one of its authentication codes. */
+function refusesToken(status, data, badRequestIsToken) {
+  if (status === 401 || status === 403) return true;
+  if (status !== 400) return false;
+  if (badRequestIsToken) return true;
+  return (Array.isArray(data?.errors) ? data.errors : []).some((e) => AUTH_ERROR_CODES.has(Number(e?.code)));
+}
+
 /**
  * One API call. A failure to reach Cloudflare, or an answer that is not its
- * JSON, is CERTIFICATE_DNS_UNAVAILABLE; a refused token (400, 401, 403: the
- * request is well-formed but for its Authorization) CERTIFICATE_TOKEN_REJECTED;
- * any other refusal CERTIFICATE_DNS_UNAVAILABLE with Cloudflare's message. A
- * status in `absentStatus` resolves null. The caller's `signal` aborting
- * rejects with its reason, untouched.
+ * JSON, is CERTIFICATE_DNS_UNAVAILABLE; a refused token (`refusesToken`)
+ * CERTIFICATE_TOKEN_REJECTED; any other refusal CERTIFICATE_DNS_UNAVAILABLE
+ * with Cloudflare's message (a record refused, e.g. 81058 "identical record
+ * already exists", is not the token's fault). `badRequestIsToken`: a 400 can
+ * only be the Authorization header (the zone lookup, a bare GET). A status in
+ * `absentStatus` resolves null. The caller's `signal` aborting rejects with its
+ * reason, untouched.
  */
-async function call(token, method, path, { body, signal, absentStatus } = {}) {
+async function call(token, method, path, { body, signal, absentStatus, badRequestIsToken = false } = {}) {
   const bound = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const headers = { authorization: `Bearer ${token}`, accept: 'application/json' };
   const init = {
@@ -57,7 +70,7 @@ async function call(token, method, path, { body, signal, absentStatus } = {}) {
     if (signal?.aborted) throw signal.reason;
     throw wrapAppError('CERTIFICATE_DNS_UNAVAILABLE', 'Cloudflare could not be reached', err);
   }
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
+  if (refusesToken(res.status, data, badRequestIsToken)) {
     throw createAppError('CERTIFICATE_TOKEN_REJECTED', 'Cloudflare refused the API token', cloudflareMessage(data, res.status));
   }
   if (!res.ok || data?.success !== true) {
@@ -84,7 +97,7 @@ function zoneCandidates(domain) {
  */
 export async function findZone(domain, token, { signal } = {}) {
   for (const name of zoneCandidates(domain)) {
-    const result = await call(token, 'GET', `/zones?name=${encodeURIComponent(name)}`, { signal });
+    const result = await call(token, 'GET', `/zones?name=${encodeURIComponent(name)}`, { signal, badRequestIsToken: true });
     const zone = Array.isArray(result) ? result.find((z) => z?.name === name) : null;
     if (zone) {
       return {

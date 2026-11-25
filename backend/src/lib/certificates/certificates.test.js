@@ -205,6 +205,7 @@ function cloudflare(url, init) {
   }
   const rec = /^\/zones\/([^/]+)\/dns_records(?:\/([^/]+))?$/.exec(route);
   if (rec && init.method === 'POST') {
+    if (world.recordRefused) return json(400, { success: false, errors: [{ code: 81058, message: 'An identical record already exists.' }] });
     if (world.readOnlyToken) return json(403, { success: false, errors: [{ code: 10000, message: 'Authentication error' }] });
     const body = JSON.parse(init.body);
     assert.equal(body.type, 'TXT');
@@ -385,4 +386,19 @@ test('the records are removed together under one bound, and those Cloudflare doe
   const took = Date.now() - started;
   assert.deepEqual(left, records);
   assert.ok(took >= 4_500 && took < 7_000, `one bound for both, not one each (${took} ms)`);
+});
+
+test("a record Cloudflare refuses is its own message, not a refused token; a 400 on the zone lookup is the token", async () => {
+  world.recordRefused = true;
+  const { run } = issue('example.com');
+  await assert.rejects(run, (err) => {
+    assert.equal(err.code, 'CERTIFICATE_ISSUE_FAILED');
+    assert.match(err.message, /step "dns"/);
+    assert.doesNotMatch(err.message, /refused the API token/);
+    assert.match(err.raw, /81058 An identical record already exists\./);
+    return true;
+  });
+  world = freshWorld();
+  world.tokenRejected = true;
+  await assert.rejects(findZone('example.com', TOKEN), { code: 'CERTIFICATE_TOKEN_REJECTED' });
 });
