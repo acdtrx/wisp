@@ -189,11 +189,15 @@ const followed = new Set();
 
 /**
  * After a job for `domain` ended: a save that changed the domain while it ran
- * joined it (the job is shared), so the new domain gets its own job now.
+ * joined it (the job is shared), so the domain the setting asks for now gets
+ * its own job, when the check would start one (Wisp may already hold its
+ * certificate: a save that went back to it).
  */
 async function afterJob(domain, jobLog) {
   const setting = await getRawCertificateSetting();
-  if (setting && setting.domain !== domain) await startIssueJob(setting, jobLog);
+  if (!setting || setting.domain === domain) return;
+  const { certificate, lastAttempt } = await readStore();
+  if (checkDecision(setting, certificate, lastAttempt, Date.now()) === 'issue') await startIssueJob(setting, jobLog);
 }
 
 /**
@@ -261,9 +265,11 @@ async function runIssueJob({ domain, token, report, signal, jobLog }) {
     report({ step });
     let stored = false;
     await updateStore(async (s) => {
-      // Under the store's lock: a removal of the setting either lands before
-      // this read, and nothing is stored, or clears what is stored after it.
-      if (!(await getRawCertificateSetting())) return null;
+      // Under the store's lock: a removal or a domain change of the setting
+      // either lands before this read, and nothing is stored — the certificate
+      // held stays, and the follow-up gets the asked-for domain's — or acts on
+      // what is stored after it.
+      if ((await getRawCertificateSetting())?.domain !== domain) return null;
       stored = true;
       return {
         ...s,
@@ -272,7 +278,7 @@ async function runIssueJob({ domain, token, report, signal, jobLog }) {
       };
     });
     if (!stored) {
-      throw createAppError('CERTIFICATE_ISSUE_FAILED', `The certificate could not be got, at the step "${step}": the certificate setting was removed while the job ran`);
+      throw createAppError('CERTIFICATE_ISSUE_FAILED', `The certificate could not be got, at the step "${step}": the certificate setting no longer asks for ${domain}`);
     }
     certificateChange.emit();
     jobLog.info({ domain, validUntil: issued.validUntil, serial: issued.serial }, 'The host certificate was stored');
@@ -286,8 +292,10 @@ async function runIssueJob({ domain, token, report, signal, jobLog }) {
     if (signal?.aborted) throw err;
     const failure = jobFailure(step, err);
     try {
-      // With the setting gone the attempt is not recorded: there is nothing it was for.
-      await updateStore(async (s) => ((await getRawCertificateSetting())
+      // An attempt for a domain the setting no longer asks for (removed, or
+      // changed under the job) is not recorded: the host's flag is about the
+      // certificate it asks for, and the follow-up gets that one.
+      await updateStore(async (s) => ((await getRawCertificateSetting())?.domain === domain
         ? { ...s, lastAttempt: { at: new Date().toISOString(), error: errorBody(failure) } }
         : null));
       certificateChange.emit();

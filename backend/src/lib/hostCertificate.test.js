@@ -222,13 +222,36 @@ test('a job whose setting was removed while it ran fails as the job, stores noth
   await assert.rejects(runStartedJob(), (err) => {
     assert.equal(err.code, 'CERTIFICATE_ISSUE_FAILED');
     assert.match(err.message, /step "deliver"/);
-    assert.match(err.message, /setting was removed/);
+    assert.match(err.message, /no longer asks for example\.com/);
     return true;
   });
   const record = await certificate.getCertificateRecord();
   assert.equal(record.certificate, null);
   assert.equal(record.lastAttempt, null);
   assert.ok(!readFileSync(storeFile, 'utf8').includes('PRIVATE KEY'));
+});
+
+test("a job for a domain the setting no longer asks for keeps the certificate held and records no attempt", async () => {
+  cloudflare = (url) => {
+    const name = new URL(url).searchParams.get('name');
+    return json(200, { success: true, result: ['example.com', 'example.org'].includes(name) ? [{ id: 'z', name, name_servers: [] }] : [] });
+  };
+  await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: TOKEN }, silentLog);
+  issue = async () => ISSUED;
+  await runStartedJob();
+  const held = (await certificate.getCertificateRecord()).certificate;
+
+  await certificate.saveCertificateSetting({ domain: 'example.org' }, silentLog); // J1, for example.org
+  const j1 = started.at(-1);
+  started.length = 0;
+  await certificate.saveCertificateSetting({ domain: 'example.com' }, silentLog); // back: Wisp holds its certificate
+  assert.equal(started.length, 0, 'the save back starts nothing');
+
+  issue = async ({ domain }) => ({ ...ISSUED, validUntil: '2027-06-01T00:00:00.000Z', serial: domain });
+  await assert.rejects(j1.run(() => {}, new AbortController().signal), (err) => err.code === 'CERTIFICATE_ISSUE_FAILED' && /no longer asks for example\.org/.test(err.message));
+  const record = await certificate.getCertificateRecord();
+  assert.deepEqual(record.certificate, held, "example.com's certificate stays");
+  assert.equal(record.lastAttempt.error, null, 'no failure recorded');
 });
 
 test('a store write that fails ends the job as CERTIFICATE_ISSUE_FAILED naming the step, in one line', { skip: process.getuid?.() === 0 && 'root writes through the read-only folder' }, async () => {
