@@ -65,10 +65,8 @@ function reloadFailureDetail(result) {
  *
  * A reload can never apply an env change: the OCI spec's process env is built from
  * `config.env` when the task starts (containerManagerSpec.js), so a running process keeps
- * the environment it was exec'd with. Caddy shows why this matters — its Caddyfile refers
- * to the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`, which the *running* server
- * resolves against its own environment, so `caddy reload` after adding the token yields a
- * silently token-less DNS-01 config. Callers must treat an env diff as restart-worthy.
+ * the environment it was exec'd with, and new files that refer to a new variable would be
+ * judged against the old environment. Callers treat an env diff as restart-worthy.
  */
 function envSig(env) {
   return JSON.stringify(
@@ -234,6 +232,30 @@ export function assertMountListNotAppManaged(config) {
 }
 
 /**
+ * What an app module's derived config and links are given beside its appConfig:
+ * the host's certificate (`{ domain, chain, key }` or null) for a module that
+ * serves HTTPS with it (`usesHostCertificate`), nothing for any other.
+ */
+function appContext(appModule, certificate) {
+  return appModule.usesHostCertificate ? { certificate: certificate ?? null } : {};
+}
+
+/**
+ * The URLs a container's app publishes (CUSTOM-APPS.md, getPublishedLinks), or
+ * none; `certificate` as for `applyAppConfig`.
+ */
+export function appPublishedLinks(config, { certificate } = {}) {
+  const appModule = getAppModule(config?.metadata?.app);
+  if (!appModule?.getPublishedLinks) return [];
+  return appModule.getPublishedLinks(config.metadata.appConfig, appContext(appModule, certificate)) || [];
+}
+
+/** Whether a container is an app container whose app serves HTTPS with the host's certificate. */
+export function usesHostCertificate(config) {
+  return getAppModule(config?.metadata?.app)?.usesHostCertificate === true;
+}
+
+/**
  * Create an app container. Computes the derived config from the app module,
  * builds an expanded spec with all the regular containerManager fields plus
  * `metadata.app`/`metadata.appConfig`, then writes derived file contents into
@@ -242,10 +264,13 @@ export function assertMountListNotAppManaged(config) {
  * On any failure after the container is created, the container is deleted
  * (rollback) so partially-configured containers don't linger.
  *
+ * `certificate` is the host's certificate, given to an app that uses it
+ * (`appContext`).
+ *
  * @returns {Promise<{ name: string }>} createContainer's result — the create
  *   job's completion payload.
  */
-export async function createAppContainer(spec, onStep) {
+export async function createAppContainer(spec, onStep, { certificate } = {}) {
   if (!isKnownApp(spec.app)) {
     throw createAppError('UNKNOWN_APP_TYPE', `Unknown app type "${spec.app}"`);
   }
@@ -255,7 +280,7 @@ export async function createAppContainer(spec, onStep) {
   const initialAppConfig = spec.appConfig
     ? appModule.validateAppConfig(spec.appConfig, null)
     : appModule.getDefaultAppConfig({ containerName: spec.name });
-  const derived = await appModule.generateDerivedConfig(initialAppConfig);
+  const derived = await appModule.generateDerivedConfig(initialAppConfig, appContext(appModule, certificate));
   const finalAppConfig = derived.appConfig ?? initialAppConfig;
 
   const expandedSpec = {
@@ -320,10 +345,13 @@ function envReplacementPatch(current, next) {
  * Apply a new app config to an existing app container. Validates, derives,
  * persists the new metadata + container fields (env/mounts/devices), writes
  * any updated mount file contents, and — if the container is running —
- * issues the app's reload command. Falls back to `pendingRestart` when the
- * change can't be applied live (no reload command, a saved field the task
- * only reads at start changed (the manager's rule),
- * app reports `requiresRestartForChange`, or reload exec fails).
+ * issues the app's reload command. A container that needs a restart is not
+ * reloaded (CUSTOM-APPS.md, Live Reload): no reload command, a saved field the
+ * task only reads at start changed (env, mount layout, devices: the manager's
+ * rule), or the container already flagged restart required — the running task
+ * lacks what the new files were written for. `pendingRestart` is then set (or
+ * stays). It is also set when the app reports `requiresRestartForChange`, or
+ * the reload exec fails. `certificate` is the host's, for an app that uses it.
  *
  * When the reload itself rejects the new state (`APP_RELOAD_FAILED`), the
  * persisted config and mount file contents are rolled back to the previous
@@ -339,7 +367,7 @@ function envReplacementPatch(current, next) {
  *
  * Returns `{ requiresRestart, reloaded? }`.
  */
-export async function applyAppConfig(name, newAppConfig) {
+export async function applyAppConfig(name, newAppConfig, { certificate } = {}) {
   const config = await getContainerConfig(name);
   const appType = config?.metadata?.app;
   if (!appType) {
@@ -354,7 +382,7 @@ export async function applyAppConfig(name, newAppConfig) {
   /* The flag as it stands before this save, for a rejected reload to restore. */
   const prevPendingRestart = config.pendingRestart ?? null;
   const validated = appModule.validateAppConfig(newAppConfig, oldAppConfig);
-  const derived = await appModule.generateDerivedConfig(validated);
+  const derived = await appModule.generateDerivedConfig(validated, appContext(appModule, certificate));
   const finalAppConfig = derived.appConfig ?? validated;
 
   const oldMounts = Array.isArray(config.mounts) ? config.mounts : [];
@@ -376,17 +404,20 @@ export async function applyAppConfig(name, newAppConfig) {
   const task = await getTaskState(name);
   const isRunning = isTaskOn(task);
   const reloadCmd = appModule.getReloadCommand?.();
-  const willReload = isRunning && !!reloadCmd && !envChanged;
+  const alreadyFlagged = prevPendingRestart !== null;
+  // Decided before the persist, with only what can be known then; the persist's own
+  // verdict on the saved fields (`persistFlagged`, below) completes it.
+  const mayReload = isRunning && !!reloadCmd && !envChanged && !alreadyFlagged;
 
   // Snapshot every local file mount's backing content before persisting: the
-  // update below overwrites files named in mountContents. Only needed when a
-  // reload will judge the new state — every other path keeps the persisted
+  // writes below overwrite files named in mountContents. Only needed when a
+  // reload may judge the new state — every other path keeps the persisted
   // config unconditionally. Directory mounts need no snapshot: persisting
   // never touches their contents (renames move whole directories and are
   // reversed by the rollback; dropped mounts keep their data until the new
   // config stands).
   let prevFileContents = null;
-  if (willReload) {
+  if (mayReload) {
     prevFileContents = {};
     for (const m of oldMounts) {
       if (m.type !== 'file' || m.sourceId) continue;
@@ -418,22 +449,17 @@ export async function applyAppConfig(name, newAppConfig) {
   if (!isRunning) {
     return settle({ requiresRestart: false });
   }
-  // Skip the reload outright when the env changed. It cannot apply — the OCI process env is
-  // fixed at task start — and attempting it is worse than useless: the persist above has
-  // already written a config that refers to the new variable, which the running process then
-  // resolves against an environment that lacks it. Adding Caddy's Cloudflare token this way yields
-  //   provision dns.providers.cloudflare: API token '' appears invalid
-  // and a hard APP_RELOAD_FAILED for a save that only ever needed a restart. Restarting
-  // applies the new env and the new mount contents together — the only order that works.
-  if (!reloadCmd || envChanged) {
-    await setContainerPendingRestart(name, true);
+  // A container that needs a restart is not reloaded: the running task lacks what the
+  // new files were written for (a variable, a mount, a device), so the reload would fail
+  // and roll the save back. The restart applies everything together. The persist has
+  // flagged a running container whose mounts or devices changed; an env change and the
+  // other cases are flagged here, and a flag already in force stays as it is.
+  if (!mayReload || persistFlagged) {
+    if (!alreadyFlagged && !persistFlagged) await setContainerPendingRestart(name, true);
     return settle({ requiresRestart: true });
   }
 
-  const appWantsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
-  // The persist above flagged a running container whose saved fields changed
-  // what its task was started with (mounts, devices…); the response says so too.
-  const stillNeedsRestart = appWantsRestart || persistFlagged;
+  const stillNeedsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
 
   try {
     const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });

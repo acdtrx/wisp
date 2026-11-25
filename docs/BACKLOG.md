@@ -373,15 +373,6 @@ can't reach it). The CLI would be the Darwin manager's one exec caller, which ne
 user's validation (CODING-RULES §7). **Revisit trigger:** the user wants Wisp to run
 containers on a Mac.
 
-**The Caddy app's certificate needs an image the user must build.** The app writes one
-wildcard site and gets its certificate by the Cloudflare DNS challenge, which needs the
-`caddy-dns/cloudflare` module; the app's default image, the stock `caddy:latest`, does
-not have it, so a user has to build and host an image before the app can serve HTTPS.
-To talk through with the user (their note on the README, 2026-11-23): Wisp's own Caddy
-image published on GitHub and used as the app's default, or another way to a
-certificate. **Revisit trigger:** before the README's Caddy line is next touched, or a
-user who cannot get the app a certificate.
-
 ## Backups
 
 **Restore in place can't repair a container whose `container.json` is missing or corrupt.**

@@ -36,8 +36,10 @@ mock.module(new URL('./certificates/index.js', import.meta.url).href, {
     issueCertificate: (opts) => issue(opts),
   },
 });
+const realJobs = await import('./jobs/index.js');
 mock.module(new URL('./jobs/index.js', import.meta.url).href, {
   exports: {
+    ...realJobs,
     startJob: async (opts) => {
       started.push(opts);
       return { jobId: `job-${started.length}`, kind: opts.kind, title: opts.title, subject: null };

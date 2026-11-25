@@ -180,7 +180,8 @@ export default async function eventsRoutes(fastify) {
         subscribeImagesChange(() => { sendChange({ kind: CHANGE_KIND.IMAGES }); }),
         subscribeLibraryChange(() => { sendChange({ kind: CHANGE_KIND.LIBRARY }); }),
         subscribeWispUpdateChange(() => { sendChange({ kind: CHANGE_KIND.WISP_UPDATE }); }),
-        subscribeCertificateChange(() => { sendChange({ kind: CHANGE_KIND.CERTIFICATE }); }),
+        // The Caddy sites' tiles are under the certificate's domain.
+        subscribeCertificateChange(() => { sendChange({ kind: CHANGE_KIND.CERTIFICATE }); sendHome(); }),
       ];
 
       onSSEClose(reply, () => {

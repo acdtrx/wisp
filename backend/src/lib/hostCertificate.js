@@ -1,119 +1,28 @@
 /**
  * The host's certificate (docs/specs/CERTIFICATES.md), app glue: the setting
  * and the checks a save runs, the job that gets the certificate, the record
- * the pages read, and what Wisp obtained, kept in `certificate.json` beside
- * wisp-config.json. lib/certificates speaks to the certificate authority and
+ * the pages read, and what Wisp obtained (lib/hostCertificateStore.js).
+ * lib/certificates speaks to the certificate authority and
  * Cloudflare; this module decides when, and keeps what they gave.
  */
-import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-
-import { CONFIG_PATH } from './config.js';
 import { checkCertificateDomain } from './configSchema.js';
 import { getRawCertificateSetting, writeCertificateSetting } from './settings.js';
 import { createAppError, errorBody } from './appErrors.js';
-import { createEmitter, writeJsonAtomic } from './base/index.js';
+import { createEmitter } from './base/index.js';
+import { readStore, updateStore } from './hostCertificateStore.js';
 import { findZone, issueCertificate, removeTxtRecords } from './certificates/index.js';
 import { startJob, titleForCertificateIssue, whenJobEnds } from './jobs/index.js';
+import { getContainerConfig, listContainers } from './containerManager/index.js';
+import { usesHostCertificate } from './containerApps/index.js';
+import { deliverHostCertificate } from './containerOperations.js';
 import { log } from './log.js';
 import { JOB_KIND } from '../../../shared/wireNames.js';
 
-const STORE_PATH = join(dirname(CONFIG_PATH), 'certificate.json');
 const LETS_ENCRYPT_DIRECTORY = 'https://acme-v02.api.letsencrypt.org/directory';
 
 /** The directory Wisp gets certificates from: Let's Encrypt's, unless runtime.env names another. */
 function acmeDirectory() {
   return process.env.WISP_ACME_DIRECTORY || LETS_ENCRYPT_DIRECTORY;
-}
-
-// ── certificate.json ─────────────────────────────────────────────────────────
-
-function emptyStore() {
-  return { account: null, certificate: null, lastAttempt: null, txtRecords: [] };
-}
-
-function isObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
-function storeInvalid(where) {
-  return new Error(`certificate.json → ${where}: not what Wisp writes`);
-}
-
-function onlyKeys(obj, keys, where) {
-  if (!isObject(obj)) throw storeInvalid(where);
-  for (const key of Object.keys(obj)) if (!keys.includes(key)) throw storeInvalid(`${where}.${key}`);
-}
-
-function strings(obj, keys, where) {
-  for (const key of keys) if (typeof obj[key] !== 'string' || !obj[key]) throw storeInvalid(`${where}.${key}`);
-}
-
-/** The file read strictly (CODING-RULES §4): only what this module writes. */
-function parseStore(data) {
-  onlyKeys(data, ['account', 'certificate', 'lastAttempt', 'txtRecords'], 'the file');
-  const out = emptyStore();
-  if (data.account != null) {
-    onlyKeys(data.account, ['directory', 'url', 'key'], 'account');
-    strings(data.account, ['directory', 'url'], 'account');
-    if (!isObject(data.account.key)) throw storeInvalid('account.key');
-    out.account = data.account;
-  }
-  if (data.certificate != null) {
-    onlyKeys(data.certificate, ['domain', 'chain', 'key', 'validFrom', 'validUntil'], 'certificate');
-    strings(data.certificate, ['domain', 'chain', 'key', 'validFrom', 'validUntil'], 'certificate');
-    out.certificate = data.certificate;
-  }
-  if (data.lastAttempt != null) {
-    onlyKeys(data.lastAttempt, ['at', 'error'], 'lastAttempt');
-    strings(data.lastAttempt, ['at'], 'lastAttempt');
-    if (data.lastAttempt.error !== null) {
-      onlyKeys(data.lastAttempt.error, ['error', 'detail'], 'lastAttempt.error');
-      strings(data.lastAttempt.error, ['error', 'detail'], 'lastAttempt.error');
-    }
-    out.lastAttempt = data.lastAttempt;
-  }
-  if (!Array.isArray(data.txtRecords)) throw storeInvalid('txtRecords');
-  out.txtRecords = data.txtRecords.map((r, i) => {
-    onlyKeys(r, ['zoneId', 'recordId'], `txtRecords[${i}]`);
-    strings(r, ['zoneId', 'recordId'], `txtRecords[${i}]`);
-    return r;
-  });
-  return out;
-}
-
-/** The store as last read or written: only this module writes it. */
-let cached = null;
-
-async function readStore() {
-  if (cached) return cached;
-  let raw;
-  try {
-    raw = await readFile(STORE_PATH, 'utf8');
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-    cached = emptyStore();
-    return cached;
-  }
-  cached = parseStore(JSON.parse(raw));
-  return cached;
-}
-
-let storeLock = Promise.resolve();
-
-/**
- * Write the store through `mutate(current) → next`, one write at a time,
- * atomically and `0600` (it holds the account's and the certificate's keys).
- */
-function updateStore(mutate) {
-  const run = storeLock.then(async () => {
-    const next = await mutate(await readStore());
-    if (!next) return;
-    await writeJsonAtomic(STORE_PATH, next, { mode: 0o600 });
-    cached = next;
-  });
-  storeLock = run.catch(() => { /* the rejection is the caller's (run), not the chain's */ });
-  return run;
 }
 
 // ── the record ───────────────────────────────────────────────────────────────
@@ -147,6 +56,42 @@ export async function getCertificateRecord() {
 /** Whether the last attempt failed: the host's flag (`certificateFailed` in the stats topic). */
 export async function isCertificateFailed() {
   return (await readStore()).lastAttempt?.error != null;
+}
+
+// ── delivery ─────────────────────────────────────────────────────────────────
+
+/**
+ * Deliver the certificate Wisp holds (or none) to every app container that
+ * uses it (CERTIFICATES.md, Delivery): each one's own config save. A busy
+ * container is skipped and a failed save logged: the next check delivers to
+ * both. `trigger` names what asked, for the log.
+ */
+export async function deliverToAppContainers(trigger, deliveryLog) {
+  const names = [];
+  for (const { name } of await listContainers()) {
+    try {
+      if (usesHostCertificate(await getContainerConfig(name))) names.push(name);
+    } catch (err) {
+      deliveryLog.warn({ container: name, code: err?.code, err: err?.message }, 'The host certificate could not be delivered: the container could not be read');
+    }
+  }
+  const outcome = { delivered: [], skipped: [], failed: [] };
+  for (const name of names) {
+    try {
+      const result = await deliverHostCertificate(name);
+      if (result.delivered) {
+        outcome.delivered.push(name);
+        deliveryLog.info({ container: name, trigger, requiresRestart: result.requiresRestart, reloaded: result.reloaded === true }, 'The host certificate was delivered');
+      } else {
+        outcome.skipped.push(name);
+        deliveryLog.info({ container: name, trigger }, 'The host certificate was not delivered: the container is busy; the next check delivers it');
+      }
+    } catch (err) {
+      outcome.failed.push(name);
+      deliveryLog.warn({ container: name, trigger, code: err?.code, err: err?.message, raw: err?.raw }, 'The host certificate could not be delivered; the next check tries again');
+    }
+  }
+  return outcome;
 }
 
 // ── the job ──────────────────────────────────────────────────────────────────
@@ -227,6 +172,11 @@ async function runIssueJob({ domain, token, report, signal, jobLog }) {
     }
     certificateChange.emit();
     jobLog.info({ domain, validUntil: issued.validUntil, serial: issued.serial }, 'The host certificate was stored');
+    // Stored, the job's work is done: a container that misses the delivery is
+    // logged and gets it from the next check, never fails the job.
+    await deliverToAppContainers('certificate job', jobLog).catch((err) => {
+      jobLog.warn({ code: err?.code, err: err?.message }, 'The host certificate was not delivered: the containers could not be listed; the next check delivers it');
+    });
     return { domain, validUntil: issued.validUntil };
   } catch (err) {
     if (!signal?.aborted && err?.code !== 'CERTIFICATE_NOT_FOUND') {
@@ -305,4 +255,8 @@ export async function removeCertificateSetting(reqLog) {
   });
   certificateChange.emit();
   reqLog.info({ hadSetting: !!removed }, 'The certificate setting was removed');
+  // The route answers once the setting is gone; the apps' saves run on.
+  deliverToAppContainers('certificate removed', reqLog).catch((err) => {
+    reqLog.warn({ code: err?.code, err: err?.message }, 'The removal was not delivered: the containers could not be listed; the next check delivers it');
+  });
 }

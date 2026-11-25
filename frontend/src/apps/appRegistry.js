@@ -10,7 +10,7 @@ import JellyfinGroups from './jellyfin/JellyfinGroups.jsx';
 const APP_REGISTRY = {
   'caddy-reverse-proxy': {
     label: 'Caddy Reverse Proxy',
-    description: 'HTTPS reverse proxy with Let\'s Encrypt and Cloudflare DNS',
+    description: 'HTTPS reverse proxy for your sites, with the host certificate',
     defaultImage: 'caddy:latest',
     allowCustomImage: true,
     Groups: CaddyGroups,

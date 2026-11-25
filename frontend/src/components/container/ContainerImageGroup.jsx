@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Undo2 } from 'lucide-react';
 
 import { changedFields, NOTHING_CHANGED } from '../../hooks/editorValues.js';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -9,16 +9,39 @@ import { FormField } from '../shared/FormModalChrome.jsx';
 import IconButton from '../shared/IconButton.jsx';
 import Card from '../shared/Card.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
+import { getAppEntry } from '../../apps/appRegistry.js';
 import ContainerImageField from './ContainerImageField.jsx';
 import { imageProblems } from './containerForms.js';
 
-/** The image the container runs; a newer one pulled is applied by Restart. */
+/**
+ * The image the container runs; a newer one pulled is applied by Restart. On an app
+ * container whose image is not its app's own, Use the app's image names that image
+ * and saves it, at once (docs/specs/UI-CONTAINER.md, Groups).
+ */
 export default function ContainerImageGroup({ config, busy, update }) {
   const [editing, setEditing] = useState(false);
+  const useAppImage = useCommand();
+  const appImage = getAppEntry(config.metadata?.app)?.defaultImage ?? null;
+  const offerAppImage = !!appImage && config.image !== appImage;
   return (
     <Card
       title="Image"
-      actions={<IconButton icon={Pencil} label="Change image" reason={busy} onClick={() => setEditing(true)} />}
+      actions={(
+        <>
+          {offerAppImage && (
+            <IconButton
+              icon={Undo2}
+              label={`Use the app's image, ${appImage}`}
+              reason={busy}
+              busy={useAppImage.busy}
+              onClick={() => useAppImage.run(() => update({ image: appImage }), { about: `Couldn't use the app's image ${appImage}` })}
+            />
+          )}
+          <IconButton icon={Pencil} label="Change image" reason={busy} disabled={useAppImage.busy} onClick={() => setEditing(true)} />
+        </>
+      )}
+      commands={[useAppImage]}
+      errorPrefix={(_key, _cmd, about) => about}
     >
       <ValueRows
         rows={[
@@ -32,6 +55,7 @@ export default function ContainerImageGroup({ config, busy, update }) {
               </span>
             ) : null,
           },
+          { label: "App's image", value: offerAppImage ? appImage : null, mono: true },
         ]}
       />
       {editing && <ImageEditor config={config} update={update} onClose={() => setEditing(false)} />}

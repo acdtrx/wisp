@@ -10,7 +10,8 @@
  *
  *   1. App modules' `getPublishedLinks(appConfig)` — every container carrying
  *      `metadata.app`, never a hardcoded container name, so zero, one, or many
- *      Caddy instances all work.
+ *      Caddy instances all work. An app that uses the host's certificate is
+ *      given it: its links are under the certificate's domain.
  *   2. Declared `_http._tcp` / `_https._tcp` mDNS services on containers with
  *      Local DNS on.
  *   3. Manual links the user added.
@@ -19,7 +20,7 @@
  * what gives the tile its live state. A link with no matching workload (a Caddy
  * host fronting another machine) renders as a stateless external tile.
  */
-import { getAppModule } from './containerApps/index.js';
+import { appPublishedLinks } from './containerApps/index.js';
 import { gatherDeployment } from './deploymentOverview.js';
 import { getHomepage, UNGROUPED_GROUP_ID } from './homepage.js';
 
@@ -127,13 +128,10 @@ function buildWorkloadIndex(deployment) {
 function collectAppLinks(deployment) {
   const candidates = [];
   for (const { summary, config } of deployment.containers) {
-    const appId = config?.metadata?.app;
-    if (!appId) continue;
-    const appModule = getAppModule(appId);
-    if (!appModule?.getPublishedLinks) continue;
+    if (!config?.metadata?.app) continue;
     let links;
     try {
-      links = appModule.getPublishedLinks(config.metadata.appConfig) || [];
+      links = appPublishedLinks(config, { certificate: deployment.certificate ?? null });
     } catch {
       /* A malformed appConfig must not take the whole page down — the app's own
        * config screen is where that gets reported. */

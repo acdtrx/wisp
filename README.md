@@ -21,7 +21,7 @@ The philosophy: direct flows and clear choices instead of a setting for everythi
 ### Containers
 
 - **A container is on the network like a VM**: its own LAN address on the host bridge, by DHCP. No NAT, no port mapping.
-- **Apps** with their own settings pages: **Caddy** (reverse proxy; a wildcard certificate through the Cloudflare DNS challenge, with a Caddy image that has that module), **Zot** (a local OCI registry), **Jellyfin** (media server), **Tiny Samba** (file shares).
+- **Apps** with their own settings pages: **Caddy** (reverse proxy for your sites under one domain, with the certificate Wisp gets from Let's Encrypt and renews: a domain and a Cloudflare token in Host → App Config, and the stock `caddy` image), **Zot** (a local OCI registry), **Jellyfin** (media server), **Tiny Samba** (file shares).
 - **Shell in the browser**, and **logs** kept per run.
 - **File and folder mounts**, kept with the container or on a storage mount, with an editor in the browser and zip upload. A file mount can be a write-only secret.
 - **Environment variables**, with write-only secrets; **CPU and memory limits**; **restart policies**; **start with the host**; an **image update check**.

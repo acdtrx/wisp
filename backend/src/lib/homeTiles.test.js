@@ -11,9 +11,7 @@ const TARGETS = ['web:80', 'webhost:81', 'webhost.local:82', '192.0.2.10:83', 'w
 
 const mockModule = (path, exports) => mock.module(new URL(path, import.meta.url).href, { exports });
 mockModule('./containerApps/index.js', {
-  getAppModule: () => ({
-    getPublishedLinks: () => TARGETS.map((target, i) => ({ url: `https://t${i}.example.test`, target })),
-  }),
+  appPublishedLinks: () => TARGETS.map((target, i) => ({ url: `https://t${i}.example.test`, target })),
 });
 mockModule('./deploymentOverview.js', { gatherDeployment: async () => { throw new Error('not gathered in this test'); } });
 mockModule('./homepage.js', { getHomepage: async () => { throw new Error('not read in this test'); }, UNGROUPED_GROUP_ID: 'ungrouped' });

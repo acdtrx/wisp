@@ -80,7 +80,8 @@ import {
   titleForContainerMountDataDelete,
   titleForZipExtract,
 } from './jobs/index.js';
-import { withContainerOperationLock } from './containerOperationLock.js';
+import { tryAcquireContainerOperationLock, withContainerOperationLock } from './containerOperationLock.js';
+import { getHeldCertificate } from './hostCertificateStore.js';
 import { createAppError, isAppError, wrapAppError } from './appErrors.js';
 import { resolveBackupDestinations } from './backupDestinations.js';
 import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
@@ -127,7 +128,11 @@ export function startContainerCreateJob({ spec, log }) {
     check: () => assertContainerNameAvailable(name),
     log,
     run: async (report) => {
-      await (spec.app ? createAppContainer(spec, report) : createContainer(spec, report));
+      if (spec.app) {
+        await createAppContainer(spec, report, { certificate: await getHeldCertificate() });
+      } else {
+        await createContainer(spec, report);
+      }
       return { name };
     },
   });
@@ -351,14 +356,35 @@ export async function editContainerConfig({ name, changes, log }) {
  * regenerates the derived env, mounts and files (deleting a dropped mount's
  * data) and live-reloads when it can. `appConfigFor(config)` answers the
  * appConfig to save from the container's config as read under the lock, so
- * a merge onto the stored one (MCP) cannot interleave with another save.
- * Resolves `{ requiresRestart, reloaded? }`.
+ * a merge onto the stored one (MCP) cannot interleave with another save. An
+ * app that uses the host's certificate gets the one Wisp holds, so every save
+ * delivers it too. Resolves `{ requiresRestart, reloaded? }`.
  */
 export function saveContainerAppConfig(name, appConfigFor) {
   return withContainerOperationLock(name, 'configuration change', async () => {
     const appConfig = appConfigFor(await getContainerConfig(name));
-    return applyAppConfig(name, appConfig);
+    return applyAppConfig(name, appConfig, { certificate: await getHeldCertificate() });
   });
+}
+
+/**
+ * Deliver the host's certificate to an app container that uses it
+ * (docs/specs/CERTIFICATES.md, Delivery): its own config save, with its stored
+ * appConfig and the certificate Wisp holds (none: the app serves no site).
+ * A container whose operation lock is held is skipped, not waited for: the
+ * next check delivers to it. Resolves `{ delivered: false }` when skipped,
+ * else `{ delivered: true, requiresRestart, reloaded? }`.
+ */
+export async function deliverHostCertificate(name) {
+  const release = tryAcquireContainerOperationLock(name, 'certificate delivery');
+  if (!release) return { delivered: false };
+  try {
+    const config = await getContainerConfig(name);
+    const result = await applyAppConfig(name, config.metadata?.appConfig, { certificate: await getHeldCertificate() });
+    return { delivered: true, ...result };
+  } finally {
+    release();
+  }
 }
 
 /** Turn an app container into a generic one, keeping its env, mounts and files (no-op on a generic container). */

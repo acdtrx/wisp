@@ -1,21 +1,15 @@
 import { keyTaken, withRow, withoutRow } from '../appConfigRows.js';
 
 /**
- * The Caddy app's config as its groups edit it, pure. The stored config comes masked
- * (the Cloudflare token as `{ isSet }`): a save sends the mask back, which keeps the
- * stored token, unless a new one was typed.
+ * The Caddy app's config as its groups edit it, pure: its sites (`hosts`), all the
+ * config there is. The domain they are under is the host certificate's.
  */
 
 const siteKey = (h) => h.subdomain;
 
-/** The config as the PATCH takes it, from the stored (masked) one. */
+/** The config as the PATCH takes it, from the stored one. */
 export function caddySendable(ac = {}) {
-  const tokenIsSet = ac.cloudflareApiToken?.isSet === true;
   return {
-    domain: ac.domain ?? '',
-    email: ac.email ?? '',
-    cloudflareDnsEnabled: ac.cloudflareDnsEnabled ?? tokenIsSet,
-    cloudflareApiToken: { isSet: tokenIsSet },
     hosts: (ac.hosts ?? []).filter(Boolean).map((h) => ({ subdomain: h.subdomain ?? '', target: h.target ?? '' })),
   };
 }
@@ -49,27 +43,5 @@ export function siteProblem(ac, key, form) {
   return null;
 }
 
-/* ---- Domain and certificates ---- */
-
-export function domainForm(ac = {}) {
-  const base = caddySendable(ac);
-  return {
-    domain: base.domain,
-    email: base.email,
-    cloudflareDnsEnabled: base.cloudflareDnsEnabled,
-    token: '',
-    tokenIsSet: base.cloudflareApiToken.isSet,
-  };
-}
-
-/** The config with the domain's values: the token only when one was typed. */
-export function withDomain(ac, form) {
-  const base = caddySendable(ac);
-  return {
-    ...base,
-    domain: form.domain.trim(),
-    email: form.email.trim(),
-    cloudflareDnsEnabled: form.cloudflareDnsEnabled,
-    ...(form.token.trim() ? { cloudflareApiToken: form.token.trim() } : {}),
-  };
-}
+/** A site's full name under the certificate's domain, or its name alone while there is none. */
+export const siteName = (subdomain, domain) => (domain ? `${subdomain}.${domain}` : subdomain);

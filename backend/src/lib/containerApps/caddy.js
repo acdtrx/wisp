@@ -1,56 +1,34 @@
 /**
- * Caddy Reverse Proxy app module.
- * Manages Caddyfile generation, Cloudflare DNS env var, and persistent data/config mounts.
+ * Caddy Reverse Proxy app module (docs/specs/CUSTOM-APPS.md, App: Caddy).
+ * Its sites are `<subdomain>.<domain>` under the host's certificate, which Wisp
+ * gets and renews (docs/specs/CERTIFICATES.md): Caddy only loads the two
+ * `tls-` files, so the stock image serves them, and the app holds no domain,
+ * token or certificate of its own.
  */
 import { createAppError as containerError } from '../appErrors.js';
 
-/**
- * Default appConfig for a new Caddy container.
- */
+const TLS_CERT_PATH = '/etc/caddy/tls/fullchain.pem';
+const TLS_KEY_PATH = '/etc/caddy/tls/key.pem';
+
+/** Default appConfig for a new Caddy container: no sites. */
 function getDefaultAppConfig() {
-  return {
-    domain: '',
-    email: '',
-    hosts: [],
-    cloudflareDnsEnabled: false,
-    cloudflareApiToken: '',
-  };
+  return { hosts: [] };
 }
 
-/**
- * Validate and normalize appConfig. Throws INVALID_APP_CONFIG on failure.
- *
- * `oldAppConfig` carries the stored secret forward: `maskSecrets` replaces the token with
- * `{ isSet }`, and the form omits it entirely when the user didn't retype it, so without
- * the merge below an unrelated save (adding a host) would silently blank the token and
- * break the DNS-01 challenge at the next certificate renewal.
- */
-function validateAppConfig(appConfig, oldAppConfig = null) {
+/** Validate and normalize appConfig (`{ hosts }` only). Throws INVALID_APP_CONFIG. */
+function validateAppConfig(appConfig) {
   if (!appConfig || typeof appConfig !== 'object' || Array.isArray(appConfig)) {
     throw containerError('INVALID_APP_CONFIG', 'appConfig must be an object');
   }
-
-  const { domain, email, hosts, cloudflareDnsEnabled, cloudflareApiToken } = appConfig;
-
-  // email: optional string for Let's Encrypt registration
-  if (email != null && typeof email !== 'string') {
-    throw containerError('INVALID_APP_CONFIG', 'email must be a string');
+  const unknown = Object.keys(appConfig).filter((k) => k !== 'hosts');
+  if (unknown.length) {
+    throw containerError(
+      'INVALID_APP_CONFIG',
+      `The Caddy app's config holds only hosts, not ${unknown.join(', ')}`,
+      'The domain and its certificate are the host\'s: Host → App Config → Certificate',
+    );
   }
-  const trimmedEmail = typeof email === 'string' ? email.trim() : '';
-
-  // domain: required non-empty string, no protocol prefix, no trailing dot
-  if (typeof domain !== 'string') {
-    throw containerError('INVALID_APP_CONFIG', 'domain must be a string');
-  }
-  const trimmedDomain = domain.trim();
-  if (trimmedDomain && /^https?:\/\//i.test(trimmedDomain)) {
-    throw containerError('INVALID_APP_CONFIG', 'domain must not include a protocol (e.g. use "example.com" not "https://example.com")');
-  }
-  if (trimmedDomain.endsWith('.')) {
-    throw containerError('INVALID_APP_CONFIG', 'domain must not end with a trailing dot');
-  }
-
-  // hosts: array of { subdomain, target }
+  const { hosts } = appConfig;
   if (!Array.isArray(hosts)) {
     throw containerError('INVALID_APP_CONFIG', 'hosts must be an array');
   }
@@ -75,11 +53,9 @@ function validateAppConfig(appConfig, oldAppConfig = null) {
     if (!target) {
       throw containerError('INVALID_APP_CONFIG', `hosts[${i}].target is required`);
     }
-    // The target is interpolated raw into the Caddyfile (`reverse_proxy ${target}`).
-    // Without validation, an admin (or a future automation that surfaces this
-    // field) could inject Caddy directives by including `\n`, `{`, or `}`.
-    // Allow common shapes (host, host:port, scheme://host[:port][/path]) and
-    // reject any character that has structural meaning in a Caddyfile.
+    // The target is interpolated raw into the Caddyfile (`reverse_proxy ${target}`):
+    // a `\n`, `{` or `}` would inject directives. Allow the common shapes (host,
+    // host:port, scheme://host[:port][/path]) and nothing with structural meaning.
     if (/[\n\r{}]/.test(target)) {
       throw containerError('INVALID_APP_CONFIG', `hosts[${i}].target contains invalid characters`);
     }
@@ -93,56 +69,20 @@ function validateAppConfig(appConfig, oldAppConfig = null) {
     return { subdomain: sub, target };
   });
 
-  // cloudflareApiToken: optional. A non-string (absent, or the `{ isSet }` mask coming
-  // back round) means "unchanged" — keep what's on disk. An explicit '' clears it.
-  if (cloudflareApiToken != null && typeof cloudflareApiToken !== 'string'
-      && !(typeof cloudflareApiToken === 'object' && 'isSet' in cloudflareApiToken)) {
-    throw containerError('INVALID_APP_CONFIG', 'cloudflareApiToken must be a string');
-  }
-  const token = typeof cloudflareApiToken === 'string'
-    ? cloudflareApiToken.trim()
-    : (oldAppConfig?.cloudflareApiToken || '');
-
-  // cloudflareDnsEnabled: the user's assertion that the image ships the
-  // caddy-dns/cloudflare module (a compile-time xcaddy plugin the stock caddy
-  // image lacks — a Caddyfile referencing it makes that image fail to start).
-  // Absent means "unchanged"; configs stored before this field existed
-  // expressed the same intent by setting the token.
-  if (cloudflareDnsEnabled != null && typeof cloudflareDnsEnabled !== 'boolean') {
-    throw containerError('INVALID_APP_CONFIG', 'cloudflareDnsEnabled must be a boolean');
-  }
-  const dnsEnabled = typeof cloudflareDnsEnabled === 'boolean'
-    ? cloudflareDnsEnabled
-    : typeof oldAppConfig?.cloudflareDnsEnabled === 'boolean'
-      ? oldAppConfig.cloudflareDnsEnabled
-      : !!token;
-
-  return {
-    domain: trimmedDomain,
-    email: trimmedEmail,
-    hosts: normalizedHosts,
-    cloudflareDnsEnabled: dnsEnabled,
-    cloudflareApiToken: token,
-  };
+  return { hosts: normalizedHosts };
 }
 
 /**
- * Build a Caddyfile string from appConfig.
+ * The Caddyfile: with the host's certificate, one wildcard site under its
+ * domain that loads the two `tls-` files, a handler per host and a 404 for any
+ * other name; without one, no site.
  */
-function generateCaddyfile(appConfig) {
-  const { domain, email, hosts, cloudflareDnsEnabled, cloudflareApiToken } = appConfig;
-  // Both gates: the token without the module assertion would emit directives
-  // the image can't parse; the assertion without a token has nothing to send.
-  const dnsActive = !!(cloudflareDnsEnabled && cloudflareApiToken);
+function generateCaddyfile(appConfig, certificate) {
   const lines = [];
-
-  // Global options block. Always emitted so SSE-aware log filtering is in place:
-  // reverse_proxy logs every SSE client abort as a WARN ("aborting with incomplete response").
-  // Route reverse_proxy logs to a separate logger capped at ERROR so real upstream failures
-  // still surface while per-disconnect warns don't spam the log on SSE-heavy apps like Wisp.
+  // Global options. The reverse proxy's own logs go to a logger capped at ERROR:
+  // it logs every disconnecting SSE client as a WARN, which floods the log on
+  // SSE-heavy sites like Wisp, while real upstream failures still show.
   lines.push('{');
-  if (email) lines.push(`  email ${email}`);
-  if (dnsActive) lines.push('  acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
   lines.push('  log default {');
   lines.push('    exclude http.handlers.reverse_proxy');
   lines.push('  }');
@@ -153,97 +93,76 @@ function generateCaddyfile(appConfig) {
   lines.push('}');
   lines.push('');
 
-  if (!domain) {
-    // No domain configured yet — placeholder Caddyfile
-    lines.push('# No domain configured yet. Set a domain in the Caddy app configuration.');
+  if (!certificate) {
+    lines.push('# Wisp holds no certificate yet: set it up in Host → App Config → Certificate.');
     return lines.join('\n') + '\n';
   }
 
-  // Wildcard site block
+  const { domain } = certificate;
   lines.push(`*.${domain} {`);
-
-  if (dnsActive) {
-    lines.push('  tls {');
-    lines.push('    dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
-    lines.push('  }');
-    lines.push('');
-  }
-
-  for (const host of hosts) {
-    const fqdn = `${host.subdomain}.${domain}`;
-    lines.push(`  @${host.subdomain} host ${fqdn}`);
+  lines.push(`  tls ${TLS_CERT_PATH} ${TLS_KEY_PATH}`);
+  lines.push('');
+  for (const host of appConfig.hosts) {
+    lines.push(`  @${host.subdomain} host ${host.subdomain}.${domain}`);
     lines.push(`  handle @${host.subdomain} {`);
     lines.push(`    reverse_proxy ${host.target}`);
     lines.push('  }');
     lines.push('');
   }
-
-  // Fallback handler
   lines.push('  handle {');
   lines.push('    respond "No matching host" 404');
   lines.push('  }');
   lines.push('}');
-
   return lines.join('\n') + '\n';
 }
 
 /**
- * Generate derived config (env, mounts, mount file contents) from appConfig.
+ * The derived config. The two `tls-` files are always mounted, empty while Wisp
+ * holds no certificate, so its arrival changes file contents and never the
+ * mount layout: a running Caddy takes it by reload.
  */
-function generateDerivedConfig(appConfig) {
-  const env = {};
-  if (appConfig.cloudflareDnsEnabled && appConfig.cloudflareApiToken) {
-    env.CLOUDFLARE_API_TOKEN = { value: appConfig.cloudflareApiToken, secret: true };
-  }
-
+function generateDerivedConfig(appConfig, { certificate = null } = {}) {
   const mounts = [
     { type: 'file', name: 'Caddyfile', containerPath: '/etc/caddy/Caddyfile', readonly: true },
+    { type: 'file', name: 'tls-cert', containerPath: TLS_CERT_PATH, readonly: true },
+    { type: 'file', name: 'tls-key', containerPath: TLS_KEY_PATH, readonly: true },
     { type: 'directory', name: 'caddy-data', containerPath: '/data', readonly: false },
     { type: 'directory', name: 'caddy-config', containerPath: '/config', readonly: false },
   ];
-
   const mountContents = {
-    Caddyfile: generateCaddyfile(appConfig),
+    Caddyfile: generateCaddyfile(appConfig, certificate),
+    'tls-cert': certificate?.chain ?? '',
+    'tls-key': certificate?.key ?? '',
   };
+  return { env: {}, mounts, mountContents };
+}
 
-  return { env, mounts, mountContents };
+/** The certificate's key is the one secret file. */
+function getSecretMountNames() {
+  return ['tls-key'];
 }
 
 /**
- * Return appConfig with secrets redacted for API responses.
- */
-function maskSecrets(appConfig) {
-  if (!appConfig) return appConfig;
-  return {
-    ...appConfig,
-    cloudflareApiToken: appConfig.cloudflareApiToken
-      ? { isSet: true }
-      : { isSet: false },
-  };
-}
-
-/**
- * Command to reload config without restarting the container.
- * Returns null if the app doesn't support live reload.
+ * Reload without a restart. `--force` makes Caddy load the config, and with it
+ * the certificate files, even when the Caddyfile is unchanged: a renewal changes
+ * only the files.
  */
 function getReloadCommand() {
-  return ['caddy', 'reload', '--config', '/etc/caddy/Caddyfile'];
+  return ['caddy', 'reload', '--config', '/etc/caddy/Caddyfile', '--force'];
 }
 
 /**
- * URLs this container publishes, for the Home page launcher. One per proxied
- * host; `target` is carried so the tile can be joined back to the workload it
- * actually fronts (a Caddy host may also point at another machine entirely,
- * which then renders as a stateless external tile).
+ * URLs this container publishes, for the Home page launcher: one per host under
+ * the domain of the certificate Wisp holds, none while it holds none. `target`
+ * is carried so the tile joins the workload the host fronts.
  */
-function getPublishedLinks(appConfig) {
-  const domain = typeof appConfig?.domain === 'string' ? appConfig.domain.trim() : '';
-  if (!domain) return [];
+function getPublishedLinks(appConfig, { certificate = null } = {}) {
+  if (!certificate?.domain) return [];
   const hosts = Array.isArray(appConfig?.hosts) ? appConfig.hosts : [];
   return hosts
     .filter((h) => h && typeof h.subdomain === 'string' && h.subdomain.trim())
     .map((h) => ({
-      url: `https://${h.subdomain.trim()}.${domain}`,
+      url: `https://${h.subdomain.trim()}.${certificate.domain}`,
       target: typeof h.target === 'string' ? h.target : undefined,
     }));
 }
@@ -252,11 +171,11 @@ export const caddyAppModule = {
   getDefaultAppConfig,
   validateAppConfig,
   generateDerivedConfig,
-  maskSecrets,
+  getSecretMountNames,
   getReloadCommand,
   getPublishedLinks,
-  // Only the reverse-proxy host rows are agent-writable (MCP update_app_config).
-  // domain and email are the certificate identity and cloudflareApiToken is a
-  // secret — all three stay human-only so an agent can't break TLS by mistake.
+  usesHostCertificate: true,
+  // The host rows are all the app's config; the domain and its certificate are the
+  // host's, out of an agent's reach.
   agentWritableAppConfigFields: ['hosts'],
 };

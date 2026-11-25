@@ -14,6 +14,7 @@ import { getCurrentVersion } from './wispUpdate.js';
 import { getHostInfo, listVMs, getGuestNetwork } from './vmManager/index.js';
 import { listContainers, getContainerConfig } from './containerManager/index.js';
 import { listHostBridges } from './networking/index.js';
+import { getHeldCertificateSummary } from './hostCertificateStore.js';
 
 /**
  * @typedef {object} DeploymentContainer
@@ -34,6 +35,7 @@ import { listHostBridges } from './networking/index.js';
  *
  * @returns {Promise<{
  *   settings: object,
+ *   certificate: { domain: string, validUntil: string } | null,
  *   hostInfo: object,
  *   bridges: object[],
  *   containers: DeploymentContainer[],
@@ -41,12 +43,13 @@ import { listHostBridges } from './networking/index.js';
  * }>}
  */
 export async function gatherDeployment() {
-  const [settings, hostInfo, bridges, containers, vms] = await Promise.all([
+  const [settings, hostInfo, bridges, containers, vms, certificate] = await Promise.all([
     getSettings(),
     getHostInfo(),
     listHostBridges(),
     listContainers(),
     listVMs(),
+    getHeldCertificateSummary(),
   ]);
 
   const containerEntries = await Promise.all(containers.map(async (summary) => (
@@ -60,6 +63,7 @@ export async function gatherDeployment() {
 
   return {
     settings,
+    certificate,
     hostInfo,
     bridges,
     containers: containerEntries,
@@ -74,7 +78,7 @@ export async function gatherDeployment() {
  */
 export async function buildDeploymentOverview() {
   const deployment = await gatherDeployment();
-  const { settings, hostInfo, bridges } = deployment;
+  const { settings, hostInfo, bridges, certificate } = deployment;
 
   const containers = deployment.containers.map(({ summary, config }) => {
     // A stopped container's persisted address is only a DHCP lease
@@ -122,6 +126,7 @@ export async function buildDeploymentOverview() {
     },
     bridges,
     sections: (settings.sections || []).map((s) => ({ id: s.id, name: s.name })),
+    certificate,
     containers,
     vms,
   };
