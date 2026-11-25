@@ -389,6 +389,32 @@ Update the OIDC / SSO configuration. Session-only: an API token of either scope 
 - **`clientSecret`:** Write-only. Omit or send empty to keep the saved secret — only while `issuer` and `clientId` are unchanged. Changing either without a new `clientSecret` returns **422** `INVALID_OIDC` (the saved secret is never sent to a different provider); clearing either drops the saved secret.
 - **Validation:** When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
 
+### Certificate
+
+The host's certificate ([CERTIFICATES.md](CERTIFICATES.md)). Every
+write, and the end of every attempt, is announced as `{ kind: "certificate" }` on the
+[`changes`](API.md#changes-topic-payload) topic.
+
+- **`GET /api/settings/certificate`** · `read` → **200**
+  [the record](CERTIFICATES.md#the-record): the setting without its token, the
+  certificate Wisp holds and the last attempt. With no setting: `domain` `null`,
+  `tokenSet` `false`.
+- **`PUT /api/settings/certificate`** · `admin` `{ domain, cloudflareApiToken? }` →
+  **204** once the setting is stored. `cloudflareApiToken` omitted or empty keeps the
+  stored one; with none stored it is required (**422** `INVALID_SETTINGS`). The
+  [checks](CERTIFICATES.md#the-certificate-setting) run first: **422**
+  `INVALID_SETTINGS`, `CERTIFICATE_TOKEN_REJECTED`, `CERTIFICATE_ZONE_NOT_FOUND`;
+  **502** `CERTIFICATE_DNS_UNAVAILABLE`. A first save, or a changed domain, starts the
+  `certificate-issue` job, which clients see on the `jobs` topic; the route does not
+  wait for it.
+- **`DELETE /api/settings/certificate`** · `admin` → **204**: the setting, the
+  certificate and its key are gone, and the apps are delivered that. **204** too when
+  there was none.
+- **`POST /api/settings/certificate/renew`** · `admin` → **202** the job's ack
+  `{ jobId, kind, title, subject }` ([API.md → Job routes](API.md#job-routes)), the
+  running job's when one runs; `done` result `{ domain, validUntil }`. **404**
+  `CERTIFICATE_NOT_FOUND` with no setting.
+
 ### GET /api/host/mounts · `read`
 
 List configured mounts (SMB + disk). SMB passwords are never returned; SMB entries carry `hasPassword` (boolean).

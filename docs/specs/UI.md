@@ -50,7 +50,7 @@ The **browser tab title** is `{server display name} — Wisp` after settings loa
 
 ### Host entry
 
-A **Host** row appears above the workloads. It shows the label "Host", a secondary line with physical CPU count and total RAM, and a badge dot when pending OS updates are available (from the background hourly check). Clicking it navigates to `/host/overview` and renders the Host panel in the center with tabs: Home, Overview, Host Mgmt, Software, Backups, App Config. It has active state styling (accent border) when the Host panel is visible.
+A **Host** row appears above the workloads. It shows the label "Host", a secondary line with physical CPU count and total RAM, and a badge dot when pending OS updates are available (from the background hourly check) or while the host's certificate could not be got or renewed ([CERTIFICATES.md](CERTIFICATES.md#renewal)). Clicking it navigates to `/host/overview` and renders the Host panel in the center with tabs: Home, Overview, Host Mgmt, Software, Backups, App Config. It has active state styling (accent border) when the Host panel is visible.
 
 ### Workloads
 

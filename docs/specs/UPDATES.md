@@ -249,6 +249,7 @@ The migrations are the files in `backend/migrations/`; each names what it brings
 - `0013-cloud-init-key-source` (settled 2026-11-21): every `<vmsPath>/*/cloud-init.json` loses `sshKeySource`. The file keeps its mode and is written atomically; the seed ISO is not touched.
 - `0014-retire-helper-path-overrides` and `0015-retire-cni-dir-overrides` (settled 2026-11-22): `runtime.env` loses the five `WISP_*_SCRIPT` lines, `WISP_CNI_BIN_DIR` and `WISP_CNI_CONF_DIR`. Other lines, comments and the file's mode stay.
 - `0016-canonical-mount-forms` (settled 2026-11-22): every stored mount gets its `mountPath` in canonical form and its `share` as `//host/share[/folder]`. A share that cannot be brought into form is left as it is and reported.
+- `0017-caddy-certificate-to-settings`: the `domain` and `cloudflareApiToken` of a Caddy app container become the host's certificate setting ([CERTIFICATES.md](CERTIFICATES.md#the-certificate-setting)) when the host has none; of several Caddy containers that hold both, the first by name gives them. Every Caddy container's `appConfig` then loses `domain`, `email`, `cloudflareDnsEnabled` and `cloudflareApiToken`; its env, mounts, Caddyfile and image are not touched ([CUSTOM-APPS.md](CUSTOM-APPS.md#containers-made-before-the-hosts-certificate)).
 
 ## Timeouts
 

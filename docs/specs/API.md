@@ -54,7 +54,7 @@ In-memory job registry (server process only; no persistence across restart) (set
 
 **Shared runs, by scope (settled 2026-11-20).** The OS update check and the image update check are shared: a start, from any trigger, while a running job of the same kind *covers* it answers that job's ack and starts nothing. The OS check always covers another. An image check of every image covers a check of one image; a check of one image covers only a check of that image. So a check of every image started while a check of one image runs is its own job: image check runs then take turns — a run waits for the one before it to end, so two runs never pull the same image at once.
 
-**Jobs that may be cut (settled 2026-11-20).** A job must finish, except the interruptible ones: the OS update check and the image update check. A shutdown (a restart, a self-update) cuts a running interruptible job: it ends with status `cancelled` and the terminal event `{ "step": "cancelled" }` — not a failure, no error body; the next hourly check runs again. The self-update's `UPDATE_JOBS_ACTIVE` refusal counts only running jobs that must finish.
+**Jobs that may be cut (settled 2026-11-20).** A job must finish, except the interruptible ones: the OS update check, the image update check and the certificate job ([CERTIFICATES.md](CERTIFICATES.md#the-job)). A shutdown (a restart, a self-update) cuts a running interruptible job: it ends with status `cancelled` and the terminal event `{ "step": "cancelled" }` — not a failure, no error body; the next hourly check runs again. The self-update's `UPDATE_JOBS_ACTIVE` refusal counts only running jobs that must finish.
 
 ### GET /api/jobs · `read`
 
@@ -65,7 +65,7 @@ In-memory job registry (server process only; no persistence across restart) (set
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | vm-backup | vm-start | vm-force-stop | vm-delete | vm-restore | container-create | container-backup | container-restore | container-restore-new | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-zip-extract | container-deploy | container-image-update | container-image-update-check | container-image-delete | library-download | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update",
+      "kind": "vm-create | vm-backup | vm-start | vm-force-stop | vm-delete | vm-restore | container-create | container-backup | container-restore | container-restore-new | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-zip-extract | container-deploy | container-image-update | container-image-update-check | container-image-delete | library-download | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | certificate-issue | self-update",
       "title": "string",
       "subject": { "type": "vm | container", "name": "string" },
       "status": "running | done | error | cancelled",
@@ -143,6 +143,7 @@ Every topic except `discovery` and `jobs` (in-memory lists that can't fail) may 
 | `library` | — | `GET /api/library` |
 | `images` | — | `GET /api/containers/images` |
 | `tokens` | — | `GET /api/auth/tokens` |
+| `certificate` | — | `GET /api/settings/certificate` |
 | `wisp-update` | — | `GET /api/updates/status` |
 
 The snapshot frame on connect is `{ "kind": "all" }`: anything may have changed while the stream was down, so a client GETs every record it shows.
@@ -197,6 +198,7 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
   "updateOperationInProgress": false,
   "rebootRequired": false,
   "rebootReasons": [],
+  "certificateFailed": false,
   "wispUpdate": { "current": "…", "latest": "…", "available": false, "lastChecked": "…" }
 }
 ```
@@ -209,6 +211,7 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
 - `pendingUpdates` is the count of upgradable packages from the background hourly check (or 0 if check unavailable).
 - `updatesLastChecked` is an ISO 8601 timestamp of the last successful update check (background or manual), or `null` if no check has completed since the backend started.
 - `rebootRequired` is `true` when the host has a pending reboot. `rebootReasons` is a list of short tags (the package names that asked for the reboot).
+- `certificateFailed` is `true` while the last attempt to get or renew the host's certificate failed ([CERTIFICATES.md → Renewal](CERTIFICATES.md#renewal)); `false` otherwise, with no certificate setting included.
 - CPU and memory `allocated` values reflect running VMs only.
 
 ---

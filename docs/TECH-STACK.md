@@ -30,7 +30,7 @@
   its own client, same origin), multipart (streamed uploads), static (the SPA and the
   vendored noVNC), websocket (VNC proxy, container shell).
 - **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
-- **`undici`** for every outbound request, only in the two fetch helpers of `lib/downloads/`, the one home of
+- **`undici`** for every outbound request, only in the two fetch helpers of `lib/outbound/`, the one home of
   outbound HTTP (no global `fetch` elsewhere in the backend): the SSRF-hardened fetch,
   and the operator-endpoint fetch for the OIDC issuer;
   **`js-yaml`** for cloud-init YAML emission.
@@ -151,7 +151,7 @@ alone, and nothing installs the root's packages there.
 | Proto loader | @grpc/proto-loader | ^0.8.0 | Dynamic protobuf definition loading for containerd proto files. |
 | Proto encoding | protobufjs | ^8.0.0 | Binary protobuf encoding for containerd Transfer API `Any` fields. Direct usage needed because `@grpc/proto-loader` only exposes descriptor objects, not encodable Type instances. |
 | Log pretty-print (dev only) | pino-pretty | ^13.1 | `devDependency`. Single-line, time-formatted log output when `NODE_ENV=development`. Production keeps Pino's default JSON output. |
-| HTTP client | undici | ^8.7 | Every outbound request, through `lib/downloads`' two fetches: the SSRF-hardened one (single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation) and the operator-endpoint one (private addresses allowed, no redirect followed). Node ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`, and the backend calls no global `fetch`. v8 negotiates HTTP/2 by default. |
+| HTTP client | undici | ^8.7 | Every outbound request, through `lib/outbound`'s two fetches: the SSRF-hardened one (single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation) and the operator-endpoint one (private addresses allowed, no redirect followed). Node ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`, and the backend calls no global `fetch`. v8 negotiates HTTP/2 by default. |
 | YAML emitter | js-yaml | ^5.2 | `dump()` (named export; v5 has no default export) for cloud-init `user-data` / `meta-data`. Replaces hand-rolled template-literal YAML which was vulnerable to scalar-break injection from user-controlled fields. |
 
 #### Backend: not used
@@ -160,6 +160,7 @@ alone, and nothing installs the root's packages there.
 - **No native libvirt bindings** — unmaintained, require native compilation.
 - **No stats library** — host metrics read directly from `/proc`.
 - **No JWT library** — JWT signing/verification implemented with Node.js `crypto` built-ins.
+- **No ACME library** — the certificate authority's protocol (RFC 8555) is signed JSON over HTTPS, done with Node.js `crypto` built-ins and the one outbound fetch; the usual package brings its own HTTP client and 47 more packages.
 - **No UUID library** — `crypto.randomUUID()` or libvirt-generated UUIDs.
 - **No date library** — built-in `Date` and `Intl` APIs.
 - **No semver library** — `compareSemver` in `wispUpdate.js` handles prerelease precedence per the semver spec (settled 2026-08-25).

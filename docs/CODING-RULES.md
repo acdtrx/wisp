@@ -132,19 +132,21 @@ source refer to them.
   - Applied: import `dbus-next` for libvirt only in `lib/vmManager/linux/` (behind the
     `vmManager` facade), `@grpc/grpc-js` only in `lib/containerManager/linux/` (behind
     its facade), Avahi's `dbus-next` only in `lib/mdns/linux/`, and `undici` only in
-    `lib/downloads/` (settled 2026-11-12). Add a new operation as a new purpose-named
+    `lib/outbound/` (settled 2026-11-12). Add a new operation as a new purpose-named
     facade export.
-  - Applied: outbound HTTP has one home, `lib/downloads/` (settled 2026-11-20): no
+  - Applied: outbound HTTP has one home, `lib/outbound/` (settled 2026-11-20): no
     backend file outside it imports `undici` or Node's HTTP clients (a server's
     `createServer` aside), calls the global `fetch` or opens a WebSocket client. It has
     two fetches: `ssrfSafeFetch` for every URL from user input or a public source, and
     `fetchOperatorEndpoint` for an endpoint only the operator sets, the OIDC issuer
-    (§9), which no file but `lib/oidc.js` may name. Inside `lib/downloads/` too, only
-    the two files that implement those fetches import `undici` or call `fetch`.
+    (§9), which no file but `lib/oidc.js` may name. Inside `lib/outbound/` too, only
+    the two files that implement those fetches import `undici` or call `fetch`. What
+    speaks a remote API through them lives with its own subject: the image downloads in
+    `lib/downloads/`, the certificate authority and Cloudflare in `lib/certificates/`.
   - Applied — the lint is `npm run check-fences`: the package fences, the facades (a
     module with an `index.js` is imported only through it), the strict managers and
     carved modules, routes that take no operation lock, outbound HTTP outside
-    `lib/downloads/`, and the three shared-home rules below. A reviewed allowance is one
+    `lib/outbound/`, and the three shared-home rules below. A reviewed allowance is one
     line in its `EXCEPTIONS`.
   - Applied — **shared homes** (settled 2026-11-22): `lib/base/` is the one module every
     other may import, the strict managers and the carved modules included; it imports
@@ -218,7 +220,7 @@ In projects with a web UI: `FRONTEND-RULES.md`.
   - Applied: mask SMB passwords.
 - Block requests to private/loopback addresses when the URL originates from user input
   (SSRF).
-  - Applied: every URL from user input goes through `ssrfSafeFetch` (`lib/downloads`):
+  - Applied: every URL from user input goes through `ssrfSafeFetch` (`lib/outbound`):
     the library's download URLs and the GitHub keys lookup, and with them the public
     sources whose redirects Wisp does not control (the image mirrors, GitHub Releases).
     One exception is an endpoint only the operator sets, the OIDC issuer and the

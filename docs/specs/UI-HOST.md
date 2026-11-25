@@ -53,7 +53,7 @@ The Host panel is opened from the left panel "Host" entry. It uses the same layo
 
 - **Left:** "Host" label, tab strip: **Home** | **Overview** | **Host Mgmt** | **Software** | **Backups** | **App Config**.
 - **Right:** Power Off button, Restart button (each opens a simple confirmation dialog before executing)
-- **Badge:** A dot on the "Software" tab when **either** a Wisp self-update is available (from `wispUpdate.available` in the host stats SSE) **or** pending OS package updates are available (background hourly check or manual check). The same dot serves both signals — clicking the tab takes the user to the Software panel where the relevant section explains which one.
+- **Badge:** A dot on the "App Config" tab while the last attempt to get or renew the host's certificate failed (`certificateFailed` in the host stats SSE); the Certificate group says why. A dot on the "Software" tab when **either** a Wisp self-update is available (from `wispUpdate.available` in the host stats SSE) **or** pending OS package updates are available (background hourly check or manual check). The same dot serves both signals — clicking the tab takes the user to the Software panel where the relevant section explains which one.
 
 ### Tab: Home
 
@@ -139,4 +139,5 @@ Groups, in this order ([SETTINGS.md](SETTINGS.md)):
 - **Password**: change the application password (current and new).
 - **SSH keys**: the list of keys, with Add, Import from GitHub, a default mark, Rename and Remove.
 - **Single sign-on**: issuer, client ID and whether a client secret is set, with an Edit; the redirect URI to register with the provider, with a copy action; a switch (sign in with SSO) that acts at once, off with its reason until issuer, client ID and secret are stored. The secret is write-only: the form's field is empty and keeps the stored one, and must be typed again when the issuer or client ID changes.
+- **Certificate** ([CERTIFICATES.md](CERTIFICATES.md)): the domain and whether a Cloudflare token is set, as text, with an Edit (the token's field is empty and keeps the stored one). Below them the state: valid until a date and renewing around a date; getting the certificate, while its job runs; or the last attempt's failure with its message and time, beside the certificate that still serves, if any. **Renew now** starts the job. **Remove** asks first, saying that the sites of the Caddy apps stop being served. With no setting the group says what the certificate is for and offers Set up.
 - **API tokens**: the tokens (label, scope, created), with create and revoke; a new token's text is shown once.

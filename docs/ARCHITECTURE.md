@@ -72,7 +72,8 @@ page. The service worker keeps the app shell so a launch always boots React.
 - Persistent state lives in three places; write runtime state nowhere else:
   - **`config/`** at the install root: `wisp-config.json` (application settings, API
     token hashes), `wisp-password` (the scrypt hash the session secret derives from),
-    `migrations.json` (the migration ledger) and the optional `runtime.env`;
+    `migrations.json` (the migration ledger), `certificate.json` (the host's certificate,
+    its key and the certificate authority account) and the optional `runtime.env`;
     `WISP_CONFIG_PATH` moves the first three in development and tests only (an installed
     Wisp refuses it). An install and an update keep everything in `config/` ([`specs/UPDATES.md`](specs/UPDATES.md), the keep rule).
   - **libvirt's domain definitions**: a VM's configuration *is* its domain XML, with
@@ -82,8 +83,8 @@ page. The service worker keeps the app shell so a launch always boots React.
 - **The server is the source of truth**: VM metadata lives in domain XML, a container's
   configuration in its `container.json`, settings in `wisp-config.json` — never in the
   browser. containerd holds only runtime state (task status, metrics).
-- **Secrets are write-only and live in their owner's record** `[PROJECT]`: SMB passwords
-  and the OIDC client secret in `wisp-config.json`, secret env values and secret file
+- **Secrets are write-only and live in their owner's record** `[PROJECT]`: SMB passwords,
+  the OIDC client secret and the certificate's Cloudflare token in `wisp-config.json`, secret env values and secret file
   mounts in `container.json` (both `0600`), the cloud-init password as a hash in
   `cloud-init.json`. The API never returns one, only a flag that it is on file, and an
   edit that omits or blanks a secret keeps the stored one; each secret's exact rules are
@@ -288,13 +289,17 @@ kept over the template's one in-memory bus).
   library directory (upload, rename, delete, and the downloads, through `downloads`, that
   land a file there), checks the file names it is given and refuses to touch a file a VM
   uses, and announces each write ([`specs/IMAGE-LIBRARY.md`](specs/IMAGE-LIBRARY.md)).
-- `downloads` — the home of outbound HTTP: the SSRF-guarded fetch for URLs from user
-  input and public sources, the fetch for an endpoint only the operator sets (the OIDC
-  issuer), and the image downloads built on them; within it, only the two fetches'
-  own files reach the network. No other backend file calls the
+- `outbound` — the home of outbound HTTP, and nothing else: the SSRF-guarded fetch for
+  URLs from user input and public sources, and the fetch for an endpoint only the
+  operator sets (the OIDC issuer). No other backend file calls the
   global `fetch`, imports `undici` or Node's HTTP clients, or opens a WebSocket client:
   `npm run check-fences` holds that much, and cannot see HTTP spoken over a raw socket
   (`node:net`, `node:tls`) or by a child process (CODING-RULES §7, §9).
+- `downloads` — the image downloads into the library, through `outbound`: a URL, and the
+  sources Wisp knows (Ubuntu and Arch cloud images, Home Assistant OS).
+- `certificates` — the client of the certificate authority (ACME) and of Cloudflare's DNS
+  API, through `outbound`: it gets a certificate for a domain and knows nothing of
+  containers or settings ([`specs/CERTIFICATES.md`](specs/CERTIFICATES.md)).
 - `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
   masked ([`specs/MCP.md`](specs/MCP.md)).
 - App glue — the workload operations (`lib/vmOperations.js`, `lib/containerOperations.js`:
@@ -304,4 +309,6 @@ kept over the template's one in-memory bus).
   attempt status), the job store and its starter (`lib/jobs`: every job, whatever starts
   it), operation locks, the update checks' jobs and their hourly trigger
   (`lib/updateChecks.js`), the container mDNS reconciler and the stuck-probe recovery's
-  triggers (`lib/mdnsProbeRecovery.js`), LAN discovery, the home page and self-update.
+  triggers (`lib/mdnsProbeRecovery.js`), LAN discovery, the home page, self-update, and the
+  host's certificate: its record, its job, the hourly check and the delivery to the app
+  containers.

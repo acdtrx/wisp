@@ -43,6 +43,7 @@ What an app's module provides, and the rule each part carries:
 - **A reload command** (`getReloadCommand() → string[] | null`, optional), run inside the running container to apply a new config; `null` when the app has no live reload. Without one, a save on a running container needs a restart.
 - **`requiresRestartForChange(oldAppConfig, newAppConfig) → boolean`** (optional): true when the change includes fields the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). The save then sets `pendingRestart` and reports `requiresRestart: true` even after a successful reload.
 - **`agentWritableAppConfigFields`** (optional): the top-level appConfig keys the MCP `update_app_config` tool may change (see [MCP.md](MCP.md)). Absent or empty = the app is not agent-configurable. Never list secrets, certificate identity, or auth settings. The UI/REST surface is unaffected.
+- **The host's certificate** (optional): an app that serves HTTPS with the certificate Wisp holds ([CERTIFICATES.md](CERTIFICATES.md)) says so. Its derived config and its published links are then given that certificate, or nothing when Wisp holds none, and Wisp runs the app's save whenever the certificate changes ([CERTIFICATES.md → Delivery](CERTIFICATES.md#delivery)). The certificate is never part of `appConfig`.
 - **Published links** (`getPublishedLinks`, optional), below.
 
 ### generateDerivedConfig return shape
@@ -65,7 +66,7 @@ The URLs an app makes reachable, as `[{ url, target?, label? }]`, for the Home p
 - **`target`** — set it when the URL fronts *something else*, and carry through whatever the config holds (`host`, `host:port`, or `scheme://host[:port][/path]`). The Home page resolves it against workload hostnames to give the tile live state, and renders a stateless external tile when it resolves to nothing. **Omit `target` when the URL is the container's own address** — the tile then joins to the publishing container itself.
 - **`label`** — optional display name. Omit it to let the tile name itself from the workload it points at (or the URL's first hostname label).
 
-Implemented by: **caddy-reverse-proxy** (one link per `hosts[]` entry → `https://<subdomain>.<domain>`, `target` carried), **jellyfin** (`publishedUrl`, no target), **zot-registry** (`externalUrl`, no target). **tiny-samba** publishes no HTTP surface.
+Implemented by: **caddy-reverse-proxy** (one link per `hosts[]` entry → `https://<subdomain>.<domain>`, the domain that of the certificate Wisp holds, `target` carried; none while Wisp holds no certificate), **jellyfin** (`publishedUrl`, no target), **zot-registry** (`externalUrl`, no target). **tiny-samba** publishes no HTTP surface.
 
 ## API Changes
 
@@ -124,31 +125,51 @@ What an `appConfig` save does on a running container. The save's result is `{ re
 **ID:** `caddy-reverse-proxy`
 **Default image:** `caddy:latest` (custom image allowed)
 
+The app serves its sites over HTTPS with the host's certificate
+([CERTIFICATES.md](CERTIFICATES.md)): Wisp gets and renews it, Caddy only loads it, so
+the stock image is enough. The app has no domain, token or certificate setting of its
+own, and never asks a certificate authority for anything.
+
 ### appConfig Schema
 
 ```json
 {
-  "domain": "example.com",
   "hosts": [
     { "subdomain": "ha", "target": "192.168.1.100" },
     { "subdomain": "plex", "target": "192.168.1.101:32400" }
-  ],
-  "cloudflareDnsEnabled": true,
-  "cloudflareApiToken": "cf-token"
+  ]
 }
 ```
 
-- `domain` — Base domain for wildcard certificate (e.g. `example.com`)
-- `hosts[]` — Reverse proxy entries. `subdomain` is a DNS label; `target` is IP/hostname with optional port (also accepts `scheme://host[:port][/path]`). The Caddyfile is generated with `target` interpolated into a `reverse_proxy` directive, so the validator rejects `\n` / `\r` / `{` / `}` and any shape that doesn't match `host[:port]` or `scheme://host[:port][/path]`. Returns **422 INVALID_APP_CONFIG** otherwise.
-- `cloudflareDnsEnabled` — The user's assertion that the container image ships the `caddy-dns/cloudflare` module, which the stock `caddy:latest` image does **not** include (a Caddyfile referencing `dns cloudflare` makes that image fail to start). No `dns cloudflare` / `acme_dns cloudflare` directives are emitted unless this is `true` **and** a token is set. In the UI this is a toggle that reveals the token field. Absent means "unchanged"; a stored config without the field is read as enabled when a token is set.
-- `cloudflareApiToken` — Cloudflare API token for DNS-01 challenge. Stored as secret, masked in API responses as `{ isSet: boolean }`. Omit it (or send the `{ isSet }` mask back) to keep the stored token; send an explicit `""` to clear it. Kept in storage (but inert) while `cloudflareDnsEnabled` is `false`, so toggling off and back on doesn't require re-entering it.
+- `hosts[]` — Reverse proxy entries, one site each: `https://<subdomain>.<domain>`, the domain that of the certificate Wisp holds. `subdomain` is a DNS label; `target` is IP/hostname with optional port (also accepts `scheme://host[:port][/path]`). The Caddyfile is generated with `target` interpolated into a `reverse_proxy` directive, so the validator rejects `\n` / `\r` / `{` / `}` and any shape that doesn't match `host[:port]` or `scheme://host[:port][/path]`. Returns **422 INVALID_APP_CONFIG** otherwise.
+- There are no secrets in `appConfig`.
+- **Sites are stored whether or not Wisp holds a certificate.** While it holds none, the app serves no site, and its page says where the certificate is set up.
 
 ### Derived Config
 
-- **env:** `CLOUDFLARE_API_TOKEN` (secret) when Cloudflare DNS is enabled and a token is set
-- **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`) — no secret files (the Cloudflare token reaches Caddy as an env var, referenced as `{env.CLOUDFLARE_API_TOKEN}`), so the Caddyfile is readable
-- **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when Cloudflare DNS is enabled and a token is set), and the reverse proxy's own logs capped at `ERROR` (a disconnecting SSE client is otherwise a WARN each time)
-- **Reload:** `caddy reload --config /etc/caddy/Caddyfile` — live reload without restart
+- **env:** (none)
+- **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `tls-cert` (file → `/etc/caddy/tls/fullchain.pem`, readonly), `tls-key` (file → `/etc/caddy/tls/key.pem`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`). The two `tls-` files are always mounted, empty while Wisp holds no certificate, so a certificate's arrival changes file contents and never the mount layout.
+- **Secret mounts** (`getSecretMountNames`): `tls-key`. The Caddyfile and `tls-cert` are readable.
+- **Caddyfile:** with a certificate, one wildcard site `*.<domain>` that loads the two `tls-` files, a reverse proxy handler per host and a 404 for any other name; without one, no site. Always: the reverse proxy's own logs capped at `ERROR` (a disconnecting SSE client is otherwise a WARN each time).
+- **Reload:** a `caddy reload` that makes Caddy read the certificate files again even when the Caddyfile has not changed: a renewal changes only the files.
+
+### Containers made before the host's certificate
+
+Such a container held its own `domain`, `email`, `cloudflareDnsEnabled` and
+`cloudflareApiToken`, and got its certificate itself, which needed an image with the
+`caddy-dns/cloudflare` module.
+
+- **At the update**, a state migration
+  ([UPDATES.md → Shipped migrations](UPDATES.md#shipped-migrations)) moves the domain and
+  the token to the [certificate setting](CERTIFICATES.md#the-certificate-setting) and
+  removes the four fields. Its env, mounts, Caddyfile and image are left as they were,
+  so it keeps serving with its own certificate, across a restart too.
+- **At Wisp's first delivery** to it, its env, mounts and Caddyfile are rewritten, and
+  it is flagged restart required (its env and mount layout change).
+- **After that one restart**, at a time the user chooses, it serves Wisp's certificate.
+  Wisp never changes its image: the one it has serves Wisp's certificate as well, and
+  the user moves it to the stock image with the Image group's **Use the app's image**
+  ([UI-CONTAINER.md](UI-CONTAINER.md#groups)).
 
 ---
 

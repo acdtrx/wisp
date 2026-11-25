@@ -17,6 +17,7 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 | `WISP_CONTAINERD_SOCK` | `/run/containerd/containerd.sock` | containerd's gRPC socket. Absolute. |
 | `WISP_ALLOWED_WS_ORIGINS` | (unset) | Comma-separated origins (`scheme://host[:port]`) allowed to open console WebSockets besides the same origin. |
 | `WISP_UPDATE_REPO` | `acdtrx/wisp` | GitHub `<owner>/<repo>` that self-update checks for releases. |
+| `WISP_ACME_DIRECTORY` | Let's Encrypt's production directory | For development and tests. The `https` URL of the ACME directory Wisp gets the host's certificate from ([CERTIFICATES.md](CERTIFICATES.md#the-certificate-authority)), e.g. Let's Encrypt's staging directory. |
 | `WISP_ROUTE_ACCESS_REPORT` | (unset) | `1` prints the route access table and exits (`npm run route-access`); `0` or unset boots normally. |
 | `NODE_ENV` | (unset) | `development` enables CORS for `localhost:5173`. |
 
@@ -47,6 +48,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `homepage` | `object` | `{ groups: [], overrides: {}, manualTiles: [] }` | Home page overlay (see object shape below). Managed exclusively via `GET/POST/PATCH/PUT/DELETE /api/homepage`, never via `PATCH /api/settings`, and not part of `GET /api/settings` — the client reads it through the derived `home` events topic. |
 | `discoveryEnabled` | `boolean` | `true` | Announce this instance as a `_wisp._tcp` mDNS service and browse for peers (see [DISCOVERY.md](DISCOVERY.md)). |
 | `advertisedUrl` | `string \| null` | `null` | This instance's browser-facing URL; must be `http`/`https`. Other Wisp instances open it from the mDNS announcement, and its origin pins the OIDC callback URL ([AUTH.md](AUTH.md) § OIDC). `null` → announce `http://<hostname>.local:<port>`; OIDC falls back to the request origin. |
+| `certificate` | `object \| null` | `null` | The host's certificate setting: `{ domain, cloudflareApiToken }` ([CERTIFICATES.md](CERTIFICATES.md#the-certificate-setting)). Managed exclusively via the `/api/settings/certificate` routes, never via `PATCH /api/settings`, and never returned by `GET /api/settings`. What Wisp obtained with it (the account, the certificate and its key) is in `certificate.json`, beside this file and `0600` too. |
 | `updateChannel` | `"stable" \| "beta"` | `"stable"` | Which releases self-update offers this host: `stable` takes GitHub's latest release, `beta` also takes pre-releases. Any other value fails startup. Edited from **Host → Software** (the Wisp Update card), not the Settings page. See [UPDATES.md → Update channels](UPDATES.md#update-channels). |
 | `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled: true` requires `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` — the API refuses to save it otherwise, and startup fails on a file that has it. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. Written only via the session-only `PATCH /api/settings/oidc`. |
 | `trustedProxies` | `string[]` | `[]` | Extra reverse-proxy sources whose `X-Forwarded-Proto` / `X-Forwarded-For` Wisp honors (in addition to the always-trusted loopback). See **Reverse proxy / HTTPS** below. Not editable from the UI. |
@@ -101,11 +103,11 @@ The read and the Settings writes share one schema: the API refuses (422) what th
 
 ### Config file permissions
 
-The file may hold secrets (SMB passwords, the OIDC `clientSecret`, API token hashes), so it is kept **`0600`**: set at install, and kept by every Settings write, so a save can't widen it back to the umask default.
+The file may hold secrets (SMB passwords, the OIDC `clientSecret`, the certificate's Cloudflare token, API token hashes), so it is kept **`0600`**: set at install, and kept by every Settings write, so a save can't widen it back to the umask default.
 
 ### Reverse proxy / HTTPS (`trustedProxies`)
 
-Wisp itself serves plain HTTP; TLS is expected to terminate at an optional reverse proxy (Caddy / nginx / Traefik). Wisp derives the request scheme from `X-Forwarded-Proto`, which in turn decides:
+Wisp itself serves plain HTTP; TLS is expected to terminate at an optional reverse proxy (Caddy / nginx / Traefik). The Caddy app with the host's certificate ([CERTIFICATES.md](CERTIFICATES.md)) is the one Wisp sets up itself: Wisp is then one of its sites. Wisp derives the request scheme from `X-Forwarded-Proto`, which in turn decides:
 
 - the session cookie's `Secure` flag, and
 - the scheme of generated absolute URLs — notably the **OIDC redirect/callback URI** when `advertisedUrl` is not set. If Wisp thinks the request was `http` when the browser used `https`, the callback it sends to the identity provider is `http://…` and the provider rejects it as an invalid callback URL. Setting `advertisedUrl` to the proxy's `https://` URL pins the callback regardless of forwarded headers.

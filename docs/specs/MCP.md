@@ -35,7 +35,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `get_deployment_overview` | — | wisp version, serverName, host identity, bridges, sections; per-container `{ name, state, image, ip, bridge, mdnsName, app, autostart, autoBackup, restartPolicy, updateAvailable }` (`ip` only while running; stopped containers report `lastKnownIp` — a stale DHCP lease, possibly reassigned); per-VM `{ name, state, vcpus, memoryMiB, profile, ip, guestHostname }` (VM `autostart` only on `get_vm`) |
+| `get_deployment_overview` | — | wisp version, serverName, host identity, bridges, sections; `certificate`, `{ domain, validUntil }` of the certificate Wisp holds or `null` ([CERTIFICATES.md](CERTIFICATES.md)): the domain every Caddy site is under; per-container `{ name, state, image, ip, bridge, mdnsName, app, autostart, autoBackup, restartPolicy, updateAvailable }` (`ip` only while running; stopped containers report `lastKnownIp` — a stale DHCP lease, possibly reassigned); per-VM `{ name, state, vcpus, memoryMiB, profile, ip, guestHostname }` (VM `autostart` only on `get_vm`) |
 | `get_container` | `{ name }` | Full container config + state with **all secrets masked** — including `metadata.app`, the masked `appConfig`, and secret file mounts reported as `secret: true` with `isSet` / `sizeBytes` only. This is how agents read app configuration generically (e.g. a Caddy container's `appConfig.hosts[]` = the exposure map); there are deliberately no app-specific tools |
 | `get_container_mount_usage` | `{ name }` | Host-side disk usage of each bind mount (Local data dirs and storage-backed mounts): `{ name, containerPath, type, source, hostPath, sizeBytes, partial }` per mount. Sized on demand as the sum of file sizes (can take seconds on large data dirs); tmpfs has no host backing (`sizeBytes` null); `partial: true` flags an undercount from unreadable entries |
 | `get_container_logs` | `{ name, lines?, runId? }` | Tail of a run log (newest run by default; `lines` an integer 1–1000, default 100 — one outside the range is refused, not clamped; `runId` a run id as the REST runs list gives it) |
@@ -51,7 +51,7 @@ Tool handlers call the same facades and glue as the REST routes and go through t
 
 Deliberately a **subset** of the REST API: agents get deploy, image update, lifecycle, and a filtered app-config surface.
 
-**Job-backed tools (settled 2026-11-13).** `deploy_container`, `update_container_image`, `start_container` / `stop_container` / `restart_container` and `check_image_updates` run as server jobs, as their REST counterparts do: the tool answers its checks at once (validation, a taken name, not found, busy, already running / not running — a tool error as usual), then starts the job and returns `{ jobId, kind, title, subject }`. The agent reads it with `get_job` until its status is no longer `running`; the job's `result` is the operation's outcome, listed per tool below. The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) throughout (deploy holds the new name's), so a busy container is refused at once, never as a failed job. The lifecycle jobs are the same ones the REST routes start. **Never exposed via MCP:** container deletes, mounts, devices, `runAsRoot`, app-template creation, env edits on existing containers, VM mutations, host power/updates, settings, token management.
+**Job-backed tools (settled 2026-11-13).** `deploy_container`, `update_container_image`, `start_container` / `stop_container` / `restart_container` and `check_image_updates` run as server jobs, as their REST counterparts do: the tool answers its checks at once (validation, a taken name, not found, busy, already running / not running — a tool error as usual), then starts the job and returns `{ jobId, kind, title, subject }`. The agent reads it with `get_job` until its status is no longer `running`; the job's `result` is the operation's outcome, listed per tool below. The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) throughout (deploy holds the new name's), so a busy container is refused at once, never as a failed job. The lifecycle jobs are the same ones the REST routes start. **Never exposed via MCP:** the host's certificate setting, container deletes, mounts, devices, `runAsRoot`, app-template creation, env edits on existing containers, VM mutations, host power/updates, settings, token management.
 
 | Tool | Input | Behaviour |
 |------|-------|-----------|
@@ -67,7 +67,7 @@ Each app module may export `agentWritableAppConfigFields` — the top-level appC
 
 | App | Agent-writable | Human-only (examples) |
 |-----|----------------|----------------------|
-| `caddy-reverse-proxy` | `hosts` (full replacement array of `{ subdomain, target }`) | `domain`, `email`, `cloudflareApiToken` |
+| `caddy-reverse-proxy` | `hosts` (full replacement array of `{ subdomain, target }`) | — (the domain and the certificate are the host's, out of any tool's reach: [CERTIFICATES.md](CERTIFICATES.md)) |
 | `zot-registry` | — none | users/passwords, OIDC, `externalUrl`, session keys |
 | `jellyfin`, `tiny-samba` | — none | everything |
 

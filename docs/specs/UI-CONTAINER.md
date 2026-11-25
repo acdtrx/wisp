@@ -36,7 +36,7 @@ Everything else can be changed while it runs.
 | Group | Shows | Changed by | Request |
 |---|---|---|---|
 | **The app's own** (an app container) | See below | The app's rows and forms | `PATCH /api/containers/:name` `{ appConfig }`, the whole config |
-| **Image** | The image; "Update available" when a newer one was pulled | Edit: the image. An update is applied by Restart | `PATCH` `{ image }` |
+| **Image** | The image; "Update available" when a newer one was pulled | Edit: the image. An update is applied by Restart. On an app container whose image is not its app's own, **Use the app's image** names that image and saves it | `PATCH` `{ image }` |
 | **Environment** (not an app container) | Each variable; a secret shows as "Secret" | Add, Edit, Remove | `PATCH` `{ envPatch }` |
 | **Storage** (not an app container) | Each mount: its path, kind and size | Add a folder, a file or a memory folder; Edit; Remove; open a file's content; upload. A zip upload is offered only for a folder kept on this host: for one kept on a storage share it is disabled and says so | The mount routes ([API-CONTAINERS.md](API-CONTAINERS.md)) |
 | **Network** | A switch: announce as `<name>.local`. Bridge, MAC, and the services it announces | The switch, at once. Edit *(needs stopped)*: bridge, MAC. A service: Add (one of the image's ports not yet announced, or a typed port), Edit, Remove, while the local name is on | `PATCH` `{ localDns }`; `PATCH` `{ network }`; the service routes |
@@ -68,7 +68,7 @@ changed. An app container shows neither Environment nor Storage: the app owns bo
 
 | App | Lists | Groups with Edit | Switches |
 |---|---|---|---|
-| Caddy | Sites | Domain and certificates | — |
+| Caddy | Sites | — | — |
 | Zot | Users | Address; Sign-in (SSO) | — |
 | Jellyfin | Libraries | Published address | Use the GPU (in the Published address card) |
 | Tiny Samba | Shares; Users | Server | — |
@@ -76,6 +76,11 @@ changed. An app container shows neither Environment nor Storage: the app owns bo
 - Removing a Samba share whose data would be deleted asks first, naming what goes; so
   does saving a share's form when the edit moves it off this host.
 - A password or token field in a form is empty and keeps the stored one unless typed.
+- Caddy's page has a **Certificate** card with no Edit: the domain
+  its sites are under and the date the host's certificate is valid until, with a link to
+  Host → App Config, where it is set up. While Wisp holds no certificate the card says
+  so, and that the sites are not served until it does. A site's row shows its full
+  name, `<subdomain>.<domain>`, once there is a domain.
 
 ## Logs
 

@@ -22,6 +22,15 @@ Settings are persisted in `config/wisp-config.json` ([CONFIGURATION.md](CONFIGUR
 
 Configured in **Host → App Config → Single sign-on** (issuer URL, client ID and client secret in its form; a switch turns SSO on, off with its reason until all three are stored). Saved through `PATCH /api/settings/oidc`, which requires a browser session — API tokens cannot change SSO (settled 2026-10-16, see [AUTH.md](AUTH.md) § Denied surfaces). The client secret is write-only: the field stays blank with a "saved" placeholder, and leaving it blank keeps the saved secret. Changing the issuer or client ID marks the secret required — the saved one is never reused for a different provider. Behavior and validation: [AUTH.md](AUTH.md) § OIDC.
 
+## Certificate (`certificate`)
+
+Configured in **Host → App Config → Certificate**: the domain and a
+Cloudflare API token, from which Wisp gets and renews the host's TLS certificate for the
+app containers that serve HTTPS. The token is write-only, like the SSO client secret.
+It is saved through its own routes, never `PATCH /api/settings`, and is not part of
+`GET /api/settings`. The setting, the checks a save runs, the certificate's state and
+its renewal: [CERTIFICATES.md](CERTIFICATES.md).
+
 ## SSH keys (`sshKeys`)
 
 Wisp keeps a list of SSH public keys, for the VMs it sets up (settled 2026-11-21). A key
