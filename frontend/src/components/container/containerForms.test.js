@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { changedFields } from '../../hooks/editorValues.js';
 import {
   advancedForm, advancedProblems, advancedSent, limitsForm, limitsProblems, limitsSent, networkForm, networkProblems,
-  networkSent, restartPolicyText,
+  networkSent, restartPolicyText, sameImage,
 } from './containerForms.js';
 
 const config = {
@@ -74,4 +74,14 @@ test('the network sends the bridge and the MAC in lower case; a bad MAC is a pro
 test('a restart policy reads as words', () => {
   assert.equal(restartPolicyText('on-failure'), 'After a failure');
   assert.equal(restartPolicyText(undefined), 'Unless I stopped it');
+});
+
+test('an image reference names the same image with or without Docker Hub, library/ and :latest', () => {
+  assert.ok(sameImage('caddy:latest', 'docker.io/library/caddy:latest'));
+  assert.ok(sameImage('caddy', 'docker.io/library/caddy:latest'));
+  assert.ok(sameImage('jellyfin/jellyfin:latest', 'docker.io/jellyfin/jellyfin:latest'));
+  assert.ok(sameImage('ghcr.io/acdtrx/tiny-samba:latest', 'ghcr.io/acdtrx/tiny-samba'));
+  assert.ok(!sameImage('caddy:latest', 'zotty.anapana.trixbits.ro/acdtrx/caddy:latest'));
+  assert.ok(!sameImage('caddy:2', 'caddy:latest'));
+  assert.ok(!sameImage('localhost:5000/caddy:latest', 'caddy:latest'));
 });

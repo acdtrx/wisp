@@ -108,14 +108,14 @@ export async function deliverToAppContainers(trigger, deliveryLog, { onlyStale =
       const result = await deliverHostCertificate(name);
       if (result.delivered) {
         outcome.delivered.push(name);
-        deliveryLog.info({ container: name, trigger, requiresRestart: result.requiresRestart, reloaded: result.reloaded === true }, 'The host certificate was delivered');
+        deliveryLog.info({ container: name, deliveredFor: trigger, requiresRestart: result.requiresRestart, reloaded: result.reloaded === true }, 'The host certificate was delivered');
       } else {
         outcome.skipped.push(name);
-        deliveryLog.info({ container: name, trigger }, 'The host certificate was not delivered: the container is busy; the next check delivers it');
+        deliveryLog.info({ container: name, deliveredFor: trigger }, 'The host certificate was not delivered: the container is busy; the next check delivers it');
       }
     } catch (err) {
       outcome.failed.push(name);
-      deliveryLog.warn({ container: name, trigger, code: err?.code, err: err?.message, raw: err?.raw }, 'The host certificate could not be delivered; the next check tries again');
+      deliveryLog.warn({ container: name, deliveredFor: trigger, code: err?.code, err: err?.message, raw: err?.raw }, 'The host certificate could not be delivered; the next check tries again');
     }
   }
   return outcome;
@@ -148,7 +148,6 @@ export async function runCertificateCheck(trigger, checkLog) {
   if (decision === 'issue') job = await startIssueJob(setting, checkLog);
   const delivery = await deliverToAppContainers(`check (${trigger})`, checkLog, { onlyStale: true });
   checkLog.info({
-    trigger,
     decision,
     jobId: job?.jobId ?? null,
     renewAt: certificate ? renewAt(certificate.validFrom, certificate.validUntil) : null,

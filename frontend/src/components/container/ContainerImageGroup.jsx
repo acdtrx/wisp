@@ -11,7 +11,7 @@ import Card from '../shared/Card.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import { getAppEntry } from '../../apps/appRegistry.js';
 import ContainerImageField from './ContainerImageField.jsx';
-import { imageProblems } from './containerForms.js';
+import { imageProblems, sameImage } from './containerForms.js';
 
 /**
  * The image the container runs; a newer one pulled is applied by Restart. On an app
@@ -22,7 +22,7 @@ export default function ContainerImageGroup({ config, busy, update }) {
   const [editing, setEditing] = useState(false);
   const useAppImage = useCommand();
   const appImage = getAppEntry(config.metadata?.app)?.defaultImage ?? null;
-  const offerAppImage = !!appImage && config.image !== appImage;
+  const offerAppImage = !!appImage && !sameImage(config.image, appImage);
   return (
     <Card
       title="Image"

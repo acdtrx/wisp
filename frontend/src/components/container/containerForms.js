@@ -104,3 +104,24 @@ export function networkProblems(form) {
 /* ---- Image ---- */
 
 export const imageProblems = (form) => (form.image.trim() === '' ? { image: 'An image is required.' } : {});
+
+/**
+ * An image reference as containerd stores it: a name with no registry is Docker
+ * Hub's (`docker.io`, official images under `library/`), and one with no tag or
+ * digest is `:latest`. So `caddy:latest` and `docker.io/library/caddy:latest`
+ * name the same image.
+ */
+function canonicalImageRef(ref) {
+  const text = String(ref ?? '').trim();
+  if (!text) return '';
+  const slash = text.indexOf('/');
+  const first = slash === -1 ? '' : text.slice(0, slash);
+  const hasRegistry = first.includes('.') || first.includes(':') || first === 'localhost';
+  let name = hasRegistry ? text : `docker.io/${slash === -1 ? `library/${text}` : text}`;
+  const lastSegment = name.slice(name.lastIndexOf('/') + 1);
+  if (!lastSegment.includes(':') && !name.includes('@')) name += ':latest';
+  return name;
+}
+
+/** Whether two image references name the same image. */
+export const sameImage = (a, b) => canonicalImageRef(a) === canonicalImageRef(b);
