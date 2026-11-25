@@ -160,7 +160,7 @@ alone, and nothing installs the root's packages there.
 - **No native libvirt bindings** — unmaintained, require native compilation.
 - **No stats library** — host metrics read directly from `/proc`.
 - **No JWT library** — JWT signing/verification implemented with Node.js `crypto` built-ins.
-- **No ACME library** — the certificate authority's protocol (RFC 8555) is signed JSON over HTTPS, done with Node.js `crypto` built-ins and the one outbound fetch; the usual package brings its own HTTP client and 47 more packages.
+- **No ACME library** — the certificate authority's protocol (RFC 8555) is signed JSON over HTTPS, done with Node.js `crypto` built-ins and the one outbound fetch, the signing request alone by `openssl req`; the usual package brings its own HTTP client and 47 more packages.
 - **No UUID library** — `crypto.randomUUID()` or libvirt-generated UUIDs.
 - **No date library** — built-in `Date` and `Intl` APIs.
 - **No semver library** — `compareSemver` in `wispUpdate.js` handles prerelease precedence per the semver spec (settled 2026-08-25).

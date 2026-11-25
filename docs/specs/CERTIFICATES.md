@@ -12,7 +12,8 @@ app containers that serve HTTPS. The Caddy app is the one that uses it today
 - **One certificate per host**, for `<domain>` and `*.<domain>`. Every app that uses it
   serves names under that one domain.
 - **No ACME library** ([TECH-STACK.md](../TECH-STACK.md)): the client is Wisp's own, on
-  Node's `crypto`. It follows the standard (RFC 8555), never what Let's Encrypt happens to
+  Node's `crypto`. The one thing Node cannot build, the signing request, is built by
+  `openssl req`. It follows the standard (RFC 8555), never what Let's Encrypt happens to
   do today: it reads each order's and authorization's status and waits on it, takes the
   URLs the directory gives, and hands on the chain exactly as delivered.
 - **Nothing depends on a fixed lifetime.** Every date Wisp acts on is computed from the
@@ -107,6 +108,9 @@ save ([CUSTOM-APPS.md → Live Reload](CUSTOM-APPS.md#live-reload)), run by Wisp
 - **A running container** reloads and serves the new certificate without a restart. One
   that cannot take the change by reload is flagged restart required, as after any app
   save.
+- **A delivery that fails is not the job's failure.** The job is done once the
+  certificate is stored; a container whose save then fails is logged, and the next check
+  delivers to it again, since its files still differ.
 - **A container whose [operation lock](CONTAINERS.md#per-container-operation-lock) is
   held** (a backup running, say) is skipped, and the next check, within the hour,
   delivers to it. A renewed certificate loses nothing by that: the one the container

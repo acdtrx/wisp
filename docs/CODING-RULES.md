@@ -179,7 +179,8 @@ source refer to them.
 - Prefer native/API access over shelling out to CLI tools. Exec a binary only when there
   is no practical programmatic alternative, and confirm first.
   - Applied — the exec allowlist: `qemu-img`, `cp --reflink=auto` (with a `copyFile`
-    fallback), `cloud-localds`/`genisoimage`, `openssl passwd`, `xz`, `tar`, `unzip`
+    fallback), `cloud-localds`/`genisoimage`, `openssl passwd`, `openssl req` (the certificate's
+    signing request, which Node cannot build; the key on stdin), `xz`, `tar`, `unzip`
     (`-Z1` listing + extract for container mount zip uploads), `mkfifo` (container exec
     stdio FIFOs), `systemd-notify --ready` (the start's readiness, under `Type=notify`;
     settled 2026-11-18), and, through `sudo -n` only, the privileged helpers

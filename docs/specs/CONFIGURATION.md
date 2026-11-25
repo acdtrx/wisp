@@ -1,6 +1,6 @@
 # Configuration
 
-Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). `WISP_CONFIG_PATH`, which moves the settings file and with it the login secret and the migration ledger, is for development and tests only: an installed Wisp refuses it ([Password Storage](#password-storage)). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing. How the install fills it: [DEPLOYMENT.md → Install](DEPLOYMENT.md#install).
+Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). `WISP_CONFIG_PATH`, which moves the settings file and with it the login secret, the migration ledger and the certificate's record, is for development and tests only: an installed Wisp refuses it ([Password Storage](#password-storage)). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing. How the install fills it: [DEPLOYMENT.md → Install](DEPLOYMENT.md#install).
 
 ## Optional `config/runtime.env`
 
@@ -13,7 +13,7 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 | `WISP_PORT` | `8080` | Port the Wisp server listens on (serves both API and SPA). Digits, 1–65535. |
 | `WISP_DEFAULT_BRIDGE` | (unset) | Override default bridge for new VM NICs; backend auto-detects if unset. Must name an existing host bridge, checked at startup (Linux). |
 | `GITHUB_TOKEN` | (unset) | Optional; some download flows in the backend. |
-| `WISP_CONFIG_PATH` | (unset) | **Development and tests only.** Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. Absolute. Its directory holds `wisp-password` and the migration ledger too; `runtime.env` and `backup-status.json` stay in `<project>/config/`. An installed Wisp refuses to start with it set (`CONFIG_PATH_NOT_ALLOWED`, [Password Storage](#password-storage)). No Wisp tool writes this key. |
+| `WISP_CONFIG_PATH` | (unset) | **Development and tests only.** Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. Absolute. Its directory holds `wisp-password`, the migration ledger and `certificate.json` too; `runtime.env` and `backup-status.json` stay in `<project>/config/`. An installed Wisp refuses to start with it set (`CONFIG_PATH_NOT_ALLOWED`, [Password Storage](#password-storage)). No Wisp tool writes this key. |
 | `WISP_CONTAINERD_SOCK` | `/run/containerd/containerd.sock` | containerd's gRPC socket. Absolute. |
 | `WISP_ALLOWED_WS_ORIGINS` | (unset) | Comma-separated origins (`scheme://host[:port]`) allowed to open console WebSockets besides the same origin. |
 | `WISP_UPDATE_REPO` | `acdtrx/wisp` | GitHub `<owner>/<repo>` that self-update checks for releases. |
