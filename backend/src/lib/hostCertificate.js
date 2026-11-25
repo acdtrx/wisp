@@ -260,8 +260,10 @@ export async function startCertificateIssueJob(jobLog) {
 /**
  * Save the setting (CERTIFICATES.md, The certificate setting): the domain's
  * form, then the zone Cloudflare holds for it with the token, before anything
- * is stored. An omitted or empty token keeps the stored one. The first save,
- * and one that changes the domain, start the job; the route does not wait.
+ * is stored. An omitted or empty token keeps the stored one. A save starts the
+ * job whenever Wisp holds no certificate for the saved domain (a first save, a
+ * changed domain, a token corrected after a failed attempt); the route does
+ * not wait.
  */
 export async function saveCertificateSetting({ domain, cloudflareApiToken }, reqLog) {
   const checkedDomain = checkCertificateDomain(domain);
@@ -272,14 +274,10 @@ export async function saveCertificateSetting({ domain, cloudflareApiToken }, req
   }
   await findZone(checkedDomain, token);
 
-  let previous = null;
-  const written = await writeCertificateSetting((current) => {
-    previous = current;
-    return { domain: checkedDomain, cloudflareApiToken: token };
-  });
+  const written = await writeCertificateSetting(() => ({ domain: checkedDomain, cloudflareApiToken: token }));
   certificateChange.emit();
   reqLog.info({ domain: checkedDomain, tokenChanged: !!typed }, 'The certificate setting was saved');
-  if (previous?.domain === checkedDomain) return;
+  if ((await readStore()).certificate?.domain === checkedDomain) return;
   try {
     await startIssueJob(written, reqLog);
   } catch (err) {

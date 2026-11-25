@@ -134,14 +134,20 @@ test('a domain inside a zone is saved, 0600, and the first save starts the job; 
   assert.ok(!JSON.stringify(record).includes(TOKEN));
 });
 
-test('a save that changes only the token stores it and starts nothing; an empty token keeps the stored one', async () => {
+test('a save starts the job while Wisp holds no certificate for the domain, a token-only one included; with it, a token-only save starts nothing', async () => {
   await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: TOKEN }, silentLog);
-  started.length = 0;
+  assert.equal(started.length, 1, 'the first save');
   await certificate.saveCertificateSetting({ domain: 'example.com', cloudflareApiToken: '' }, silentLog);
-  assert.equal(storedConfig().certificate.cloudflareApiToken, TOKEN);
-  assert.equal(started.length, 0);
+  assert.equal(storedConfig().certificate.cloudflareApiToken, TOKEN, 'an empty token keeps the stored one');
+  assert.equal(started.length, 2, 'a token corrected after a failed attempt: no certificate yet');
+
+  issue = async () => ISSUED;
+  await runStartedJob();
+  started.length = 0;
+  await certificate.saveCertificateSetting({ domain: 'example.com' }, silentLog);
+  assert.equal(started.length, 0, 'Wisp holds the domain\'s certificate');
   await certificate.saveCertificateSetting({ domain: 'home.example.com' }, silentLog);
-  assert.equal(started.length, 1, 'a changed domain starts the job');
+  assert.equal(started.length, 1, 'a changed domain');
 });
 
 test('renew now with no setting is 404 CERTIFICATE_NOT_FOUND', async () => {
