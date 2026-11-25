@@ -13,8 +13,12 @@ import { createTxtRecord, deleteTxtRecord, findZone } from './cloudflare.js';
 import { waitForTxtRecords } from './challengeDns.js';
 import { buildSigningRequest } from './signingRequest.js';
 
-/** Removing a record after the job ends, however it ended, a shutdown's cut included. */
-const CLEANUP_TIMEOUT_MS = 8_000;
+/**
+ * Removing the records after the job ends, however it ended: all of them at
+ * once, under one bound that leaves a shutdown's cut (10 s in all, index.js)
+ * time to finish.
+ */
+const CLEANUP_TIMEOUT_MS = 5_000;
 
 /** The certificates of a PEM chain, in order. */
 function pemBlocks(chain) {
@@ -38,15 +42,10 @@ export function describeChain(chain) {
  * Resolves the records that could not be removed, for the next job.
  */
 export async function removeTxtRecords(token, records) {
-  const left = [];
-  for (const record of records) {
-    try {
-      await deleteTxtRecord(token, record.zoneId, record.recordId, { signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) });
-    } catch {
-      left.push(record); // kept for the next job, which removes it first
-    }
-  }
-  return left;
+  const signal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
+  const results = await Promise.allSettled(records.map((r) => deleteTxtRecord(token, r.zoneId, r.recordId, { signal })));
+  // One not removed is kept for the next job, which removes it first.
+  return records.filter((_r, i) => results[i].status === 'rejected');
 }
 
 /**

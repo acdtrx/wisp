@@ -213,6 +213,10 @@ function cloudflare(url, init) {
     world.log.push(`txt+ ${body.name}`);
     return json(200, { success: true, errors: [], result: { id } });
   }
+  if (rec && init.method === 'DELETE' && world.deleteHangs) {
+    // Never answers: only the caller's signal ends the wait.
+    return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+  }
   if (rec && init.method === 'DELETE') {
     if (!world.records.delete(rec[2])) return json(404, { success: false, errors: [{ code: 81044, message: 'Record does not exist.' }] });
     world.log.push('txt-');
@@ -232,7 +236,13 @@ class StandInResolver {
     assert.deepEqual(servers, ['192.0.2.53', '192.0.2.54'], "the zone's own name servers are asked");
   }
 
+  cancel() {
+    world.log.push('resolver cancelled');
+    for (const reject of this.pending ?? []) reject(Object.assign(new Error('queryTxt ECANCELLED'), { code: 'ECANCELLED' }));
+  }
+
   async resolveTxt(name) {
+    if (world.dnsHangs) return new Promise((_resolve, reject) => { this.pending = [...(this.pending ?? []), reject]; });
     const values = [...world.records.values()].filter((r) => r.name === name).map((r) => [r.content]);
     if (values.length === 0) throw Object.assign(new Error('queryTxt ENODATA'), { code: 'ENODATA' });
     return values;
@@ -246,7 +256,7 @@ mock.module('node:dns/promises', {
   },
 });
 
-const { findZone, issueCertificate } = await import('./index.js');
+const { findZone, issueCertificate, removeTxtRecords } = await import('./index.js');
 
 beforeEach(() => {
   world = freshWorld();
@@ -349,4 +359,30 @@ test('a cut job removes the records it wrote and rejects with the abort', async 
   });
   await assert.rejects(run, { name: 'AbortError' });
   assert.equal(world.records.size, 0);
+});
+
+test('a cut job does not wait out a DNS query in flight: the resolver is cancelled', async () => {
+  world.dnsHangs = true;
+  const controller = new AbortController();
+  const { run } = issue('example.com', {
+    signal: controller.signal,
+    onStep: (step) => { if (step === 'dns') setTimeout(() => controller.abort(), 50); },
+  });
+  const started = Date.now();
+  await assert.rejects(run, { name: 'AbortError' });
+  assert.ok(Date.now() - started < 2_000, 'ended at once');
+  assert.ok(world.log.includes('resolver cancelled'));
+  assert.equal(world.records.size, 0);
+});
+
+test('the records are removed together under one bound, and those Cloudflare does not answer for are kept for the next job', async () => {
+  world.records.set('r1', { zoneId: 'zone-1', name: 'x', content: 'a' });
+  world.records.set('r2', { zoneId: 'zone-1', name: 'x', content: 'b' });
+  world.deleteHangs = true;
+  const records = [{ zoneId: 'zone-1', recordId: 'r1' }, { zoneId: 'zone-1', recordId: 'r2' }];
+  const started = Date.now();
+  const left = await removeTxtRecords(TOKEN, records);
+  const took = Date.now() - started;
+  assert.deepEqual(left, records);
+  assert.ok(took >= 4_500 && took < 7_000, `one bound for both, not one each (${took} ms)`);
 });
