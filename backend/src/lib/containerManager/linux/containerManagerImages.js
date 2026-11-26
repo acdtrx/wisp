@@ -2,7 +2,7 @@
  * List and delete OCI images in containerd (wisp namespace).
  */
 import { getClient, callUnary } from './containerManagerConnection.js';
-import { normalizeImageRef } from './containerImageRef.js';
+import { normalizeImageRef, isImageImportWorkName } from './containerImageRef.js';
 import { compressedBlobSizeForImageName } from './containerManagerOciSize.js';
 import { readImageMeta, writeImageMeta, withImageMetaWriteLock } from './containerManagerImageMeta.js';
 
@@ -47,6 +47,8 @@ export async function resolveContainerImageRef(imageRef) {
  *   any other failure (containerd unreachable) throws.
  */
 export async function getImageDigest(imageRef) {
+  // An import's own names are no image of the library's.
+  if (isImageImportWorkName(imageRef)) return null;
   try {
     const res = await callUnary(getClient('images'), 'get', { name: imageRef });
     return res.image?.target?.digest || null;
@@ -61,7 +63,8 @@ export async function getImageDigest(imageRef) {
  */
 export async function listContainerImages() {
   const res = await callUnary(getClient('images'), 'list', { filters: [] });
-  const images = res.images || [];
+  // An import's own names, while it runs, are no image of the library's.
+  const images = (res.images || []).filter((img) => !isImageImportWorkName(img.name));
 
   return withImageMetaWriteLock(async () => {
     const meta = await readImageMeta();

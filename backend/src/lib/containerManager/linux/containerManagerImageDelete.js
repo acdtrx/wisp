@@ -4,6 +4,7 @@
  */
 import { getClient, callUnary, containerError, isWispError, wrapContainerError } from './containerManagerConnection.js';
 import { findContainersUsingImage } from './containerManagerList.js';
+import { isImageImportWorkName } from './containerImageRef.js';
 
 /**
  * The checks an image delete makes first, quick and without side effects: a
@@ -17,6 +18,10 @@ export async function assertContainerImageDeletable(ref) {
     throw containerError('INVALID_CONTAINER_IMAGE_REF', 'Image reference is required');
   }
   const imageName = ref.trim();
+  if (isImageImportWorkName(imageName)) {
+    // A running import's own name: not an image of the library's.
+    throw containerError('CONTAINER_IMAGE_NOT_FOUND', `Image not found: ${imageName}`);
+  }
 
   let users;
   try {

@@ -58,6 +58,7 @@ export const titleForContainerRestart = (name) => `Restart ${name}`;
 export const titleForContainerDelete = (name) => `Delete ${name}`;
 export const titleForContainerMountDelete = (name, mount) => `Remove mount ${mount} from ${name}`;
 export const titleForContainerMountDataDelete = (name, mount) => `Delete data of ${mount} in ${name}`;
+export const titleForContainerImageImport = (fileName) => `Import ${fileName}`;
 export const titleForContainerImageDelete = (ref) => `Delete image ${ref}`;
 export const titleForContainerRestoreAsNew = (newName) => `Restore ${newName}`;
 export const titleForZipExtract = (name, mount) => `Extract zip into ${mount} of ${name}`;

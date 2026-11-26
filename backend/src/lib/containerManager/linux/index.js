@@ -86,6 +86,12 @@ export {
 export { assertContainerImageDeletable, deleteContainerImage } from './containerManagerImageDelete.js';
 
 export {
+  newImageImportStagingPath,
+  storeImagesFromArchive,
+  removeImageImportLeftoversAtBackendBoot,
+} from './containerManagerImageImport.js';
+
+export {
   checkAllImagesForUpdates,
   checkSingleImageForUpdates,
   getImageUpdateStatus,

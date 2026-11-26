@@ -275,6 +275,8 @@ function buildClients() {
     'containerd/types/transfer/registry.proto',
     'containerd/types/transfer/imagestore.proto',
     'containerd/types/transfer/progress.proto',
+    'containerd/types/transfer/importexport.proto',
+    'containerd/types/transfer/streaming.proto',
     'containerd/services/streaming/v1/streaming.proto',
   ]);
 
@@ -303,6 +305,15 @@ function buildClients() {
     },
     'containerd.types.transfer.Progress': {
       type: transferRoot.lookupType('containerd.types.transfer.Progress'),
+    },
+    'containerd.types.transfer.ImageImportStream': {
+      type: transferRoot.lookupType('containerd.types.transfer.ImageImportStream'),
+    },
+    'containerd.types.transfer.Data': {
+      type: transferRoot.lookupType('containerd.types.transfer.Data'),
+    },
+    'containerd.types.transfer.WindowUpdate': {
+      type: transferRoot.lookupType('containerd.types.transfer.WindowUpdate'),
     },
     'containerd.services.streaming.v1.StreamInit': {
       type: transferRoot.lookupType('containerd.services.streaming.v1.StreamInit'),

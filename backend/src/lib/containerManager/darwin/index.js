@@ -200,6 +200,17 @@ export async function deleteContainerImage() {
   throw noContainerd();
 }
 
+export async function newImageImportStagingPath() {
+  throw noContainerd();
+}
+
+export async function storeImagesFromArchive() {
+  throw noContainerd();
+}
+
+/** No import runs here (no containerd): nothing to leave behind. */
+export async function removeImageImportLeftoversAtBackendBoot() {}
+
 export async function getImageDigest() {
   return null;
 }

@@ -266,6 +266,9 @@ Each code a client can receive, with its status.
 | `UNKNOWN_APP_TYPE` | 422 | No app type by that name |
 | `INVALID_CONTAINER_IMAGE_REF` | 422 | The image reference is malformed |
 | `IMAGE_PULL_FAILED` | 422 | The image could not be pulled |
+| `CONTAINER_IMAGE_ARCHIVE_INVALID` | 422 | The upload is not an image archive containerd can import; the detail carries its message. A job's error only |
+| `CONTAINER_IMAGE_ARCHIVE_UNNAMED` | 422 | The uploaded archive names no image. A job's error only |
+| `CONTAINER_IMAGE_PLATFORM_MISMATCH` | 422 | The uploaded archive holds no image for the host's platform. A job's error only |
 | `INVALID_CONTAINER_NAME` | 422 | A container name that reached the container manager breaks the [name rules](#name-validation) |
 | `INVALID_CONTAINER_MAC` | 422 | The MAC address is malformed |
 | `INVALID_CONTAINER_MOUNTS` | 422 | A mount's shape is invalid |

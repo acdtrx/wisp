@@ -56,6 +56,7 @@ export const JOB_KIND = Object.freeze({
   CONTAINER_DEPLOY: 'container-deploy',
   CONTAINER_IMAGE_UPDATE: 'container-image-update',
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
+  CONTAINER_IMAGE_IMPORT: 'container-image-import',
   CONTAINER_IMAGE_DELETE: 'container-image-delete',
   LIBRARY_DOWNLOAD: 'library-download',
   OS_UPDATE_CHECK: 'os-update-check',

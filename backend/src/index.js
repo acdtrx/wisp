@@ -19,6 +19,7 @@ import { DEV_LOG_TRANSPORT } from './lib/logFormat.js';
 import {
   startAutostartContainersAtBackendBoot,
   resumeStalePausedContainersAtBackendBoot,
+  removeImageImportLeftoversAtBackendBoot,
 } from './lib/containerManager/index.js';
 import {
   startContainerBackupScheduler,
@@ -201,6 +202,8 @@ async function main() {
 
   // A paused task at boot can only be a backup interrupted by a crash —
   // resume before autostart so the pass sees accurate states.
+  // An image upload a crash cut short: its staging file, its own image names.
+  await removeImageImportLeftoversAtBackendBoot(app.log);
   await resumeStalePausedContainersAtBackendBoot(app.log);
   await startAutostartContainersAtBackendBoot(app.log);
 

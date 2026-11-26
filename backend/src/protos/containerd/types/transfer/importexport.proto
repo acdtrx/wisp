@@ -1,0 +1,31 @@
+syntax = "proto3";
+package containerd.types.transfer;
+
+import "containerd/types/platform.proto";
+
+option go_package = "github.com/containerd/containerd/api/types/transfer";
+
+message ImageImportStream {
+  // Stream is used to identify the binary input stream for the import operation.
+  // The stream uses the transfer binary stream protocol with the client as the sender.
+  // The binary data is expected to be a raw tar stream.
+  string stream = 1;
+  string media_type = 2;
+  bool force_compress = 3;
+}
+
+message ImageExportStream {
+  // Stream is used to identify the binary output stream for the export operation.
+  // The stream uses the transfer binary stream protocol with the server as the sender.
+  // The binary data is expected to be a raw tar stream.
+  string stream = 1;
+  string media_type = 2;
+  // The specified platforms
+  repeated containerd.types.Platform platforms = 3;
+  // Whether to include all platforms
+  bool all_platforms = 4;
+  // Skips the creation of the Docker compatible manifest.json file
+  bool skip_compatibility_manifest = 5;
+  // Excludes non-distributable blobs such as Windows base layers.
+  bool skip_non_distributable = 6;
+}

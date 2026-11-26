@@ -57,6 +57,9 @@ export const setContainerBackupOrigin = impl.setContainerBackupOrigin;
 export const listContainerImages = impl.listContainerImages;
 export const assertContainerImageDeletable = impl.assertContainerImageDeletable;
 export const deleteContainerImage = impl.deleteContainerImage;
+export const newImageImportStagingPath = impl.newImageImportStagingPath;
+export const storeImagesFromArchive = impl.storeImagesFromArchive;
+export const removeImageImportLeftoversAtBackendBoot = impl.removeImageImportLeftoversAtBackendBoot;
 export const getImageDigest = impl.getImageDigest;
 export const resolveContainerImageRef = impl.resolveContainerImageRef;
 

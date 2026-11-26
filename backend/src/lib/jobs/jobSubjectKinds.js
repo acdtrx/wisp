@@ -31,6 +31,7 @@ export const SUBJECT_KINDS = {
   [K.CONTAINER_DEPLOY]: { type: 'container', lock: 'deploy' },
   [K.CONTAINER_IMAGE_UPDATE]: { type: 'container', lock: 'image update' },
   [K.CONTAINER_IMAGE_UPDATE_CHECK]: null,
+  [K.CONTAINER_IMAGE_IMPORT]: null,
   [K.CONTAINER_IMAGE_DELETE]: null,
   [K.LIBRARY_DOWNLOAD]: null,
   [K.OS_UPDATE_CHECK]: null,

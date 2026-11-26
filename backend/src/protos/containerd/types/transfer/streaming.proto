@@ -1,0 +1,22 @@
+syntax = "proto3";
+package containerd.types.transfer;
+
+option go_package = "github.com/containerd/containerd/api/types/transfer";
+
+message Data {
+  bytes data = 1;
+}
+
+message WindowUpdate {
+  int32 update = 1;
+}
+
+message ReadStream {
+  string stream = 1;
+  string media_type = 2;
+}
+
+message WriteStream {
+  string stream = 1;
+  string media_type = 2;
+}

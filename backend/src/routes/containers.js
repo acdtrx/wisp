@@ -44,6 +44,7 @@ import {
   removeContainerServiceRow,
 } from '../lib/containerOperations.js';
 import { startImageUpdateCheckJob } from '../lib/updateChecks.js';
+import { startContainerImageImportJob } from '../lib/containerImageImport.js';
 import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { createAppError } from '../lib/appErrors.js';
@@ -262,8 +263,9 @@ const imageRefSchema = { type: 'string', minLength: 1, pattern: '\\S' };
 
 /**
  * Stream the request's single file part to `stagingPath` while iterating the
- * parts; a request without one answers UPLOAD_NO_FILE. The caller owns (and
- * always removes) the staging file.
+ * parts, and resolve with the file name the client gave it; a request without
+ * one answers UPLOAD_NO_FILE. The caller owns (and always removes) the staging
+ * file.
  *
  * The file must be consumed as it arrives. busboy finishes the multipart body
  * only after every file stream has been read to its end, and @fastify/multipart
@@ -278,6 +280,7 @@ const imageRefSchema = { type: 'string', minLength: 1, pattern: '\\S' };
  */
 async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600, what = 'file' } = {}) {
   let staged = false;
+  let fileName = null;
   let extraFiles = false;
   try {
     for await (const part of request.parts()) {
@@ -288,6 +291,7 @@ async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600, wh
         continue;
       }
       staged = true;
+      fileName = part.filename ?? null;
       await pipeline(part.file, createWriteStream(stagingPath, { mode, flags: 'wx' }));
       if (part.file.truncated) throw uploadTooLargeError();
     }
@@ -300,6 +304,7 @@ async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600, wh
     throw createAppError('BAD_MULTIPART_TOO_MANY_FILES', 'Only one file upload is allowed per request');
   }
   if (!staged) throw createAppError('UPLOAD_NO_FILE', `The request must include a ${what} upload`);
+  return fileName;
 }
 
 function uploadTooLargeError() {
@@ -391,6 +396,30 @@ export default async function containerRoutes(fastify) {
         },
       });
       return reply.code(202).send(job);
+    },
+  });
+
+  // The upload is received here, into a staging file; the import that
+  // follows is a job (202). No file, two files, too large and a stalled body
+  // are answered here, as for the mount uploads.
+  fastify.post('/containers/images/upload', {
+    config: { auth: 'agent' },
+    schema: { response: { 202: jobAckSchema } },
+    handler: async (request, reply) => {
+      const bodyWatch = watchRequestBody(request);
+      try {
+        const job = await startContainerImageImportJob({
+          stage: async (stagingPath) => {
+            const fileName = await stageSingleMultipartFile(request, stagingPath, { what: 'image archive' });
+            bodyWatch.stop();
+            return fileName;
+          },
+          log: request.log,
+        });
+        return reply.code(202).send(job);
+      } finally {
+        bodyWatch.stop();
+      }
     },
   });
 

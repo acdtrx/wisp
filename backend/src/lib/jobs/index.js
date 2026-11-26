@@ -47,6 +47,7 @@ export {
   titleForContainerDelete,
   titleForContainerMountDelete,
   titleForContainerMountDataDelete,
+  titleForContainerImageImport,
   titleForContainerImageDelete,
   titleForContainerRestoreAsNew,
   titleForZipExtract,
