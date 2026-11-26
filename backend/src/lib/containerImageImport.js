@@ -37,13 +37,12 @@ export async function startContainerImageImportJob({ stage, log }) {
     return await startJob({
       kind: JOB_KIND.CONTAINER_IMAGE_IMPORT,
       title: titleForContainerImageImport(fileName),
-      // Cut at shutdown: containerd drops what it took, and the next start
-      // removes the import's own image names.
-      interruptible: true,
+      // A job that must finish (docs/specs/API.md → Jobs that may be cut): a
+      // shutdown and a self-update wait for it.
       log,
-      run: async (report, signal) => {
+      run: async (report) => {
         report({ step: 'importing', detail: `Importing ${fileName}…` });
-        return storeImagesFromArchive(stagingPath, { signal });
+        return storeImagesFromArchive(stagingPath);
       },
     });
   } catch (err) {

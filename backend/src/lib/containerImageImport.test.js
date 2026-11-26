@@ -17,18 +17,21 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 
 let staged = 0;
 const imported = [];
+/** Set by a test to hold the import until it resolves. */
+let hold = null;
 mock.module(new URL('./containerManager/index.js', import.meta.url).href, {
   exports: {
     newImageImportStagingPath: async () => path.join(dir, `.image-import-${staged += 1}.tar`),
     storeImagesFromArchive: async (archivePath) => {
       imported.push(archivePath);
+      await hold;
       return { images: [{ name: 'localhost/myapp:v1', digest: 'sha256:00' }] };
     },
   },
 });
 
 const { startContainerImageImportJob } = await import('./containerImageImport.js');
-const { readJob, whenJobEnds } = await import('./jobs/index.js');
+const { readJob, whenJobEnds, countJobsThatMustFinish, cancelInterruptibleJobs } = await import('./jobs/index.js');
 
 const log = { debug() {}, info() {}, warn() {}, error() {}, child() { return log; } };
 
@@ -71,4 +74,22 @@ test('an upload without a file name is titled as an image archive', async () => 
   });
   assert.equal(ack.title, 'Import image archive');
   await whenJobEnds(ack.jobId);
+});
+
+test('an import is a job that must finish: it counts against a self-update, and a shutdown does not cut it', async () => {
+  const release = Promise.withResolvers();
+  hold = release.promise;
+  try {
+    const ack = await startContainerImageImportJob({
+      stage: async (p) => { writeFileSync(p, 'archive'); return 'myapp.tar'; },
+      log,
+    });
+    assert.equal(countJobsThatMustFinish(), 1);
+    await cancelInterruptibleJobs();
+    assert.equal(readJob(ack.jobId).status, 'running');
+    release.resolve();
+    assert.equal(await whenJobEnds(ack.jobId), 'done');
+  } finally {
+    hold = null;
+  }
 });
