@@ -6,6 +6,14 @@ export function listContainerImages({ signal } = {}) {
   return api('/api/containers/images', { signal });
 }
 
+/**
+ * Upload an image archive (the tar `docker save` writes) with upload progress
+ * (0–100). Its import is a job: answers `{ jobId, kind, title, subject }`.
+ */
+export function uploadContainerImageArchive(file, onProgress) {
+  return postMultipartFile('/api/containers/images/upload', file, { onProgress });
+}
+
 /** A job: answers `{ jobId, kind, title, subject }` (follow with awaitJob). */
 export function deleteContainerImage(ref) {
   const params = new URLSearchParams({ ref });

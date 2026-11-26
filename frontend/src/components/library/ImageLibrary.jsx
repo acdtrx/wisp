@@ -11,7 +11,7 @@ import {
   startDownloadHaos,
   startDownloadArchCloud,
 } from '../../api/library.js';
-import { checkContainerImageUpdates, deleteContainerImage } from '../../api/containers.js';
+import { checkContainerImageUpdates, deleteContainerImage, uploadContainerImageArchive } from '../../api/containers.js';
 import { useCommand } from '../../hooks/useCommand.js';
 import { useJobProgress } from '../../hooks/useJobProgress.js';
 import { useFollowJob, useRunningJob } from '../../hooks/useFollowJob.js';
@@ -58,6 +58,11 @@ const FILTERS_PICKER = [
 const FILTERS_PICKER_CONTAINER = [
   { key: 'container', label: 'OCI' },
 ];
+
+/** An image under `localhost/`: this host's own (an upload), never pulled, so never checked for updates. */
+function isLocalImage(name) {
+  return String(name).startsWith('localhost/');
+}
 
 function shortDigest(digest) {
   if (!digest) return '—';
@@ -117,15 +122,17 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
           <Button variant="primary" onClick={() => onSelect?.({ kind: 'oci', name: row.name, digest: row.digest })}>Select</Button>
         ) : (
           <DataTableRowActions forceVisible={deleting || thisChecking}>
-            <IconButton
-              icon={RefreshCw}
-              label={`Check image ${row.name} for updates`}
-              title="Check this image for updates"
-              size="sm"
-              busy={thisChecking}
-              disabled={anyChecking || deleting}
-              onClick={() => onCheckUpdate?.(row)}
-            />
+            {!isLocalImage(row.name) && (
+              <IconButton
+                icon={RefreshCw}
+                label={`Check image ${row.name} for updates`}
+                title="Check this image for updates"
+                size="sm"
+                busy={thisChecking}
+                disabled={anyChecking || deleting}
+                onClick={() => onCheckUpdate?.(row)}
+              />
+            )}
             <IconButton
               icon={Trash2}
               label={`Delete image ${row.name}`}
@@ -307,6 +314,8 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
   const upload = useCommand();
   const uploading = upload.busy;
   const [uploadProgress, setUploadProgress] = useState(0);
+  /* An image archive's upload is followed by its import, a job: busy until it ended. */
+  const [uploadingArchive, setUploadingArchive] = useState(false);
 
   /** @type {[{ kind: 'file', name: string } | { kind: 'oci', ref: string }] | null} */
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -359,11 +368,16 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
     return merged;
   }, [isEmbedded, filter, files, containerImages]);
 
-  /* Done once the list holds the file: it arrives on the `library` cue. */
+  /* Done once the list holds the file: it arrives on the `library` cue. Under the OCI
+   * filter the file is an image archive, and its import a job (in the jobs tray too):
+   * the images arrive on their own cue when it ends. */
   const handleUpload = (file) => {
     setUploadProgress(0);
-    upload.run(() => uploadFile(file, setUploadProgress))
-      .then(() => setUploadProgress(0));
+    setUploadingArchive(isOciView);
+    const send = isOciView
+      ? upload.run(() => uploadContainerImageArchive(file, setUploadProgress), { job: true })
+      : upload.run(() => uploadFile(file, setUploadProgress));
+    send.then(() => setUploadProgress(0));
   };
 
   const handleFileInput = (e) => {
@@ -453,8 +467,15 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
             onClick={() => startImageUpdateCheck(null)}
           />
         )}
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileInput} />
-        <IconButton icon={Upload} label="Upload file" variant="primary" size="sm" busy={uploading} onClick={() => fileInputRef.current?.click()} />
+        <input ref={fileInputRef} type="file" className="hidden" accept={isOciView ? '.tar,application/x-tar' : undefined} onChange={handleFileInput} />
+        <IconButton
+          icon={Upload}
+          label={isOciView ? 'Upload image archive (.tar)' : 'Upload file'}
+          variant="primary"
+          size="sm"
+          busy={uploading}
+          onClick={() => fileInputRef.current?.click()}
+        />
         <IconButton icon={Link} label="Download from URL" variant="neutral" size="sm" onClick={() => setUrlModalOpen(true)} />
         <PresetImageDownloadMenu onSelectPreset={handlePresetSelect} />
       </div>
@@ -476,7 +497,7 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
               {uploading && (
                 <div className="max-w-md">
                   <div className="mb-1 text-xs font-medium text-text-secondary">
-                    Uploading… {uploadProgress}%
+                    {uploadingArchive && uploadProgress === 100 ? 'Importing…' : `Uploading… ${uploadProgress}%`}
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-border">
                     <div
@@ -549,7 +570,7 @@ export default function ImageLibrary({ mode = 'embedded', pickerKind = 'vm', onS
               <Package size={32} className="mb-2 text-text-muted" />
               <p className="text-sm text-text-muted">No OCI images found</p>
               <p className="mt-1 max-w-sm text-xs text-text-muted">
-                Images are stored in containerd when you create a container or pull an image. Remove a container first if an image is still in use.
+                Images are stored in containerd when you create a container, pull an image or upload an image archive. Remove a container first if an image is still in use.
               </p>
             </div>
           ) : (
