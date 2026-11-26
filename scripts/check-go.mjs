@@ -8,12 +8,15 @@
  * - `gofmt -l`: any file it names fails;
  * - `go vet ./...` once for each platform the CLI ships for (cli/platforms,
  *   the list's one home), so every platform's build-tagged files compile;
- * - staticcheck, at the version pinned below, run with `go run` (a build tool,
- *   not a dependency of the module), for the machine's own platform;
+ * - staticcheck, at the version pinned below (a build tool, not a dependency
+ *   of the module), once for each platform: `go run` would build the tool
+ *   for GOOS, so it is installed once, for this machine, into a temporary
+ *   folder, and run with each GOOS/GOARCH;
  * - `go test ./...`: the unit tests and the end-to-end test of the built binary.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,8 +57,20 @@ for (const platform of PLATFORMS) {
   if (!vet.ok) problems.push(`go vet for ${platform}:\n${vet.output}`);
 }
 
-const staticcheck = run('staticcheck', 'go', ['run', STATICCHECK, './...']);
-if (!staticcheck.ok) problems.push(`staticcheck:\n${staticcheck.output}`);
+const toolDir = mkdtempSync(path.join(tmpdir(), 'wisp-staticcheck-'));
+try {
+  const install = run('staticcheck install', 'go', ['install', STATICCHECK], { GOBIN: toolDir });
+  if (!install.ok) problems.push(`installing ${STATICCHECK}:\n${install.output}`);
+  else {
+    for (const platform of PLATFORMS) {
+      const [GOOS, GOARCH] = platform.split('/');
+      const check = run(`staticcheck (${platform})`, path.join(toolDir, 'staticcheck'), ['./...'], { GOOS, GOARCH });
+      if (!check.ok) problems.push(`staticcheck for ${platform}:\n${check.output}`);
+    }
+  }
+} finally {
+  rmSync(toolDir, { recursive: true, force: true });
+}
 
 const test = run('go test', 'go', ['test', './...']);
 if (!test.ok) problems.push(`go test:\n${test.output}`);
@@ -65,4 +80,4 @@ if (problems.length > 0) {
   console.error(`\nThe CLI's check fails (${probe.stdout.trim()}, in ${path.relative(process.cwd(), CLI_DIR) || 'cli'}).`);
   process.exit(1);
 }
-console.log(`OK — the CLI is gofmt-clean, vets on ${PLATFORMS.length} platforms, passes staticcheck and its tests (${probe.stdout.trim()}).`);
+console.log(`OK — the CLI is gofmt-clean, vets and passes staticcheck on ${PLATFORMS.length} platforms, and passes its tests (${probe.stdout.trim()}).`);
