@@ -5,6 +5,8 @@
 ### New Features
 - **An agent token scope** — a third API token scope between read-only and admin: it builds, runs and updates containers (create, lifecycle, settings and env, folders and files kept on the host, services, a backup, the image check) and cannot delete, give a container more reach into the host, or change a VM or the host. Over MCP it calls every tool. The token form preselects it; existing tokens keep their scope.
 - **The token form is a dialog** — a label and the three scopes, each with what it allows.
+- **Upload an image archive** — the tar `docker save` writes, from the image library's OCI view or with an agent token (`POST /api/containers/images/upload`): each image runs with no registry, under its name with `localhost/` as its registry host.
+- **A `localhost/` image is never pulled** — the update check skips it, a create or a start uses the image the host holds, and a new upload under the same name flags the containers on it for a restart.
 
 ## 2026-11-25
 

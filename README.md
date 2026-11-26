@@ -25,6 +25,7 @@ The philosophy: direct flows and clear choices instead of a setting for everythi
 - **Shell in the browser**, and **logs** kept per run.
 - **File and folder mounts**, kept with the container or on a storage mount, with an editor in the browser and zip upload. A file mount can be a write-only secret.
 - **Environment variables**, with write-only secrets; **CPU and memory limits**; **restart policies**; **start with the host**; an **image update check**.
+- **Your own images without a registry**: upload the tar `docker save` writes, from the image library or with an agent token; each image is stored under `localhost/`, never replaced by a pull, and a new upload under the same name updates the containers on it at their restart.
 - **The host's GPU** (Intel or AMD) shared with a container, for transcoding.
 
 ### Networking
@@ -60,7 +61,7 @@ The philosophy: direct flows and clear choices instead of a setting for everythi
 
 - **API tokens** for scripts and agents, read-only, agent or admin: made in the page, shown once, revocable.
 - **MCP endpoint** (`/mcp`), so a coding agent can look at the deployment: every VM and container with its address, a container's `.local` name, a workload's settings (secrets masked), logs, images, live host figures, the hardware inventory.
-- **Agent deploys, with guard rails**: an agent token builds, runs and updates containers: over MCP it deploys a container, updates images and starts or stops containers; over the REST API it also edits a container's settings and env, its folders and files kept on the host, and its services, and takes a backup. It cannot delete, give a container more reach into the host (storage shares, devices, root, the network), change a VM or change the host, and an app's settings are filtered per app (an agent can add a Caddy host, never touch the TLS credentials).
+- **Agent deploys, with guard rails**: an agent token builds, runs and updates containers: over MCP it deploys a container, updates images and starts or stops containers; over the REST API it also edits a container's settings and env, its folders and files kept on the host, and its services, takes a backup and uploads an image archive. It cannot delete, give a container more reach into the host (storage shares, devices, root, the network), change a VM or change the host, and an app's settings are filtered per app (an agent can add a Caddy host, never touch the TLS credentials).
 
 ## What it's not
 
