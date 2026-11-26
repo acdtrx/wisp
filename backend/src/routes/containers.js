@@ -47,6 +47,7 @@ import { startImageUpdateCheckJob } from '../lib/updateChecks.js';
 import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { createAppError } from '../lib/appErrors.js';
+import { callerScope } from '../lib/auth.js';
 import { openOnPurpose } from '../lib/schemaValidation.js';
 import { containerBridgeSchema, containerNameSchema } from '../lib/validation.js';
 import {
@@ -317,7 +318,7 @@ export default async function containerRoutes(fastify) {
   // A job, the image pull included. Only the create contract's fields reach
   // the operation: app creation fills in env, mounts and metadata itself.
   fastify.post('/containers', {
-    config: { auth: 'agent' },
+    config: { auth: 'agent', agentRefuses: ['app', 'appConfig'] },
     schema: {
       body: {
         type: 'object',
@@ -478,7 +479,7 @@ export default async function containerRoutes(fastify) {
   // rename included (a body `name` other than the URL's runs first, the rest
   // applies under the new name).
   fastify.patch('/containers/:name', {
-    config: { auth: 'agent' },
+    config: { auth: 'agent', agentRefuses: ['name', 'runAsRoot', 'network', 'devices', 'mounts', 'mountRenames'] },
     schema: { params: nameParams, body: containerPatchSchema, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       const body = request.body;
@@ -491,7 +492,7 @@ export default async function containerRoutes(fastify) {
             `${others.map((key) => `body/${key}`).join(', ')} cannot be sent with body/appConfig: an appConfig save stands alone`,
           );
         }
-        await saveContainerAppConfig(name, () => body.appConfig);
+        await saveContainerAppConfig({ name, appConfig: body.appConfig, scope: callerScope(request) });
         return reply.code(204).send();
       }
       await editContainerConfig({ name, changes: body, log: request.log });
@@ -702,7 +703,7 @@ export default async function containerRoutes(fastify) {
 
   // ── Mount definitions (row-scoped) ──────────────────────────────
   fastify.post('/containers/:name/mounts', {
-    config: { auth: 'agent' },
+    config: { auth: 'agent', agentRefuses: ['sourceId', 'subPath'] },
     schema: { params: nameParams, body: mountBodySchema, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await addContainerMountRow(request.params.name, request.body);
@@ -711,14 +712,14 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.patch('/containers/:name/mounts/:mountName', {
-    config: { auth: 'agent' },
+    config: { auth: 'agent', agentRefuses: ['sourceId', 'subPath'] },
     schema: {
       params: mountParams,
       body: { type: 'object', properties: mountFields, additionalProperties: false },
       response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
-      await editContainerMountRow(request.params.name, request.params.mountName, request.body);
+      await editContainerMountRow(request.params.name, request.params.mountName, request.body, { scope: callerScope(request) });
       return reply.code(204).send();
     },
   });
@@ -829,7 +830,7 @@ export default async function containerRoutes(fastify) {
     config: { auth: 'agent' },
     schema: { params: mountParams, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
-      await initContainerMountContent(request.params.name, request.params.mountName);
+      await initContainerMountContent(request.params.name, request.params.mountName, { scope: callerScope(request) });
       return reply.code(204).send();
     },
   });

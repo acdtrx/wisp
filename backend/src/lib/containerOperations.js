@@ -61,6 +61,7 @@ import {
   applyAppConfig,
   eject,
   maskContainerConfigSecrets,
+  getAppModule,
   assertMountNotAppManaged,
   assertMountListNotAppManaged,
 } from './containerApps/index.js';
@@ -356,15 +357,57 @@ export async function editContainerConfig({ name, changes, log }) {
  * regenerates the derived env, mounts and files (deleting a dropped mount's
  * data) and live-reloads when it can. `appConfigFor(config)` answers the
  * appConfig to save from the container's config as read under the lock, so
- * a merge onto the stored one (MCP) cannot interleave with another save. An
- * app that uses the host's certificate gets the one Wisp holds, so every save
+ * a merge onto the stored one cannot interleave with another save. An app
+ * that uses the host's certificate gets the one Wisp holds, so every save
  * delivers it too. Resolves `{ requiresRestart, reloaded? }`.
  */
-export function saveContainerAppConfig(name, appConfigFor) {
+function saveAppConfigUnderLock(name, appConfigFor) {
   return withContainerOperationLock(name, 'configuration change', async () => {
     const appConfig = appConfigFor(await getContainerConfig(name));
     return applyAppConfig(name, appConfig, { certificate: await getHeldCertificate() });
   });
+}
+
+/**
+ * The one rule for an agent's appConfig (MCP `update_app_config`, a `PATCH`
+ * from an `agent` token): it holds only the keys the app marks agent-writable,
+ * each replacing that key, merged onto the stored, unmasked config, so what
+ * the agent cannot write — secrets included — passes through untouched.
+ * `refusalCode` is the caller's: the tool refuses every caller, the `PATCH`
+ * the scope. A generic container is CONFIG_ERROR for both.
+ */
+function agentWritableAppConfig(name, appConfig, refusalCode) {
+  return (cfg) => {
+    const appType = cfg?.metadata?.app;
+    if (!appType) throw createAppError('CONFIG_ERROR', `Container "${name}" is not an app container`);
+    const writable = getAppModule(appType)?.agentWritableAppConfigFields ?? [];
+    if (!writable.length) {
+      throw createAppError(refusalCode, `The "${appType}" app has no agent-writable appConfig field: configure it in the Wisp UI`);
+    }
+    const blocked = Object.keys(appConfig).filter((key) => !writable.includes(key));
+    if (blocked.length) {
+      throw createAppError(
+        refusalCode,
+        `Field(s) not agent-writable for "${appType}": ${blocked.join(', ')}. Writable: ${writable.join(', ')}. Everything else is configured in the Wisp UI.`,
+      );
+    }
+    return { ...cfg.metadata.appConfig, ...appConfig };
+  };
+}
+
+/**
+ * `PATCH /api/containers/:name` with `{ appConfig }`: the whole config from a
+ * session or an `admin` token; from an `agent` token, its agent-writable keys
+ * merged onto the stored config, any other key refused for the scope.
+ */
+export function saveContainerAppConfig({ name, appConfig, scope }) {
+  if (scope === 'agent') return saveAppConfigUnderLock(name, agentWritableAppConfig(name, appConfig, 'SCOPE_INSUFFICIENT'));
+  return saveAppConfigUnderLock(name, () => appConfig);
+}
+
+/** MCP `update_app_config`: the agent-writable keys, for every caller (APP_CONFIG_ONLY otherwise). */
+export function saveAgentAppConfig(name, appConfig) {
+  return saveAppConfigUnderLock(name, agentWritableAppConfig(name, appConfig, 'APP_CONFIG_ONLY'));
 }
 
 /**
@@ -400,10 +443,28 @@ export function addContainerMountRow(name, mount) {
   });
 }
 
-/** Edit one mount by its current name (row-scoped). */
-export function editContainerMountRow(name, mountName, changes) {
+/**
+ * A mount backed by a storage share or a drive (one with a `sourceId`) is the
+ * container's reach into the host: an `agent` token changes nothing of it.
+ * Read under the lock, from the stored mount.
+ */
+function assertAgentMayTouchMount(config, mountName, scope) {
+  if (scope !== 'agent') return;
+  const mount = config?.mounts?.find((m) => m.name === mountName);
+  if (mount?.sourceId) {
+    throw createAppError(
+      'SCOPE_INSUFFICIENT',
+      `Mount "${mountName}" is backed by a storage mount: an agent token cannot change it; it needs an admin-scoped token or a session`,
+    );
+  }
+}
+
+/** Edit one mount by its current name (row-scoped). `scope` is the caller's token scope (null for a session). */
+export function editContainerMountRow(name, mountName, changes, { scope = null } = {}) {
   return withContainerOperationLock(name, 'configuration change', async () => {
-    assertMountNotAppManaged(await getContainerConfig(name), mountName);
+    const config = await getContainerConfig(name);
+    assertMountNotAppManaged(config, mountName);
+    assertAgentMayTouchMount(config, mountName, scope);
     return updateContainerMount(name, mountName, changes);
   });
 }
@@ -511,10 +572,12 @@ export function putContainerMountContent(name, mountName, content) {
   });
 }
 
-/** Create a mount's empty file or directory. */
-export function initContainerMountContent(name, mountName) {
+/** Create a mount's empty file or directory. `scope` is the caller's token scope (null for a session). */
+export function initContainerMountContent(name, mountName, { scope = null } = {}) {
   return withContainerOperationLock(name, 'mount init', async () => {
-    assertMountNotAppManaged(await getContainerConfig(name), mountName);
+    const config = await getContainerConfig(name);
+    assertMountNotAppManaged(config, mountName);
+    assertAgentMayTouchMount(config, mountName, scope);
     await initMountContent(name, mountName);
   });
 }

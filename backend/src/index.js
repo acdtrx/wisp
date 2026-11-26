@@ -105,6 +105,9 @@ function printRouteAccessReport(routes) {
     }
     const level = row.declared ? row.auth : `${row.auth} (UNDECLARED)`;
     process.stdout.write(`${level.padEnd(18)} ${methods.padEnd(14)} ${routeSchemaSummary(row).padEnd(40)} ${row.url}\n`);
+    if (row.config?.agentRefuses) {
+      process.stdout.write(`${''.padEnd(18)} an agent token may not send: ${row.config.agentRefuses.map((key) => `body/${key}`).join(', ')}\n`);
+    }
     const problems = routeSchemaProblems(row);
     for (const problem of problems) process.stdout.write(`${''.padEnd(18)} SCHEMA: ${problem}\n`);
     if (row.declared) counts[row.auth] += endpoints;

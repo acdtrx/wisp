@@ -270,7 +270,9 @@ function objectProblems(schema, path, root = schema, followed = new Set()) {
  * params naming every URL param; every object of its input and of its answers
  * listing the keys it takes, unless marked open on purpose (`openOnPurpose`,
  * lib/schemaValidation.js); a response schema for a 2xx, unless the route
- * answers a stream, a file, a redirect or MCP (`config.answers`).
+ * answers a stream, a file, a redirect or MCP (`config.answers`); the body
+ * keys an `agent` route refuses from an `agent` token (`config.agentRefuses`)
+ * on an `agent` route only, each one its body schema lists.
  * @param {{ method: string, url: string, declaredSchema?: object, config?: object, websocket?: boolean }} route
  */
 export function routeSchemaProblems({ url, declaredSchema, config, websocket }) {
@@ -282,6 +284,16 @@ export function routeSchemaProblems({ url, declaredSchema, config, websocket }) 
   }
   if (websocket && answers !== 'websocket') problems.push('a WebSocket route needs config.answers \'websocket\'');
   if (!websocket && answers === 'websocket') problems.push('config.answers \'websocket\' on a route that is not one');
+  const refuses = config?.agentRefuses;
+  if (refuses !== undefined) {
+    const bodyKeys = Object.keys(schema.body?.properties ?? {});
+    if (config.auth !== 'agent') problems.push('config.agentRefuses on a route that is not agent');
+    if (!Array.isArray(refuses) || refuses.length === 0) problems.push('config.agentRefuses must list the body keys it refuses');
+    else {
+      const unlisted = refuses.filter((key) => !bodyKeys.includes(key));
+      if (unlisted.length > 0) problems.push(`config.agentRefuses names keys the body schema does not list: ${unlisted.join(', ')}`);
+    }
+  }
   const params = urlParams(url);
   if (params.length > 0) {
     const declared = Object.keys(schema.params?.properties ?? {});

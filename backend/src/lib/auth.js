@@ -316,6 +316,32 @@ async function handleBearerAuth(request, reply, token, level) {
   request.user = { via: 'token', tokenId: info.id, label: info.label, scope: info.scope };
 }
 
+/**
+ * The scope of the token a request came with, or null for a session (whose
+ * requests are never narrowed). An operation that refuses part of a request
+ * from an `agent` token by what is stored is told this (AUTH.md, The `agent`
+ * scope: Narrowed requests).
+ */
+export function callerScope(request) {
+  return request.user?.via === 'token' ? request.user.scope : null;
+}
+
+/**
+ * The body keys an `agent` route refuses from an `agent` token, declared in
+ * its options as `config: { auth: 'agent', agentRefuses: [...] }`. A
+ * `preHandler`: it runs once the body passed its schema (a malformed request
+ * is 400 first) and before the handler writes anything.
+ */
+export async function refuseAgentKeys(request) {
+  const refused = request.routeOptions.config?.agentRefuses;
+  if (!refused || callerScope(request) !== 'agent') return;
+  const body = request.body;
+  const sent = body && typeof body === 'object' ? refused.filter((key) => Object.hasOwn(body, key)) : [];
+  if (sent.length === 0) return;
+  const keys = sent.map((key) => `body/${key}`).join(', ');
+  throw createAppError('SCOPE_INSUFFICIENT', `${keys}: an agent token cannot send ${sent.length > 1 ? 'these' : 'this'}; it needs an admin-scoped token or a session`);
+}
+
 export function createAuthHook() {
   return async (request, reply) => {
     // No route matched: no handler runs and the not-found handler answers, so

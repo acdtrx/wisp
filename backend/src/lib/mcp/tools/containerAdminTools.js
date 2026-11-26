@@ -10,9 +10,8 @@
  * `{ jobId, kind, title, subject }`; `get_job` reads it to the end.
  */
 import { getContainerConfig } from '../../containerManager/index.js';
-import { getAppModule, maskContainerConfigSecrets } from '../../containerApps/index.js';
+import { maskContainerConfigSecrets } from '../../containerApps/index.js';
 import { containerNameSchema } from '../../validation.js';
-import { createAppError } from '../../appErrors.js';
 import { openOnPurpose } from '../../schemaValidation.js';
 import {
   startContainerDeployJob,
@@ -20,7 +19,7 @@ import {
   startContainerStartJob,
   startContainerStopJob,
   startContainerRestartJob,
-  saveContainerAppConfig,
+  saveAgentAppConfig,
 } from '../../containerOperations.js';
 import { startImageUpdateCheckJob } from '../../updateChecks.js';
 
@@ -184,34 +183,11 @@ export const containerAdminTools = [
     },
     scope: 'admin',
     handler: async ({ name, appConfig }) => {
-      // The merge builds on the config as read under the lock, so a
-      // concurrent save can't slip between the read and the write.
-      let appType;
-      const result = await saveContainerAppConfig(name, (cfg) => {
-        appType = cfg?.metadata?.app;
-        if (!appType) {
-          throw createAppError('CONFIG_ERROR', `Container "${name}" is not an app container`);
-        }
-        const writable = getAppModule(appType)?.agentWritableAppConfigFields ?? [];
-        if (!writable.length) {
-          throw createAppError('APP_CONFIG_ONLY', `The "${appType}" app is not agent-configurable — use the Wisp UI`);
-        }
-        const blocked = Object.keys(appConfig).filter((k) => !writable.includes(k));
-        if (blocked.length) {
-          throw createAppError(
-            'APP_CONFIG_ONLY',
-            `Field(s) not agent-writable for "${appType}": ${blocked.join(', ')}. Writable: ${writable.join(', ')}. Everything else is configured in the Wisp UI.`,
-          );
-        }
-        // Merged onto the RAW stored config (unmasked, server-side) so protected
-        // fields — secrets included — pass through the standard validate path
-        // completely untouched by the agent's input.
-        return { ...cfg.metadata.appConfig, ...appConfig };
-      });
+      const result = await saveAgentAppConfig(name, appConfig);
       const after = await maskContainerConfigSecrets(await getContainerConfig(name));
       return {
         name,
-        app: appType,
+        app: after.metadata?.app ?? null,
         appliedFields: Object.keys(appConfig),
         ...result,
         appConfig: after.metadata?.appConfig ?? null,

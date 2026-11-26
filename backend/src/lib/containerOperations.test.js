@@ -38,16 +38,18 @@ mockModule('./containerManager/index.js', [
   'getImageDigest', 'resolveContainerImageRef',
 ]);
 mockModule('./containerApps/index.js', [
-  'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'assertMountNotAppManaged',
+  'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'getAppModule', 'assertMountNotAppManaged',
   'assertMountListNotAppManaged',
 ]);
+mockModule('./hostCertificateStore.js', ['getHeldCertificate']);
 mockModule('./backupDestinations.js', ['resolveBackupDestinations', 'backupToEachDestination']);
 mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'forgetBackupStatus']);
 mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
 const {
-  editContainerConfig, killContainerNow, startContainerDeleteJob, startContainerDeployJob, startContainerStopJob,
+  editContainerConfig, editContainerMountRow, initContainerMountContent, killContainerNow, saveAgentAppConfig,
+  saveContainerAppConfig, startContainerDeleteJob, startContainerDeployJob, startContainerStopJob,
   startContainerZipExtractJob,
 } = await import('./containerOperations.js');
 const { tryAcquireContainerOperationLock } = await import('./containerOperationLock.js');
@@ -250,4 +252,81 @@ test('a kill with no stop running takes the lock and kills', async () => {
   await killContainerNow('k');
   assert.deepEqual(calls, [['killContainer', 'k']]);
   assertUnlocked('k');
+});
+
+/* ── An agent token's narrowed requests (docs/specs/AUTH.md, The `agent` scope) ── */
+
+const SHARE_MOUNT = { name: 'media', type: 'directory', containerPath: '/media', sourceId: 'nas', subPath: 'films' };
+const LOCAL_MOUNT = { name: 'site', type: 'directory', containerPath: '/srv' };
+
+test('an agent token cannot edit or init a mount backed by a storage mount; the mount is not touched', async () => {
+  impl.getContainerConfig = async () => ({ metadata: {}, mounts: [SHARE_MOUNT, LOCAL_MOUNT] });
+  for (const run of [
+    () => editContainerMountRow('c', 'media', { readonly: true }, { scope: 'agent' }),
+    () => initContainerMountContent('c', 'media', { scope: 'agent' }),
+  ]) {
+    calls.length = 0;
+    await assert.rejects(run(), (err) => err.code === 'SCOPE_INSUFFICIENT' && /Mount "media" is backed by a storage mount/.test(err.message));
+    assert.deepEqual(names().filter((n) => n !== 'getContainerConfig' && n !== 'assertMountNotAppManaged'), []);
+  }
+  assertUnlocked('c');
+});
+
+test('the same mount edit and init pass for a session and an admin token, and a Local mount for an agent token', async () => {
+  impl.getContainerConfig = async () => ({ metadata: {}, mounts: [SHARE_MOUNT, LOCAL_MOUNT] });
+  for (const [mount, scope] of [['media', null], ['media', 'admin'], ['site', 'agent']]) {
+    calls.length = 0;
+    await editContainerMountRow('c', mount, { readonly: true }, { scope });
+    await initContainerMountContent('c', mount, { scope });
+    assert.deepEqual(names().filter((n) => n === 'updateContainerMount' || n === 'initMountContent'), ['updateContainerMount', 'initMountContent'], `${mount} ${scope}`);
+  }
+});
+
+const CADDY = { metadata: { app: 'caddy-reverse-proxy', appConfig: { hosts: [{ subdomain: 'a', target: 'a.local:80' }], other: 'kept' } } };
+
+/** The appConfig handed to the app's save, or the code the save was refused with. */
+async function savedAppConfig(save) {
+  try {
+    await save();
+  } catch (err) {
+    assert.equal(names().includes('applyAppConfig'), false, 'nothing is saved on a refusal');
+    return err.code;
+  }
+  return calls.find(([n]) => n === 'applyAppConfig')[2];
+}
+
+test('an agent token\'s appConfig replaces its agent-writable keys and keeps the rest of the stored config', async () => {
+  impl.getContainerConfig = async () => CADDY;
+  impl.getAppModule = () => ({ agentWritableAppConfigFields: ['hosts'] });
+  const hosts = [{ subdomain: 'b', target: 'b.local:80' }];
+  assert.deepEqual(await savedAppConfig(() => saveContainerAppConfig({ name: 'caddy', appConfig: { hosts }, scope: 'agent' })), { hosts, other: 'kept' });
+  calls.length = 0;
+  assert.deepEqual(await savedAppConfig(() => saveAgentAppConfig('caddy', { hosts })), { hosts, other: 'kept' });
+});
+
+test('a session\'s and an admin token\'s appConfig is the whole config', async () => {
+  impl.getContainerConfig = async () => CADDY;
+  for (const scope of [null, 'admin']) {
+    calls.length = 0;
+    assert.deepEqual(await savedAppConfig(() => saveContainerAppConfig({ name: 'caddy', appConfig: { domain: 'x' }, scope })), { domain: 'x' });
+  }
+});
+
+test('a key outside the writable ones, or an app with none, is refused for the scope over REST and for every caller over MCP', async () => {
+  impl.getContainerConfig = async () => CADDY;
+  for (const writable of [['hosts'], [], undefined]) {
+    impl.getAppModule = () => (writable === undefined ? {} : { agentWritableAppConfigFields: writable });
+    calls.length = 0;
+    assert.equal(await savedAppConfig(() => saveContainerAppConfig({ name: 'caddy', appConfig: { other: 'x' }, scope: 'agent' })), 'SCOPE_INSUFFICIENT');
+    calls.length = 0;
+    assert.equal(await savedAppConfig(() => saveAgentAppConfig('caddy', { other: 'x' })), 'APP_CONFIG_ONLY');
+  }
+  assertUnlocked('caddy');
+});
+
+test('an agent token\'s appConfig on a generic container is CONFIG_ERROR, as the tool\'s is', async () => {
+  impl.getContainerConfig = async () => ({ metadata: {} });
+  assert.equal(await savedAppConfig(() => saveContainerAppConfig({ name: 'web', appConfig: { hosts: [] }, scope: 'agent' })), 'CONFIG_ERROR');
+  calls.length = 0;
+  assert.equal(await savedAppConfig(() => saveAgentAppConfig('web', { hosts: [] })), 'CONFIG_ERROR');
 });

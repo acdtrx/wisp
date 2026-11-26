@@ -13,7 +13,7 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
-import { createAuthHook, createRouteAccessRegistry } from './lib/auth.js';
+import { createAuthHook, createRouteAccessRegistry, refuseAgentKeys } from './lib/auth.js';
 import { createAppError, handleRequestError } from './lib/appErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { compileRouteValidator } from './lib/schemaValidation.js';
@@ -233,6 +233,7 @@ export async function buildApp(log) {
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
 
   app.addHook('onRequest', createAuthHook());
+  app.addHook('preHandler', refuseAgentKeys);
 
   await app.register(fastifyWebsocket);
 

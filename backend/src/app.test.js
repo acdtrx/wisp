@@ -212,6 +212,55 @@ test('a token is made with each of the three scopes, its text prefixed by it; an
   assert.match(other.json().detail, /^body\/scope must be equal to one of the allowed values/);
 });
 
+/*
+ * Each body key an agent route refuses from an agent token (API-CONTAINERS.md, the
+ * `An agent token:` lines), each in a request whose handler would answer otherwise:
+ * the container `web` does not exist, and the app is unknown.
+ */
+const NARROWED = [
+  ['POST', '/api/containers', { name: 'web', image: 'nginx', app: 'no-such-app' }, 'app'],
+  ['POST', '/api/containers', { name: 'web', image: 'nginx', app: 'no-such-app', appConfig: {} }, 'appConfig'],
+  ...['name', 'runAsRoot', 'network', 'devices', 'mounts', 'mountRenames'].map((key) => ['PATCH', '/api/containers/web', {
+    name: { name: 'web2' }, runAsRoot: { runAsRoot: true }, network: { network: { mac: '02:00:00:00:00:01' } },
+    devices: { devices: [] }, mounts: { mounts: [] }, mountRenames: { mounts: [], mountRenames: { a: 'b' } },
+  }[key], key]),
+  ['POST', '/api/containers/web/mounts', { type: 'directory', name: 'm', containerPath: '/m', sourceId: 'nas' }, 'sourceId'],
+  ['POST', '/api/containers/web/mounts', { type: 'directory', name: 'm', containerPath: '/m', subPath: 'x' }, 'subPath'],
+  ['PATCH', '/api/containers/web/mounts/m', { sourceId: 'nas' }, 'sourceId'],
+  ['PATCH', '/api/containers/web/mounts/m', { subPath: 'x' }, 'subPath'],
+];
+
+test('an agent token sending a key its route keeps admin answers 403 SCOPE_INSUFFICIENT naming the key, before the handler', async () => {
+  for (const [method, url, payload, key] of NARROWED) {
+    const res = await app.inject({ method, url, payload, headers: bearer(AGENT_TOKEN) });
+    assert.equal(res.statusCode, 403, `${method} ${url} ${key}`);
+    assert.equal(res.json().error, 'SCOPE_INSUFFICIENT', `${method} ${url} ${key}`);
+    assert.match(res.json().detail, new RegExp(`body/${key}\\b`), `${method} ${url} ${key}`);
+  }
+});
+
+test('the same requests from an admin token and from a session pass the check', async () => {
+  const session = await login('10.0.0.8');
+  for (const headers of [bearer(ADMIN_TOKEN), { cookie: session.cookie, 'x-csrf-token': session.csrf }]) {
+    for (const [method, url, payload, key] of NARROWED) {
+      const res = await app.inject({ method, url, payload, headers, remoteAddress: '10.0.0.8' });
+      assert.notEqual(res.json().error, 'SCOPE_INSUFFICIENT', `${method} ${url} ${key}`);
+      assert.notEqual(res.statusCode, 401, `${method} ${url} ${key}`);
+    }
+  }
+});
+
+test('a body that breaks its schema and carries a refused key answers 400 VALIDATION_FAILED', async () => {
+  const res = await app.inject({ method: 'PATCH', url: '/api/containers/web', headers: bearer(AGENT_TOKEN), payload: { runAsRoot: 'yes' } });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().error, 'VALIDATION_FAILED');
+});
+
+test('an agent token passes the check with the keys its route allows', async () => {
+  const res = await app.inject({ method: 'PATCH', url: '/api/containers/web', headers: bearer(AGENT_TOKEN), payload: { autostart: true } });
+  assert.notEqual(res.json().error, 'SCOPE_INSUFFICIENT');
+});
+
 test('a read token cannot start the OS package check: 403 SCOPE_INSUFFICIENT, and no job', async () => {
   const jobs = async () => (await app.inject({ method: 'GET', url: '/api/jobs', headers: bearer(READ_TOKEN) })).json().jobs.map((j) => j.jobId);
   const before = await jobs();

@@ -32,7 +32,7 @@ mockModule('./containerManager/index.js', [
   'getImageDigest', 'resolveContainerImageRef', 'listContainerBackups', 'deleteContainerBackup',
 ]);
 mockModule('./containerApps/index.js', [
-  'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'assertMountNotAppManaged',
+  'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'getAppModule', 'assertMountNotAppManaged',
   'assertMountListNotAppManaged',
 ]);
 mockModule('./settings.js', ['getSettings', 'listConfiguredBackupRoots']);
