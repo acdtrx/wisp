@@ -38,7 +38,7 @@ export async function startContainerImageImportJob({ stage, log }) {
       kind: JOB_KIND.CONTAINER_IMAGE_IMPORT,
       title: titleForContainerImageImport(fileName),
       // A job that must finish (docs/specs/API.md → Jobs that may be cut): a
-      // shutdown and a self-update wait for it.
+      // shutdown does not cut it, and a self-update is refused while it runs.
       log,
       run: async (report) => {
         report({ step: 'importing', detail: `Importing ${fileName}…` });
