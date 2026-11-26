@@ -6,14 +6,17 @@
 # Usage: scripts/stage-release.sh <out-dir>
 #   → <out-dir>/wisp/ (the tree) and <out-dir>/wisp-<version>.tar.gz (its top
 #     directory `wisp/`), <version> from the root package.json.
-# Needs the frontend's packages installed (`npm ci` in frontend/).
+# Needs the frontend's packages installed (`npm ci` in frontend/), and Go for
+# the CLI (the version cli/go.mod names, or later).
 #
 # What ships is what a host runs, and the few files that describe the release
 # to its owner: an allowlist (SHIPS below), never a denylist, so a file added
 # outside the directories it names stays out until it is named; inside a
 # shipped directory a new file ships unless NEVER names it. The backend
 # (without its tests, the helpers' and the migrations' test benches and the
-# route tests' fixtures), the built frontend and noVNC,
+# route tests' fixtures), the built frontend and noVNC, cli/ (the `wisp` CLI's
+# binaries, built here for every platform, and its install scripts, which the
+# backend serves; not the CLI's Go source),
 # shared/ (the wire's names, which the backend loads), the install, setup and
 # wispctl scripts, the unit templates, the config examples, the root
 # package.json (the version's one source; its "type" makes shared/ an ES
@@ -48,6 +51,8 @@ ARCHIVE="$OUT/wisp-$VERSION.tar.gz"
 
 echo "=== Staging Wisp $VERSION → $STAGE ==="
 
+command -v go >/dev/null 2>&1 || { echo "ERROR: go is not installed: the wisp CLI's binaries are built here (docs/TECH-STACK.md, The CLI)" >&2; exit 1; }
+
 echo "--- Frontend build ---"
 (cd "$ROOT/frontend" && npm run build)
 
@@ -68,7 +73,7 @@ const [stage, list] = process.argv.slice(2);
 // the build fetches; served under /vendor/). RELEASE is written after this.
 const SHIPS = [
   /^backend\//, /^shared\//, /^systemd\//, /^config\/[^/]+\.example$/,
-  /^scripts\/(?:install|wispctl)\.sh$/, /^scripts\/linux\//,
+  /^scripts\/(?:install|wispctl)\.sh$/, /^scripts\/linux\//, /^cli\/install\.(?:sh|ps1)$/,
   /^frontend\/dist\//, /^frontend\/public\/vendor\//, /^screenshots\//,
   /^(?:package\.json|CHANGELOG\.md|LICENSE|README\.md)$/,
 ];
@@ -92,6 +97,18 @@ for (const dir of ['frontend/dist', 'frontend/public/vendor']) {
 }
 NODE
 
+# The CLI, for every platform of docs/specs/CLI.md: static and cgo-free, its
+# version stamped from the root package.json. -trimpath and no VCS stamp, so
+# the binaries are the same from any checkout.
+echo "--- CLI build ---"
+CLI_PLATFORMS=(darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-arm64 windows-amd64)
+mkdir -p "$STAGE/cli"
+for platform in "${CLI_PLATFORMS[@]}"; do
+  (cd "$ROOT/cli" && CGO_ENABLED=0 GOOS="${platform%-*}" GOARCH="${platform#*-}" \
+    go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$VERSION" -o "$STAGE/cli/wisp-$platform" .)
+  echo "  wisp-$platform"
+done
+
 COMMIT="$(git rev-parse HEAD)"
 # key=value lines, so the installer reads them before Node is on the host.
 DIRTY=no
@@ -114,16 +131,19 @@ const exactly = (rel, want) => {
   if (extra.length) problems.push(`${rel || '.'}/ holds what a host does not: ${extra.join(', ')}`);
   if (missing.length) problems.push(`${rel || '.'}/ lacks: ${missing.join(', ')}`);
 };
-exactly('', ['CHANGELOG.md', 'LICENSE', 'README.md', 'RELEASE', 'backend', 'config', 'frontend', 'package.json', 'screenshots', 'scripts', 'shared', 'systemd']);
+exactly('', ['CHANGELOG.md', 'LICENSE', 'README.md', 'RELEASE', 'backend', 'cli', 'config', 'frontend', 'package.json', 'screenshots', 'scripts', 'shared', 'systemd']);
 exactly('frontend', ['dist', 'public']);
 exactly('frontend/public', ['vendor']);
 exactly('scripts', ['install.sh', 'linux', 'wispctl.sh']);
+const CLI_BINARIES = ['darwin-arm64', 'darwin-amd64', 'linux-arm64', 'linux-amd64', 'windows-arm64', 'windows-amd64'].map((p) => `wisp-${p}`);
+exactly('cli', ['install.ps1', 'install.sh', ...CLI_BINARIES].sort());
 const REQUIRED = [
   ['scripts/install.sh', 'x'], ['scripts/linux/install-tree.sh', 'x'], ['backend/scripts/wisp-updater', 'x'],
   ['backend/package.json'], ['backend/package-lock.json'], ['backend/.npmrc'], ['backend/src/index.js'],
   ['backend/migrations', 'dir'], ['shared/wireNames.js'], ['systemd/linux/wisp.service'],
   ['systemd/linux/wisp-updater.service'], ['frontend/dist/index.html'], ['frontend/public/vendor/novnc', 'dir'],
   ['config/runtime.env.example'], ['config/wisp-config.json.example'],
+  ['cli/install.sh'], ['cli/install.ps1'], ...CLI_BINARIES.map((b) => [`cli/${b}`, 'x']),
 ];
 for (const [rel, kind] of REQUIRED) {
   const st = fs.statSync(path.join(stage, rel), { throwIfNoEntry: false });
@@ -136,6 +156,20 @@ if (problems.length) {
   process.exit(1);
 }
 NODE
+
+# Each binary carries the version, and the one for this machine says it.
+for platform in "${CLI_PLATFORMS[@]}"; do
+  LC_ALL=C grep -q -a -F "$VERSION" "$STAGE/cli/wisp-$platform" \
+    || { echo "ERROR: cli/wisp-$platform does not carry version $VERSION" >&2; exit 1; }
+done
+HOST_PLATFORM="$(go env GOOS)-$(go env GOARCH)"
+if [[ -x "$STAGE/cli/wisp-$HOST_PLATFORM" ]]; then
+  PROBE_HOME="$(mktemp -d)"
+  SAID="$(env -i HOME="$PROBE_HOME" "$STAGE/cli/wisp-$HOST_PLATFORM" version 2>/dev/null | head -n 1 || true)"
+  rm -rf "$PROBE_HOME"
+  [[ "$SAID" == "wisp CLI  $VERSION" ]] \
+    || { echo "ERROR: cli/wisp-$HOST_PLATFORM version says \"$SAID\", not wisp CLI  $VERSION" >&2; exit 1; }
+fi
 
 # The offline shell must ship with its precache list baked in by
 # frontend/scripts/generate-sw-precache.js: a missing or unsubstituted sw.js

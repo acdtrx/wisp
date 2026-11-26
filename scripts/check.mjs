@@ -33,6 +33,8 @@ const CHECKS = [
   // Setup's Python, which reads the network tools' files: its unit tests.
   { name: 'setup-python', command: ['python3', '-I', '-B', '-m', 'unittest', 'discover', '-s', 'scripts/linux/setup', '-p', '*_test.py'], timeoutMs: 60_000 },
   { name: 'test', command: ['npm', 'test', '--silent'], needs: ['frontend', 'backend'], timeoutMs: 120_000 },
+  // The wisp CLI's Go checks: format, vet per platform, staticcheck, its tests.
+  { name: 'cli', command: ['node', 'scripts/check-go.mjs'], timeoutMs: 600_000 },
 ];
 
 /** The running step's process group, ended with the runner. */

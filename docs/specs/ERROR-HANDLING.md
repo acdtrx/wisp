@@ -191,6 +191,7 @@ Each code a client can receive, with its status.
 | `SSH_KEY_NOT_FOUND` | 404 | No key with that id in Wisp's list |
 | `GITHUB_KEYS_NOT_FOUND` | 404 | GitHub answered 404 for that user: no such user |
 | `CERTIFICATE_NOT_FOUND` | 404 | The host has no certificate setting to renew |
+| `CLI_NOT_AVAILABLE` | 404 | This Wisp carries no CLI binary for the platform asked for |
 | `METHOD_NOT_ALLOWED` | 405 | The path takes another method (`GET` or `DELETE /mcp`) |
 | `PAYLOAD_TOO_LARGE` | 413 | The body, or the multipart parts, exceed their limit |
 | `UPLOAD_TOO_LARGE` | 413 | The upload exceeds its size limit |

@@ -22,6 +22,15 @@ jobs:
         with:
           node-version: '26'
 
+      # The CLI's checks (npm run check) and its binaries (the stage) need Go,
+      # at the version cli/go.mod names. The module has no dependency, so
+      # nothing to cache.
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+
       - name: Derive version + assert package.json matches
         id: ver
         run: |
@@ -74,11 +83,11 @@ jobs:
 
       # The gate: nothing is built, staged or published unless every check passes.
       - name: Check
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: npm run check
 
       # The release-shaped tree and its tarball, by the same script push.sh uses:
-      # it builds the frontend, stages what a host runs (an allowlist) and refuses a
+      # it builds the frontend and the CLI's binaries, stages what a host runs (an allowlist) and refuses a
       # tree holding anything else, or a tarball holding extended attributes or macOS litter.
       - name: Stage release tarball
         id: pack

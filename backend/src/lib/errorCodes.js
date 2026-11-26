@@ -45,6 +45,7 @@ export const ERROR_STATUS = Object.freeze({
   SSH_KEY_NOT_FOUND: 404,
   GITHUB_KEYS_NOT_FOUND: 404,
   CERTIFICATE_NOT_FOUND: 404,
+  CLI_NOT_AVAILABLE: 404,
 
   // 405 / 413 / 414 / 415: the framework refuses the request's form.
   METHOD_NOT_ALLOWED: 405,

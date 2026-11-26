@@ -19,6 +19,7 @@ import { getConfigSync } from './lib/config.js';
 import { compileRouteValidator } from './lib/schemaValidation.js';
 import { completeRouteSchema } from './routes/schemas.js';
 import authRoutes from './routes/auth.js';
+import cliRoutes from './routes/cli.js';
 import hostRoutes from './routes/host.js';
 import eventsRoutes from './routes/events.js';
 import libraryRoutes from './routes/library.js';
@@ -245,6 +246,7 @@ export async function buildApp(log) {
   await app.register(fastifyWebsocket);
 
   app.register(authRoutes, { prefix: '/api/auth' });
+  app.register(cliRoutes, { prefix: '/api' });
   app.register(hostRoutes, { prefix: '/api' });
   app.register(eventsRoutes, { prefix: '/api' });
   app.register(libraryRoutes, { prefix: '/api' });
