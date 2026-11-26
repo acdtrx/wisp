@@ -71,13 +71,14 @@ The header must carry `alg === 'HS256'` — any other value (including `none`) i
 |-------|--------------|----------|
 | `public` | anyone | `POST /api/auth/login`, the three OIDC routes, static assets + SPA shell |
 | `session` | browser session only — API tokens get **403** `SESSION_REQUIRED` | the rest of `/api/auth/*` (logout, change-password, token management), `PATCH /api/settings/oidc`, the `/ws` consoles |
-| `read` | session, or an API token of either scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
-| `admin` | session, or an `admin`-scoped API token; a `read` token gets **403** `SCOPE_INSUFFICIENT` | every mutation, plus GETs that return raw file content or make outbound requests |
-| `mcp` | API token only (either scope) — cookies ignored; per-tool scope in the MCP layer | `/mcp` |
+| `read` | session, or an API token of any scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
+| `agent` | session, or an `agent`- or `admin`-scoped API token; a `read` token gets **403** `SCOPE_INSUFFICIENT` | what building, running and updating a container takes ([§ The `agent` scope](#the-agent-scope)): create, lifecycle, config, the mounts kept on this host and their content, services, a container's backup, the image update check |
+| `admin` | session, or an `admin`-scoped API token; a `read` or `agent` token gets **403** `SCOPE_INSUFFICIENT` | every other mutation, plus GETs that make outbound requests |
+| `mcp` | API token only (any scope) — cookies ignored; per-tool scope in the MCP layer | `/mcp` |
 
 CSRF double-submit is a property of cookie auth on state-changing methods, independent of the level (see § CSRF protection).
 
-`read` is a deliberate per-route choice, governed by the read-token contract in [MCP.md](MCP.md) § Authentication: a read token must not recover a secret. GETs stay `admin` when their response could carry one — `GET /api/containers/:name/mounts/:mountName/content` (raw file content) — or when they are actions rather than reads: `GET /api/library/check-url` makes an outbound request on demand. The `API-*.md` area files tag every endpoint with its level; `npm run route-access` prints the live table (method, URL, level), exiting non-zero if any route is undeclared.
+`read` is a deliberate per-route choice, governed by the read-token contract in [MCP.md](MCP.md) § Authentication: a read token must not recover a secret. A GET whose response could carry one is above `read`: `GET /api/containers/:name/mounts/:mountName/content` (raw file content) is `agent`. A GET that is an action rather than a read is `admin`: `GET /api/library/check-url` makes an outbound request on demand. The `API-*.md` area files tag every endpoint with its level; `npm run route-access` prints the live table (method, URL, level), exiting non-zero if any route is undeclared.
 
 **Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — have the routes they add while they load marked `public`, and nothing else falls in that window.
 
@@ -124,7 +125,7 @@ expired session"** on every route the client calls. A route that rejects the req
 
 ## API tokens
 
-Scoped bearer tokens let non-interactive clients (coding agents, scripts, future MCP clients) call the REST API without the password + cookie + CSRF dance. They are managed in **Host → App Config → API tokens**.
+Scoped bearer tokens let non-interactive clients (coding agents, scripts, MCP clients) call the REST API without the password + cookie + CSRF dance. They are managed in **Host → App Config → API tokens**.
 
 ### Format and storage
 
@@ -135,14 +136,56 @@ Scoped bearer tokens let non-interactive clients (coding agents, scripts, future
 
 ### Scopes
 
+Three scopes, each holding the one before it:
+
 | Scope | Allowed |
 |-------|---------|
-| `read` | `read` and `mcp` routes. `admin` routes → **403** `SCOPE_INSUFFICIENT`. |
-| `admin` | `read`, `admin`, and `mcp` routes. |
+| `read` | `read` and `mcp` routes. `agent` and `admin` routes → **403** `SCOPE_INSUFFICIENT`. |
+| `agent` | `read`, `agent` and `mcp` routes, less what an `agent` route refuses from it ([below](#the-agent-scope)). `admin` routes → **403** `SCOPE_INSUFFICIENT`. |
+| `admin` | `read`, `agent`, `admin` and `mcp` routes. |
 
-On **`/mcp`** both scopes pass the route (MCP is JSON-RPC over POST, so the method says nothing about mutation); scope is enforced **per tool** in the MCP layer instead — see [MCP.md](MCP.md).
+On **`/mcp`** every scope passes the route (MCP is JSON-RPC over POST, so the method says nothing about mutation); scope is enforced **per tool** in the MCP layer instead — see [MCP.md](MCP.md).
 
-### Denied surfaces (both scopes)
+A token keeps the scope it was made with: there is no changing it, only revoking the token and making another.
+
+### The `agent` scope
+
+For a coding agent that builds, runs and updates containers. It cannot delete, cannot give a container more reach into the host, and cannot change a VM or the host. The token form preselects it.
+
+| Area | An `agent` token may |
+|------|----------------------|
+| Everything `read` has | Lists, masked details, stats, logs, jobs |
+| Containers | Create a generic container (it lands on the default bridge); start, stop, restart, kill |
+| Container config | Change the image, the command, the env (a secret value is write-only), the CPU and memory limits, the restart policy, start at boot, the scheduled backup, Local DNS, the icon |
+| App containers | Change an app's config, in the fields the app marks agent-writable ([CUSTOM-APPS.md](CUSTOM-APPS.md#backend-app-module-interface); today Caddy's sites) |
+| Mounts | Add and edit a folder, a file or a memory folder kept on this host; upload a file or a zip; write and read a file's content |
+| Services | Add, edit and remove the names a container announces |
+| Images | Check for updates; point a container at another image |
+| Backups | Take a backup of a container |
+
+| Area | Stays `admin` |
+|------|---------------|
+| Every delete | Containers, mounts, a mount's data, images, backups |
+| Restores and eject | Restoring a backup, ejecting an app |
+| A container's reach into the host | A mount backed by a storage share or drive, devices, running as root, the bridge and the MAC |
+| Containers | Renaming one; creating one from an app; an app's other fields |
+| VMs | Every change |
+| The host | Storage, bridges, power, OS updates, Wisp updates, settings, the certificate, the library, sections, the Home page |
+
+Token management, the consoles and sign-on stay out of every token's reach ([Denied surfaces](#denied-surfaces-every-scope)).
+
+- **A zip upload replaces a folder's content**, and an `agent` token may send one: it is how a site or a config folder is shipped.
+- **Reading a file mount's content** follows the one secret rule: a secret file mount is unreadable for every caller, any other file is readable. A file that holds a secret and is not marked secret is therefore readable with an `agent` token.
+
+**Narrowed requests.** An `agent` route may take less from an `agent` token than from a session or an `admin` token: a body key (`runAsRoot`), or a target (a mount backed by a storage share). Each route's entry in [API-CONTAINERS.md](API-CONTAINERS.md) lists what it refuses.
+
+- The refusal is **403** `SCOPE_INSUFFICIENT`, its `detail` naming the key or the reason.
+- It comes after the request passed its schema (a malformed request is **400** first) and before anything is written or a job starts.
+- The body keys a route refuses are declared in its options, beside its level, and one hook enforces them; `npm run route-access` prints them with the level. A refusal that depends on what is stored (the mount's backing, the app's writable fields) is made by the operation, which is told the caller's scope.
+
+**The scope is not a wall around the containers that exist.** An `agent` token may change the image, the command and the env of any container, one that runs as root or holds a device or a storage share included: what that container was given, the new image has.
+
+### Denied surfaces (every scope)
 
 `session` routes refuse every token with **403** `SESSION_REQUIRED`, before the token is even verified:
 

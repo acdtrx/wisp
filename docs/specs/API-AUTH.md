@@ -37,13 +37,13 @@ Scoped bearer tokens for non-interactive clients (coding agents, scripts). All t
 
 #### GET /api/auth/tokens · `session`
 
-- **200:** `[{ id, label, scope: "read" | "admin", createdAt }]` (never includes the hash or plaintext)
+- **200:** `[{ id, label, scope: "read" | "agent" | "admin", createdAt }]` (never includes the hash or plaintext)
 
 #### POST /api/auth/tokens · `session`
 
-- **Body:** `{ label: string (1–64), scope: "read" | "admin" }`
+- **Body:** `{ label: string (1–64), scope: "read" | "agent" | "admin" }`
 - **201:** `{ id, label, scope, createdAt, token }` — `token` (`wisp_<scope>_<random>`) is shown only in this response
-- **400:** `VALIDATION_FAILED` — a label of 0 or over 64 characters, a scope other than `read` / `admin`, or an unknown key (the body's schema)
+- **400:** `VALIDATION_FAILED` — a label of 0 or over 64 characters, a scope other than `read` / `agent` / `admin`, or an unknown key (the body's schema)
 - **422:** `TOKEN_INVALID` — a label of whitespace only
 
 #### DELETE /api/auth/tokens/:id · `session`

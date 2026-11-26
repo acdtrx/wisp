@@ -62,7 +62,7 @@ Delete a backup.
 - **400:** `VALIDATION_FAILED` — the body fails its schema, as for the restore
 - **422:** `BACKUP_INVALID` — an unknown `destinationId`, or a target that would resolve to a destination root (see [BACKUPS.md → Deleting a Backup](BACKUPS.md#deleting-a-backup))
 
-### POST /api/containers/:name/backup · `admin`
+### POST /api/containers/:name/backup · `agent`
 
 Start a container backup job (kind `container-backup`), on `GET /api/jobs/:jobId/progress`. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution, same SMB auto-mount behavior. The container does **not** need to be stopped: a running container is paused (cgroup freezer) for the duration of the archive and resumed automatically; stopped/created containers are archived cold. Manual backups record `origin: "manual"` in the manifest. Details in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
 

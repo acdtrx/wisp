@@ -36,7 +36,7 @@
   **`js-yaml`** for cloud-init YAML emission.
 - **Auth:** password login yielding `node:crypto`-signed session JWTs in cookies (no JWT
   library), optional library-less OIDC SSO layered on top (the password stays as backup —
-  the session secret derives from it), scoped bearer API tokens (read/admin) and the
+  the session secret derives from it), scoped bearer API tokens (read/agent/admin) and the
   `/mcp` endpoint for agents. Contract: [specs/AUTH.md](specs/AUTH.md).
 - **No database**: state is libvirt domain XML and JSON files (`ARCHITECTURE.md`, State).
 - **SSE** for server→client updates. The client reads it through its own fetch-based

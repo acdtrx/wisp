@@ -16,9 +16,10 @@ Every endpoint heading carries its **access level** — declared on the route it
 |-------|--------------|
 | `public` | anyone — login, the OIDC routes, static assets + SPA shell |
 | `session` | browser session only; API tokens get **403 Session required** |
-| `read` | session, or an API token of either scope |
-| `admin` | session, or an `admin`-scoped token (a `read` token gets **403 Insufficient scope**) |
-| `mcp` | API token only (either scope); cookies are ignored |
+| `read` | session, or an API token of any scope |
+| `agent` | session, or an `agent`- or `admin`-scoped token (a `read` token gets **403** `SCOPE_INSUFFICIENT`); an entry may keep a part of the route `admin` ([AUTH.md → The `agent` scope](AUTH.md#the-agent-scope)) |
+| `admin` | session, or an `admin`-scoped token (a `read` or `agent` token gets **403** `SCOPE_INSUFFICIENT`) |
+| `mcp` | API token only (any scope); cookies are ignored |
 
 Credentials:
 
@@ -220,7 +221,7 @@ A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-
 
 ### POST /mcp · `mcp`
 
-Model Context Protocol endpoint (streamable HTTP, stateless, JSON-RPC 2.0) exposing read-only inspection tools to coding agents. **Bearer API tokens only** — cookies are ignored, so the endpoint is CSRF-irrelevant; missing/invalid tokens get 401 with `WWW-Authenticate: Bearer`. Either token scope passes the route; scope is enforced per tool. `GET /mcp` and `DELETE /mcp` return 405. Full protocol subset, tool catalogue, and client registration in [MCP.md](MCP.md).
+Model Context Protocol endpoint (streamable HTTP, stateless, JSON-RPC 2.0) exposing inspection tools, and a few that deploy and run containers, to coding agents. **Bearer API tokens only** — cookies are ignored, so the endpoint is CSRF-irrelevant; missing/invalid tokens get 401 with `WWW-Authenticate: Bearer`. Any token scope passes the route; scope is enforced per tool. `GET /mcp` and `DELETE /mcp` return 405. Full protocol subset, tool catalogue, and client registration in [MCP.md](MCP.md).
 
 ---
 

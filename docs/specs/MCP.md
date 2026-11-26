@@ -14,7 +14,7 @@ Streamable HTTP in **stateless, single-JSON-response mode** (permitted by the MC
 | `notifications/*` (any message without an `id`) | Accepted with **202**, no body |
 | `ping` | `{}` |
 | `tools/list` | Tool catalogue **filtered to what the token's scope can call** (no pagination — the list is small) |
-| `tools/call` | Runs the tool; success returns `structuredContent` (JSON) plus a stringified `text` content block; a tool failure returns `isError: true` with the [error body](ERROR-HANDLING.md#the-error-body) `{ error, detail }` (`error` the code, `detail` the message, redacted) as `structuredContent` and as the `text` block. A `read` token calling an admin tool fails with `SCOPE_INSUFFICIENT`. Arguments that fail the tool's `inputSchema` fail with `VALIDATION_FAILED` before the tool runs ([argument validation](#argument-validation)). An unknown tool is JSON-RPC error `-32602` |
+| `tools/call` | Runs the tool; success returns `structuredContent` (JSON) plus a stringified `text` content block; a tool failure returns `isError: true` with the [error body](ERROR-HANDLING.md#the-error-body) `{ error, detail }` (`error` the code, `detail` the message, redacted) as `structuredContent` and as the `text` block. A `read` token calling an `agent` tool fails with `SCOPE_INSUFFICIENT`. Arguments that fail the tool's `inputSchema` fail with `VALIDATION_FAILED` before the tool runs ([argument validation](#argument-validation)). An unknown tool is JSON-RPC error `-32602` |
 | anything else | JSON-RPC error `-32601` |
 
 JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18). Malformed JSON is rejected by Fastify's body parser before reaching the MCP layer.
@@ -27,9 +27,9 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 
 `/mcp` accepts **only bearer API tokens** ([AUTH.md](AUTH.md) § API tokens). Cookies are ignored entirely, which also makes the endpoint CSRF-irrelevant. A missing or invalid token gets **401** with `WWW-Authenticate: Bearer`; invalid tokens feed the shared per-IP auth rate limit.
 
-**Scope model:** `/mcp` is an `mcp`-level route ([AUTH.md](AUTH.md) § Route access levels) — either token scope passes the HTTP layer, because MCP is JSON-RPC over POST and the HTTP method says nothing about mutation. Instead each tool declares a required scope; `tools/list` hides tools above the token's scope and `tools/call` double-checks.
+**Scope model:** `/mcp` is an `mcp`-level route ([AUTH.md](AUTH.md) § Route access levels) — any token scope passes the HTTP layer, because MCP is JSON-RPC over POST and the HTTP method says nothing about mutation. Instead each tool declares the scope it needs, `read` or `agent`; `tools/list` hides tools above the token's scope and `tools/call` double-checks.
 
-**Read-token contract:** a `read` token can never recover a secret, on either surface it reaches. MCP tool output is masked (below); on the REST API a route is `read` only when its response carries no secret material — anything that could (raw mount file content) is `admin`, and token management is `session`.
+**Read-token contract:** a `read` token can never recover a secret, on either surface it reaches. MCP tool output is masked (below); on the REST API a route is `read` only when its response carries no secret material — anything that could (raw mount file content) is `agent` or `admin`, and token management is `session`.
 
 ## Tools — read scope
 
@@ -45,11 +45,11 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 | `get_host_hardware` | — | Static inventory: CPU topology, DMI, RAM modules, disks + SMART, PCI, GPUs |
 | `get_job` | `{ jobId }` | Any job, whatever started it (a tool, a REST route, the scheduler, an hourly check), read from the one job store ([API.md → Background jobs](API.md#background-jobs)): `{ jobId, kind, title, subject, status, createdAt }` — the fields of a `GET /api/jobs` row — with `status` `running` (plus `progress`, the latest event), `done` (plus `result`, the job's result) or `error` (plus the error body's `error`, the code, and `detail`, the message), or `cancelled` (an update check cut by a shutdown, nothing more). A finished job is readable for 5 minutes; an unknown or expired id fails with `JOB_NOT_FOUND` |
 
-Tool handlers call the same facades and glue as the REST routes and go through the same masking — no tool output ever contains a secret. A container or VM name in a tool's arguments is checked by the same name schema as the REST routes' ([argument validation](#argument-validation)) before any path-derived read. Each container command is the container operation the REST routes call (settled 2026-11-20), its [operation lock](CONTAINERS.md#per-container-operation-lock) and follow-ups included — `deploy_container`'s settings are applied as a configuration update, as a `PATCH` applies them — so one that meets a running backup, restore, start or edit fails with `CONTAINER_BUSY` (the message names the running operation). There is no mount-content tool. The same token also reaches the REST API ([AUTH.md](AUTH.md) § API tokens), whose one raw-content read of mount files — `GET /api/containers/:name/mounts/:mountName/content` — is `admin`, so a `read` token cannot reach it at all; and for every caller, admin and session included, it refuses secret file mounts (403 `CONTAINER_MOUNT_SECRET`: a generic container's mount marked secret, or a file an app declares secret such as tiny-samba passwords or zot `htpasswd`; see [API-CONTAINERS.md](API-CONTAINERS.md) and [CONTAINERS.md § Secret file mounts](CONTAINERS.md#secret-file-mounts)). Non-secret files (a Caddyfile) stay readable to admin tokens and sessions.
+Tool handlers call the same facades and glue as the REST routes and go through the same masking — no tool output ever contains a secret. A container or VM name in a tool's arguments is checked by the same name schema as the REST routes' ([argument validation](#argument-validation)) before any path-derived read. Each container command is the container operation the REST routes call (settled 2026-11-20), its [operation lock](CONTAINERS.md#per-container-operation-lock) and follow-ups included — `deploy_container`'s settings are applied as a configuration update, as a `PATCH` applies them — so one that meets a running backup, restore, start or edit fails with `CONTAINER_BUSY` (the message names the running operation). There is no mount-content tool. The same token also reaches the REST API ([AUTH.md](AUTH.md) § API tokens), whose one raw-content read of mount files — `GET /api/containers/:name/mounts/:mountName/content` — is `agent`, so a `read` token cannot reach it at all; and for every caller, admin and session included, it refuses secret file mounts (403 `CONTAINER_MOUNT_SECRET`: a generic container's mount marked secret, or a file an app declares secret such as tiny-samba passwords or zot `htpasswd`; see [API-CONTAINERS.md](API-CONTAINERS.md) and [CONTAINERS.md § Secret file mounts](CONTAINERS.md#secret-file-mounts)). Non-secret files (a Caddyfile) stay readable to `agent` and `admin` tokens and to sessions.
 
-## Tools — admin scope (mutating)
+## Tools — agent scope (mutating)
 
-Deliberately a **subset** of the REST API: agents get deploy, image update, lifecycle, and a filtered app-config surface.
+Deliberately a **subset** of the REST API: agents get deploy, image update, lifecycle, and a filtered app-config surface. An `agent` token calls them, and an `admin` one. Over the REST API the same `agent` token reaches more: env edits, mounts and their content, services ([AUTH.md → The `agent` scope](AUTH.md#the-agent-scope)).
 
 **Job-backed tools (settled 2026-11-13).** `deploy_container`, `update_container_image`, `start_container` / `stop_container` / `restart_container` and `check_image_updates` run as server jobs, as their REST counterparts do: the tool answers its checks at once (validation, a taken name, not found, busy, already running / not running — a tool error as usual), then starts the job and returns `{ jobId, kind, title, subject }`. The agent reads it with `get_job` until its status is no longer `running`; the job's `result` is the operation's outcome, listed per tool below. The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) throughout (deploy holds the new name's), so a busy container is refused at once, never as a failed job. The lifecycle jobs are the same ones the REST routes start. **Never exposed via MCP:** the host's certificate setting, container deletes, mounts, devices, `runAsRoot`, app-template creation, env edits on existing containers, VM mutations, host power/updates, settings, token management.
 
@@ -63,7 +63,7 @@ Deliberately a **subset** of the REST API: agents get deploy, image update, life
 
 ### Agent-writable app config
 
-Each app module may export `agentWritableAppConfigFields` — the top-level appConfig keys `update_app_config` accepts. The filter exists so an agent can extend an app's config without being able to break it: secrets, certificate identity, and auth settings are structurally out of reach, not just discouraged.
+Each app module may export `agentWritableAppConfigFields` — the top-level appConfig keys `update_app_config` accepts, and a `PATCH` from an `agent` token with them ([API-CONTAINERS.md](API-CONTAINERS.md#patch-apicontainersname--agent)). The filter exists so an agent can extend an app's config without being able to break it: secrets, certificate identity, and auth settings are structurally out of reach, not just discouraged.
 
 | App | Agent-writable | Human-only (examples) |
 |-----|----------------|----------------------|
@@ -79,10 +79,10 @@ The typical agent flow for exposing a freshly deployed service: `get_container` 
 # Claude Code (user scope — available in every project)
 claude mcp add --scope user --transport http wisp \
   https://<wisp-host>/mcp \
-  --header "Authorization: Bearer wisp_read_…"
+  --header "Authorization: Bearer wisp_agent_…"
 ```
 
-Any streamable-HTTP MCP client works the same way: point it at `https://<wisp-host>/mcp` with the `Authorization` header. Create the token in **Host → App Config → API tokens** — `read` scope for inspection-only agents, `admin` to also allow the mutating tools. TLS comes from the reverse proxy in front of Wisp; on the LAN, `http://<host>:8080/mcp` works too.
+Any streamable-HTTP MCP client works the same way: point it at `https://<wisp-host>/mcp` with the `Authorization` header. Create the token in **Host → App Config → API tokens** — `read` scope for inspection-only agents, `agent` to also allow the mutating tools. TLS comes from the reverse proxy in front of Wisp; on the LAN, `http://<host>:8080/mcp` works too.
 
 ## Design rules
 

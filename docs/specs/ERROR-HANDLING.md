@@ -108,7 +108,7 @@ client-side route.
 | No session cookie, or no bearer token on `/mcp` | **401** `AUTH_REQUIRED` |
 | An invalid or expired session, or an unknown bearer token | **401** `AUTH_INVALID` |
 | A bearer token on a `session` route | **403** `SESSION_REQUIRED` |
-| A `read` token on an `admin` route or tool | **403** `SCOPE_INSUFFICIENT` |
+| A token whose scope is below the route's or the tool's, or an `agent` token sending a part of an `agent` route that stays `admin` | **403** `SCOPE_INSUFFICIENT` |
 | A state-changing request whose CSRF header is missing or wrong | **403** `CSRF_FAILED` |
 | Wrong password at login | **401** `LOGIN_FAILED` |
 | Wrong current password on change-password | **422** `INVALID_PASSWORD` |
@@ -169,7 +169,7 @@ Each code a client can receive, with its status.
 | `AUTH_INVALID` | 401 | The session is invalid or expired, or the bearer token is unknown |
 | `LOGIN_FAILED` | 401 | Wrong password at login |
 | `SESSION_REQUIRED` | 403 | An API token on a route only a browser session may call |
-| `SCOPE_INSUFFICIENT` | 403 | A `read` token on an `admin` route or MCP tool |
+| `SCOPE_INSUFFICIENT` | 403 | The token's scope is below what the route, the MCP tool or the part of the request needs |
 | `CSRF_FAILED` | 403 | A state-changing request without the matching CSRF header |
 | `OIDC_SESSION_ONLY` | 403 | An `oidc` key in `PATCH /api/settings`: SSO settings change only through the session route |
 | `CONTAINER_MOUNT_SECRET` | 403 | Raw content of a secret file mount was asked for |
