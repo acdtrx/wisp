@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -157,5 +158,32 @@ func TestADownloadCutShortIsAnError(t *testing.T) {
 	var dst bytes.Buffer
 	if _, err := New(srv.URL, "", "v").Download(context.Background(), "/bin", &dst); err == nil {
 		t.Fatal("a short download taken whole")
+	}
+}
+
+func TestARedirectIsNeverFollowed(t *testing.T) {
+	var reached atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached.Add(1)
+		fmt.Fprint(w, `{"version":"1","platforms":[]}`)
+	}))
+	defer target.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer redirector.Close()
+	c := New(redirector.URL, "wisp_agent_secret", "v")
+	var notWisp *NotWispError
+	if _, err := c.Get(context.Background(), "/api/cli", nil); !errors.As(err, &notWisp) || notWisp.Status != 302 || !strings.Contains(err.Error(), "redirects") {
+		t.Fatalf("get: %v", err)
+	}
+	if err := c.Stream(context.Background(), "/s", nil, func([]byte) (bool, error) { return true, nil }); !errors.As(err, &notWisp) {
+		t.Fatalf("stream: %v", err)
+	}
+	if _, err := c.Download(context.Background(), "/bin", &bytes.Buffer{}); !errors.As(err, &notWisp) {
+		t.Fatalf("download: %v", err)
+	}
+	if reached.Load() != 0 {
+		t.Fatalf("the redirect was followed %d times", reached.Load())
 	}
 }

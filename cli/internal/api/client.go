@@ -98,7 +98,11 @@ func New(base, token, version string) *Client {
 		ForceAttemptHTTP2:     true,
 	}
 	return &Client{
-		base: strings.TrimRight(base, "/"), token: token, version: version, http: &http.Client{Transport: transport},
+		base: strings.TrimRight(base, "/"), token: token, version: version,
+		// Wisp's API never redirects: a redirect is answered as it came, and
+		// refused as not a Wisp's, so neither the token nor the address check
+		// ever follows one to another server, scheme or port.
+		http:           &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		requestTimeout: requestTimeout, streamIdle: streamIdle, downloadIdle: downloadIdle,
 	}
 }
@@ -161,7 +165,7 @@ func (c *Client) Get(ctx context.Context, path string, query url.Values) ([]byte
 		return nil, fmt.Errorf("the answer of %s is over %d bytes", c.url(path, query), maxResponseBytes)
 	}
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, refusal(c.url(path, query), res.StatusCode, body)
+		return nil, refusal(c.url(path, query), res, body)
 	}
 	return body, nil
 }
@@ -180,7 +184,11 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, v a
 
 // refusal turns a non-2xx answer into an *Error when it carries Wisp's error
 // body, else a *NotWispError.
-func refusal(u string, status int, body []byte) error {
+func refusal(u string, res *http.Response, body []byte) error {
+	status := res.StatusCode
+	if status >= 300 && status < 400 {
+		return &NotWispError{URL: u, Status: status, Reason: fmt.Sprintf("it redirects to %q, and a Wisp's API never redirects", res.Header.Get("Location"))}
+	}
 	var parsed struct {
 		Error  *string `json:"error"`
 		Detail string  `json:"detail"`

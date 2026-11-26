@@ -32,7 +32,7 @@ func (c *Client) Stream(ctx context.Context, path string, query url.Values, onEv
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes)) // a refusal's body: whatever arrived is what there is to show
-		return refusal(u, res.StatusCode, body)
+		return refusal(u, res, body)
 	}
 	reader := bufio.NewReader(idleReader{r: res.Body, w: watch})
 	var data bytes.Buffer
@@ -99,7 +99,7 @@ func (c *Client) Download(ctx context.Context, path string, dst io.Writer) (int6
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes)) // a refusal's body: whatever arrived is what there is to show
-		return 0, refusal(u, res.StatusCode, body)
+		return 0, refusal(u, res, body)
 	}
 	n, err := io.Copy(dst, idleReader{r: res.Body, w: watch})
 	if err != nil {

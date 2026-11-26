@@ -229,3 +229,21 @@ func TestALoginAcrossVersionsSavesAndSaysToUpdate(t *testing.T) {
 		t.Fatalf("stderr %q", r.stderr.String())
 	}
 }
+
+func TestLoginNeverFollowsARedirect(t *testing.T) {
+	f := newFakeWisp(t, "1.0.0")
+	f.tokens["wisp_agent_secret"] = true
+	redirector := newFakeWisp(t, "1.0.0")
+	redirector.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, f.URL+r.URL.Path, http.StatusMovedPermanently)
+	})
+	r := newRun(t)
+	r.stdin = "wisp_agent_secret\n"
+	r.do("login", redirector.URL).wantCode(1)
+	if f.requestCount() != 0 || !strings.Contains(r.stderr.String(), "redirects") {
+		t.Fatalf("%d requests reached the redirect's target; stderr %q", f.requestCount(), r.stderr.String())
+	}
+	if _, err := os.Stat(r.configFile()); err == nil {
+		t.Fatal("a config was written")
+	}
+}
