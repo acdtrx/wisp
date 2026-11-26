@@ -5,7 +5,6 @@ import { getRawApiTokens, withSettingsWriteLock } from './settings.js';
 import { createEmitter } from './base/index.js';
 import { log } from './log.js';
 
-export const API_TOKEN_SCOPES = ['read', 'admin'];
 const TOKEN_RANDOM_BYTES = 32;
 const LABEL_MAX_LENGTH = 64;
 
@@ -32,18 +31,16 @@ export async function listApiTokens() {
 }
 
 /**
- * Mint a new token. The plaintext is returned exactly once and never stored —
- * only its SHA-256 hash lands in wisp-config.json. The scope embedded in the
- * token prefix is cosmetic (readability in agent configs); the stored record
- * is authoritative.
+ * Mint a new token of `scope` (one of API_TOKEN_SCOPES: the route's schema
+ * holds it). The plaintext is returned exactly once and never stored — only
+ * its SHA-256 hash lands in wisp-config.json. The scope embedded in the token
+ * prefix is cosmetic (readability in agent configs); the stored record is
+ * authoritative.
  */
 export async function createApiToken(label, scope) {
   const trimmed = typeof label === 'string' ? label.trim() : '';
   if (!trimmed || trimmed.length > LABEL_MAX_LENGTH) {
     throw createAppError('TOKEN_INVALID', `Token label must be 1-${LABEL_MAX_LENGTH} characters`);
-  }
-  if (!API_TOKEN_SCOPES.includes(scope)) {
-    throw createAppError('TOKEN_INVALID', 'Token scope must be "read" or "admin"');
   }
   const token = `wisp_${scope}_${randomBytes(TOKEN_RANDOM_BYTES).toString('base64url')}`;
   const entry = {

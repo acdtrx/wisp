@@ -57,3 +57,9 @@ test('the certificate setting is read strictly: null, or a lowercase domain and 
     assert.equal(refused(() => parseWispConfig({ certificate: bad })), 'CONFIG_INVALID', JSON.stringify(bad));
   }
 });
+
+test('the strict read takes a token of each of the three scopes, and stops on another, naming the key', () => {
+  const token = (scope) => ({ apiTokens: [{ id: 't', label: 'x', scope, tokenHash: 'a'.repeat(64), createdAt: '2026-01-01T00:00:00.000Z' }] });
+  for (const scope of ['read', 'agent', 'admin']) assert.equal(parseWispConfig(token(scope)).apiTokens[0].scope, scope);
+  assert.throws(() => parseWispConfig(token('owner')), /wisp-config\.json → apiTokens\[0\]\.scope: must be one of "read", "agent", "admin"/);
+});

@@ -317,7 +317,7 @@ export default async function containerRoutes(fastify) {
   // A job, the image pull included. Only the create contract's fields reach
   // the operation: app creation fills in env, mounts and metadata itself.
   fastify.post('/containers', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       body: {
         type: 'object',
@@ -397,7 +397,7 @@ export default async function containerRoutes(fastify) {
   // image covers one image; one image never covers every image). No body, or
   // an empty `ref`, checks every image.
   fastify.post('/containers/images/check-updates', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       body: {
         type: 'object',
@@ -478,7 +478,7 @@ export default async function containerRoutes(fastify) {
   // rename included (a body `name` other than the URL's runs first, the rest
   // applies under the new name).
   fastify.patch('/containers/:name', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: nameParams, body: containerPatchSchema, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       const body = request.body;
@@ -539,7 +539,7 @@ export default async function containerRoutes(fastify) {
   ];
   for (const { path, start } of lifecycleJobs) {
     fastify.post(`/containers/:name/${path}`, {
-      config: { auth: 'admin' },
+      config: { auth: 'agent' },
       schema: { params: nameParams, response: { 202: jobAckSchema } },
       handler: async (request, reply) => {
         return reply.code(202).send(await start({ name: request.params.name, log: request.log }));
@@ -548,7 +548,7 @@ export default async function containerRoutes(fastify) {
   }
 
   fastify.post('/containers/:name/kill', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: nameParams, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await killContainerNow(request.params.name);
@@ -559,7 +559,7 @@ export default async function containerRoutes(fastify) {
   // Works on running containers too: the task is paused for the archive and
   // resumed (createContainerBackup → freezeForBackup).
   fastify.post('/containers/:name/backup', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: nameParams, body: backupBodySchema, response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startContainerBackupJob({
@@ -702,7 +702,7 @@ export default async function containerRoutes(fastify) {
 
   // ── Mount definitions (row-scoped) ──────────────────────────────
   fastify.post('/containers/:name/mounts', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: nameParams, body: mountBodySchema, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await addContainerMountRow(request.params.name, request.body);
@@ -711,7 +711,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.patch('/containers/:name/mounts/:mountName', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       params: mountParams,
       body: { type: 'object', properties: mountFields, additionalProperties: false },
@@ -740,7 +740,7 @@ export default async function containerRoutes(fastify) {
   // reply comes right after the upload, and every rejection leaves the mount
   // as it was.
   fastify.post('/containers/:name/mounts/:mountName/file', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: mountParams, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       const { name, mountName } = request.params;
@@ -765,7 +765,7 @@ export default async function containerRoutes(fastify) {
   // Not found, app-managed, a mount that takes no zip, an invalid or unsafe
   // archive and busy are answered here.
   fastify.post('/containers/:name/mounts/:mountName/zip', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: mountParams, response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const { name, mountName } = request.params;
@@ -788,7 +788,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.get('/containers/:name/mounts/:mountName/content', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       params: mountParams,
       response: { 200: { type: 'object', properties: { content: { type: 'string' } }, additionalProperties: false } },
@@ -807,7 +807,7 @@ export default async function containerRoutes(fastify) {
   fastify.put('/containers/:name/mounts/:mountName/content', {
     bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT,
     ...bodyWatchHooks,
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       params: mountParams,
       body: {
@@ -826,7 +826,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.post('/containers/:name/mounts/:mountName/init', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: mountParams, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await initContainerMountContent(request.params.name, request.params.mountName);
@@ -847,7 +847,7 @@ export default async function containerRoutes(fastify) {
 
   // ── mDNS service advertisements (row-scoped, keyed by port) ─────
   fastify.post('/containers/:name/services', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       params: nameParams,
       body: {
@@ -865,7 +865,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.patch('/containers/:name/services/:port', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: {
       params: serviceParams,
       body: {
@@ -883,7 +883,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.delete('/containers/:name/services/:port', {
-    config: { auth: 'admin' },
+    config: { auth: 'agent' },
     schema: { params: serviceParams, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       const { name, port } = request.params;

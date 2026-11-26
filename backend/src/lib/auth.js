@@ -7,6 +7,7 @@ import { writeFileAtomic } from './base/index.js';
 import { CONFIG_PATH } from './config.js';
 import { parseCookieHeader, appendSetCookie, buildSetCookie } from './cookies.js';
 import { verifyApiToken } from './apiTokens.js';
+import { scopeCovers } from './apiTokenScopes.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from './loginRateLimit.js';
 
 // Beside the config file, wherever WISP_CONFIG_PATH puts it, as the migration
@@ -159,14 +160,19 @@ export async function setPassword(newPassword) {
  *   public  — anyone (login, OIDC start/callback/status, static assets + SPA shell)
  *   session — browser session only; API tokens refused (/api/auth/*, consoles)
  *   read    — session, or an API token of any scope (GETs exposing no secrets)
+ *   agent   — session, or an agent- or admin-scoped API token (building,
+ *             running and updating containers)
  *   admin   — session, or an admin-scoped API token
  *   mcp     — API token only (any scope); per-tool scope is the MCP layer's job
+ *
+ * `read`, `agent` and `admin` are also token scopes, in that order: a token
+ * passes such a route when its scope covers the level (lib/apiTokenScopes.js).
  *
  * A route that declares nothing, or an unknown level, is treated as `admin`:
  * fail closed. Development refuses to boot with such a route
  * (`checkRouteAccess`), so the default only ever applies in production.
  */
-export const AUTH_LEVELS = Object.freeze(['public', 'session', 'read', 'admin', 'mcp']);
+export const AUTH_LEVELS = Object.freeze(['public', 'session', 'read', 'agent', 'admin', 'mcp']);
 const AUTH_LEVEL_SET = new Set(AUTH_LEVELS);
 const UNDECLARED_AUTH_LEVEL = 'admin';
 
@@ -272,12 +278,19 @@ function timingSafeEqualString(a, b) {
 
 /**
  * Bearer API tokens authenticate non-interactive clients (agents, scripts) on
- * `read`, `admin`, and `mcp` routes. `session` routes (consoles, everything
+ * `read`, `agent`, `admin`, and `mcp` routes. `session` routes (consoles, everything
  * under /api/auth) refuse them before the token is even checked, so a leaked
  * token can never open a shell, change the password, or mint more tokens.
  * Bearer requests skip the CSRF check on purpose: double-submit defends
  * against ambient cookie credentials, which a bearer request doesn't carry.
  */
+/** Which tokens a route of each token-reachable level takes, for its refusal. */
+const LEVEL_TOKENS = Object.freeze({
+  read: 'an API token',
+  agent: 'an agent- or admin-scoped token',
+  admin: 'an admin-scoped token',
+});
+
 /** The challenge `/mcp` answers a missing or invalid token with (MCP.md, Authentication). */
 const MCP_AUTHENTICATE = 'Bearer realm="wisp"';
 
@@ -295,10 +308,10 @@ async function handleBearerAuth(request, reply, token, level) {
     if (level === 'mcp') reply.header('WWW-Authenticate', MCP_AUTHENTICATE);
     throw createAppError('AUTH_INVALID', 'Invalid API token');
   }
-  // `read` and `mcp` routes accept either scope — on /mcp the MCP layer gates
-  // each tool by scope, since JSON-RPC over POST says nothing about mutation.
-  if (level === 'admin' && info.scope !== 'admin') {
-    throw createAppError('SCOPE_INSUFFICIENT', 'This route requires an admin-scoped token');
+  // `mcp` routes accept every scope — the MCP layer gates each tool by scope,
+  // since JSON-RPC over POST says nothing about mutation.
+  if (level !== 'mcp' && !scopeCovers(info.scope, level)) {
+    throw createAppError('SCOPE_INSUFFICIENT', `This route needs ${LEVEL_TOKENS[level]}; this token is ${info.scope}-scoped`);
   }
   request.user = { via: 'token', tokenId: info.id, label: info.label, scope: info.scope };
 }

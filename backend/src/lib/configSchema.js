@@ -17,6 +17,7 @@
 import { isIP } from 'node:net';
 import path from 'node:path';
 
+import { API_TOKEN_SCOPES } from './apiTokenScopes.js';
 import { createAppError } from './appErrors.js';
 import { MAX_SSH_KEYS, MAX_SSH_KEY_NAME, readSshKey, validSshKeyName } from './sshKeys.js';
 
@@ -44,7 +45,6 @@ export const MAX_CERTIFICATE_DOMAIN = 253 - '_acme-challenge.'.length;
 
 export const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
 const BACKUP_SCHEDULE_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const API_TOKEN_SCOPES = new Set(['read', 'admin']);
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 // proxy-addr (Fastify's trustProxy backend) accepts these named ranges.
 const NAMED_PROXY_RANGES = new Set(['loopback', 'linklocal', 'uniquelocal']);
@@ -566,7 +566,9 @@ function parseApiTokens(arr) {
     const id = expectId(t.id, `${where}.id`);
     if (seen.has(id)) throw configInvalid(`${where}.id`, `duplicate id "${id}"`);
     seen.add(id);
-    if (!API_TOKEN_SCOPES.has(t.scope)) throw configInvalid(`${where}.scope`, 'must be "read" or "admin"');
+    if (!API_TOKEN_SCOPES.includes(t.scope)) {
+      throw configInvalid(`${where}.scope`, `must be one of ${API_TOKEN_SCOPES.map((s) => `"${s}"`).join(', ')}`);
+    }
     if (typeof t.tokenHash !== 'string' || !SHA256_HEX_RE.test(t.tokenHash)) {
       throw configInvalid(`${where}.tokenHash`, 'must be a SHA-256 hex digest');
     }

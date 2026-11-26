@@ -1,23 +1,43 @@
 import { useState } from 'react';
-import { KeyRound, Plus, Check, X, Trash2 } from 'lucide-react';
+import { KeyRound, Plus, X, Trash2 } from 'lucide-react';
 
 import Card from '../shared/Card.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import FormModal from '../shared/FormModal.jsx';
+import { FormField } from '../shared/FormModalChrome.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
 import { DataTableScroll, DataTable, DataTableTh, DataTableTd, DataTableRowActions, dataTableHeadRowClass, dataTableBodyRowClass, dataTableEmptyCellClass } from '../shared/DataTableChrome.jsx';
 import { createApiToken, deleteApiToken } from '../../api/authTokens.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useCommand } from '../../hooks/useCommand.js';
+import { useEditor } from '../../hooks/useEditor.js';
 import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import IconButton from '../shared/IconButton.jsx';
 import CopyButton from '../shared/CopyButton.jsx';
 
 const HELP =
-  'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
-  'only GET; admin tokens can change state. Tokens cannot open consoles, change the password, ' +
-  'change SSO settings, or manage other tokens. The token value is shown once at creation — only a hash is stored.';
+  'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens see everything ' +
+  'and change nothing; agent tokens also build, run and update containers; admin tokens can do everything ' +
+  'a token can. Tokens cannot open consoles, change the password, change SSO settings, or manage other ' +
+  'tokens. The token value is shown once at creation — only a hash is stored.';
+
+const LABEL_MAX = 64;
+
+/* The three scopes, in their order, each with what it allows (docs/specs/AUTH.md, Scopes). */
+const SCOPES = [
+  { value: 'read', label: 'Read-only', detail: 'See everything, change nothing.' },
+  { value: 'agent', label: 'Agent', detail: 'Build, run and update containers; no deletes, no VMs, no host.' },
+  { value: 'admin', label: 'Admin', detail: 'Everything a token can do.' },
+];
+
+const SCOPE_BADGE = {
+  read: { text: 'read-only', className: 'border border-surface-border bg-surface text-text-muted' },
+  agent: { text: 'agent', className: 'bg-accent-soft text-accent-text' },
+  admin: { text: 'admin', className: 'bg-status-warning-soft text-status-warning' },
+};
 
 function formatCreated(iso) {
   if (!iso) return '—';
@@ -29,40 +49,12 @@ export default function ApiTokensSettings() {
   /* The tokens, read again on a create or revoke from any tab. */
   const tokensRecord = useRecord(RECORD.TOKENS);
   const tokens = tokensRecord.data;
-  /* Create, and each token's revoke (keyed by its id): separate commands, each with
-   * its own error in the section. */
-  const create = useCommand();
+  /* Each token's revoke, keyed by its id, with its error in the card. */
   const revoke = useCommand();
-  const [adding, setAdding] = useState(false);
-  const [newLabel, setNewLabel] = useState('');
-  const [newScope, setNewScope] = useState('read');
-  const creating = create.busy;
+  const [creating, setCreating] = useState(false);
   // { label, token } — shown once after a successful create, until dismissed.
   const [minted, setMinted] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-
-  const openAdd = () => {
-    setNewLabel('');
-    setNewScope('read');
-    setAdding(true);
-  };
-
-  const cancelAdd = () => {
-    setAdding(false);
-    setNewLabel('');
-  };
-
-  const handleCreate = () => {
-    if (!newLabel.trim()) return;
-    /* The secret is shown once, from the 201; the list row arrives with the cue. */
-    create.run(() => createApiToken({ label: newLabel.trim(), scope: newScope }), {
-      onDone: (created) => {
-        setMinted({ label: created.label, token: created.token });
-        setAdding(false);
-        setNewLabel('');
-      },
-    });
-  };
 
   /* The confirm closes at once; the token's row shows the revoke in flight. */
   const handleDelete = () => {
@@ -73,7 +65,7 @@ export default function ApiTokensSettings() {
   };
 
   const headerAdd = (
-    <IconButton icon={Plus} kindIcon={KeyRound} label="Create API token" variant="primary" onClick={openAdd} />
+    <IconButton icon={Plus} kindIcon={KeyRound} label="Create API token" variant="primary" onClick={() => setCreating(true)} />
   );
 
   return (
@@ -81,8 +73,8 @@ export default function ApiTokensSettings() {
       title="API tokens"
       icon={<KeyRound size={14} />}
       help={HELP}
-      commands={[create, revoke]}
-      errorPrefix={(key, command) => (command === create ? "Couldn't create the token" : `Couldn't revoke ${tokens?.find((t) => t.id === key)?.label ?? 'the token'}`)}
+      commands={[revoke]}
+      errorPrefix={(key) => `Couldn't revoke ${tokens?.find((t) => t.id === key)?.label ?? 'the token'}`}
       actions={headerAdd}
     >
       <div className="space-y-4">
@@ -122,40 +114,7 @@ export default function ApiTokensSettings() {
                 </tr>
               </thead>
               <tbody>
-                {adding && (
-                  <tr className={dataTableBodyRowClass}>
-                    <DataTableTd dense>
-                      <input
-                        type="text"
-                        value={newLabel}
-                        onChange={(e) => setNewLabel(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
-                        placeholder="claude-code"
-                        maxLength={64}
-                        ref={autoFocusField}
-                        className="input-field placeholder:text-text-muted"
-                      />
-                    </DataTableTd>
-                    <DataTableTd dense>
-                      <select
-                        value={newScope}
-                        onChange={(e) => setNewScope(e.target.value)}
-                        className="input-field"
-                      >
-                        <option value="read">Read-only</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </DataTableTd>
-                    <DataTableTd dense className="hidden sm:table-cell text-text-muted">—</DataTableTd>
-                    <DataTableTd dense align="right">
-                      <DataTableRowActions forceVisible>
-                        <IconButton icon={Check} label="Create token" variant="primary" size="sm" busy={creating} disabled={!newLabel.trim()} onClick={handleCreate} />
-                        <IconButton icon={X} label="Cancel" variant="neutral" size="sm" disabled={creating} onClick={cancelAdd} />
-                      </DataTableRowActions>
-                    </DataTableTd>
-                  </tr>
-                )}
-                {tokens.length === 0 && !adding ? (
+                {tokens.length === 0 ? (
                   <tr>
                     <td colSpan={4} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
                       No API tokens. Create one with the + button above to let agents and scripts talk to Wisp.
@@ -166,11 +125,9 @@ export default function ApiTokensSettings() {
                     <tr key={t.id} className={dataTableBodyRowClass}>
                       <DataTableTd dense className="text-text-primary">{t.label}</DataTableTd>
                       <DataTableTd dense>
-                        {t.scope === 'admin' ? (
-                          <span className="rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning">admin</span>
-                        ) : (
-                          <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-muted border border-surface-border">read-only</span>
-                        )}
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${SCOPE_BADGE[t.scope].className}`}>
+                          {SCOPE_BADGE[t.scope].text}
+                        </span>
                       </DataTableTd>
                       <DataTableTd dense className="hidden sm:table-cell text-text-muted">
                         {formatCreated(t.createdAt)}
@@ -189,6 +146,13 @@ export default function ApiTokensSettings() {
         )}
       </div>
 
+      {creating && (
+        <CreateTokenForm
+          onCreated={(created) => setMinted({ label: created.label, token: created.token })}
+          onClose={() => setCreating(false)}
+        />
+      )}
+
       <ConfirmDialog
         open={deleteTarget != null}
         title="Revoke API token"
@@ -199,5 +163,49 @@ export default function ApiTokensSettings() {
         Revoke “{deleteTarget?.label}”? Clients using it will stop working immediately.
       </ConfirmDialog>
     </Card>
+  );
+}
+
+/** A new token: its label and its scope, Agent chosen. The secret is shown once, from the 201; the list row arrives with the cue. */
+function CreateTokenForm({ onCreated, onClose }) {
+  const { form, setField } = useEditor({ label: '', scope: 'agent' });
+  const save = useCommand();
+  const blocked = !form.label.trim() ? 'Give the token a label.' : null;
+  return (
+    <FormModal
+      title="Create an API token"
+      saveLabel="Create"
+      save={save}
+      blocked={blocked}
+      onClose={onClose}
+      size="md"
+      onSubmit={() => save.run(() => createApiToken({ label: form.label.trim(), scope: form.scope }), { onDone: onCreated })
+        .then((ok) => { if (ok) onClose(); })}
+    >
+      <FormField label="Label" htmlFor="api-token-label" hint="Who uses it, e.g. the agent or the script.">
+        <input
+          id="api-token-label"
+          ref={autoFocusField}
+          type="text"
+          value={form.label}
+          maxLength={LABEL_MAX}
+          onChange={(e) => setField('label', e.target.value)}
+          placeholder="claude-code"
+          autoComplete="off"
+          className="input-field placeholder:text-text-muted"
+        />
+      </FormField>
+      <div>
+        <p className="mb-1 block text-xs font-medium text-text-secondary">Scope</p>
+        <RadioPills
+          variant="card"
+          className="grid-cols-1"
+          label="Scope"
+          options={SCOPES}
+          value={form.scope}
+          onChange={(scope) => setField('scope', scope)}
+        />
+      </div>
+    </FormModal>
   );
 }

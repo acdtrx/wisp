@@ -20,13 +20,16 @@ import { JOB_KIND } from '../../shared/wireNames.js';
 const READ_TOKEN = 'wisp_read_test-read-token';
 const PASSWORD = 'test-login-password';
 const ADMIN_TOKEN = 'wisp_admin_test-admin-token';
+const AGENT_TOKEN = 'wisp_agent_test-agent-token';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'wisp-app-test-'));
 const tokenEntry = (id, scope, token) => ({
   id, label: id, scope, tokenHash: createHash('sha256').update(token).digest('hex'), createdAt: '2026-01-01T00:00:00.000Z',
 });
 writeFileSync(path.join(dir, 'wisp-config.json'), JSON.stringify({
-  apiTokens: [tokenEntry('read', 'read', READ_TOKEN), tokenEntry('admin', 'admin', ADMIN_TOKEN)],
+  apiTokens: [
+    tokenEntry('read', 'read', READ_TOKEN), tokenEntry('agent', 'agent', AGENT_TOKEN), tokenEntry('admin', 'admin', ADMIN_TOKEN),
+  ],
 }));
 // config.js reads the path when it loads: set it before the app is imported.
 process.env.WISP_CONFIG_PATH = path.join(dir, 'wisp-config.json');
@@ -149,6 +152,64 @@ test('a read token on an admin route answers 403 SCOPE_INSUFFICIENT', async () =
   const res = await app.inject({ method: 'PATCH', url: '/api/settings', headers: bearer(READ_TOKEN), payload: {} });
   assert.equal(res.statusCode, 403);
   assert.equal(res.json().error, 'SCOPE_INSUFFICIENT');
+});
+
+/*
+ * One route of each level, each with a body or a querystring its schema refuses: a
+ * caller the auth hook lets through gets that 400, so nothing runs whichever way the
+ * hook decides.
+ */
+const LEVEL_PROBES = {
+  read: { method: 'GET', url: '/api/vms?bogus=1' },
+  agent: { method: 'POST', url: '/api/containers/web/kill', payload: { force: true } },
+  admin: { method: 'PATCH', url: '/api/settings', payload: { updateChannel: 'nightly' } },
+  session: { method: 'POST', url: '/api/auth/tokens', payload: { label: 'x', scope: 'read', bogus: 1 } },
+  mcp: { method: 'POST', url: '/mcp', payload: { jsonrpc: '2.0', id: 1, method: 'ping' } },
+};
+const THROUGH = { status: 400, error: 'VALIDATION_FAILED' };
+const SCOPE = { status: 403, error: 'SCOPE_INSUFFICIENT' };
+const SESSION = { status: 403, error: 'SESSION_REQUIRED' };
+const MCP_OK = { status: 200 };
+
+test('each caller gets the answer AUTH.md gives on a route of each level', async () => {
+  const session = await login('10.0.0.6');
+  const callers = {
+    read: bearer(READ_TOKEN),
+    agent: bearer(AGENT_TOKEN),
+    admin: bearer(ADMIN_TOKEN),
+    session: { cookie: session.cookie, 'x-csrf-token': session.csrf },
+  };
+  const expected = {
+    read: { read: THROUGH, agent: SCOPE, admin: SCOPE, session: SESSION, mcp: MCP_OK },
+    agent: { read: THROUGH, agent: THROUGH, admin: SCOPE, session: SESSION, mcp: MCP_OK },
+    admin: { read: THROUGH, agent: THROUGH, admin: THROUGH, session: SESSION, mcp: MCP_OK },
+    session: { read: THROUGH, agent: THROUGH, admin: THROUGH, session: THROUGH, mcp: { status: 401, error: 'AUTH_REQUIRED' } },
+  };
+  for (const [caller, headers] of Object.entries(callers)) {
+    for (const [level, probe] of Object.entries(LEVEL_PROBES)) {
+      const res = await app.inject({ ...probe, headers, remoteAddress: '10.0.0.6' });
+      const want = expected[caller][level];
+      assert.equal(res.statusCode, want.status, `${caller} on ${level}`);
+      if (want.error) assert.equal(res.json().error, want.error, `${caller} on ${level}`);
+    }
+  }
+});
+
+test('a token is made with each of the three scopes, its text prefixed by it; another scope is 400', async () => {
+  const session = await login('10.0.0.7');
+  const headers = { cookie: session.cookie, 'x-csrf-token': session.csrf };
+  for (const scope of ['read', 'agent', 'admin']) {
+    const res = await app.inject({ method: 'POST', url: '/api/auth/tokens', headers, payload: { label: `made-${scope}`, scope } });
+    assert.equal(res.statusCode, 201, scope);
+    assert.equal(res.json().scope, scope);
+    assert.ok(res.json().token.startsWith(`wisp_${scope}_`), scope);
+  }
+  const list = await app.inject({ method: 'GET', url: '/api/auth/tokens', headers });
+  assert.equal(list.json().find((t) => t.label === 'made-agent').scope, 'agent');
+  const other = await app.inject({ method: 'POST', url: '/api/auth/tokens', headers, payload: { label: 'x', scope: 'owner' } });
+  assert.equal(other.statusCode, 400);
+  assert.equal(other.json().error, 'VALIDATION_FAILED');
+  assert.match(other.json().detail, /^body\/scope must be equal to one of the allowed values/);
 });
 
 test('a read token cannot start the OS package check: 403 SCOPE_INSUFFICIENT, and no job', async () => {
