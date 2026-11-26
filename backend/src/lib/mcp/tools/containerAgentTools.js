@@ -1,5 +1,6 @@
 /**
- * Mutating container tools — admin scope only. Deliberately a SUBSET of the
+ * Mutating container tools — agent scope (an admin token calls them too).
+ * Deliberately a SUBSET of the
  * REST API: agents get deploy/update/lifecycle and a filtered app-config
  * surface, never mounts, devices, runAsRoot, deletes, or secret-bearing
  * fields. Human-only concerns stay in the UI.
@@ -48,7 +49,7 @@ function buildSettingsChanges(args) {
   return Object.fromEntries(SETTINGS_ARGUMENTS.filter((key) => args[key] !== undefined).map((key) => [key, args[key]]));
 }
 
-export const containerAdminTools = [
+export const containerAgentTools = [
   {
     name: 'deploy_container',
     title: 'Deploy a container',
@@ -82,7 +83,7 @@ export const containerAdminTools = [
       required: ['name', 'image'],
       additionalProperties: false,
     },
-    scope: 'admin',
+    scope: 'agent',
     handler: async (args, { log } = {}) => {
       const { name, image } = args;
       return startContainerDeployJob({
@@ -107,7 +108,7 @@ export const containerAdminTools = [
       required: ['name'],
       additionalProperties: false,
     },
-    scope: 'admin',
+    scope: 'agent',
     handler: async ({ name, image }, { log } = {}) => {
       return startContainerImageUpdateJob({ name, image, log });
     },
@@ -122,7 +123,7 @@ export const containerAdminTools = [
       required: ['name'],
       additionalProperties: false,
     },
-    scope: 'admin',
+    scope: 'agent',
     handler: async ({ name }, { log } = {}) => {
       return startContainerStartJob({ name, log });
     },
@@ -139,7 +140,7 @@ export const containerAdminTools = [
       required: ['name'],
       additionalProperties: false,
     },
-    scope: 'admin',
+    scope: 'agent',
     handler: async ({ name }, { log } = {}) => {
       return startContainerStopJob({ name, log });
     },
@@ -154,7 +155,7 @@ export const containerAdminTools = [
       required: ['name'],
       additionalProperties: false,
     },
-    scope: 'admin',
+    scope: 'agent',
     handler: async ({ name }, { log } = {}) => {
       return startContainerRestartJob({ name, log });
     },
@@ -181,7 +182,7 @@ export const containerAdminTools = [
       required: ['name', 'appConfig'],
       additionalProperties: false,
     },
-    scope: 'admin',
+    scope: 'agent',
     handler: async ({ name, appConfig }) => {
       const result = await saveAgentAppConfig(name, appConfig);
       const after = await maskContainerConfigSecrets(await getContainerConfig(name));
@@ -202,7 +203,7 @@ export const containerAdminTools = [
       'Its result counts the images checked and updated and the containers flagged; list_images then shows ' +
       'which containers have a newer image. Apply one with update_container_image. ' + JOB_NOTE,
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    scope: 'admin',
+    scope: 'agent',
     handler: async (_args, { log } = {}) => startImageUpdateCheckJob({ log }),
   },
 ];

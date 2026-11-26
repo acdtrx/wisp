@@ -10,6 +10,7 @@
  * tokens to /mcp and passes the token scope in. Per-tool scope is enforced
  * here (tools/list hides what the token can't call; tools/call double-checks).
  */
+import { scopeCovers } from '../apiTokenScopes.js';
 import { createAppError, errorBody, schemaValidationError } from '../appErrors.js';
 import { compileJsonValidator } from '../schemaValidation.js';
 import { getCurrentVersion } from '../wispUpdate.js';
@@ -45,8 +46,7 @@ function rpcError(id, code, message) {
 const argumentValidators = new Map(allTools.map((tool) => [tool.name, compileJsonValidator(tool.inputSchema)]));
 
 function toolsForScope(scope) {
-  if (scope === 'admin') return allTools;
-  return allTools.filter((t) => t.scope === 'read');
+  return allTools.filter((t) => scopeCovers(scope, t.scope));
 }
 
 function toolResult(id, data) {
@@ -117,8 +117,8 @@ export async function handleMcpMessage(message, { scope, log }) {
       if (!tool) {
         return { status: 200, body: rpcError(id, INVALID_PARAMS, `Unknown tool: ${String(name)}`) };
       }
-      if (tool.scope !== 'read' && scope !== 'admin') {
-        return { status: 200, body: toolError(id, createAppError('SCOPE_INSUFFICIENT', `Tool "${tool.name}" requires an admin-scoped API token`)) };
+      if (!scopeCovers(scope, tool.scope)) {
+        return { status: 200, body: toolError(id, createAppError('SCOPE_INSUFFICIENT', `Tool "${tool.name}" needs an agent- or admin-scoped API token`)) };
       }
       const args = params?.arguments ?? {};
       const invalid = argumentValidators.get(tool.name)(args);

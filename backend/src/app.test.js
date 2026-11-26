@@ -369,12 +369,35 @@ test('a failed MCP tool call carries the error body, as text and structured', as
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
 });
 
-test('an admin tool called with a read token answers SCOPE_INSUFFICIENT', async () => {
-  const res = await app.inject({
-    method: 'POST', url: '/mcp', headers: bearer(READ_TOKEN),
+const READ_TOOLS = [
+  'get_deployment_overview', 'get_container', 'get_container_mount_usage', 'get_container_logs', 'list_images',
+  'get_vm', 'get_host_stats', 'get_host_hardware', 'get_job',
+];
+const AGENT_TOOLS = [
+  'deploy_container', 'update_container_image', 'start_container', 'stop_container', 'restart_container',
+  'update_app_config', 'check_image_updates',
+];
+
+test('tools/list shows a read token the read tools only, and an agent and an admin token every tool', async () => {
+  const listed = async (token) => (await app.inject({
+    method: 'POST', url: '/mcp', headers: bearer(token), payload: { jsonrpc: '2.0', id: 9, method: 'tools/list' },
+  })).json().result.tools.map((t) => t.name).sort();
+  assert.deepEqual(await listed(READ_TOKEN), [...READ_TOOLS].sort());
+  for (const token of [AGENT_TOKEN, ADMIN_TOKEN]) assert.deepEqual(await listed(token), [...READ_TOOLS, ...AGENT_TOOLS].sort());
+});
+
+// The container does not exist: a tool that runs answers CONTAINER_NOT_FOUND (macOS
+// stub) or the unconnected manager's error (Linux), never the scope refusal.
+test('a mutating tool answers a read token SCOPE_INSUFFICIENT, and runs for an agent and an admin token', async () => {
+  const call = async (token) => (await app.inject({
+    method: 'POST', url: '/mcp', headers: bearer(token),
     payload: { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'start_container', arguments: { name: 'x' } } },
-  });
-  assert.equal(res.json().result.structuredContent.error, 'SCOPE_INSUFFICIENT');
+  })).json().result.structuredContent.error;
+  assert.equal(await call(READ_TOKEN), 'SCOPE_INSUFFICIENT');
+  for (const token of [AGENT_TOKEN, ADMIN_TOKEN]) {
+    const error = await call(token);
+    assert.ok(error && error !== 'SCOPE_INSUFFICIENT', `${token}: ${error}`);
+  }
 });
 
 // The image update check runs on either platform's stub or unconnected manager:
