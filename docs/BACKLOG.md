@@ -373,6 +373,12 @@ can't reach it). The CLI would be the Darwin manager's one exec caller, which ne
 user's validation (CODING-RULES §7). **Revisit trigger:** the user wants Wisp to run
 containers on a Mac.
 
+**A zip upload's staging file is not removed at the next start.** The zip upload stages
+its archive as `.wisp-upload-<hex>` in the container's directory and removes it when the
+extract ends; a crash in between leaves it there, and the boot sweep removes only the
+atomic-write suffix (seen building the image archive upload, 2026-11-26). **Revisit
+trigger:** a container directory found holding a `.wisp-upload-` file.
+
 ## Backups
 
 **Deleting a container's last backup leaves its empty folder.** After `DELETE
@@ -616,6 +622,12 @@ session's work was ending on the same machine (2026-11-23); the next five runs p
 with all 571 tests, and the failing test's name was not kept. A test that depends on
 timing under load is the likely kind. **Revisit trigger:** the test step fails again
 without a code change: keep the full output and name the test.
+
+**The import check misreads a name that begins with `import`.** `check-imports`
+finds an `import … from` by a pattern that also matches inside an export list holding a
+name such as `importImageArchive`, and reports it as a form it cannot read; the image
+archive upload named its function `storeImagesFromArchive` to pass (2026-11-26).
+**Revisit trigger:** another name has to change for the scan.
 
 ## Docs and method
 
