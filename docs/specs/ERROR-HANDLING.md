@@ -259,7 +259,7 @@ Each code a client can receive, with its status.
 | `INVALID_SETTINGS` | 422 | A settings value is invalid |
 | `CERTIFICATE_TOKEN_REJECTED` | 422 | Cloudflare refused the API token of the certificate setting |
 | `CERTIFICATE_ZONE_NOT_FOUND` | 422 | The token sees no Cloudflare zone that holds the certificate's domain |
-| `TOKEN_INVALID` | 422 | The API token request is invalid (label, scope) |
+| `TOKEN_INVALID` | 422 | The API token's label is whitespace only |
 | `INVALID_APP_CONFIG` | 422 | The app container's configuration is invalid |
 | `APP_CONFIG_ONLY` | 422 | An app container is configured through its app config, not this field or mount |
 | `APP_RELOAD_FAILED` | 422 | The app refused its new configuration on reload |
