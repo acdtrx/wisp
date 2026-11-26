@@ -8,6 +8,10 @@
 - A **single Node process** (`wisp.service`) on the host it manages, beside the libvirt
   daemon and containerd: it serves the API, the consoles, background work, the built
   frontend from `frontend/dist/` and the vendored noVNC under `/vendor/`.
+- **The `wisp` CLI is a second program**, run on a client machine by an agent or the
+  user: it talks to the REST API over HTTP with an API token and shares no code with the
+  backend. Wisp serves its binaries from `cli/` in the install tree
+  ([specs/CLI.md](specs/CLI.md)).
 - API and stream routes live under `/api`, console WebSockets under `/ws`, the MCP
   endpoint at `/mcp`; every other path serves the client. In development the Vite dev
   server serves the client and proxies `/api` and `/ws` to the backend; on macOS the
@@ -231,7 +235,10 @@ kept over the template's one in-memory bus).
   `shared/` (the wire's names both packages import: the events stream's topics, the
   `changes` kinds, the job kinds; nothing else, and it imports nothing). Each package
   has its own `package.json`; the root's marks the tree as ES modules, which is how
-  Node reads `shared/`, and the release tarball carries both.
+  Node reads `shared/`, and the release tarball carries both. `cli/` is the CLI: one Go
+  module, `main` at its top and its parts a flat list of packages under `internal/`. It
+  imports nothing from the rest of the repo, and nothing imports it: the REST API is the
+  boundary.
 - Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,
   with platform implementations under `<module>/linux/` and `<module>/darwin/`. App glue —
   Wisp's own orchestration — stays flat at the top of `src/lib/`, and routes do HTTP

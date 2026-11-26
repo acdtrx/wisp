@@ -42,6 +42,16 @@ The `using-local` step replaces `pulling`/`pulled` when the exact literal `image
 
 *An `agent` token:* `app` and `appConfig`. It creates generic containers only.
 
+### POST /api/containers/deploy · `agent`
+
+Create a generic container on the default bridge, apply its settings and start it, as one [job](API.md#job-routes) (kind `container-deploy`, subject the new name). It is [create](#post-apicontainers--agent), a `PATCH` and a start in one request, for a caller that cannot follow three: the `wisp` CLI's `containers create` uses it. The MCP tool `deploy_container` starts the same job ([MCP.md](MCP.md#tools--agent-scope-mutating)); the route also takes `mounts`.
+
+**Body:** `{ name, image, env?, secretEnv?, command?, mounts?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB?, start? }`. `env` and `secretEnv` map a name to its value, a `secretEnv` value stored write-only. `mounts` is a list of mounts, each as [`POST …/mounts`](#post-apicontainersnamemounts--agent) takes one, made before the start. The settings are `PATCH`'s, applied as a `PATCH` applies them. `start` defaults to `true`; `false` leaves the container defined and stopped. There is no `app`: the route creates generic containers, for every caller.
+
+**202:** `{ jobId, kind, title, subject }`; `done` result: the new container, as `GET /api/containers/:name` gives it, secrets masked. When the start fails, the container stays defined, stopped, and the job's error says so | **409:** `CONTAINER_EXISTS`, `CONTAINER_BUSY` | **400:** `VALIDATION_FAILED` | **422:** a mount's refusals, as `POST …/mounts` | **503:** `NO_CONTAINERD`
+
+*An `agent` token:* `sourceId` and `subPath` in a mount.
+
 ### GET /api/containers/images · `read`
 
 List OCI images in the containerd `wisp` namespace (same store used when creating containers).
@@ -188,6 +198,14 @@ Stop a running container (SIGTERM + grace period). On a stopped container with a
 Restart a container (stop + start).
 
 **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
+
+### POST /api/containers/:name/image-update · `agent`
+
+Pull the container's image again, or move it to another, and restart it if it runs, as one [job](API.md#job-routes) (kind `container-image-update`) that holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) from the pull to the restart. The `wisp` CLI's `containers update` uses it. The MCP tool `update_container_image` starts the same job.
+
+**Body:** `{ image? }`: the ref to move to, stored as create and `PATCH` store one; without it the current one is pulled again. A `localhost/` ref is not pulled ([CONTAINERS.md → Image Management](CONTAINERS.md#image-management)).
+
+**202:** `{ jobId, kind, title, subject }`; `done` result: `{ name, image, restarted, applied, note }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/kill · `agent`
 

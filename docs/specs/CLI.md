@@ -1,0 +1,190 @@
+# The `wisp` CLI
+
+`wisp` is a command-line client of Wisp's REST API, for coding agents and for the user at
+a terminal: one static binary with nothing to install beside it. The server-side tool
+that manages an install, `wispctl`, is another program ([DEPLOYMENT.md](DEPLOYMENT.md)).
+
+## Principles
+
+- **A client of the REST API, and nothing else.** Every command is one or a few requests
+  any HTTP client could send with the same token. The CLI holds no rule of its own about
+  what is allowed: the token's scope decides ([AUTH.md](AUTH.md#the-agent-scope)), and a
+  refusal is the server's, printed as it came.
+- **Served by the Wisp it talks to.** A Wisp carries the CLI of its own version, for
+  every platform, so installing and updating need no internet and the two always match.
+- **One version on both sides.** A CLI and a Wisp of different versions do not talk
+  ([Version check](#version-check)).
+- **No dependencies.** Go's standard library only ([TECH-STACK.md](../TECH-STACK.md)).
+
+## Getting it
+
+Wisp serves the CLI from its own install, to anyone who can reach it: the files hold no
+secret and are the same on every Wisp of that version.
+
+| Route | Level | Answers |
+|-------|-------|---------|
+| `GET /api/cli` | `public` | `{ version, platforms }`: Wisp's version, and the platforms it has a binary for |
+| `GET /api/cli/wisp-<platform>` | `public` | The binary, as a download. An unknown platform, or a Wisp that carries none (a development checkout), is **404** `CLI_NOT_AVAILABLE` |
+| `GET /api/cli/install.sh` | `public` | The install script for macOS and Linux |
+| `GET /api/cli/install.ps1` | `public` | The install script for Windows |
+
+- **Platforms:** `darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`,
+  `windows-arm64`, `windows-amd64`.
+- **Installing** is one line, shown with a copy action in **Host → App Config → API
+  tokens** ([UI-HOST.md](UI-HOST.md)): `curl -fsSL <url>/api/cli/install.sh | sh`, or
+  `irm <url>/api/cli/install.ps1 | iex` on Windows. `<url>` is the advertised URL when
+  one is set ([SETTINGS.md](SETTINGS.md)), else the address the request came to.
+- **The script** picks the platform, downloads that binary from the Wisp that served the
+  script, and puts it in the user's own programs folder (`~/.local/bin/wisp`;
+  `%LocalAppData%\Programs\wisp\wisp.exe`), with no root. It says so when that folder is
+  not on the `PATH`, and ends by naming the next command, `wisp login`.
+
+## Signing in
+
+The CLI needs two things: a Wisp's address and an API token
+([AUTH.md](AUTH.md#api-tokens)). It takes them from a profile, or from the environment.
+
+### Profiles
+
+A profile is a name for one Wisp: its `url` and a `token`. They live in one file the CLI
+writes, `config.json` in the user's configuration folder (`$XDG_CONFIG_HOME/wisp/`, by
+default `~/.config/wisp/`; `%AppData%\wisp\` on Windows), mode `0600` in a `0700`
+folder:
+
+```json
+{
+  "version": 1,
+  "default": "home",
+  "profiles": {
+    "home": { "url": "https://wisp.home.example.com", "token": "wisp_agent_…" },
+    "tini": { "url": "http://tini.local:8080", "token": "wisp_agent_…" }
+  }
+}
+```
+
+| Command | Does |
+|---------|------|
+| `wisp [--profile <name>] login <url>` | Asks for the token, with the typing hidden, or reads it from standard input when that is not a terminal. Checks the address and the token against the server, then saves the profile. Without `--profile` the profile is named `default`. The first profile saved becomes the default one. |
+| `wisp --profile <name> default` | Makes that profile the default. |
+| `wisp profiles` | Lists the profiles: name, address, the token's scope, and which is the default. Never a token. |
+| `wisp [--profile <name>] logout` | Removes the profile. The token stays valid on the server until it is revoked there. |
+
+- **The token is never a command's argument**, so it stays out of the shell's history
+  and the process list.
+- **`--profile <name>`** goes before the command and picks the profile for that one
+  call.
+
+### The environment
+
+`WISP_URL` and `WISP_TOKEN`, set together, are enough with no file at all: for an
+agent's sandbox, or CI.
+
+**Which one is used**, first match: `--profile`; `WISP_URL` with `WISP_TOKEN`; the
+default profile. With none, the CLI says to run `wisp login`.
+
+### Transport
+
+- An `https` address is checked against the system's certificate authorities. An `http`
+  address is taken as it is, for the LAN.
+- Every request carries `Authorization: Bearer <token>`. Nothing else leaves the
+  profile.
+
+## Version check
+
+- The CLI sends its version with every request, in the `Wisp-Cli-Version` header.
+- A Wisp of another version refuses the request before anything runs: **409**
+  `CLI_VERSION_MISMATCH`, the `detail` naming both versions. A request without the
+  header is not checked: other clients send none.
+- The CLI then says to run **`wisp update`**, which downloads the binary for this
+  platform from the profile's Wisp and replaces itself with it, in one step that leaves
+  the old binary in place when the download fails.
+- **`wisp version`** prints the CLI's version and the Wisp's (`GET /api/cli`).
+- Two Wisps on two versions take a `wisp update` when switching between them.
+
+## Commands
+
+`wisp help` prints every command with a line each; `wisp help <command>` and `--help`
+print one command in full, with an example. The help is what an agent learns the CLI
+from, so it is complete: no command, flag or argument exists outside it.
+
+| Group | Commands |
+|-------|----------|
+| The CLI itself | `login`, `logout`, `profiles`, `default`, `version`, `update`, `help` |
+| `containers` | `list`, `show`, `create`, `set`, `update`, `start`, `stop`, `restart`, `logs`, `upload` |
+| `images` | `list`, `push` |
+| `jobs` | `list`, `wait` |
+
+Nothing for VMs or the host.
+
+**One command reads a container and one changes it.** `containers show` prints
+everything about a container: its settings, env, mounts and, for an app container, the
+app's config. `containers create` and `containers set` take every setting as a flag,
+env and mounts among them. There is no command group per part of a container.
+
+### What each does
+
+| Command | Request | Notes |
+|---------|---------|-------|
+| `containers list` | `GET /api/containers` | |
+| `containers show <name>` | `GET /api/containers/:name` | Secrets masked, as the API sends them |
+| `containers create <name> --image <ref> [settings]` | `POST /api/containers/deploy` | Creates a generic container with the [settings](#the-settings-flags) given, mounts included, and starts it: one job. `--no-start` leaves it stopped, for files to be uploaded first |
+| `containers set <name> [settings]` | `PATCH /api/containers/:name`; `POST …/mounts` per mount added | Changes the settings given, and leaves the rest |
+| `containers update <name> [--image <ref>]` | `POST /api/containers/:name/image-update` | Pulls the image again, or moves to another, and restarts a running container |
+| `containers start` / `stop` / `restart <name>` | the lifecycle routes | |
+| `containers logs <name>` | `GET /api/containers/:name/logs` | The newest run's last lines (`--lines`, default 100), then ends; `--follow` keeps printing new lines; `--run <id>` picks a run |
+| `containers upload <name> <mount> <path>` | `POST …/mounts/:mountName/file` or `…/zip` | A file goes to a file mount. A zip or a folder goes to a folder mount and **replaces its content**; a folder is zipped by the CLI as it is sent |
+| `images list` | `GET /api/containers/images` | |
+| `images push <archive>` | `POST /api/containers/images/upload` | An archive file, or `-` for standard input (`docker save myapp:v1 \| wisp images push -`). Prints the `localhost/` name each image is stored under |
+| `jobs list` | `GET /api/jobs` | |
+| `jobs wait <id>` | `GET /api/jobs/:jobId/progress` | |
+
+### The settings flags
+
+For `containers create` and `containers set`. Each may be given once, but for those that
+say otherwise.
+
+| Flag | Sets |
+|------|------|
+| `--image <ref>` | The image. Required by `create` |
+| `--env KEY=VALUE` | An env variable; may be repeated |
+| `--secret-env KEY=VALUE` | An env variable stored write-only; may be repeated |
+| `--unset-env KEY` | Removes an env variable; may be repeated. `set` only |
+| `--mount <name>:<container-path>[:ro]` | Adds a folder kept on this host; may be repeated |
+| `--file-mount <name>:<container-path>[:ro][:secret]` | Adds a file kept on this host; may be repeated |
+| `--tmpfs <name>:<container-path>[:<MiB>]` | Adds a memory folder; may be repeated |
+| `--cpu <cores>`, `--memory <MiB>` | The limits; `none` removes one |
+| `--restart-policy <policy>` | `never`, `on-failure`, `unless-stopped` or `always` |
+| `--autostart on\|off`, `--auto-backup on\|off`, `--local-dns on\|off` | Start at boot, the scheduled backup, Local DNS |
+| `-- <command> [args…]` | The command the container runs: everything after `--`. `--no-command` goes back to the image's own. |
+| `--app-config <file>` | An app container's config: the fields to change, as JSON in a file or `-` for standard input. `set` only, and with no other setting, as the server saves an app's config alone |
+
+- **`set` adds mounts and never removes or edits one**: a name that exists is the
+  server's refusal. Removing a mount is not an `agent` token's to do.
+- **`set` may send more than one request**: the settings and env as one, then each mount
+  added. The first that fails ends the command, which says what was saved before it.
+- `create` sends one request whatever it carries.
+
+### Behaviour every command shares
+
+- **Flags and arguments** may come in either order.
+- **Output:** text by default, laid out for reading: a table for a list, labelled lines
+  for one thing. `--json` prints the API's own JSON instead, unchanged, for a script to
+  parse. What a command prints is on standard output; progress and errors are on
+  standard error.
+- **A command that starts a job waits for it**, printing the job's progress as it
+  comes, and ends when the job does: with its result, or with its error. `--no-wait`
+  prints the job's id and ends at once. An interrupt (Ctrl-C) ends the wait, never the
+  job, and says so.
+- **An error** is one line: the API's code and its message (`CONTAINER_BUSY: …`). With
+  `--json` it is the error body.
+- **Exit codes:** `0` done; `1` the request or the job failed; `2` the command line was
+  wrong, and nothing was sent.
+- **Nothing waits forever:** a request that gets no answer, and a stream or an upload
+  that stops moving, end with an error after a bound.
+
+## Not supported
+
+- VMs, the host's settings, deletes and whatever else an `agent` token cannot do. An
+  `admin` token widens what the same commands may touch, not the list of commands.
+- A token stored anywhere but the profile file or the environment (no keychain).
+- Talking to a Wisp of another version.

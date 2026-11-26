@@ -69,7 +69,7 @@ The header must carry `alg === 'HS256'` — any other value (including `none`) i
 
 | Level | Who may call | Used for |
 |-------|--------------|----------|
-| `public` | anyone | `POST /api/auth/login`, the three OIDC routes, static assets + SPA shell |
+| `public` | anyone | `POST /api/auth/login`, the three OIDC routes, the CLI's downloads (`/api/cli`, [CLI.md](CLI.md#getting-it)), static assets + SPA shell |
 | `session` | browser session only — API tokens get **403** `SESSION_REQUIRED` | the rest of `/api/auth/*` (logout, change-password, token management), `PATCH /api/settings/oidc`, the `/ws` consoles |
 | `read` | session, or an API token of any scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
 | `agent` | session, or an `agent`- or `admin`-scoped API token; a `read` token gets **403** `SCOPE_INSUFFICIENT` | what building, running and updating a container takes ([§ The `agent` scope](#the-agent-scope)): create, lifecycle, config, the mounts kept on this host and their content, services, a container's backup, the image update check |

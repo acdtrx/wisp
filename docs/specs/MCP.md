@@ -10,7 +10,7 @@ Streamable HTTP in **stateless, single-JSON-response mode** (permitted by the MC
 
 | Method | Behaviour |
 |--------|-----------|
-| `initialize` | Returns `protocolVersion: "2025-06-18"`, `capabilities: { tools: {} }`, `serverInfo` (`name: "wisp"`, current version), and an `instructions` string describing the host model |
+| `initialize` | Returns `protocolVersion: "2025-06-18"`, `capabilities: { tools: {} }`, `serverInfo` (`name: "wisp"`, current version), and an `instructions` string describing the host model, which ends by saying that the `wisp` CLI does more (env, mounts, uploads, images) and how to install it from this Wisp ([CLI.md](CLI.md)) |
 | `notifications/*` (any message without an `id`) | Accepted with **202**, no body |
 | `ping` | `{}` |
 | `tools/list` | Tool catalogue **filtered to what the token's scope can call** (no pagination — the list is small) |
@@ -55,7 +55,7 @@ Deliberately a **subset** of the REST API: agents get deploy, image update, life
 
 | Tool | Input | Behaviour |
 |------|-------|-----------|
-| `deploy_container` | `{ name, image, env?, secretEnv?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB? }` | A job: create a generic container on the default bridge and start it; its result is the new container (secrets masked). `secretEnv` values are stored write-only (`secret: true`) so no read token can recover them later. On start failure the container stays defined (stopped) and the error says so. `restartPolicy` (default `unless-stopped`) is enforced as in [CONTAINERS.md → Restart policy](CONTAINERS.md#restart-policy). |
+| `deploy_container` | `{ name, image, env?, secretEnv?, command?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB?, start? }` | A job, the one `POST /api/containers/deploy` starts: create a generic container on the default bridge and start it (`start: false` leaves it stopped); its result is the new container (secrets masked). `secretEnv` values are stored write-only (`secret: true`) so no read token can recover them later. On start failure the container stays defined (stopped) and the error says so. `restartPolicy` (default `unless-stopped`) is enforced as in [CONTAINERS.md → Restart policy](CONTAINERS.md#restart-policy). |
 | `update_container_image` | `{ name, image? }` | A job: pull the given ref (or re-pull the current tag), point the container at it, restart if running. The ref is stored like create and `PATCH` store it — an exact local name when containerd has one, else normalized (`nginx:1.27` → `docker.io/library/nginx:1.27`) — and the result reports that stored ref. A `localhost/` ref is not pulled: the image Wisp holds is used. Locally-imported images whose pull fails are fine when present. The whole job, pull included, holds the container's operation lock. Result `{ name, image, restarted, applied, note }`. |
 | `start_container` / `stop_container` / `restart_container` | `{ name }` | Lifecycle jobs, the same the REST routes start; result `{ name }` (a stop adds `restartCancelled`). |
 | `update_app_config` | `{ name, appConfig }` | Patch an app container's appConfig **restricted to that app's `agentWritableAppConfigFields`** (see below). Blocked fields are rejected with an error naming the writable set; everything else is carried forward verbatim from the stored config. Runs the standard app config save ([CUSTOM-APPS.md](CUSTOM-APPS.md)): validate → regenerate derived config → live reload or `pendingRestart`. |

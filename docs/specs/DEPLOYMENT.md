@@ -61,7 +61,7 @@ cd wisp
 ./scripts/install.sh [install-dir] [--server-name NAME]
 ```
 
-or from a development machine, which stages the same release-shaped tarball (`scripts/stage-release.sh`) and runs that installer on the host: `scripts/push.sh user@host /opt/wisp`. Hosts never build: the tarball carries the prebuilt frontend. A fresh host needs only ssh, sudo and `tar`. The install directory defaults to `/opt/wisp`; it must be missing, empty, or a Wisp install already.
+or from a development machine, which stages the same release-shaped tarball (`scripts/stage-release.sh`) and runs that installer on the host: `scripts/push.sh user@host /opt/wisp`. Hosts never build: the tarball carries the prebuilt frontend and the `wisp` CLI's binaries (`cli/`, [CLI.md](CLI.md#getting-it)), so the machine that stages it needs Node and Go. A fresh host needs only ssh, sudo and `tar`. The install directory defaults to `/opt/wisp`; it must be missing, empty, or a Wisp install already.
 
 What is asked, all before anything changes (settled 2026-11-18):
 

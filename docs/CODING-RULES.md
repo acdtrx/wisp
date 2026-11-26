@@ -273,6 +273,24 @@ In projects with a web UI: `FRONTEND-RULES.md`.
 - Make every async function return a Promise. Throw errors as structured objects (§5).
 - Prefer `const` over `let`; `let` only when reassignment is genuinely needed; never `var`.
 
+### Go
+
+For the CLI (`cli/`).
+
+- Keep the code lint-clean (`TECH-STACK.md`, The CLI).
+- Treat errors as values: wrap with `%w` and context (`fmt.Errorf("read config %s: %w",
+  …)`), inspect with `errors.Is` / `errors.As`. Make an error that callers branch on a
+  typed error (`type XError struct`) or a sentinel value (§5). An API refusal is one
+  typed error that carries the code and the message as the server sent them.
+- Pass `context.Context` as the first parameter of anything that does network I/O or may
+  block; it is the cancellation primitive (§6).
+- Give every goroutine an owner that can stop it and waits for it; never fire and forget
+  a goroutine.
+- Keep package-level variables to constant-like data: lookup tables, sentinel errors,
+  the build version. Pass mutable state in; `main` builds the graph.
+- Put platform-specific code behind **build-tagged files** (`x_windows.go` /
+  `x_unix.go`); every platform the CLI ships for compiles in the checks.
+
 ### Shell
 
 - A script that handles a stop runs nothing in the foreground that can outlast the time it

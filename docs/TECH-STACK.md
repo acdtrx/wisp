@@ -99,6 +99,27 @@
   `scripts/release.sh` run it. What each covers, and when to run it:
   `CODING-RULES.md` §14. The frontend build checks the client's imports.
 
+## The CLI
+
+- **Go, current stable, for the `wisp` CLI alone** (`cli/`, a Go module of its own): one
+  static, cgo-free binary per platform, so the machine that runs it needs nothing
+  installed. Chosen over a Node script because the machines agents work on often have no
+  Node. Nothing on the server is Go.
+- **Standard library only**: `net/http`, `encoding/json`, `flag`, `archive/zip`.
+  Subcommands are dispatched by hand, with no CLI framework. Its config file is JSON:
+  the CLI writes it, nobody edits it by hand.
+- The binary carries its version, stamped at build (`-ldflags "-X main.version=…"`) from
+  the root `package.json`, the version's one source.
+- **Built where a release is staged** (`scripts/stage-release.sh`), for every platform
+  in [specs/CLI.md](specs/CLI.md). No `Makefile`: the scripts and `npm run check` stay
+  the project's entry points.
+- **Its checks run in `npm run check`**: `gofmt -l` (any output fails), `go vet ./...`,
+  staticcheck run as `go run honnef.co/go/tools/cmd/staticcheck@<pinned version>` (a
+  build tool, not a dependency of the module), and `go test ./...`: table tests, and
+  `net/http/httptest` for a stand-in Wisp. The check needs Go installed, and says so
+  when it is not.
+- Contract: [specs/CLI.md](specs/CLI.md).
+
 ## Deployment
 
 - **Bare-metal systemd** (`wisp.service`, one process for API + SPA) — deliberate
@@ -106,8 +127,8 @@
   onto, so it runs on the host, not in a container. Self-update from GitHub Releases through
   `wisp-updater`. No Docker anywhere in the project. The flow:
   `PRODUCTION.md`, Deploys.
-- **One release-shaped tarball** with a prebuilt frontend, for releases and dev pushes
-  alike: hosts never build. Install and setup: [specs/DEPLOYMENT.md](specs/DEPLOYMENT.md);
+- **One release-shaped tarball** with a prebuilt frontend and the CLI's binaries, for
+  releases and dev pushes alike: hosts never build. Install and setup: [specs/DEPLOYMENT.md](specs/DEPLOYMENT.md);
   update and release: [specs/UPDATES.md](specs/UPDATES.md).
 - **Setup's Python** (Python 3, `scripts/linux/setup/*.py`), for setup and the installer
   only, where Node may not be installed yet (settled 2026-11-19; not jq or Node: neither

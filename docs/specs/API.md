@@ -9,12 +9,13 @@ All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket), plus `/mcp`. 
 - [API-BACKUPS.md](API-BACKUPS.md) — VM and container backups
 - [API-LIBRARY.md](API-LIBRARY.md) — the image library
 - [API-WORKSPACE.md](API-WORKSPACE.md) — sidebar sections and the home page
+- [CLI.md](CLI.md) — the `wisp` CLI, and the routes that serve it (`/api/cli`)
 
 Every endpoint heading carries its **access level** — declared on the route itself and enforced by one hook; see [AUTH.md](AUTH.md) § Route access levels:
 
 | Level | Who may call |
 |-------|--------------|
-| `public` | anyone — login, the OIDC routes, static assets + SPA shell |
+| `public` | anyone — login, the OIDC routes, the CLI's downloads, static assets + SPA shell |
 | `session` | browser session only; API tokens get **403 Session required** |
 | `read` | session, or an API token of any scope |
 | `agent` | session, or an `agent`- or `admin`-scoped token (a `read` token gets **403** `SCOPE_INSUFFICIENT`); an entry may keep a part of the route `admin` ([AUTH.md → The `agent` scope](AUTH.md#the-agent-scope)) |
@@ -25,6 +26,8 @@ Credentials:
 
 - **Session cookie** (the browser/SPA path) — the `wisp_session` cookie set by login. State-changing methods (`POST` / `PUT` / `PATCH` / `DELETE`) additionally require the `X-CSRF-Token` header to match the (non-HttpOnly) `wisp_csrf` cookie. Send `credentials: 'include'` on fetch requests so the browser carries the cookies cross-port in dev.
 - **Bearer API token** (the non-interactive path) — `Authorization: Bearer wisp_…`. No CSRF header needed. See [AUTH.md](AUTH.md) § API tokens.
+
+**The CLI's version.** A request may carry `Wisp-Cli-Version`, as the `wisp` CLI's all do. One that names another version than this Wisp's is refused before the route's handler, on every route but the `public` ones: **409** `CLI_VERSION_MISMATCH`, `detail` naming both ([CLI.md → Version check](CLI.md#version-check)). A request without the header is not checked.
 
 `npm run route-access` prints the level of every registered route. A path that matches no route answers 404 (JSON for API-looking paths, the SPA shell otherwise in production) without an auth check — no handler runs.
 
