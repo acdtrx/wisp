@@ -178,6 +178,16 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 		t.Fatalf("the failed update left %d files beside the binary", len(entries))
 	}
 
+	// A 200 that is not the CLI (a portal's page) leaves it too.
+	wisp.binary = []byte("<html>Sign in to the Wi-Fi</html>")
+	got = runWisp(t, oldBin, env, "", "update")
+	if got.code != 1 || !strings.Contains(got.stderr, "stays as it was") {
+		t.Fatalf("update from a portal: %+v", got)
+	}
+	if got = runWisp(t, oldBin, env, "", "version"); !strings.Contains(got.stdout, "wisp CLI  9.9.8-old") {
+		t.Fatalf("after the portal: %+v", got)
+	}
+
 	wisp.binary = newBytes
 	got = runWisp(t, oldBin, env, "", "update")
 	if got.code != 0 {

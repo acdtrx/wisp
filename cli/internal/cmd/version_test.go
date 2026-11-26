@@ -52,9 +52,9 @@ func TestAnotherVersionSaysBothAndToUpdate(t *testing.T) {
 }
 
 func TestUpdateReplacesTheBinary(t *testing.T) {
-	_, r := otherVersionWisp(t, []byte("new binary 2.0.0"))
+	_, r := otherVersionWisp(t, []byte("wisp CLI  2.0.0"))
 	r.do("update").wantCode(0)
-	if got := readFile(t, r.exe); got != "new binary 2.0.0" {
+	if got := readFile(t, r.exe); got != "wisp CLI  2.0.0" {
 		t.Fatalf("binary now %q", got)
 	}
 	if runtime.GOOS != "windows" {
@@ -110,5 +110,23 @@ func TestVersionPrintsBoth(t *testing.T) {
 	out := r.stdout.String()
 	if !strings.Contains(out, "wisp CLI  1.0.0") || !strings.Contains(out, "Wisp      2.0.0") || !strings.Contains(r.stderr.String(), "wisp update") {
 		t.Fatalf("stdout %q stderr %q", out, r.stderr.String())
+	}
+}
+
+func TestADownloadThatIsNotTheCLILeavesTheOldBinary(t *testing.T) {
+	for name, body := range map[string]string{
+		"a portal's page":   "<html>Sign in to the Wi-Fi</html>",
+		"another version's": "wisp CLI  3.0.0",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, r := otherVersionWisp(t, []byte(body))
+			r.do("update").wantCode(1)
+			if readFile(t, r.exe) != "old binary" || !strings.Contains(r.stderr.String(), "stays as it was") {
+				t.Fatalf("binary %q, stderr %q", readFile(t, r.exe), r.stderr.String())
+			}
+			if entries, _ := os.ReadDir(filepath.Dir(r.exe)); len(entries) != 1 {
+				t.Fatalf("%d files left beside the binary", len(entries))
+			}
+		})
 	}
 }

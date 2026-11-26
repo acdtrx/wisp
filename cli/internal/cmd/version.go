@@ -11,7 +11,7 @@ import (
 )
 
 func runVersion(ctx context.Context, c *call) error {
-	fmt.Fprintf(c.env.Stdout, "wisp CLI  %s\n", c.env.Version)
+	fmt.Fprintf(c.env.Stdout, "%s%s\n", selfupdate.VersionLinePrefix, c.env.Version)
 	t, err := c.target()
 	if err != nil {
 		return err
@@ -60,6 +60,13 @@ func runUpdate(ctx context.Context, c *call) error {
 	}
 	if err == nil && size == 0 {
 		err = fmt.Errorf("the Wisp at %s sent an empty file", t.url)
+	}
+	// A 200 that is not the CLI (a captive portal's page) must not replace it.
+	if err == nil {
+		var got string
+		if got, err = c.env.BinaryVersion(ctx, tmp.Name()); err == nil && got != *info.Version {
+			err = fmt.Errorf("the download is the wisp CLI %s, not %s", got, *info.Version)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("wisp %s stays as it was: %w", c.env.Version, err)

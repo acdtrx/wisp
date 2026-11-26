@@ -38,8 +38,10 @@ type Env struct {
 	// ReadHidden with the typing hidden, or read from Stdin.
 	StdinIsTerminal bool
 	ReadHidden      func() (string, error)
-	// Executable is the file `wisp update` replaces.
-	Executable func() (string, error)
+	// Executable is the file `wisp update` replaces, and BinaryVersion asks
+	// a download which CLI it is before it does.
+	Executable    func() (string, error)
+	BinaryVersion func(ctx context.Context, path string) (string, error)
 }
 
 // System is the process's own Env.
@@ -54,6 +56,7 @@ func System(version string) *Env {
 		StdinIsTerminal: term.IsTerminal(os.Stdin),
 		ReadHidden:      func() (string, error) { return term.ReadHidden(os.Stdin) },
 		Executable:      selfupdate.Executable,
+		BinaryVersion:   selfupdate.VersionOf,
 	}
 }
 

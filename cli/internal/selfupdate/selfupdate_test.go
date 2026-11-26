@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,5 +43,17 @@ func TestAFailedReplaceLeavesTheOldFile(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(exe); string(got) != "old" {
 		t.Fatalf("exe holds %q", got)
+	}
+}
+
+func TestAFileThatIsNotTheCLIHasNoVersion(t *testing.T) {
+	f, err := TempBeside(filepath.Join(t.TempDir(), "wisp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("<html>portal</html>")
+	f.Close()
+	if v, err := VersionOf(context.Background(), f.Name()); err == nil {
+		t.Fatalf("a page answered version %q", v)
 	}
 }

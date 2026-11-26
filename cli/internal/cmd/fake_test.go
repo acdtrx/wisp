@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -149,6 +150,14 @@ func (r *run) do(args ...string) *run {
 		Getenv:          func(k string) string { return r.env[k] },
 		StdinIsTerminal: r.tty,
 		ReadHidden:      func() (string, error) { return r.typed, nil },
+		BinaryVersion: func(_ context.Context, path string) (string, error) {
+			// The stand-in binaries are text: "wisp CLI  <version>" when they are the CLI.
+			b, err := os.ReadFile(path)
+			if v, ok := strings.CutPrefix(string(b), "wisp CLI  "); err == nil && ok {
+				return strings.TrimSpace(v), nil
+			}
+			return "", fmt.Errorf("the download does not answer as the wisp CLI: %q", b)
+		},
 		Executable: func() (string, error) {
 			if r.exe == "" {
 				return filepath.Join(r.home, "bin", "wisp"), nil
