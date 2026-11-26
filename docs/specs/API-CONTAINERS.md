@@ -56,7 +56,7 @@ Upload an image archive, the tar `docker save` or `podman save` writes, and impo
 
 **202:** `{ jobId, kind, title, subject }`; `done` result: `{ images: [{ name, digest }] }`, each image the archive named, under the `localhost/` name it is stored by
 
-**Job errors:** `CONTAINER_IMAGE_ARCHIVE_INVALID` (not an image archive containerd can import; `detail` carries its message), `CONTAINER_IMAGE_ARCHIVE_UNNAMED` (the archive names no image), `CONTAINER_IMAGE_PLATFORM_MISMATCH` (no image in it for `linux/<arch>`; `detail` lists the platforms it has). After any of them nothing of the archive is kept.
+**Job errors:** `CONTAINER_IMAGE_ARCHIVE_INVALID` (not an image archive containerd can import; `detail` carries its message), `CONTAINER_IMAGE_ARCHIVE_UNNAMED` (the archive names no image), `CONTAINER_IMAGE_PLATFORM_MISMATCH` (an image in it is not for `linux/<arch>`; `detail` names the host's platform, and the image and its platforms where they could be read). After any of them nothing of the archive is kept.
 
 **503:** `NO_CONTAINERD`
 
