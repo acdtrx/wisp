@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -245,5 +246,17 @@ func TestLoginNeverFollowsARedirect(t *testing.T) {
 	}
 	if _, err := os.Stat(r.configFile()); err == nil {
 		t.Fatal("a config was written")
+	}
+}
+
+func TestAStandardInputThatNeverSendsEndsTheLogin(t *testing.T) {
+	f := newFakeWisp(t, "1.0.0")
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	r := newRun(t)
+	r.stdinR = pr
+	r.do("login", f.URL).wantCode(1)
+	if !strings.Contains(r.stderr.String(), "no token on standard input within") || f.requestCount() != 0 {
+		t.Fatalf("stderr %q, %d requests", r.stderr.String(), f.requestCount())
 	}
 }

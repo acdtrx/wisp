@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"time"
 )
 
 const maxLine = 4096
@@ -38,6 +39,37 @@ func ReadLine(r io.Reader) (string, error) {
 		}
 	}
 	return strings.TrimRight(b.String(), "\r"), nil
+}
+
+// ErrNoLine is a line that did not come within the bound.
+var ErrNoLine = errors.New("no line came")
+
+// ReadLineWithin is ReadLine, given up after d: a standard input left open
+// with nothing written to it must not hold the program forever.
+//
+// A blocked read of standard input cannot be stopped on every platform the
+// CLI ships for (a pipe takes no deadline on Windows), so on the bound the
+// read is left behind, and the program, which has nothing more to read,
+// ends with the error: its exit ends the read. This is the CLI's one
+// goroutine without an owner that waits for it.
+func ReadLineWithin(r io.Reader, d time.Duration) (string, error) {
+	type read struct {
+		line string
+		err  error
+	}
+	done := make(chan read, 1) // buffered: a read that ends after the bound never blocks
+	go func() {
+		line, err := ReadLine(r)
+		done <- read{line, err}
+	}()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case got := <-done:
+		return got.line, got.err
+	case <-timer.C:
+		return "", ErrNoLine
+	}
 }
 
 // readLineRestoring reads a line with the terminal changed, and puts it back

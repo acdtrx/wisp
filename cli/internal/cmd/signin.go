@@ -102,7 +102,10 @@ func (c *call) readToken(base string) (string, error) {
 		token, err = c.env.ReadHidden()
 		fmt.Fprintln(c.env.Stderr)
 	} else {
-		token, err = term.ReadLine(c.env.Stdin)
+		token, err = term.ReadLineWithin(c.env.Stdin, c.env.TokenWait)
+		if errors.Is(err, term.ErrNoLine) {
+			return "", fmt.Errorf("no token on standard input within %s: give it there (printf '%%s\\n' \"$TOKEN\" | wisp login <url>), or run wisp login at a terminal", c.env.TokenWait)
+		}
 	}
 	if err != nil {
 		return "", fmt.Errorf("read the token: %w", err)

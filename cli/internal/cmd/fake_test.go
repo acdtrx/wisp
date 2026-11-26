@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeWisp stands in for a Wisp: GET /api/cli and the downloads for anyone,
@@ -122,6 +124,7 @@ type run struct {
 	home   string
 	env    map[string]string
 	stdin  string
+	stdinR io.Reader // when set, read in place of stdin
 	tty    bool
 	typed  string
 	exe    string
@@ -141,10 +144,15 @@ func newRun(t *testing.T) *run {
 func (r *run) do(args ...string) *run {
 	r.stdout.Reset()
 	r.stderr.Reset()
+	var stdin io.Reader = strings.NewReader(r.stdin)
+	if r.stdinR != nil {
+		stdin = r.stdinR
+	}
 	env := &Env{
 		Version:         "1.0.0",
 		Platform:        "linux-amd64",
-		Stdin:           strings.NewReader(r.stdin),
+		Stdin:           stdin,
+		TokenWait:       200 * time.Millisecond,
 		Stdout:          &r.stdout,
 		Stderr:          &r.stderr,
 		Getenv:          func(k string) string { return r.env[k] },

@@ -1,9 +1,12 @@
 package term
 
 import (
+	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReadLine(t *testing.T) {
@@ -38,5 +41,16 @@ func TestAFileIsNoTerminal(t *testing.T) {
 	}
 	if _, err := ReadHidden(f); err == nil {
 		t.Fatal("hidden read from a file")
+	}
+}
+
+func TestReadLineWithinGivesUp(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	if _, err := ReadLineWithin(pr, 50*time.Millisecond); !errors.Is(err, ErrNoLine) {
+		t.Fatalf("got %v", err)
+	}
+	if got, err := ReadLineWithin(strings.NewReader("tok\n"), time.Second); got != "tok" || err != nil {
+		t.Fatalf("got %q %v", got, err)
 	}
 }
