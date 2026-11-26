@@ -140,16 +140,30 @@ export function startContainerCreateJob({ spec, log }) {
   });
 }
 
+/** The deploy's settings, applied as a configuration update after the create. */
+const DEPLOY_SETTINGS = ['command', 'restartPolicy', 'autostart', 'autoBackup', 'localDns', 'cpuLimit', 'memoryLimitMiB'];
+
+/** The deploy's env in the create's shape: each `secretEnv` value stored write-only. */
+function deployEnv(env, secretEnv) {
+  const out = {};
+  for (const [key, value] of Object.entries(env ?? {})) out[key] = { value };
+  for (const [key, value] of Object.entries(secretEnv ?? {})) out[key] = { value, secret: true };
+  return out;
+}
+
 /**
- * Deploy a container (MCP `deploy_container`): create it from `image` with
- * `env`, apply the settings `changes` as a configuration update — its
- * follow-ups included — and start it, as one job holding the new name's lock.
- * Its `.local` name is published once it runs, by the network-change event,
- * as for any start. A failure after the create says the container now exists,
- * stopped, and keeps the failure's code (INTERNAL_ERROR for one without a
- * code from the table). `done`: the container's config, secrets masked.
+ * Deploy a container (`POST /api/containers/deploy`, MCP `deploy_container`):
+ * create a generic one from `spec.image` with its env, apply the settings as a
+ * configuration update — its follow-ups included — and start it unless
+ * `spec.start` is false, as one job holding the new name's lock. Its `.local`
+ * name is published once it runs, by the network-change event, as for any
+ * start. A failure after the create says the container now exists, stopped,
+ * and keeps the failure's code (INTERNAL_ERROR for one without a code from the
+ * table). `done`: the container's config, secrets masked.
  */
-export function startContainerDeployJob({ name, image, env, changes, log }) {
+export function startContainerDeployJob({ spec, log }) {
+  const { name, start = true } = spec;
+  const changes = Object.fromEntries(DEPLOY_SETTINGS.filter((key) => spec[key] !== undefined).map((key) => [key, spec[key]]));
   return startJob({
     kind: JOB_KIND.CONTAINER_DEPLOY,
     title: titleForContainerDeploy(name),
@@ -157,13 +171,15 @@ export function startContainerDeployJob({ name, image, env, changes, log }) {
     check: () => assertContainerNameAvailable(name),
     log,
     run: async (report) => {
-      await createContainer({ name, image, env }, report);
-      let failed = 'its settings could not be applied; it exists in stopped state (fix it, then start_container)';
+      await createContainer({ name, image: spec.image.trim(), env: deployEnv(spec.env, spec.secretEnv) }, report);
+      let failed = 'its settings could not be applied; it exists, stopped: fix them, then start it';
       try {
         await applyContainerConfigChanges({ name, changes, log });
-        report({ step: 'starting' });
-        failed = 'failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)';
-        await startContainer(name);
+        if (start) {
+          report({ step: 'starting' });
+          failed = 'failed to start; it exists, stopped: read its logs, fix it, then start it';
+          await startContainer(name);
+        }
       } catch (err) {
         throw wrapAppError(isAppError(err) ? err.code : 'INTERNAL_ERROR', `Container "${name}" was created but ${failed}`, err);
       }

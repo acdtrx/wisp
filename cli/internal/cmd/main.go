@@ -147,7 +147,11 @@ type call struct {
 	help     bool
 	args     []string
 	values   map[string]string
+	lists    map[string][]string // the values of a flag that may be repeated, in order
 	switches map[string]bool
+	// command is what follows `--` on a command that TakesCommand; nil when
+	// no `--` was given.
+	command []string
 }
 
 // updateCommand is the `wisp update` that fetches the CLI of this call's Wisp.
@@ -161,7 +165,7 @@ func (c *call) updateCommand() string {
 // parseCommandLine reads the global flags (before the command), the command,
 // and its arguments and flags, in any order.
 func parseCommandLine(env *Env, args []string) (*call, error) {
-	c := &call{env: env, values: map[string]string{}, switches: map[string]bool{}}
+	c := &call{env: env, values: map[string]string{}, lists: map[string][]string{}, switches: map[string]bool{}}
 	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
 		name, value, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
 		switch {
@@ -228,6 +232,13 @@ func (c *call) parseArgs(args []string) error {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
+			if c.cmd.TakesCommand {
+				c.command = append([]string{}, args[i+1:]...)
+				if len(c.command) == 0 {
+					return usagef(path, "-- needs the command after it: -- <command> [args…]")
+				}
+				break
+			}
 			positional = append(positional, args[i+1:]...)
 			break
 		}
@@ -260,6 +271,10 @@ func (c *call) parseArgs(args []string) error {
 			}
 			i++
 			value = args[i]
+		}
+		if def.Repeat {
+			c.lists[name] = append(c.lists[name], value)
+			continue
 		}
 		if _, seen := c.values[name]; seen {
 			return usagef(path, "--%s is given twice", name)

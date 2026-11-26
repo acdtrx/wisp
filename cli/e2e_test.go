@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,8 +13,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const e2eVersion = "9.9.9-e2e"
@@ -41,6 +45,16 @@ type e2eWisp struct {
 	token    string
 	requests atomic.Int32
 	binary   []byte
+	// The deploy's body, and its job's progress (an e2eJob).
+	deployBody atomic.Value
+	job        atomic.Value
+}
+
+// e2eJob is the frames of a job's progress; with hangs, the stream stays
+// open after them.
+type e2eJob struct {
+	frames []string
+	hangs  bool
 }
 
 func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
@@ -80,6 +94,20 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 			rw.Write([]byte(`[{"name":"web","image":"nginx:1.27","state":"running","updateAvailable":false,"scheduledRestart":null,"pendingRestart":null}]`))
 		case "/api/jobs":
 			reply(200, map[string]any{"jobs": []any{}})
+		case "/api/containers/deploy":
+			body, _ := io.ReadAll(r.Body)
+			w.deployBody.Store(string(body))
+			reply(202, map[string]any{"jobId": "j-1", "kind": "container-deploy", "title": "Deploy web", "subject": map[string]string{"type": "container", "name": "web"}})
+		case "/api/jobs/j-1/progress":
+			rw.Header().Set("Content-Type", "text/event-stream")
+			job, _ := w.job.Load().(e2eJob)
+			for _, f := range job.frames {
+				fmt.Fprintf(rw, "data: %s\n\n", f)
+			}
+			rw.(http.Flusher).Flush()
+			if job.hangs {
+				<-r.Context().Done()
+			}
 		default:
 			reply(404, map[string]string{"error": "ROUTE_NOT_FOUND", "detail": r.URL.Path})
 		}
@@ -201,4 +229,61 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 	if !strings.Contains(got.stdout, "wisp CLI  "+e2eVersion) {
 		t.Fatalf("version after the update: %+v", got)
 	}
+}
+
+func TestTheBuiltBinaryCreatesAContainerAndAnInterruptLeavesTheJob(t *testing.T) {
+	bin := buildWisp(t, t.TempDir(), e2eVersion)
+	wisp := newE2EWisp(t, e2eVersion, "wisp_agent_e2e")
+	env := append(homeEnv(t.TempDir()), "WISP_URL="+wisp.URL, "WISP_TOKEN=wisp_agent_e2e")
+	wisp.job.Store(e2eJob{frames: []string{`{"step":"pulling"}`, `{"step":"starting"}`, `{"step":"done","result":{"name":"web","state":"running","env":{"K":{"value":"v"}}}}`}})
+
+	got := runWisp(t, bin, env, "", "containers", "create", "web", "--image", "nginx:1.27", "--env", "K=v", "--", "nginx", "-g", "daemon off;")
+	if got.code != 0 || !strings.Contains(got.stdout, "running") || !strings.Contains(got.stdout, "K=v") || !strings.Contains(got.stderr, "starting") {
+		t.Fatalf("create: %+v", got)
+	}
+	if body := wisp.deployBody.Load(); body != `{"command":["nginx","-g","daemon off;"],"env":{"K":"v"},"image":"nginx:1.27","name":"web"}` {
+		t.Fatalf("deploy body %v", body)
+	}
+
+	if runtime.GOOS == "windows" {
+		return // no interrupt to send a process here
+	}
+	wisp.job.Store(e2eJob{frames: []string{`{"step":"pulling"}`}, hangs: true})
+	c := exec.Command(bin, "containers", "create", "web", "--image", "nginx:1.27")
+	c.Env = env
+	var stderr lockedBuffer
+	c.Stderr = &stderr
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(stderr.String(), "pulling") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := c.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	err := c.Wait()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(stderr.String(), "the job j-1 goes on") {
+		t.Fatalf("interrupted: %v\nstderr: %s", err, stderr.String())
+	}
+}
+
+// lockedBuffer is a buffer the test reads while the process writes it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

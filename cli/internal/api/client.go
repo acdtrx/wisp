@@ -4,6 +4,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -119,11 +120,19 @@ func (c *Client) url(path string, query url.Values) string {
 }
 
 func (c *Client) do(ctx context.Context, path string, query url.Values, accept string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path, query), nil)
+	return c.send(ctx, http.MethodGet, path, query, accept, nil, "")
+}
+
+// send sends one request: body, when not nil, as contentType.
+func (c *Client) send(ctx context.Context, method, path string, query url.Values, accept string, body io.Reader, contentType string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.url(path, query), body)
 	if err != nil {
 		return nil, fmt.Errorf("build the request for %s: %w", path, err)
 	}
 	req.Header.Set("Accept", accept)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	req.Header.Set(VersionHeader, c.version)
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
@@ -147,9 +156,31 @@ func unwrapURLError(err error) error {
 
 // Get sends one GET and answers the 2xx body. A refusal is an *Error.
 func (c *Client) Get(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	return c.request(ctx, http.MethodGet, path, query, nil)
+}
+
+// Send sends one request with v as its JSON body (none when v is nil) and
+// answers the 2xx body, empty for a 204. A refusal is an *Error.
+func (c *Client) Send(ctx context.Context, method, path string, v any) ([]byte, error) {
+	var body []byte
+	if v != nil {
+		var err error
+		if body, err = json.Marshal(v); err != nil {
+			return nil, fmt.Errorf("encode the request for %s: %w", path, err)
+		}
+	}
+	return c.request(ctx, method, path, nil, body)
+}
+
+func (c *Client) request(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
-	res, err := c.do(ctx, path, query, "application/json")
+	var reader io.Reader
+	contentType := ""
+	if body != nil {
+		reader, contentType = bytes.NewReader(body), "application/json"
+	}
+	res, err := c.send(ctx, method, path, query, "application/json", reader, contentType)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s did not answer within %s", c.url(path, query), c.requestTimeout)
@@ -157,15 +188,20 @@ func (c *Client) Get(ctx context.Context, path string, query url.Values) ([]byte
 		return nil, err
 	}
 	defer res.Body.Close()
+	return readAnswer(c.url(path, query), res)
+}
+
+// readAnswer reads a short answer's body: the 2xx body, or the refusal.
+func readAnswer(u string, res *http.Response) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read the answer of %s: %w", c.url(path, query), err)
+		return nil, fmt.Errorf("read the answer of %s: %w", u, err)
 	}
 	if len(body) > maxResponseBytes {
-		return nil, fmt.Errorf("the answer of %s is over %d bytes", c.url(path, query), maxResponseBytes)
+		return nil, fmt.Errorf("the answer of %s is over %d bytes", u, maxResponseBytes)
 	}
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, refusal(c.url(path, query), res, body)
+		return nil, refusal(u, res, body)
 	}
 	return body, nil
 }

@@ -35,31 +35,16 @@ const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
 const nameArgument = (description) => ({ ...containerNameSchema, description });
 
-function buildEnv(env, secretEnv) {
-  const out = {};
-  for (const [key, value] of Object.entries(env ?? {})) out[key] = { value };
-  for (const [key, value] of Object.entries(secretEnv ?? {})) out[key] = { value, secret: true };
-  return out;
-}
-
-const SETTINGS_ARGUMENTS = ['restartPolicy', 'autostart', 'autoBackup', 'localDns', 'cpuLimit', 'memoryLimitMiB'];
-
-/** The deploy's settings, applied as a configuration update after the create. */
-function buildSettingsChanges(args) {
-  return Object.fromEntries(SETTINGS_ARGUMENTS.filter((key) => args[key] !== undefined).map((key) => [key, args[key]]));
-}
-
 export const containerAgentTools = [
   {
     name: 'deploy_container',
     title: 'Deploy a container',
     description:
-      'Create a new container from an OCI image and start it. It joins the host bridge with its own ' +
-      'DHCP LAN IP and registers <name>.local (localDns defaults true). Use a fully-qualified image ' +
-      'ref (e.g. zotty.anapana.trixbits.ro/acdtrx/app:tag). Deliberately simple on purpose: no ' +
-      'mounts, devices, root, or app templates — configure those in the Wisp UI. Put secret env ' +
-      'values in secretEnv (stored write-only; get_container can never read them back). ' + JOB_NOTE +
-      ' Its result is the new container (secrets masked).',
+      'Create a new container from an OCI image and start it (start: false leaves it stopped). It joins the ' +
+      'host bridge with its own DHCP LAN IP and registers <name>.local (localDns defaults true). Use a ' +
+      'fully-qualified image ref (e.g. zotty.anapana.trixbits.ro/acdtrx/app:tag). No mounts, devices, root, ' +
+      'or app templates here. Put secret env values in secretEnv (stored write-only; get_container can never ' +
+      'read them back). ' + JOB_NOTE + ' Its result is the new container (secrets masked).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,6 +52,11 @@ export const containerAgentTools = [
         image: { type: 'string', pattern: '\\S', description: 'Fully-qualified OCI image ref' },
         env: { type: 'object', additionalProperties: { type: 'string' }, description: 'Plain env vars' },
         secretEnv: { type: 'object', additionalProperties: { type: 'string' }, description: 'Secret env vars (write-only)' },
+        command: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'The command the container runs, as an argv array; omit to run the image\'s own',
+        },
         restartPolicy: {
           type: 'string',
           enum: RESTART_POLICIES,
@@ -79,17 +69,13 @@ export const containerAgentTools = [
         localDns: { type: 'boolean', description: 'Register <name>.local via mDNS (default true)' },
         cpuLimit: { type: 'number', exclusiveMinimum: 0, description: 'CPU cores cap' },
         memoryLimitMiB: { type: 'integer', minimum: 1, description: 'Memory cap in MiB' },
+        start: { type: 'boolean', description: 'Start it once created (default true); false leaves it defined and stopped' },
       },
       required: ['name', 'image'],
       additionalProperties: false,
     },
     scope: 'agent',
-    handler: async (args, { log } = {}) => {
-      const { name, image } = args;
-      return startContainerDeployJob({
-        name, image: image.trim(), env: buildEnv(args.env, args.secretEnv), changes: buildSettingsChanges(args), log,
-      });
-    },
+    handler: async (args, { log } = {}) => startContainerDeployJob({ spec: args, log }),
   },
   {
     name: 'update_container_image',

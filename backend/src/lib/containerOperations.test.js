@@ -171,24 +171,52 @@ test('a zip upload refused while it stages answers the error, with no job, no st
 
 test('a deploy whose start fails on an error with no table code answers INTERNAL_ERROR, saying the container exists', async () => {
   impl.startContainer = async () => { throw Object.assign(new Error("EACCES: permission denied, open '/srv/x/runs/1.log'"), { code: 'EACCES' }); };
-  const { jobId } = await startContainerDeployJob({ name: 'd', image: 'nginx:1.27', env: {}, changes: {}, log });
+  const { jobId } = await startContainerDeployJob({ spec: { name: 'd', image: 'nginx:1.27' }, log });
   assert.equal(await whenJobEnds(jobId), 'error');
   assert.deepEqual(readJob(jobId), {
     ...readJob(jobId),
     error: 'INTERNAL_ERROR',
-    detail: 'Container "d" was created but failed to start; it exists in stopped state (check get_container_logs, or fix '
-      + "and start_container): EACCES: permission denied, open '<path>'",
+    detail: 'Container "d" was created but failed to start; it exists, stopped: read its logs, fix it, then start it: '
+      + "EACCES: permission denied, open '<path>'",
   });
 });
 
 test('a deploy whose settings fail keeps their code and says the container exists, stopped', async () => {
   impl.updateContainerConfig = async () => { throw createAppError('CONFIG_ERROR', 'cpuLimit exceeds the host\'s 4 cores'); };
-  const { jobId } = await startContainerDeployJob({ name: 'd', image: 'nginx:1.27', env: {}, changes: { cpuLimit: 8 }, log });
+  const { jobId } = await startContainerDeployJob({ spec: { name: 'd', image: 'nginx:1.27', cpuLimit: 8 }, log });
   assert.equal(await whenJobEnds(jobId), 'error');
   const { error, detail } = readJob(jobId);
   assert.equal(error, 'CONFIG_ERROR');
-  assert.equal(detail, 'Container "d" was created but its settings could not be applied; it exists in stopped state '
-    + "(fix it, then start_container): cpuLimit exceeds the host's 4 cores");
+  assert.equal(detail, 'Container "d" was created but its settings could not be applied; it exists, stopped: fix them, '
+    + "then start it: cpuLimit exceeds the host's 4 cores");
+  assert.equal(names().includes('startContainer'), false);
+});
+
+test('a deploy creates with the env, applies the settings and the command as one update, starts, and answers the container', async () => {
+  impl.getContainerConfig = async () => ({ name: 'd', state: 'running' });
+  impl.maskContainerConfigSecrets = async (cfg) => ({ ...cfg, masked: true });
+  const spec = {
+    name: 'd', image: ' nginx:1.27 ', env: { A: '1' }, secretEnv: { S: 'hush' }, command: ['nginx', '-g', 'daemon off;'],
+    restartPolicy: 'always', autostart: true, cpuLimit: 0.5, memoryLimitMiB: 128,
+  };
+  const { jobId } = await startContainerDeployJob({ spec, log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(readJob(jobId).result, { name: 'd', state: 'running', masked: true });
+  const manager = calls.filter(([name]) => ['createContainer', 'updateContainerConfig', 'startContainer'].includes(name));
+  assert.deepEqual(manager.map(([name, ...args]) => [name, ...args.filter((a) => typeof a !== 'function')]), [
+    ['createContainer', { name: 'd', image: 'nginx:1.27', env: { A: { value: '1' }, S: { value: 'hush', secret: true } } }],
+    ['updateContainerConfig', 'd', {
+      command: ['nginx', '-g', 'daemon off;'], restartPolicy: 'always', autostart: true, cpuLimit: 0.5, memoryLimitMiB: 128,
+    }],
+    ['startContainer', 'd'],
+  ]);
+  assertUnlocked('d');
+});
+
+test('a deploy with start false leaves the container defined and stopped', async () => {
+  const { jobId } = await startContainerDeployJob({ spec: { name: 'd', image: 'nginx:1.27', start: false }, log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.equal(names().includes('createContainer'), true);
   assert.equal(names().includes('startContainer'), false);
 });
 

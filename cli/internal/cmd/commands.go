@@ -16,19 +16,26 @@ type command struct {
 	Summary string
 	About   string
 	Flags   []flagDef
-	Example string
-	run     func(ctx context.Context, c *call) error
+	// TakesCommand: what follows `--` is the command a container runs, not
+	// arguments of this one.
+	TakesCommand bool
+	Example      string
+	run          func(ctx context.Context, c *call) error
 }
 
 // flagDef is one flag of a command: a switch when Value is empty, else a
 // flag that takes the value Value names.
 type flagDef struct {
-	Name  string
-	Value string
-	Usage string
+	Name   string
+	Value  string
+	Usage  string
+	Repeat bool // may be given more than once
 }
 
 var jsonFlag = flagDef{Name: "json", Usage: "Print the API's JSON instead of text, unchanged."}
+
+// jobJSONFlag is --json on a command that starts a job.
+var jobJSONFlag = flagDef{Name: "json", Usage: "Print the API's JSON instead of text, unchanged: the job's result, or with --no-wait the job's ack."}
 
 func (c *command) flag(name string) *flagDef {
 	for i := range c.Flags {
@@ -177,6 +184,63 @@ func commandTable() []*command {
 			Flags:   []flagDef{jsonFlag},
 			Example: "wisp containers show web",
 			run:     runContainersShow,
+		},
+		{
+			Path: "containers create", Usage: "<name>", MinArgs: 1, MaxArgs: 1, TakesCommand: true,
+			Summary: "Create a container, set it up and start it",
+			About: "Creates a container on the Wisp's default bridge from --image, with the settings given,\n" +
+				"and starts it: one job on the Wisp. The image is pulled, unless the Wisp holds one by\n" +
+				"that name already (an image \"wisp images push\" uploaded is under localhost/). The\n" +
+				"command prints the job's progress on standard error and ends when the job does, with\n" +
+				"the container as \"wisp containers show\" prints it. When a setting or the start fails,\n" +
+				"the container exists, stopped, and the error says so.\n\n" +
+				"The container has its own address on the LAN, by DHCP, and <name>.local unless\n" +
+				"--local-dns off; there is no port mapping. Without --restart-policy it is\n" +
+				"unless-stopped. --no-start leaves it stopped, for files to be uploaded first (\"wisp\n" +
+				"containers upload\"); \"wisp containers start\" then starts it. An interrupt (Ctrl-C) ends\n" +
+				"the wait, never the job.",
+			Flags: []flagDef{
+				imageFlag, envFlag, secretEnvFlag, cpuFlag, memoryFlag, restartFlag, autostartFlag, backupFlag, localDNSFlag,
+				{Name: "no-start", Usage: "Leave the container defined and stopped."},
+				noWaitFlag, jobJSONFlag,
+			},
+			Example: "wisp containers create web --image nginx:1.27 --env MODE=prod --secret-env API_KEY=s3cret --memory 256\n" +
+				"wisp containers create worker --image ghcr.io/me/worker:v3 --cpu 1 -- worker --queue jobs\n" +
+				"wisp containers create site --image localhost/site:v1 --no-start",
+			run: runContainersCreate,
+		},
+		{
+			Path: "containers start", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Start a stopped container",
+			About: "Starts the container, a job on the Wisp: the command prints its progress on standard\n" +
+				"error and ends when it does. A container already running, or busy with another\n" +
+				"command, is the Wisp's refusal. An interrupt (Ctrl-C) ends the wait, never the job.",
+			Flags:   []flagDef{noWaitFlag, jobJSONFlag},
+			Example: "wisp containers start web",
+			run:     lifecycleCommand("start", "Started"),
+		},
+		{
+			Path: "containers stop", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Stop a running container",
+			About: "Stops the container, a job on the Wisp: SIGTERM, then SIGKILL after its grace period. On\n" +
+				"a stopped container whose restart policy has a restart scheduled, it cancels that\n" +
+				"restart. The command prints the job's progress on standard error and ends when it\n" +
+				"does. A container not running, or busy with another command, is the Wisp's refusal.\n" +
+				"An interrupt (Ctrl-C) ends the wait, never the job.",
+			Flags:   []flagDef{noWaitFlag, jobJSONFlag},
+			Example: "wisp containers stop web",
+			run:     lifecycleCommand("stop", "Stopped"),
+		},
+		{
+			Path: "containers restart", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Restart a container",
+			About: "Stops the container and starts it again, a job on the Wisp: the start applies what\n" +
+				"waits for a restart (a changed image, env, command or mount). The command prints the\n" +
+				"job's progress on standard error and ends when it does. A container busy with another\n" +
+				"command is the Wisp's refusal. An interrupt (Ctrl-C) ends the wait, never the job.",
+			Flags:   []flagDef{noWaitFlag, jobJSONFlag},
+			Example: "wisp containers restart web",
+			run:     lifecycleCommand("restart", "Restarted"),
 		},
 		{
 			Path: "containers logs", Usage: "<name>", MinArgs: 1, MaxArgs: 1,

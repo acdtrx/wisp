@@ -89,14 +89,21 @@ func printHelp(w io.Writer, c *command) {
 		for _, f := range c.Flags {
 			fmt.Fprintf(tw, "  %s\t%s\n", strings.TrimSpace("--"+f.Name+" "+f.Value), f.Usage)
 		}
+		if c.TakesCommand {
+			fmt.Fprintf(tw, "  -- <command> [args…]\tThe command the container runs, in place of the image's own: everything after --, each word one argument. Last on the line.\n")
+		}
 		tw.Flush()
 	}
 	fmt.Fprintf(w, "\nExample:\n  %s\n", strings.ReplaceAll(c.Example, "\n", "\n  "))
 }
 
 func flagsUsage(c *command) string {
-	if len(c.Flags) == 0 {
-		return ""
+	usage := ""
+	if len(c.Flags) > 0 {
+		usage = " [flags]"
 	}
-	return " [flags]"
+	if c.TakesCommand {
+		usage += " [-- <command> [args…]]"
+	}
+	return usage
 }

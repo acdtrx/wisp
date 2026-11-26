@@ -22,6 +22,7 @@ import {
 } from '../lib/jobs/index.js';
 import {
   startContainerCreateJob,
+  startContainerDeployJob,
   startContainerStartJob,
   startContainerStopJob,
   startContainerRestartJob,
@@ -259,6 +260,9 @@ const containerDetailSchema = {
 
 const imageRefSchema = { type: 'string', minLength: 1, pattern: '\\S' };
 
+/** A deploy's env: each name to its value. */
+const envMapSchema = openOnPurpose({ type: 'object', additionalProperties: { type: 'string' } });
+
 /* ── Multipart staging ────────────────────────────────────────────────── */
 
 /**
@@ -345,6 +349,37 @@ export default async function containerRoutes(fastify) {
         throw createAppError('UNKNOWN_APP_TYPE', `App "${spec.app}" is not a known app type`);
       }
       return reply.code(202).send(await startContainerCreateJob({ spec, log: request.log }));
+    },
+  });
+
+  // Create, settings and start as one job, for a caller that cannot follow
+  // three requests (the wisp CLI). Generic containers only, for every caller.
+  fastify.post('/containers/deploy', {
+    config: { auth: 'agent' },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['name', 'image'],
+        properties: {
+          name: containerNameSchema,
+          image: imageRefSchema,
+          env: envMapSchema,
+          secretEnv: envMapSchema,
+          command: containerPatchSchema.properties.command,
+          restartPolicy: restartPolicySchema,
+          autostart: { type: 'boolean' },
+          autoBackup: { type: 'boolean' },
+          localDns: { type: 'boolean' },
+          cpuLimit: containerPatchSchema.properties.cpuLimit,
+          memoryLimitMiB: containerPatchSchema.properties.memoryLimitMiB,
+          start: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+      response: { 202: jobAckSchema },
+    },
+    handler: async (request, reply) => {
+      return reply.code(202).send(await startContainerDeployJob({ spec: request.body, log: request.log }));
     },
   });
 
