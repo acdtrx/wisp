@@ -4,6 +4,20 @@
  */
 export const OCI_ARCH = ({ x64: 'amd64', arm64: 'arm64', arm: 'arm' })[process.arch] || process.arch;
 
+/** The host's platform as a transfer's filter and unpack name it. */
+export const HOST_PLATFORM = OCI_ARCH === 'arm64'
+  ? { os: 'linux', architecture: OCI_ARCH, variant: 'v8' }
+  : { os: 'linux', architecture: OCI_ARCH };
+
+/** `os/arch[/variant]`, or '' for a descriptor without a platform. */
+export function formatPlatform(p) {
+  if (!p?.os) return '';
+  const os = p.os;
+  const arch = p.architecture || '?';
+  const v = p.variant ? `/${p.variant}` : '';
+  return `${os}/${arch}${v}`;
+}
+
 /** Map registry architecture strings to OCI-normalized values (matches common image indexes). */
 function normalizeOCIArchitecture(arch) {
   if (!arch || typeof arch !== 'string') return '';

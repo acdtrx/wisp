@@ -2,15 +2,16 @@
  * Image pulls and the image's own description: the Transfer pull, the manifest
  * resolution to this host's Linux platform, and the image config.
  */
-import { randomBytes } from 'node:crypto';
-
 import {
-  containerError, getClient, callUnary, callStream, callBidi, collectStream, STREAM_DEADLINE_MS, packProtoAny, unpackAny,
+  containerError, getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS, packProtoAny,
 } from './containerManagerConnection.js';
+import { openProgressStream } from './containerManagerTransferStreams.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 import { SNAPSHOTTER } from './containerManagerSnapshot.js';
-import { OCI_ARCH, hostLinuxManifests } from './containerManagerPlatform.js';
+import {
+  OCI_ARCH, HOST_PLATFORM, hostLinuxManifests, formatPlatform,
+} from './containerManagerPlatform.js';
 
 /**
  * An image pull runs as long as the image is big: no total bound, but it is
@@ -18,16 +19,6 @@ import { OCI_ARCH, hostLinuxManifests } from './containerManagerPlatform.js';
  * the transfer service's own progress stream: bytes fetched, bytes extracted.
  */
 const PULL_STALL_MS = 5 * 60_000;
-/** Opening the progress stream is one round trip. */
-const PROGRESS_STREAM_OPEN_MS = 30_000;
-
-function formatPlatform(p) {
-  if (!p?.os) return '';
-  const os = p.os;
-  const arch = p.architecture || '?';
-  const v = p.variant ? `/${p.variant}` : '';
-  return `${os}/${arch}${v}`;
-}
 
 /**
  * Pick the child descriptor for this host from an OCI index / Docker manifest list.
@@ -61,16 +52,11 @@ export async function pullImage(imageRef, onStep) {
     reference: ref,
   });
 
-  const hostPlatform =
-    OCI_ARCH === 'arm64'
-      ? { os: 'linux', architecture: OCI_ARCH, variant: 'v8' }
-      : { os: 'linux', architecture: OCI_ARCH };
-
   const destination = packProtoAny('containerd.types.transfer.ImageStore', {
     name: ref,
-    platforms: [hostPlatform],
+    platforms: [HOST_PLATFORM],
     unpacks: [{
-      platform: hostPlatform,
+      platform: HOST_PLATFORM,
       snapshotter: SNAPSHOTTER,
     }],
   });
@@ -109,38 +95,9 @@ export async function pullImage(imageRef, onStep) {
 }
 
 /**
- * Open a transfer progress stream (containerd's Streaming service): its id
- * goes into the transfer's options, and `onEvent` gets each progress event.
- * Resolves once containerd acknowledges the stream.
- */
-function openProgressStream(onEvent) {
-  const id = `wisp-pull-${randomBytes(8).toString('hex')}`;
-  const stream = callBidi(getClient('streaming'), 'stream');
-  const close = () => { try { stream.cancel(); } catch { /* a stream that already ended refuses the cancel: it is ended either way */ } };
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      close();
-      reject(containerError('CONTAINERD_ERROR', `containerd did not open the pull progress stream within ${PROGRESS_STREAM_OPEN_MS / 1000} s`));
-    }, PROGRESS_STREAM_OPEN_MS);
-    stream.once('error', (err) => {
-      clearTimeout(timer);
-      reject(containerError('CONTAINERD_ERROR', 'Could not open the pull progress stream', err.message));
-    });
-    stream.once('data', () => { // the ack: the stream is ready
-      clearTimeout(timer);
-      stream.on('data', (any) => onEvent(unpackAny(any)));
-      stream.removeAllListeners('error');
-      stream.on('error', () => { /* ends with the pull: a lost stream only loses progress */ });
-      resolve({ id, close });
-    });
-    stream.write(packProtoAny('containerd.services.streaming.v1.StreamInit', { id }));
-  });
-}
-
-/**
  * Read a blob from containerd's content store by digest.
  */
-async function readContent(digest) {
+export async function readContent(digest) {
   const chunks = await collectStream(
     callStream(getClient('content'), 'read', { digest }, { deadlineMs: STREAM_DEADLINE_MS }),
   );
