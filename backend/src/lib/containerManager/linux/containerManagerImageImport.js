@@ -27,8 +27,9 @@ import {
   HOST_PLATFORM, hostLinuxManifests, formatPlatform,
 } from './containerManagerPlatform.js';
 import {
-  IMAGE_IMPORT_NAME_PREFIX, isImageImportWorkName, localImageNameFor, normalizeImageRef,
+  IMAGE_IMPORT_NAME_PREFIX, normalizeImageRef,
 } from './containerImageRef.js';
+import { namedImages } from './containerImageArchiveNames.js';
 import { ensureContainersDir, getContainersPath } from './containerPaths.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 
@@ -45,12 +46,13 @@ const COMPLETED_EVENT_MS = 10_000;
 
 /** containerd's own refusal of an archive that has no image for the filter's platform (images.ErrEmptyWalk). */
 const FILTERED_OUT_TEXT = 'image might be filtered out';
-const ANNOTATION_IMAGE_NAME = 'io.containerd.image.name';
-const ANNOTATION_REF_NAME = 'org.opencontainers.image.ref.name';
 const MEDIA_INDEX = new Set([
   'application/vnd.oci.image.index.v1+json',
   'application/vnd.docker.distribution.manifest.list.v2+json',
 ]);
+
+/** An index, a manifest and a config are small: one past this is no image's. */
+const DOCUMENT_MAX_BYTES = 4 * 1024 * 1024;
 
 const STAGING_PREFIX = '.image-import-';
 const STAGING_SUFFIX = '.tar';
@@ -72,13 +74,36 @@ function containerdText(err) {
   return String(err?.raw ?? err?.message ?? '').replace(/^\d+ [A-Z_]+: /, '');
 }
 
-/** The full name an image carries in the archive, or null: one with no repository names none. */
-function archiveImageName(annotations) {
-  const name = annotations?.[ANNOTATION_IMAGE_NAME];
-  if (name) return name;
-  const ref = annotations?.[ANNOTATION_REF_NAME];
-  // A ref name of a tag alone (`v1`) names no repository.
-  return ref && /[/:@]/.test(ref) ? ref : null;
+function malformedArchive(what) {
+  return containerError('CONTAINER_IMAGE_ARCHIVE_INVALID', `The archive's ${what}`);
+}
+
+/**
+ * One of the archive's documents (an index, a manifest or a config), read
+ * from the content store: a JSON object of a bounded size, or the archive is
+ * invalid.
+ */
+async function readArchiveDocument(digest, what) {
+  if (typeof digest !== 'string' || !digest) throw malformedArchive(`${what} names no content`);
+  let info;
+  try {
+    ({ info } = await callUnary(getClient('content'), 'info', { digest }));
+  } catch (err) {
+    if (err.code === 'CONTAINER_NOT_FOUND') throw malformedArchive(`${what} names content the archive does not hold`);
+    throw err;
+  }
+  if (Number(info?.size) > DOCUMENT_MAX_BYTES) {
+    throw malformedArchive(`${what} is ${info.size} bytes, more than an image's ${what} holds`);
+  }
+  let doc;
+  try {
+    doc = JSON.parse((await readContent(digest)).toString('utf8'));
+  } catch {
+    // Not JSON: the archive's content is not an image's.
+    throw malformedArchive(`${what} is not JSON`);
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw malformedArchive(`${what} is not a JSON object`);
+  return doc;
 }
 
 /**
@@ -87,21 +112,24 @@ function archiveImageName(annotations) {
  * config is.
  */
 async function imagePlatforms(desc) {
-  const doc = JSON.parse((await readContent(desc.digest)).toString('utf8'));
-  if (MEDIA_INDEX.has(desc.mediaType) || Array.isArray(doc.manifests)) {
-    const manifests = doc.manifests || [];
-    const platforms = manifests
+  const isIndex = MEDIA_INDEX.has(desc.mediaType);
+  const doc = await readArchiveDocument(desc.digest, isIndex ? 'index' : 'manifest');
+  if (isIndex || doc.manifests !== undefined) {
+    if (!Array.isArray(doc.manifests) || doc.manifests.some((m) => !m || typeof m !== 'object')) {
+      throw malformedArchive('index lists no manifests');
+    }
+    const platforms = doc.manifests
       .map((m) => m.platform)
-      .filter((p) => p?.os && p.os !== 'unknown')
+      .filter((p) => p && typeof p === 'object' && typeof p.os === 'string' && p.os !== 'unknown')
       .map(formatPlatform);
-    return { platforms, forHost: hostLinuxManifests(manifests).length > 0 };
+    return { platforms, forHost: hostLinuxManifests(doc.manifests).length > 0 };
   }
-  const config = JSON.parse((await readContent(doc.config.digest)).toString('utf8'));
+  const config = await readArchiveDocument(doc.config?.digest, 'image config');
   const platform = { os: config.os, architecture: config.architecture, variant: config.variant };
-  return {
-    platforms: platform.os ? [formatPlatform(platform)] : [],
-    forHost: hostLinuxManifests([{ platform }]).length > 0,
-  };
+  if (typeof platform.os !== 'string' || typeof platform.architecture !== 'string') {
+    return { platforms: [], forHost: false };
+  }
+  return { platforms: [formatPlatform(platform)], forHost: hostLinuxManifests([{ platform }]).length > 0 };
 }
 
 /** Delete every image under `prefix`: an import's own names. */
@@ -132,11 +160,8 @@ async function storeImage(name, target) {
  * Run the transfer: stream the archive, store its images under `workPrefix`.
  * Resolves with the `saved` progress events of the images that name one.
  */
-async function transferArchive(archivePath, workPrefix, signal) {
+async function transferArchive(archivePath, workPrefix) {
   const controller = new AbortController();
-  const onAbort = () => controller.abort(signal.reason);
-  if (signal?.aborted) onAbort();
-  else signal?.addEventListener('abort', onAbort, { once: true });
   const watchdog = createStallWatchdog({
     stallMs: IMPORT_STALL_MS,
     onStall: () => controller.abort(
@@ -177,11 +202,10 @@ async function transferArchive(archivePath, workPrefix, signal) {
       await sender.sent.catch(() => { /* the transfer's own error says what failed */ });
       throw archiveRefusal(err, controller.signal);
     }
-    try {
-      await sender.sent;
-    } catch (err) {
-      throw containerError('CONTAINERD_ERROR', 'The image archive could not be sent to containerd', err.message);
-    }
+    // containerd has read what it imports: a tar padded past its end leaves
+    // bytes it never asks for, and the sender waits for no window more.
+    sender.close();
+    await sender.sent.catch(() => { /* the import succeeded: what was left unsent was never read */ });
 
     // `saved` events precede `Completed import` on the one stream: once it is
     // here, every name is.
@@ -197,7 +221,6 @@ async function transferArchive(archivePath, workPrefix, signal) {
     return saved;
   } finally {
     watchdog.stop();
-    signal?.removeEventListener('abort', onAbort);
     sender?.close();
     progress?.close();
     await fh?.close();
@@ -206,6 +229,7 @@ async function transferArchive(archivePath, workPrefix, signal) {
 
 /** What a failed transfer says about the archive: Wisp's own code for containerd's refusal. */
 function archiveRefusal(err, signal) {
+  // Stopped for a stall: that error says so. containerd unreachable: its own.
   if (signal.aborted || err?.code === 'NO_CONTAINERD') return err;
   const text = containerdText(err);
   if (text.includes(FILTERED_OUT_TEXT)) {
@@ -223,27 +247,13 @@ function archiveRefusal(err, signal) {
  * there is replaced); every one must be for this host, or none is stored.
  * Resolves `{ images: [{ name, digest }] }`, in the archive's order.
  * @param {string} archivePath
- * @param {{ signal?: AbortSignal }} [opts]
  */
-export async function storeImagesFromArchive(archivePath, { signal } = {}) {
+export async function storeImagesFromArchive(archivePath) {
   const workPrefix = `${IMAGE_IMPORT_NAME_PREFIX}${randomBytes(8).toString('hex')}`;
   try {
-    const saved = await transferArchive(archivePath, workPrefix, signal);
+    const named = namedImages(await transferArchive(archivePath, workPrefix));
 
-    const named = [];
-    for (const ev of saved) {
-      const archiveName = archiveImageName(ev.desc?.annotations);
-      if (!archiveName) continue;
-      named.push({ archiveName, name: localImageNameFor(archiveName), desc: ev.desc });
-    }
-    if (named.length === 0) {
-      throw containerError('CONTAINER_IMAGE_ARCHIVE_UNNAMED', 'The archive names no image');
-    }
-
-    for (const { archiveName, name, desc } of named) {
-      if (isImageImportWorkName(name)) {
-        throw containerError('CONTAINER_IMAGE_ARCHIVE_INVALID', `The archive names ${archiveName}, a name Wisp keeps for its imports`);
-      }
+    for (const { archiveName, desc } of named) {
       const { platforms, forHost } = await imagePlatforms(desc);
       if (!forHost) {
         const host = formatPlatform(HOST_PLATFORM);
@@ -257,10 +267,7 @@ export async function storeImagesFromArchive(archivePath, { signal } = {}) {
     }
 
     const images = [];
-    const stored = new Set();
     for (const { name, desc } of named) {
-      if (stored.has(name)) continue;
-      stored.add(name);
       await storeImage(name, desc);
       images.push({ name, digest: desc.digest });
     }
