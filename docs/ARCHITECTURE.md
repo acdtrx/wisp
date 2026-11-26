@@ -236,7 +236,8 @@ kept over the template's one in-memory bus).
   `changes` kinds, the job kinds; nothing else, and it imports nothing). Each package
   has its own `package.json`; the root's marks the tree as ES modules, which is how
   Node reads `shared/`, and the release tarball carries both. `cli/` is the CLI: one Go
-  module, `main` at its top and its parts a flat list of packages under `internal/`. It
+  module, `main` at its top and its parts a flat list of packages under `internal/`,
+  with the two install scripts Wisp serves beside the binaries. It
   imports nothing from the rest of the repo, and nothing imports it: the REST API is the
   boundary.
 - Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,

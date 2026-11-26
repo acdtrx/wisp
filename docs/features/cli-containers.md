@@ -20,6 +20,9 @@ Written by the design session with this file, and agreed with it:
   `POST /api/containers/:name/image-update`. Each is one job the server already has,
   which so far only an MCP tool could start.
 - `specs/MCP.md`: `deploy_container` gains `command` and `start`, as the route has them.
+  The `initialize` instructions' closing line on the CLI also says what it does beyond
+  the tools: settings, mounts, uploads and images. The design session writes that
+  sentence into `MCP.md` when this feature starts.
 - `specs/AUTH.md`: the two routes among the `agent` ones.
 
 The builder edits none of these. It reports each sentence its work makes untrue, with
@@ -108,3 +111,4 @@ file and line. `README.md` and `CHANGELOG.md` are the builder's.
 - An archive for another architecture prints the import's error and ends `1`.
 - A container created with the printed name runs: the whole path, build elsewhere,
   push, create, with no registry.
+- MCP's `initialize` instructions say what the CLI does beyond the tools.

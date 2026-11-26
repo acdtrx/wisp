@@ -114,8 +114,9 @@
   in [specs/CLI.md](specs/CLI.md). No `Makefile`: the scripts and `npm run check` stay
   the project's entry points.
 - **Its checks run in `npm run check`**: `gofmt -l` (any output fails), `go vet ./...`,
-  staticcheck run as `go run honnef.co/go/tools/cmd/staticcheck@<pinned version>` (a
-  build tool, not a dependency of the module), and `go test ./...`: table tests, and
+  staticcheck at a pinned version (`honnef.co/go/tools/cmd/staticcheck`, installed into
+  a temporary folder for the run: a build tool, not a dependency of the module), both
+  for every platform the CLI ships for, and `go test ./...`: table tests, and
   `net/http/httptest` for a stand-in Wisp. The check needs Go installed, and says so
   when it is not.
 - Contract: [specs/CLI.md](specs/CLI.md).
@@ -247,6 +248,16 @@ Installed by the server setup script:
 | containerd.io | Container runtime (2.0+), from Docker's apt repo; managed via gRPC from the backend |
 | unzip | Info-ZIP `unzip` — extracts `.zip` uploads for container directory mounts (`unzip -Z1` + `unzip -d`) |
 | CNI plugins | bridge, dhcp, loopback — container networking (downloaded to `/opt/cni/bin/` by setup's CNI step, not from apt) |
+
+#### The `wisp` CLI (dev and release only)
+
+Never on a host: a host carries the built binaries.
+
+| Component | Technology | Version | Purpose |
+|-----------|------------|---------|---------|
+| Language | Go | 1.27 (`cli/go.mod`) | Builds the CLI; no module dependency |
+| Lint | staticcheck, installed for the run | v0.8.2 | The CLI's static checks, in `npm run check`; fetched on first use |
+| Release workflow | `actions/setup-go` | v6 | Go on the release runner, at the version `cli/go.mod` names |
 
 #### CLI Tools Used by Backend
 

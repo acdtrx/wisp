@@ -64,7 +64,7 @@ folder:
 
 | Command | Does |
 |---------|------|
-| `wisp [--profile <name>] login <url>` | Asks for the token, with the typing hidden, or reads it from standard input when that is not a terminal. Checks the address and the token against the server, then saves the profile. Without `--profile` the profile is named `default`. The first profile saved becomes the default one. |
+| `wisp [--profile <name>] login <url>` | Checks that the address is a Wisp before any token is sent to it. Asks for the token, with the typing hidden, or reads it from standard input when that is not a terminal, waiting 10 s for it. Checks the address and the token against the server, then saves the profile. Without `--profile` the profile is named `default`. The first profile saved becomes the default one. |
 | `wisp --profile <name> default` | Makes that profile the default. |
 | `wisp profiles` | Lists the profiles: name, address, the token's scope, and which is the default. Never a token. |
 | `wisp [--profile <name>] logout` | Removes the profile. The token stays valid on the server until it is revoked there. |
@@ -77,7 +77,8 @@ folder:
 ### The environment
 
 `WISP_URL` and `WISP_TOKEN`, set together, are enough with no file at all: for an
-agent's sandbox, or CI.
+agent's sandbox, or CI. One without the other is an error, never a fall back to a
+profile.
 
 **Which one is used**, first match: `--profile`; `WISP_URL` with `WISP_TOKEN`; the
 default profile. With none, the CLI says to run `wisp login`.
@@ -86,6 +87,8 @@ default profile. With none, the CLI says to run `wisp login`.
 
 - An `https` address is checked against the system's certificate authorities. An `http`
   address is taken as it is, for the LAN.
+- **No redirect is followed.** Wisp's API sends none, so an answer that redirects is
+  not a Wisp, and the token never follows one to another address.
 - Every request carries `Authorization: Bearer <token>`. Nothing else leaves the
   profile.
 
@@ -96,8 +99,13 @@ default profile. With none, the CLI says to run `wisp login`.
   `CLI_VERSION_MISMATCH`, the `detail` naming both versions. A request without the
   header is not checked: other clients send none.
 - The CLI then says to run **`wisp update`**, which downloads the binary for this
-  platform from the profile's Wisp and replaces itself with it, in one step that leaves
-  the old binary in place when the download fails.
+  platform from the profile's Wisp, runs it to check that it is the CLI of that Wisp's
+  version, and replaces itself with it. The old binary stays in place when the download
+  fails or is anything else.
+- **The check comes after the token's**, so a refusal for the version means the token
+  was accepted. `wisp login` against a Wisp of another version therefore saves the
+  profile and says to run `wisp update`: a CLI can always sign in to fetch the right
+  binary.
 - **`wisp version`** prints the CLI's version and the Wisp's (`GET /api/cli`).
 - Two Wisps on two versions take a `wisp update` when switching between them.
 
