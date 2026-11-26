@@ -99,3 +99,44 @@ func lifecycleCommand(route, done string) func(ctx context.Context, c *call) err
 		return nil
 	}
 }
+
+func runContainersSet(ctx context.Context, c *call) error {
+	name := c.args[0]
+	body, err := c.patchBody()
+	if err != nil {
+		return err
+	}
+	if len(body) == 0 {
+		return usagef(c.cmd.Path, "nothing to change: give a setting's flag")
+	}
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	if _, err := client.Send(ctx, http.MethodPatch, containerPath(name), body); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.env.Stdout, "Saved the settings of %s. A change a running container cannot take waits for its restart: \"wisp containers show\" says when one does.\n", name)
+	return nil
+}
+
+func runContainersUpdate(ctx context.Context, c *call) error {
+	name := c.args[0]
+	body := map[string]any{}
+	if image, ok := c.values["image"]; ok {
+		body["image"] = image
+	}
+	result, waited, err := runJobRequest(ctx, c, http.MethodPost, containerPath(name, "image-update"), body)
+	if err != nil || !waited || c.switches["json"] {
+		return err
+	}
+	var r struct {
+		Image string `json:"image"`
+		Note  string `json:"note"`
+	}
+	if err := json.Unmarshal(result, &r); err != nil {
+		return fmt.Errorf("read the job's result: %w", err)
+	}
+	fmt.Fprintf(c.env.Stdout, "%s is on %s. %s\n", name, r.Image, r.Note)
+	return nil
+}

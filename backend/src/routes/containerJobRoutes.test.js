@@ -100,3 +100,24 @@ test('a deploy body with a key the route does not take is 400, and nothing start
   }
   assert.equal(calls.length, 0);
 });
+
+test('POST /api/containers/:name/image-update starts the job update_container_image starts, with or without an image', async () => {
+  for (const image of ['ghcr.io/me/app:v2', undefined]) {
+    const payload = image === undefined ? {} : { image };
+    const { rest, mcp, given } = await throughBoth(
+      { method: 'POST', url: '/api/containers/web/image-update', payload },
+      'update_container_image',
+      { name: 'web', ...payload },
+    );
+    assert.deepEqual(rest, mcp);
+    assert.equal(rest.kind, JOB_KIND.CONTAINER_IMAGE_UPDATE);
+    for (const args of given) {
+      assert.equal(args.name, 'web');
+      assert.equal(args.image, image);
+    }
+  }
+  calls.length = 0;
+  const res = await app.inject({ method: 'POST', url: '/api/containers/web/image-update', headers });
+  assert.equal(res.statusCode, 202, 'no body pulls the current image');
+  assert.equal(calls[0][1].image, undefined);
+});

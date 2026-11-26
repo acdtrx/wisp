@@ -34,6 +34,14 @@ func (a *agentWisp) startsJob(key, title string) {
 	}
 }
 
+// answers makes key a route that records its JSON body and answers status.
+func (a *agentWisp) answers(key string, status int) {
+	a.routes[key] = func(w http.ResponseWriter, r *http.Request) {
+		a.record(key, r)
+		w.WriteHeader(status)
+	}
+}
+
 func (a *agentWisp) record(key string, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
 	var body map[string]any
@@ -224,5 +232,77 @@ func TestAnInterruptEndsTheCommandsWaitNotItsJob(t *testing.T) {
 	r.do("containers", "create", "web", "--image", "x").wantCode(1)
 	if !strings.Contains(r.stderr.String(), "stopped waiting: the job j-1 goes on") {
 		t.Fatalf("stderr %q", r.stderr.String())
+	}
+}
+
+func TestSetSendsEachSettingItHasAFlagForAsOnePatch(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.answers("PATCH /api/containers/web", 204)
+	r.do("containers", "set", "web", "--image", "nginx:1.29", "--env", "A=1", "--env", "B=2", "--unset-env", "C", "--secret-env", "S=hush",
+		"--cpu", "2", "--memory", "none", "--restart-policy", "on-failure", "--autostart", "on", "--auto-backup", "off", "--local-dns", "off").wantCode(0)
+	want := `{"autoBackup":false,"autostart":true,"cpuLimit":2,"envPatch":{"A":{"value":"1"},"B":{"value":"2"},"C":null,"S":{"secret":true,"value":"hush"}},` +
+		`"image":"nginx:1.29","localDns":false,"memoryLimitMiB":null,"restartPolicy":"on-failure"}`
+	if got := asJSON(a.body(t, "PATCH /api/containers/web")); got != want {
+		t.Fatalf("body %s\nwant %s", got, want)
+	}
+	if !strings.HasPrefix(r.stdout.String(), "Saved the settings of web.") || strings.Contains(r.out(), "hush") {
+		t.Fatalf("stdout %q", r.stdout.String())
+	}
+
+	r.do("containers", "set", "web", "--", "worker", "--queue", "jobs").wantCode(0)
+	if got := asJSON(a.body(t, "PATCH /api/containers/web")); got != `{"command":["worker","--queue","jobs"]}` {
+		t.Fatalf("command body %s", got)
+	}
+	r.do("containers", "set", "web", "--no-command").wantCode(0)
+	if got := asJSON(a.body(t, "PATCH /api/containers/web")); got != `{"command":null}` {
+		t.Fatalf("--no-command body %s", got)
+	}
+}
+
+func TestASettingTheWispRefusesIsItsRefusal(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.routes["PATCH /api/containers/web"] = func(w http.ResponseWriter, req *http.Request) {
+		refuse(w, 403, "SCOPE_INSUFFICIENT", "body/runAsRoot: an agent token cannot send this; it needs an admin-scoped token or a session")
+	}
+	r.do("containers", "set", "web", "--autostart", "on").wantCode(1)
+	if r.stderr.String() != "SCOPE_INSUFFICIENT: body/runAsRoot: an agent token cannot send this; it needs an admin-scoped token or a session\n" {
+		t.Fatalf("stderr %q", r.stderr.String())
+	}
+}
+
+func TestAWrongSetLineExits2AndSendsNothing(t *testing.T) {
+	a, r := newAgentWisp(t)
+	for _, args := range [][]string{
+		{"containers", "set", "web"},
+		{"containers", "set", "web", "--no-command", "--", "sh"},
+		{"containers", "set", "web", "--env", "A=1", "--unset-env", "A"},
+		{"containers", "set", "web", "--unset-env", "A=1"},
+		{"containers", "set", "web", "--no-start"},
+		{"containers", "set", "web", "--cpu", "-"},
+		{"containers", "update", "web", "--env", "A=1"},
+		{"containers", "update"},
+	} {
+		r.do(args...).wantCode(2)
+	}
+	if n := a.requestCount(); n != 0 {
+		t.Fatalf("%d requests sent", n)
+	}
+}
+
+func TestUpdatePullsAndRestartsAsOneJob(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.startsJob("POST /api/containers/web/image-update", "Update the image of web")
+	jobRoute(a.fakeWisp, `{"step":"pulling","detail":"docker.io/library/nginx:1.29"}`,
+		`{"step":"done","result":{"name":"web","image":"docker.io/library/nginx:1.29","restarted":true,"applied":true,"note":"Restarted on the updated image."}}`)
+	r.do("containers", "update", "web", "--image", "nginx:1.29").wantCode(0)
+	if got := asJSON(a.body(t, "POST /api/containers/web/image-update")); got != `{"image":"nginx:1.29"}` {
+		t.Fatalf("body %s", got)
+	}
+	if r.stdout.String() != "web is on docker.io/library/nginx:1.29. Restarted on the updated image.\n" {
+		t.Fatalf("stdout %q", r.stdout.String())
+	}
+	r.do("containers", "update", "web").wantCode(0)
+	if got := asJSON(a.body(t, "POST /api/containers/web/image-update")); got != `{}` {
+		t.Fatalf("body %s", got)
 	}
 }

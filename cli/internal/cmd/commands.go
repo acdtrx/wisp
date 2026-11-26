@@ -210,6 +210,43 @@ func commandTable() []*command {
 			run: runContainersCreate,
 		},
 		{
+			Path: "containers set", Usage: "<name>", MinArgs: 1, MaxArgs: 1, TakesCommand: true,
+			Summary: "Change a container's settings",
+			About: "Changes the settings given and leaves the rest as they are: one request on the Wisp.\n" +
+				"\"wisp containers show\" prints them after. A change a running container cannot take\n" +
+				"(the image, the env, the command, the limits) waits for its restart, and the container\n" +
+				"shows a restart pending; the restart policy, autostart, the backup and Local DNS apply at\n" +
+				"once. A setting the token may not change is the Wisp's refusal.\n\n" +
+				"--env sets a variable and keeps the others; --secret-env sets one stored write-only;\n" +
+				"--unset-env removes one. --image points the container at another image for its next\n" +
+				"start, which pulls it when the Wisp does not hold it; \"wisp containers update\n" +
+				"--image\" pulls it and restarts at once.",
+			Flags: []flagDef{
+				imageFlag, envFlag, secretEnvFlag, unsetEnvFlag, cpuFlag, memoryFlag, restartFlag, autostartFlag, backupFlag,
+				localDNSFlag, noCommandFlag,
+			},
+			Example: "wisp containers set web --env MODE=staging --unset-env DEBUG --memory none\n" +
+				"wisp containers set worker -- worker --queue jobs --verbose\n" +
+				"wisp containers set worker --no-command",
+			run: runContainersSet,
+		},
+		{
+			Path: "containers update", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Pull a container's image again and restart it",
+			About: "Pulls the container's image again, or with --image the image given, points the\n" +
+				"container at it and restarts it if it runs: one job on the Wisp, which holds the\n" +
+				"container from the pull to the restart. A stopped container takes the image at its\n" +
+				"next start. An image under localhost/ (one \"wisp images push\" uploaded) is not pulled:\n" +
+				"the Wisp's own is used. The command prints the job's progress on standard error and\n" +
+				"ends when it does. An interrupt (Ctrl-C) ends the wait, never the job.",
+			Flags: []flagDef{
+				{Name: "image", Value: "<ref>", Usage: "The image to move the container to, in place of pulling its own again."},
+				noWaitFlag, jobJSONFlag,
+			},
+			Example: "wisp containers update web\nwisp containers update web --image nginx:1.29",
+			run:     runContainersUpdate,
+		},
+		{
 			Path: "containers start", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
 			Summary: "Start a stopped container",
 			About: "Starts the container, a job on the Wisp: the command prints its progress on standard\n" +

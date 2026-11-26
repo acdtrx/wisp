@@ -143,3 +143,54 @@ func (c *call) deployBody() (map[string]any, error) {
 	}
 	return body, nil
 }
+
+// unsetEnvFlag and noCommandFlag are `containers set`'s alone.
+var (
+	unsetEnvFlag  = flagDef{Name: "unset-env", Value: "KEY", Repeat: true, Usage: "Removes an env variable. May be repeated."}
+	noCommandFlag = flagDef{Name: "no-command", Usage: "Run the image's own command again, in place of the one set."}
+)
+
+// patchBody is `containers set`'s settings and env: PATCH
+// /api/containers/:name. Empty when the line sets neither.
+func (c *call) patchBody() (map[string]any, error) {
+	body := map[string]any{}
+	if c.switches["no-command"] && c.command != nil {
+		return nil, usagef(c.cmd.Path, "--no-command and -- <command> cannot both be given")
+	}
+	if err := c.commonSettings(body); err != nil {
+		return nil, err
+	}
+	if c.switches["no-command"] {
+		body["command"] = nil
+	}
+	seen := map[string]string{}
+	env, err := c.keyValues("env", seen)
+	if err != nil {
+		return nil, err
+	}
+	secretEnv, err := c.keyValues("secret-env", seen)
+	if err != nil {
+		return nil, err
+	}
+	envPatch := map[string]any{}
+	for k, v := range env {
+		envPatch[k] = map[string]any{"value": v}
+	}
+	for k, v := range secretEnv {
+		envPatch[k] = map[string]any{"value": v, "secret": true}
+	}
+	for _, k := range c.lists["unset-env"] {
+		if other, dup := seen[k]; dup {
+			return nil, usagef(c.cmd.Path, "%s is given twice (--%s and --unset-env)", k, other)
+		}
+		if k == "" || strings.Contains(k, "=") {
+			return nil, usagef(c.cmd.Path, "--unset-env takes a KEY alone, not %q", k)
+		}
+		seen[k] = "unset-env"
+		envPatch[k] = nil
+	}
+	if len(envPatch) > 0 {
+		body["envPatch"] = envPatch
+	}
+	return body, nil
+}

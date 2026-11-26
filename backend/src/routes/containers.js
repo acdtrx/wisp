@@ -23,6 +23,7 @@ import {
 import {
   startContainerCreateJob,
   startContainerDeployJob,
+  startContainerImageUpdateJob,
   startContainerStartJob,
   startContainerStopJob,
   startContainerRestartJob,
@@ -616,6 +617,26 @@ export default async function containerRoutes(fastify) {
       },
     });
   }
+
+  // A job from the pull to the restart; a missing or busy container is
+  // answered here. No image pulls the current one again.
+  fastify.post('/containers/:name/image-update', {
+    config: { auth: 'agent' },
+    schema: {
+      params: nameParams,
+      body: {
+        type: 'object',
+        nullable: true,
+        properties: { image: imageRefSchema },
+        additionalProperties: false,
+      },
+      response: { 202: jobAckSchema },
+    },
+    handler: async (request, reply) => {
+      const job = await startContainerImageUpdateJob({ name: request.params.name, image: request.body?.image, log: request.log });
+      return reply.code(202).send(job);
+    },
+  });
 
   fastify.post('/containers/:name/kill', {
     config: { auth: 'agent' },
