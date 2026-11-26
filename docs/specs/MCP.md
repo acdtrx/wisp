@@ -10,7 +10,7 @@ Streamable HTTP in **stateless, single-JSON-response mode** (permitted by the MC
 
 | Method | Behaviour |
 |--------|-----------|
-| `initialize` | Returns `protocolVersion: "2025-06-18"`, `capabilities: { tools: {} }`, `serverInfo` (`name: "wisp"`, current version), and an `instructions` string describing the host model, which ends by saying that the `wisp` CLI exists for work from a shell, and how to install it from this Wisp ([CLI.md](CLI.md)) |
+| `initialize` | Returns `protocolVersion: "2025-06-18"`, `capabilities: { tools: {} }`, `serverInfo` (`name: "wisp"`, current version), and an `instructions` string describing the host model, which ends by saying that the `wisp` CLI exists for work from a shell, what it does beyond these tools (a container's settings and mounts, file uploads, and images), and how to install it from this Wisp ([CLI.md](CLI.md)) |
 | `notifications/*` (any message without an `id`) | Accepted with **202**, no body |
 | `ping` | `{}` |
 | `tools/list` | Tool catalogue **filtered to what the token's scope can call** (no pagination — the list is small) |
