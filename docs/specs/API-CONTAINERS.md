@@ -46,9 +46,21 @@ The `using-local` step replaces `pulling`/`pulled` when the exact literal `image
 
 List OCI images in the containerd `wisp` namespace (same store used when creating containers).
 
-**200:** `[{ name, digest, size, updated }]` — `name` is the full image reference; `digest` is the manifest descriptor digest; **`size`** is the total **compressed** content-store size in bytes (sum of the image manifest’s config + layer descriptor sizes for this host’s platform), not the small top-level index/manifest blob alone; **`updated`** is ISO 8601 from containerd image `updatedAt` / `createdAt`, or `null` if timestamps are missing. If compressed size cannot be resolved, `size` falls back to the top-level descriptor size.
+**200:** `[{ name, digest, size, updated }]` — `name` is the full image reference (an [uploaded](#post-apicontainersimagesupload--agent) image's is under `localhost/`); `digest` is the manifest descriptor digest; **`size`** is the total **compressed** content-store size in bytes (sum of the image manifest’s config + layer descriptor sizes for this host’s platform), not the small top-level index/manifest blob alone; **`updated`** is ISO 8601 from containerd image `updatedAt` / `createdAt`, or `null` if timestamps are missing. If compressed size cannot be resolved, `size` falls back to the top-level descriptor size.
 
 **503:** `NO_CONTAINERD` when containerd is unavailable.
+
+### POST /api/containers/images/upload · `agent`
+
+Upload an image archive, the tar `docker save` or `podman save` writes, and import it into containerd ([CONTAINERS.md → Image Management](CONTAINERS.md#image-management)). Multipart: one file part, streamed to a staging file as it arrives, with the answers of [the mount uploads](#mount-backing-store-filesmountname) for a missing or second file part, a file past the limit, and a body that stalls. Once the upload is received, the import is a [job](API.md#job-routes) (kind `container-image-import`, no subject, `title` `Import <file name>`).
+
+**202:** `{ jobId, kind, title, subject }`; `done` result: `{ images: [{ name, digest }] }`, each image the archive named, under the `localhost/` name it is stored by
+
+**Job errors:** `CONTAINER_IMAGE_ARCHIVE_INVALID` (not an image archive containerd can import; `detail` carries its message), `CONTAINER_IMAGE_ARCHIVE_UNNAMED` (the archive names no image), `CONTAINER_IMAGE_PLATFORM_MISMATCH` (no image in it for `linux/<arch>`; `detail` lists the platforms it has). After any of them nothing of the archive is kept.
+
+**503:** `NO_CONTAINERD`
+
+The image list follows on the [`changes`](API.md#changes-topic-payload) topic (`{ kind: "images" }`), and the `containers` topic when a running container's image was replaced.
 
 ### DELETE /api/containers/images · `admin`
 
@@ -70,7 +82,7 @@ Remove an image from containerd. Query parameter **`ref`** (required): the image
 
 Start an image update check in the background. **Body:** `{ ref?: string }` — when `ref` is omitted (or empty) a bulk check runs over every image in the library; when `ref` is given, only that image is checked.
 
-For each image, the current top-level digest is recorded, the image is pulled again (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the container list (pushed on the `containers` topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` start the same job kind (`container-image-update-check`). See CONTAINERS.md → *Image updates*.
+For each image, the current top-level digest is recorded, the image is pulled again (idempotent), and the new digest is compared. A `localhost/` image is not pulled: the check passes it with a `skipped` event whose `error` is `CONTAINER_IMAGE_LOCAL`. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the container list (pushed on the `containers` topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` start the same job kind (`container-image-update-check`). See CONTAINERS.md → *Image updates*.
 
 **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`. **Shared** ([API.md → Background jobs](API.md#background-jobs)), by scope: a start joins a running check that covers what it asks — a single-image check joins a running all-images check or a check of the same image — and answers that job's ack; an all-images check never joins a single-image one and starts its own. Checks take turns: a run waits for the one before it, so two never pull the same image at once.
 

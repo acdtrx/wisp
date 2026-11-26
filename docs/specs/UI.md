@@ -236,7 +236,7 @@ Empty texts:
 
 - **No workloads:** the left panel says "No workloads".
 - **A search with no match:** "No matches for "…"" with the search term.
-- **An empty image library:** "No images found", pointing to the upload control in the card's header for VM files and to creating a container for OCI images. Under the **OCI** filter: "No OCI images found", saying that images are stored in containerd when a container is created or an image pulled, and that a container must be removed first while an image is still in use.
+- **An empty image library:** "No images found", pointing to the upload control in the card's header for VM files and to creating a container for OCI images. Under the **OCI** filter: "No OCI images found", saying that images are stored in containerd when a container is created, an image pulled or an image archive uploaded, and that a container must be removed first while an image is still in use.
 
 ---
 

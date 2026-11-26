@@ -160,7 +160,7 @@ For a coding agent that builds, runs and updates containers. It cannot delete, c
 | App containers | Change an app's config, in the fields the app marks agent-writable ([CUSTOM-APPS.md](CUSTOM-APPS.md#backend-app-module-interface); today Caddy's sites) |
 | Mounts | Add and edit a folder, a file or a memory folder kept on this host; upload a file or a zip; write and read a file's content |
 | Services | Add, edit and remove the names a container announces |
-| Images | Check for updates; point a container at another image |
+| Images | Upload an image; check for updates; point a container at another image |
 | Backups | Take a backup of a container |
 
 | Area | Stays `admin` |

@@ -8,8 +8,8 @@ act) are in `FRONTEND-RULES.md`, Data.
 
 See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md) for functionality. Accessed inside the **Software** tab of the Host panel (stacked below OS Update), and as a picker modal from VM creation/overview.
 
-- The card's header holds the type filter (All / ISO / Disk Image / OCI) and the actions for VM files: **Upload**, **Download from URL**, and a menu of named images (Ubuntu Server cloud, Arch Linux cloud, Home Assistant OS); download progress also shows in background jobs. When the **OCI** filter is active, a **Check for updates** action appears in the header and a status line "Checked {relative} · N updated · N containers flagged" (or "Checking {ref} (i/total)…") appears above the table.
-- File table: filename, type badge, digest (OCI), size, last modified; **rename/delete** per row. OCI rows also have a per-row **Check this image** action (disabled while any check is running) next to **Delete**.
+- The card's header holds the type filter (All / ISO / Disk Image / OCI) and the actions for VM files: **Upload**, **Download from URL**, and a menu of named images (Ubuntu Server cloud, Arch Linux cloud, Home Assistant OS); download progress also shows in background jobs. When the **OCI** filter is active, the header's **Upload** takes an image archive (a `.tar`) instead of a VM file, its import showing in background jobs, and a **Check for updates** action appears in the header and a status line "Checked {relative} · N updated · N containers flagged" (or "Checking {ref} (i/total)…") appears above the table.
+- File table: filename, type badge, digest (OCI), size, last modified; **rename/delete** per row. OCI rows also have a per-row **Check this image** action (disabled while any check is running) next to **Delete**. A `localhost/` image's row has no **Check this image**.
 - **Picker modal:** the same table with a Select button per file, auto-filtered by context; it omits **Digest** and **Modified**.
 
 ---
