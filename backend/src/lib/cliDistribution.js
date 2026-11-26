@@ -5,7 +5,7 @@
  * served with the address of the Wisp to download from. A development checkout
  * holds the scripts and no binary.
  */
-import { createReadStream, readFileSync, statSync } from 'node:fs';
+import { createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,11 +13,6 @@ import { createAppError } from './appErrors.js';
 import { getSettings } from './settings.js';
 
 const CLI_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../cli');
-
-/** The platforms the CLI is built for, in CLI.md's order (scripts/stage-release.sh builds the same). */
-export const CLI_PLATFORMS = Object.freeze([
-  'darwin-arm64', 'darwin-amd64', 'linux-arm64', 'linux-amd64', 'windows-arm64', 'windows-amd64',
-]);
 
 const INSTALL_SCRIPTS = Object.freeze({
   'install.sh': { file: 'install.sh', type: 'text/x-shellscript; charset=utf-8' },
@@ -34,34 +29,37 @@ const URL_PLACEHOLDER = '{{wisp_url}}';
  */
 const ORIGIN_PATTERN = /^https?:\/\/(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
 
-function binaryPath(platform) {
-  return resolve(CLI_DIR, `wisp-${platform}`);
-}
+/** A binary's name in cli/: `wisp-<os>-<arch>`, its platform the rest. */
+const BINARY_NAME = /^wisp-([a-z0-9]+-[a-z0-9]+)$/;
 
-function hasBinary(platform) {
-  return statSync(binaryPath(platform), { throwIfNoEntry: false })?.isFile() === true;
-}
-
-/** The platforms this install has a binary for. */
+/**
+ * The platforms this install has a binary for: what the tree's cli/ holds,
+ * as scripts/stage-release.sh built it from cli/platforms, so the backend
+ * keeps no list of its own.
+ */
 export function availableCliPlatforms() {
-  return CLI_PLATFORMS.filter(hasBinary);
+  return readdirSync(CLI_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && BINARY_NAME.test(entry.name))
+    .map((entry) => BINARY_NAME.exec(entry.name)[1])
+    .sort();
 }
 
 /**
  * The binary for `platform`, to stream as a download: `{ stream, size,
- * filename }`. A platform the CLI is not built for, or one this install
- * carries no binary for, is CLI_NOT_AVAILABLE.
+ * filename }`. A platform this install carries no binary for (any, in a
+ * development checkout) is CLI_NOT_AVAILABLE.
  */
 export function openCliBinary(platform) {
-  const stat = CLI_PLATFORMS.includes(platform) ? statSync(binaryPath(platform), { throwIfNoEntry: false }) : null;
-  if (!stat?.isFile()) {
-    const known = CLI_PLATFORMS.includes(platform)
-      ? 'this Wisp carries no CLI binaries (a development checkout)'
-      : `the platforms are ${CLI_PLATFORMS.join(', ')}`;
-    throw createAppError('CLI_NOT_AVAILABLE', `No wisp CLI for "${platform}": ${known}`);
+  const available = availableCliPlatforms();
+  if (!available.includes(platform)) {
+    const carried = available.length > 0
+      ? `this Wisp carries ${available.join(', ')}`
+      : 'this Wisp carries no CLI binaries (a development checkout)';
+    throw createAppError('CLI_NOT_AVAILABLE', `No wisp CLI for "${platform}": ${carried}`);
   }
+  const path = resolve(CLI_DIR, `wisp-${platform}`);
   const filename = platform.startsWith('windows-') ? `wisp-${platform}.exe` : `wisp-${platform}`;
-  return { stream: createReadStream(binaryPath(platform)), size: stat.size, filename };
+  return { stream: createReadStream(path), size: statSync(path).size, filename };
 }
 
 /**

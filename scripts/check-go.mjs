@@ -6,20 +6,21 @@
  * check needs it, never skips it):
  *
  * - `gofmt -l`: any file it names fails;
- * - `go vet ./...` once for each platform the CLI ships for (docs/specs/CLI.md,
- *   Getting it), so every platform's build-tagged files compile;
+ * - `go vet ./...` once for each platform the CLI ships for (cli/platforms,
+ *   the list's one home), so every platform's build-tagged files compile;
  * - staticcheck, at the version pinned below, run with `go run` (a build tool,
  *   not a dependency of the module), for the machine's own platform;
  * - `go test ./...`: the unit tests and the end-to-end test of the built binary.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLI_DIR = fileURLToPath(new URL('../cli/', import.meta.url));
 const STATICCHECK = 'honnef.co/go/tools/cmd/staticcheck@v0.8.2';
-/** The platforms of docs/specs/CLI.md, as GOOS/GOARCH (scripts/stage-release.sh builds the same). */
-const PLATFORMS = ['darwin/arm64', 'darwin/amd64', 'linux/arm64', 'linux/amd64', 'windows/arm64', 'windows/amd64'];
+/** The platforms the CLI ships for, as GOOS/GOARCH, from their one home (scripts/stage-release.sh builds the same). */
+const PLATFORMS = readFileSync(path.join(CLI_DIR, 'platforms'), 'utf8').split('\n').filter(Boolean).map((p) => p.replace('-', '/'));
 
 function run(label, command, args, env = {}) {
   const result = spawnSync(command, args, {

@@ -101,7 +101,13 @@ NODE
 # version stamped from the root package.json. -trimpath and no VCS stamp, so
 # the binaries are the same from any checkout.
 echo "--- CLI build ---"
-CLI_PLATFORMS=(darwin-arm64 darwin-amd64 linux-arm64 linux-amd64 windows-arm64 windows-amd64)
+# cli/platforms is the list's one home (one <os>-<arch> a line); the
+# staged tree's check below and scripts/check-go.mjs read it too.
+CLI_PLATFORMS=()
+while IFS= read -r platform; do
+  [[ -n "$platform" ]] && CLI_PLATFORMS+=("$platform")
+done < "$ROOT/cli/platforms"
+[[ ${#CLI_PLATFORMS[@]} -gt 0 ]] || { echo "ERROR: cli/platforms names no platform" >&2; exit 1; }
 mkdir -p "$STAGE/cli"
 for platform in "${CLI_PLATFORMS[@]}"; do
   (cd "$ROOT/cli" && CGO_ENABLED=0 GOOS="${platform%-*}" GOARCH="${platform#*-}" \
@@ -118,10 +124,10 @@ printf 'version=%s\ncommit=%s\nuncommitted=%s\n' "$VERSION" "$COMMIT" "$DIRTY" >
 # The staged tree as a host needs it, stated apart from SHIPS above: exactly
 # a host's top-level entries, and every file it cannot start or update without
 # (executable where it is run), so a list edited wrongly fails here.
-node - "$STAGE" <<'NODE'
+node - "$STAGE" "${CLI_PLATFORMS[@]}" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
-const stage = process.argv[2];
+const [stage, ...cliPlatforms] = process.argv.slice(2);
 const problems = [];
 const entries = (rel) => fs.readdirSync(path.join(stage, rel)).sort();
 const exactly = (rel, want) => {
@@ -135,7 +141,7 @@ exactly('', ['CHANGELOG.md', 'LICENSE', 'README.md', 'RELEASE', 'backend', 'cli'
 exactly('frontend', ['dist', 'public']);
 exactly('frontend/public', ['vendor']);
 exactly('scripts', ['install.sh', 'linux', 'wispctl.sh']);
-const CLI_BINARIES = ['darwin-arm64', 'darwin-amd64', 'linux-arm64', 'linux-amd64', 'windows-arm64', 'windows-amd64'].map((p) => `wisp-${p}`);
+const CLI_BINARIES = cliPlatforms.map((p) => `wisp-${p}`);
 exactly('cli', ['install.ps1', 'install.sh', ...CLI_BINARIES].sort());
 const REQUIRED = [
   ['scripts/install.sh', 'x'], ['scripts/linux/install-tree.sh', 'x'], ['backend/scripts/wisp-updater', 'x'],
