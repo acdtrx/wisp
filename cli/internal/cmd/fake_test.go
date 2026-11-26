@@ -69,7 +69,7 @@ func (f *fakeWisp) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sent := r.Header.Get("Wisp-Cli-Version"); sent != "" && sent != f.version {
-		refuse(w, 409, "CLI_VERSION_MISMATCH", fmt.Sprintf("This wisp CLI is %s and this Wisp is %s: the two must be the same version", sent, f.version))
+		refuse(w, 409, "CLI_VERSION_MISMATCH", fmt.Sprintf("This wisp CLI is %s and this Wisp is %s: run `wisp update` to get this Wisp's CLI.", sent, f.version))
 		return
 	}
 	if h, ok := f.routes[key]; ok {

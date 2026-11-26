@@ -116,9 +116,11 @@ func report(env *Env, c *call, err error) int {
 			return exitFailed
 		}
 		// The API's code and message, after what the command adds before them.
+		// The Wisp's refusal of the version says to run `wisp update`; with a
+		// profile named, the command that fetches from that profile's Wisp.
 		line := err.Error()
-		if refused.Code == "CLI_VERSION_MISMATCH" && c != nil {
-			line += " Run \"" + c.updateCommand() + "\" to get the CLI of that Wisp."
+		if refused.Code == "CLI_VERSION_MISMATCH" && c != nil && c.profile != "" {
+			line += " For this profile: \"" + c.updateCommand() + "\"."
 		}
 		fmt.Fprintln(env.Stderr, line)
 		return exitFailed

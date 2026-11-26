@@ -84,6 +84,7 @@ test('a CLI of another version is refused with 409 naming both versions, before 
   const { error, detail } = res.json();
   assert.equal(error, 'CLI_VERSION_MISMATCH');
   assert.ok(detail.includes('0.0.1-old') && detail.includes(VERSION), detail);
+  assert.ok(detail.includes('run `wisp update`'), detail);
 
   // A body the route's schema refuses (400) is not read: the version comes first.
   const patch = await app.inject({

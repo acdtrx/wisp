@@ -23,7 +23,7 @@ export function createCliVersionHook(version = getCurrentVersion()) {
     if (sent === undefined || sent === version) return;
     throw createAppError(
       'CLI_VERSION_MISMATCH',
-      `This wisp CLI is ${sent} and this Wisp is ${version}: the two must be the same version.`,
+      `This wisp CLI is ${sent} and this Wisp is ${version}: run \`wisp update\` to get this Wisp's CLI.`,
     );
   };
 }

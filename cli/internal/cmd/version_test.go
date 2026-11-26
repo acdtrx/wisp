@@ -46,8 +46,14 @@ func TestAnotherVersionSaysBothAndToUpdate(t *testing.T) {
 	_, r := otherVersionWisp(t, nil)
 	r.do("containers", "list").wantCode(1)
 	line := r.stderr.String()
-	if strings.Count(line, "\n") != 1 || !strings.Contains(line, "1.0.0") || !strings.Contains(line, "2.0.0") || !strings.Contains(line, `"wisp update"`) {
+	if strings.Count(line, "\n") != 1 || !strings.Contains(line, "1.0.0") || !strings.Contains(line, "2.0.0") ||
+		strings.Count(line, "wisp update") != 1 {
 		t.Fatalf("stderr %q", line)
+	}
+	// With --json, the error body as sent: it names the fix too.
+	r.do("containers", "list", "--json").wantCode(1)
+	if !strings.Contains(r.stderr.String(), `"error":"CLI_VERSION_MISMATCH"`) || !strings.Contains(r.stderr.String(), "wisp update") {
+		t.Fatalf("stderr %q", r.stderr.String())
 	}
 }
 

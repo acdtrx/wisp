@@ -71,7 +71,7 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 			return
 		}
 		if v := r.Header.Get("Wisp-Cli-Version"); v != w.version {
-			reply(409, map[string]string{"error": "CLI_VERSION_MISMATCH", "detail": "This wisp CLI is " + v + " and this Wisp is " + w.version})
+			reply(409, map[string]string{"error": "CLI_VERSION_MISMATCH", "detail": "This wisp CLI is " + v + " and this Wisp is " + w.version + ": run `wisp update` to get this Wisp's CLI."})
 			return
 		}
 		switch r.URL.Path {
