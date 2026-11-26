@@ -83,6 +83,8 @@ export {
   resolveContainerImageRef,
 } from './containerManagerImages.js';
 
+export { isLocalImageRef } from './containerImageRef.js';
+
 export { assertContainerImageDeletable, deleteContainerImage } from './containerManagerImageDelete.js';
 
 export {

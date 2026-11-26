@@ -20,6 +20,8 @@ import {
 } from './containerManagerConnection.js';
 import { openProgressStream, openFileSendStream } from './containerManagerTransferStreams.js';
 import { readContent } from './containerManagerPull.js';
+import { listContainerImages } from './containerManagerImages.js';
+import { refreshContainerListCache } from './containerManagerList.js';
 import { SNAPSHOTTER } from './containerManagerSnapshot.js';
 import {
   HOST_PLATFORM, hostLinuxManifests, formatPlatform,
@@ -262,6 +264,15 @@ export async function storeImagesFromArchive(archivePath, { signal } = {}) {
       await storeImage(name, desc);
       images.push({ name, digest: desc.digest });
     }
+    // A replaced image flags the containers running the one before it: the
+    // library's digests are read again, then the container list.
+    try {
+      await listContainerImages();
+    } catch (err) {
+      /* containerd unreachable after the import: the flags follow the next read of the images */
+      containerState.logger?.warn?.({ err: err?.message || String(err) }, 'Image-meta refresh after an image import failed');
+    }
+    await refreshContainerListCache();
     return { images };
   } finally {
     await removeImagesUnder(workPrefix).catch((err) => {

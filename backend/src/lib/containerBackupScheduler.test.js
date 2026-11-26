@@ -29,7 +29,7 @@ mockModule('./containerManager/index.js', [
   'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
   'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
   'planContainerBackupRestore', 'restoreContainerBackup', 'restoreContainerBackupInPlace', 'resolveContainerBackupDir', 'pullImage',
-  'getImageDigest', 'resolveContainerImageRef', 'listContainerBackups', 'deleteContainerBackup',
+  'getImageDigest', 'resolveContainerImageRef', 'isLocalImageRef', 'listContainerBackups', 'deleteContainerBackup',
 ]);
 mockModule('./containerApps/index.js', [
   'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'getAppModule', 'assertMountNotAppManaged',

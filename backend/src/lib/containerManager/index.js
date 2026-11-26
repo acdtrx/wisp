@@ -62,6 +62,7 @@ export const storeImagesFromArchive = impl.storeImagesFromArchive;
 export const removeImageImportLeftoversAtBackendBoot = impl.removeImageImportLeftoversAtBackendBoot;
 export const getImageDigest = impl.getImageDigest;
 export const resolveContainerImageRef = impl.resolveContainerImageRef;
+export const isLocalImageRef = impl.isLocalImageRef;
 
 export const checkAllImagesForUpdates = impl.checkAllImagesForUpdates;
 export const checkSingleImageForUpdates = impl.checkSingleImageForUpdates;

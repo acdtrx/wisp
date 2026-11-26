@@ -15,6 +15,7 @@ import {
   listContainerImages, getImageDigest,
 } from './containerManagerImages.js';
 import { pullImage } from './containerManagerPull.js';
+import { isLocalImageRef } from './containerImageRef.js';
 import { getTaskState, isTaskOn } from './containerManagerLifecycle.js';
 import { refreshContainerListCache, findContainersUsingImage } from './containerManagerList.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
@@ -76,6 +77,12 @@ async function readDigestForCheck(ref, onProgress) {
  */
 async function checkOneImage(ref, onProgress, position) {
   onProgress?.({ step: 'checking', ref, index: position.index, total: position.total });
+
+  if (isLocalImageRef(ref)) {
+    // This host's own image: nothing upstream to compare with, and never pulled.
+    onProgress?.({ step: 'skipped', ref, cause: containerError('CONTAINER_IMAGE_LOCAL', `${ref} is this host's own image: it is not pulled`) });
+    return { changed: false, flaggedCount: 0 };
+  }
 
   const before = await readDigestForCheck(ref, onProgress);
   if (before === SKIPPED) return { changed: false, flaggedCount: 0 };

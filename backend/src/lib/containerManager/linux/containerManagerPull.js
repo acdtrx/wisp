@@ -6,7 +6,7 @@ import {
   containerError, getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS, packProtoAny,
 } from './containerManagerConnection.js';
 import { openProgressStream } from './containerManagerTransferStreams.js';
-import { normalizeImageRef } from './containerImageRef.js';
+import { normalizeImageRef, isLocalImageRef } from './containerImageRef.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 import { SNAPSHOTTER } from './containerManagerSnapshot.js';
 import {
@@ -40,11 +40,24 @@ function selectLinuxManifestDescriptor(manifests) {
 }
 
 /**
+ * The rule every pull keeps: a `localhost/` ref is this host's own image and
+ * is never pulled, so one containerd does not hold is not found.
+ */
+export function assertImagePullable(imageRef) {
+  if (!isLocalImageRef(imageRef)) return;
+  throw containerError(
+    'CONTAINER_IMAGE_NOT_FOUND',
+    `No image ${imageRef} on this host: a localhost/ image is this host's own, and is never pulled`,
+  );
+}
+
+/**
  * Pull an OCI image using the Transfer gRPC service (containerd 2.0+).
  * Source/destination are proto messages packed into google.protobuf.Any
  * with binary protobuf encoding (containerd's typeurl uses proto.Marshal).
  */
 export async function pullImage(imageRef, onStep) {
+  assertImagePullable(imageRef);
   const ref = normalizeImageRef(imageRef);
   onStep?.({ step: 'pulling', detail: `Pulling ${ref}…` });
 

@@ -35,7 +35,7 @@ mockModule('./containerManager/index.js', [
   'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
   'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
   'planContainerBackupRestore', 'restoreContainerBackup', 'restoreContainerBackupInPlace', 'resolveContainerBackupDir', 'pullImage',
-  'getImageDigest', 'resolveContainerImageRef',
+  'getImageDigest', 'resolveContainerImageRef', 'isLocalImageRef',
 ]);
 mockModule('./containerApps/index.js', [
   'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'getAppModule', 'assertMountNotAppManaged',
@@ -49,7 +49,7 @@ mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContai
 
 const {
   editContainerConfig, editContainerMountRow, initContainerMountContent, killContainerNow, saveAgentAppConfig,
-  saveContainerAppConfig, startContainerDeleteJob, startContainerDeployJob, startContainerStopJob,
+  saveContainerAppConfig, startContainerDeleteJob, startContainerDeployJob, startContainerImageUpdateJob, startContainerStopJob,
   startContainerZipExtractJob,
 } = await import('./containerOperations.js');
 const { tryAcquireContainerOperationLock } = await import('./containerOperationLock.js');
@@ -329,4 +329,31 @@ test('an agent token\'s appConfig on a generic container is CONFIG_ERROR, as the
   assert.equal(await savedAppConfig(() => saveContainerAppConfig({ name: 'web', appConfig: { hosts: [] }, scope: 'agent' })), 'CONFIG_ERROR');
   calls.length = 0;
   assert.equal(await savedAppConfig(() => saveAgentAppConfig('web', { hosts: [] })), 'CONFIG_ERROR');
+});
+
+test('an image update to a localhost/ ref pulls nothing: a held image is used, and one not held is CONTAINER_IMAGE_NOT_FOUND', async () => {
+  impl.isLocalImageRef = (ref) => ref.startsWith('localhost/');
+  impl.resolveContainerImageRef = async (ref) => ({ ref, local: ref === 'localhost/myapp:v1' });
+  impl.getImageDigest = async (ref) => (ref === 'localhost/myapp:v1' ? 'sha256:01' : null);
+  impl.getContainerConfig = async () => ({ image: 'docker.io/library/busybox:latest', state: 'stopped', metadata: {} });
+
+  const held = await startContainerImageUpdateJob({ name: 'web', image: 'localhost/myapp:v1', log });
+  assert.equal(await whenJobEnds(held.jobId), 'done');
+  assert.equal(readJob(held.jobId).result.image, 'localhost/myapp:v1');
+  assert.ok(!names().includes('pullImage'), 'no pull');
+
+  calls.length = 0;
+  const missing = await startContainerImageUpdateJob({ name: 'web', image: 'localhost/gone:v1', log });
+  assert.equal(await whenJobEnds(missing.jobId), 'error');
+  assert.equal(readJob(missing.jobId).error, 'CONTAINER_IMAGE_NOT_FOUND');
+  assert.ok(!names().includes('pullImage'), 'no pull');
+});
+
+test('an image update to a registry ref, localhost:5000 among them, pulls it', async () => {
+  impl.isLocalImageRef = (ref) => ref.startsWith('localhost/');
+  impl.resolveContainerImageRef = async (ref) => ({ ref, local: false });
+  impl.getContainerConfig = async () => ({ image: 'localhost:5000/app:1', state: 'stopped', metadata: {} });
+  const { jobId } = await startContainerImageUpdateJob({ name: 'web', image: 'localhost:5000/app:2', log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(calls.filter(([n]) => n === 'pullImage').map(([, ref]) => ref), ['localhost:5000/app:2']);
 });

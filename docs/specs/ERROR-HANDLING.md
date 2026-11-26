@@ -269,6 +269,7 @@ Each code a client can receive, with its status.
 | `CONTAINER_IMAGE_ARCHIVE_INVALID` | 422 | The upload is not an image archive containerd can import; the detail carries its message. A job's error only |
 | `CONTAINER_IMAGE_ARCHIVE_UNNAMED` | 422 | The uploaded archive names no image. A job's error only |
 | `CONTAINER_IMAGE_PLATFORM_MISMATCH` | 422 | The uploaded archive holds no image for the host's platform. A job's error only |
+| `CONTAINER_IMAGE_LOCAL` | 422 | The image is under `localhost/`, this host's own, so it is not pulled. A check's `skipped` event only |
 | `INVALID_CONTAINER_NAME` | 422 | A container name that reached the container manager breaks the [name rules](#name-validation) |
 | `INVALID_CONTAINER_MAC` | 422 | The MAC address is malformed |
 | `INVALID_CONTAINER_MOUNTS` | 422 | A mount's shape is invalid |

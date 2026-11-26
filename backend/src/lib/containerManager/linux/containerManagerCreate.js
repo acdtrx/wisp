@@ -16,7 +16,7 @@ import { getImageDigest, resolveContainerImageRef } from './containerManagerImag
 import { writeContainerConfig } from './containerManagerConfigIo.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
-import { pullImage, getImageConfig } from './containerManagerPull.js';
+import { pullImage, getImageConfig, assertImagePullable } from './containerManagerPull.js';
 import { SNAPSHOTTER, prepareSnapshot, getSnapshotMounts } from './containerManagerSnapshot.js';
 
 /** The runtime every container is defined with. */
@@ -131,6 +131,7 @@ async function defineNewContainer(spec, filesDir, onStep) {
   if (local) {
     onStep?.({ step: 'using-local', detail: `Using local image ${imageRef}` });
   } else {
+    assertImagePullable(imageRef);
     // Pull image (periodic progress — containerd transfer has no %; elapsed time helps long pulls)
     try {
       const pullStarted = Date.now();

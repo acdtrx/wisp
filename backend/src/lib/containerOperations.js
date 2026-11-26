@@ -55,6 +55,7 @@ import {
   pullImage,
   getImageDigest,
   resolveContainerImageRef,
+  isLocalImageRef,
 } from './containerManager/index.js';
 import {
   createAppContainer,
@@ -188,13 +189,20 @@ export async function startContainerImageUpdateJob({ name, image, log }) {
     subject: container(name),
     log,
     run: async (report) => {
-      report({ step: 'pulling', detail: ref });
-      try {
-        await pullImage(ref);
-      } catch (err) {
-        // Locally-imported images have no registry to pull from — fine if present.
+      if (isLocalImageRef(ref)) {
+        // This host's own image: never pulled, used as containerd holds it.
         if (!(await getImageDigest(ref))) {
-          throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
+          throw createAppError('CONTAINER_IMAGE_NOT_FOUND', `No image ${ref} on this host: a localhost/ image is this host's own, and is never pulled`);
+        }
+      } else {
+        report({ step: 'pulling', detail: ref });
+        try {
+          await pullImage(ref);
+        } catch (err) {
+          // Locally-imported images have no registry to pull from — fine if present.
+          if (!(await getImageDigest(ref))) {
+            throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
+          }
         }
       }
       const current = await getContainerConfig(name);

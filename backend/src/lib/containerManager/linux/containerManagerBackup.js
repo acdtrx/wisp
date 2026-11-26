@@ -612,6 +612,7 @@ async function ensureImageAndDigest(name, config) {
     try {
       await pullImage(imageRef);
     } catch (err) {
+      if (err.code === 'CONTAINER_IMAGE_NOT_FOUND') throw err; // a localhost/ image: never pulled
       throw containerError('IMAGE_PULL_FAILED', `Failed to pull image "${imageRef}" during restore`, err.message);
     }
   }
