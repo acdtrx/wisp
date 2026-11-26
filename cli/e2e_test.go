@@ -147,3 +147,48 @@ func TestBuiltBinaryAgainstAStandInWisp(t *testing.T) {
 		t.Fatalf("unknown command: %+v, %d requests", got, wisp.requests.Load()-before)
 	}
 }
+
+func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
+	newBin := buildWisp(t, t.TempDir(), e2eVersion)
+	newBytes, err := os.ReadFile(newBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldBin := buildWisp(t, t.TempDir(), "9.9.8-old")
+	wisp := newE2EWisp(t, e2eVersion, "wisp_read_e2e")
+	wisp.binary = newBytes
+	env := append(homeEnv(t.TempDir()), "WISP_URL="+wisp.URL, "WISP_TOKEN=wisp_read_e2e")
+
+	got := runWisp(t, oldBin, env, "", "containers", "list")
+	if got.code != 1 || !strings.Contains(got.stderr, "9.9.8-old") || !strings.Contains(got.stderr, e2eVersion) || !strings.Contains(got.stderr, "wisp update") {
+		t.Fatalf("across versions: %+v", got)
+	}
+	// A download that fails leaves the old binary, which still runs.
+	wisp.binary = nil
+	got = runWisp(t, oldBin, env, "", "update")
+	if got.code != 1 || !strings.Contains(got.stderr, "stays as it was") {
+		t.Fatalf("failed update: %+v", got)
+	}
+	got = runWisp(t, oldBin, env, "", "version")
+	if !strings.Contains(got.stdout, "wisp CLI  9.9.8-old") {
+		t.Fatalf("after the failed update: %+v", got)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(oldBin))
+	if len(entries) != 1 {
+		t.Fatalf("the failed update left %d files beside the binary", len(entries))
+	}
+
+	wisp.binary = newBytes
+	got = runWisp(t, oldBin, env, "", "update")
+	if got.code != 0 {
+		t.Fatalf("update: %+v", got)
+	}
+	got = runWisp(t, oldBin, env, "", "containers", "list")
+	if got.code != 0 || !strings.Contains(got.stdout, "web") {
+		t.Fatalf("after the update: %+v", got)
+	}
+	got = runWisp(t, oldBin, env, "", "version")
+	if !strings.Contains(got.stdout, "wisp CLI  "+e2eVersion) {
+		t.Fatalf("version after the update: %+v", got)
+	}
+}

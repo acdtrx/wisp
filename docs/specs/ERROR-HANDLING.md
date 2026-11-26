@@ -226,6 +226,7 @@ Each code a client can receive, with its status.
 | `SECTION_DUPLICATE` | 409 | A sidebar section by that name exists |
 | `HOME_DUPLICATE` | 409 | A home-page group or tile like it exists |
 | `SSH_KEY_DUPLICATE` | 409 | The key is already in Wisp's list |
+| `CLI_VERSION_MISMATCH` | 409 | The `wisp` CLI that sent the request is of another version than this Wisp |
 | `UPDATE_BUSY` | 409 | An OS update check or upgrade runs, or the package manager is locked |
 | `UPDATE_NOT_AVAILABLE` | 409 | No Wisp update is available to install |
 | `UPDATE_JOBS_ACTIVE` | 409 | Other jobs that must finish run; the Wisp update install waits for them unless forced |

@@ -14,6 +14,7 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
 import { createAuthHook, createRouteAccessRegistry, refuseAgentKeys } from './lib/auth.js';
+import { createCliVersionHook } from './lib/cliVersionCheck.js';
 import { createAppError, handleRequestError } from './lib/appErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { compileRouteValidator } from './lib/schemaValidation.js';
@@ -242,6 +243,9 @@ export async function buildApp(log) {
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
 
   app.addHook('onRequest', createAuthHook());
+  // After the auth hook, before parsing and validation: a CLI of another
+  // version is refused whatever its request holds.
+  app.addHook('onRequest', createCliVersionHook());
 
   await app.register(fastifyWebsocket);
 

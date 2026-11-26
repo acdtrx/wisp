@@ -1,11 +1,12 @@
 /*
- * The CLI's downloads on the real app (built without listening, as in
- * app.test.js), from a development checkout: its cli/ holds the install
- * scripts and no binary. A staged tree's binaries are verified on a host
- * (CODING-RULES §14).
+ * The CLI's downloads and its version check on the real app (built without
+ * listening, as in app.test.js), from a development checkout: its cli/ holds
+ * the install scripts and no binary. A staged tree's binaries are verified on
+ * a host (CODING-RULES §14).
  */
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,8 +17,15 @@ import Fastify from 'fastify';
 const ROOT_PACKAGE = fileURLToPath(new URL('../../../package.json', import.meta.url));
 const VERSION = JSON.parse(readFileSync(ROOT_PACKAGE, 'utf8')).version;
 
+const AGENT_TOKEN = 'wisp_agent_test-cli-token';
+
 const dir = mkdtempSync(path.join(tmpdir(), 'wisp-cli-routes-test-'));
-writeFileSync(path.join(dir, 'wisp-config.json'), '{}\n');
+writeFileSync(path.join(dir, 'wisp-config.json'), JSON.stringify({
+  apiTokens: [{
+    id: 'agent', label: 'agent', scope: 'agent', createdAt: '2026-01-01T00:00:00.000Z',
+    tokenHash: createHash('sha256').update(AGENT_TOKEN).digest('hex'),
+  }],
+}));
 // config.js reads the path when it loads: set it before the app is imported.
 process.env.WISP_CONFIG_PATH = path.join(dir, 'wisp-config.json');
 
@@ -66,4 +74,41 @@ test('a Host the scripts could not carry is refused, never written into a script
   const res = await app.inject({ method: 'GET', url: '/api/cli/install.sh', headers: { host: "evil'$(id)" } });
   assert.equal(res.statusCode, 400);
   assert.equal(res.json().error, 'BAD_REQUEST');
+});
+
+const asCli = (version, token = AGENT_TOKEN) => ({ authorization: `Bearer ${token}`, 'wisp-cli-version': version });
+
+test('a CLI of another version is refused with 409 naming both versions, before the route runs', async () => {
+  const res = await app.inject({ method: 'GET', url: '/api/jobs', headers: asCli('0.0.1-old') });
+  assert.equal(res.statusCode, 409);
+  const { error, detail } = res.json();
+  assert.equal(error, 'CLI_VERSION_MISMATCH');
+  assert.ok(detail.includes('0.0.1-old') && detail.includes(VERSION), detail);
+
+  // A body the route's schema refuses (400) is not read: the version comes first.
+  const patch = await app.inject({
+    method: 'PATCH', url: '/api/containers/web', headers: asCli('0.0.1-old'), payload: { bogus: true },
+  });
+  assert.equal(patch.statusCode, 409);
+  assert.equal(patch.json().error, 'CLI_VERSION_MISMATCH');
+});
+
+test('a CLI of this version, or a request without the header, is served', async () => {
+  const same = await app.inject({ method: 'GET', url: '/api/jobs', headers: asCli(VERSION) });
+  assert.equal(same.statusCode, 200);
+  const none = await app.inject({ method: 'GET', url: '/api/jobs', headers: { authorization: `Bearer ${AGENT_TOKEN}` } });
+  assert.equal(none.statusCode, 200);
+});
+
+test('the token is checked before the version; the public routes never check it', async () => {
+  const badToken = await app.inject({
+    method: 'GET', url: '/api/jobs', headers: asCli('0.0.1-old', 'wisp_agent_not-a-token'), remoteAddress: '10.9.9.1',
+  });
+  assert.equal(badToken.statusCode, 401);
+  assert.equal(badToken.json().error, 'AUTH_INVALID');
+
+  const cli = await app.inject({ method: 'GET', url: '/api/cli', headers: { 'wisp-cli-version': '0.0.1-old' } });
+  assert.equal(cli.statusCode, 200);
+  const download = await app.inject({ method: 'GET', url: '/api/cli/wisp-linux-amd64', headers: { 'wisp-cli-version': '0.0.1-old' } });
+  assert.equal(download.json().error, 'CLI_NOT_AVAILABLE');
 });
