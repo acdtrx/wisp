@@ -10,6 +10,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createAppError } from './appErrors.js';
+import { getSettings } from './settings.js';
 
 const CLI_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../cli');
 
@@ -77,6 +78,12 @@ export function cliBaseUrl({ advertisedUrl, protocol, host }) {
     return null; // no Host header, or one that is no host: there is no address to name
   }
   return ORIGIN_PATTERN.test(origin) ? origin : null;
+}
+
+/** cliBaseUrl for a request: the advertised URL, else its scheme and Host. */
+export async function requestCliBaseUrl(request) {
+  const { advertisedUrl } = await getSettings();
+  return cliBaseUrl({ advertisedUrl, protocol: request.protocol, host: request.headers.host });
 }
 
 /** The install script `name` (`install.sh`, `install.ps1`), downloading from `baseUrl`: `{ body, type }`. */

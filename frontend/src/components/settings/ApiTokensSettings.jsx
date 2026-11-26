@@ -17,6 +17,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import IconButton from '../shared/IconButton.jsx';
 import CopyButton from '../shared/CopyButton.jsx';
+import { cliInstallBase } from '../host/settingsForms.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens see everything ' +
@@ -39,6 +40,31 @@ const SCOPE_BADGE = {
   admin: { text: 'admin', className: 'bg-status-warning-soft text-status-warning' },
 };
 
+/** The lines that install the `wisp` CLI from this Wisp, each with a copy action (docs/specs/UI-HOST.md). */
+function CliInstall({ base }) {
+  const lines = [
+    { label: 'macOS and Linux', command: `curl -fsSL ${base}/api/cli/install.sh | sh` },
+    { label: 'Windows (PowerShell)', command: `irm ${base}/api/cli/install.ps1 | iex` },
+  ];
+  return (
+    <div className="space-y-2 border-t border-surface-border pt-3">
+      <p className="text-xs text-text-secondary">
+        Install the <span className="font-mono">wisp</span> CLI from this Wisp, then sign in with a token:{' '}
+        <span className="font-mono">wisp login {base}</span>
+      </p>
+      {lines.map(({ label, command }) => (
+        <div key={label}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">{label}</p>
+          <span className="flex items-start gap-1">
+            <code className="min-w-0 select-all break-all font-mono text-[13px] text-text-primary">{command}</code>
+            <CopyButton text={command} label={`Copy the ${label} install line`} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatCreated(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -49,6 +75,8 @@ export default function ApiTokensSettings() {
   /* The tokens, read again on a create or revoke from any tab. */
   const tokensRecord = useRecord(RECORD.TOKENS);
   const tokens = tokensRecord.data;
+  /* The advertised URL, for the install line's address. */
+  const settings = useRecord(RECORD.SETTINGS).data;
   /* Each token's revoke, keyed by its id, with its error in the card. */
   const revoke = useCommand();
   const [creating, setCreating] = useState(false);
@@ -144,6 +172,8 @@ export default function ApiTokensSettings() {
             </DataTable>
           </DataTableScroll>
         )}
+
+        {settings != null && <CliInstall base={cliInstallBase(settings.advertisedUrl, window.location.origin)} />}
       </div>
 
       {creating && (

@@ -26,6 +26,19 @@ const SERVER_INSTRUCTIONS =
   'as metadata.appConfig on get_container — read a Caddy container\'s appConfig.hosts to see which ' +
   'subdomains are exposed and where they route. Secret values are always masked.';
 
+/**
+ * The instructions' last line: the `wisp` CLI, installed from this Wisp
+ * (docs/specs/MCP.md). `base` is the address the install lines name, or null
+ * when the request names none.
+ */
+function cliInstructions(base) {
+  const at = base ?? "<this Wisp's address>";
+  return ' To work from a shell, install the wisp CLI from this Wisp, of its version: ' +
+    `\`curl -fsSL ${at}/api/cli/install.sh | sh\` (macOS, Linux) or \`irm ${at}/api/cli/install.ps1 | iex\` (Windows); ` +
+    `then sign in with \`wisp login ${at}\` and an API token, and run \`wisp help\`. ` +
+    'Host → App Config → API tokens shows the same lines.';
+}
+
 // JSON-RPC 2.0 error codes. Parse errors (-32700) never reach this layer —
 // Fastify rejects malformed JSON bodies at the content-type parser.
 const INVALID_REQUEST = -32600;
@@ -69,8 +82,9 @@ export function toolError(id, err) {
 /**
  * Handle one MCP message. Returns { status, body } for the HTTP layer;
  * body === null means "no content" (notifications get 202 Accepted).
+ * `cliBaseUrl` answers the address the instructions' CLI install lines name.
  */
-export async function handleMcpMessage(message, { scope, log }) {
+export async function handleMcpMessage(message, { scope, log, cliBaseUrl = async () => null }) {
   if (Array.isArray(message)) {
     return { status: 200, body: rpcError(null, INVALID_REQUEST, 'JSON-RPC batching is not supported') };
   }
@@ -94,7 +108,7 @@ export async function handleMcpMessage(message, { scope, log }) {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: { tools: {} },
           serverInfo: { name: 'wisp', title: 'Wisp', version: getCurrentVersion() },
-          instructions: SERVER_INSTRUCTIONS,
+          instructions: SERVER_INSTRUCTIONS + cliInstructions(await cliBaseUrl()),
         }),
       };
 

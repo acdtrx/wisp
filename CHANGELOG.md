@@ -7,6 +7,9 @@
 - **The token form is a dialog** — a label and the three scopes, each with what it allows.
 - **Upload an image archive** — the tar `docker save` writes, from the image library's OCI view or with an agent token (`POST /api/containers/images/upload`): each image runs with no registry, under its name with `localhost/` as its registry host.
 - **A `localhost/` image is never pulled** — the update check skips it, a create or a start uses the image the host holds, and a new upload under the same name flags the containers on it for a restart.
+- **The `wisp` CLI** — one binary, served by Wisp in its own version for macOS, Linux and Windows and installed with one line from Host → App Config → API tokens; it signs in with an API token, as profiles or from `WISP_URL` and `WISP_TOKEN`, and lists and shows containers, their logs, images and jobs, as text or as the API's JSON.
+- **One version on both sides** — Wisp refuses a CLI of another version, which says so, and `wisp update` replaces it with the Wisp's own.
+- **MCP's instructions name the CLI** — with the line that installs it from this Wisp.
 
 ## 2026-11-25
 

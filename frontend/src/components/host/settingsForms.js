@@ -168,3 +168,13 @@ export function callbackUrl(advertisedUrl, origin) {
     return `${origin}/api/auth/oidc/callback`; // an advertised URL that is no URL: the page's own origin (above)
   }
 }
+
+/** The address the `wisp` CLI's install lines name (docs/specs/CLI.md, Getting it): the
+ *  advertised URL's origin when one is set (and is a URL), else `origin`, the page's. */
+export function cliInstallBase(advertisedUrl, origin) {
+  try {
+    return new URL(advertisedUrl || origin).origin;
+  } catch {
+    return origin; // an advertised URL that is no URL: the page's own origin (above)
+  }
+}

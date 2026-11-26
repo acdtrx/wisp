@@ -5,6 +5,7 @@
  * scope rides on request.user and gates which tools are listed/callable.
  */
 import { createAppError } from '../lib/appErrors.js';
+import { requestCliBaseUrl } from '../lib/cliDistribution.js';
 import { openOnPurpose } from '../lib/schemaValidation.js';
 import { handleMcpMessage } from '../lib/mcp/mcpServer.js';
 
@@ -18,6 +19,7 @@ export default async function mcpRoutes(fastify) {
       const { status, body } = await handleMcpMessage(request.body, {
         scope: request.user?.scope,
         log: request.log,
+        cliBaseUrl: () => requestCliBaseUrl(request),
       });
       if (body === null) {
         reply.code(status).send();

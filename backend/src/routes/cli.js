@@ -2,15 +2,8 @@
  * The `wisp` CLI's downloads (docs/specs/CLI.md, Getting it): public, since
  * the files hold no secret and are the same on every Wisp of a version.
  */
-import { availableCliPlatforms, cliBaseUrl, cliInstallScript, openCliBinary } from '../lib/cliDistribution.js';
-import { getSettings } from '../lib/settings.js';
+import { availableCliPlatforms, cliInstallScript, openCliBinary, requestCliBaseUrl } from '../lib/cliDistribution.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
-
-/** The address an install script downloads from, for this request. */
-async function requestBaseUrl(request) {
-  const { advertisedUrl } = await getSettings();
-  return cliBaseUrl({ advertisedUrl, protocol: request.protocol, host: request.headers.host });
-}
 
 export default async function cliRoutes(fastify) {
   fastify.get('/cli', {
@@ -35,7 +28,7 @@ export default async function cliRoutes(fastify) {
     fastify.get(`/cli/${name}`, {
       config: { auth: 'public', answers: 'download' },
       handler: async (request, reply) => {
-        const { body, type } = cliInstallScript(name, await requestBaseUrl(request));
+        const { body, type } = cliInstallScript(name, await requestCliBaseUrl(request));
         reply.header('Content-Type', type).header('Cache-Control', 'no-store');
         return reply.send(body);
       },

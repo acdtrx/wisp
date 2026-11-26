@@ -112,3 +112,15 @@ test('the token is checked before the version; the public routes never check it'
   const download = await app.inject({ method: 'GET', url: '/api/cli/wisp-linux-amd64', headers: { 'wisp-cli-version': '0.0.1-old' } });
   assert.equal(download.json().error, 'CLI_NOT_AVAILABLE');
 });
+
+test("MCP's instructions say how to install the CLI from this Wisp", async () => {
+  const res = await app.inject({
+    method: 'POST', url: '/mcp', headers: { authorization: `Bearer ${AGENT_TOKEN}`, host: 'wisp.test:8080' },
+    payload: { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+  });
+  assert.equal(res.statusCode, 200);
+  const { instructions } = res.json().result;
+  assert.ok(instructions.includes('curl -fsSL http://wisp.test:8080/api/cli/install.sh | sh'), instructions);
+  assert.ok(instructions.includes('irm http://wisp.test:8080/api/cli/install.ps1 | iex'), instructions);
+  assert.ok(instructions.includes('Host → App Config → API tokens'), instructions);
+});

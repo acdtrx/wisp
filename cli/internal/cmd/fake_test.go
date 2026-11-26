@@ -88,19 +88,49 @@ func (f *fakeWisp) lastRequest() *http.Request {
 	return f.requests[len(f.requests)-1]
 }
 
+// lockedBuffer is a buffer a test may read while the command writes it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *lockedBuffer) Len() int { return len(b.String()) }
+
+func (b *lockedBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
 // run is one command line against an Env of buffers and a home of its own.
 type run struct {
 	t      *testing.T
+	ctx    context.Context
 	home   string
 	env    map[string]string
 	stdin  string
 	tty    bool
 	typed  string
 	exe    string
-	stdout bytes.Buffer
-	stderr bytes.Buffer
+	stdout lockedBuffer
+	stderr lockedBuffer
 	code   int
 }
+
+// out is all the run printed so far.
+func (r *run) out() string { return r.stdout.String() + r.stderr.String() }
 
 func newRun(t *testing.T) *run {
 	home := t.TempDir()
@@ -126,7 +156,11 @@ func (r *run) do(args ...string) *run {
 			return r.exe, nil
 		},
 	}
-	r.code = Main(context.Background(), env, args)
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.code = Main(ctx, env, args)
 	return r
 }
 

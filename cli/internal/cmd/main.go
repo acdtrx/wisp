@@ -117,9 +117,13 @@ func report(env *Env, c *call, err error) int {
 		return exitFailed
 	}
 	var failed *jobError
-	if errors.As(err, &failed) && jsonOut {
-		body, _ := json.Marshal(map[string]string{"error": failed.code, "detail": failed.message}) // two strings: cannot fail
-		fmt.Fprintln(env.Stderr, string(body))
+	if errors.As(err, &failed) {
+		if jsonOut {
+			body, _ := json.Marshal(map[string]string{"error": failed.code, "detail": failed.message}) // two strings: cannot fail
+			fmt.Fprintln(env.Stderr, string(body))
+		} else {
+			fmt.Fprintln(env.Stderr, err.Error())
+		}
 		return exitFailed
 	}
 	fmt.Fprintf(env.Stderr, "wisp: %s\n", err)

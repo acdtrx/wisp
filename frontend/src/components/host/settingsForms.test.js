@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  backupForm, certificateBody, certificateForm, certificateProblem, backupProblem, backupSent, callbackUrl, changedSent, keepText, mountText, oidcForm, oidcProblem, oidcSent,
+  backupForm, certificateBody, certificateForm, certificateProblem, backupProblem, backupSent, callbackUrl, changedSent, cliInstallBase, keepText, mountText, oidcForm, oidcProblem, oidcSent,
   pathsForm, pathsProblem, pathsSent, scheduleForm, scheduleOf, scheduleProblem, scheduleSent, serverForm, serverProblem,
   serverSent, ssoSwitchReason,
 } from './settingsForms.js';
@@ -75,6 +75,12 @@ test('single sign-on: the secret write-only and owed again for a new issuer or c
 test('the callback URL is on the advertised URL’s origin, else on the page’s', () => {
   assert.equal(callbackUrl('https://wisp.example.com/some/path', 'http://tini:8080'), 'https://wisp.example.com/api/auth/oidc/callback');
   assert.equal(callbackUrl(null, 'http://tini:8080'), 'http://tini:8080/api/auth/oidc/callback');
+});
+
+test('the CLI install lines name the advertised URL’s origin, else the page’s', () => {
+  assert.equal(cliInstallBase('https://wisp.example.com/some/path', 'http://tini:8080'), 'https://wisp.example.com');
+  assert.equal(cliInstallBase(null, 'http://tini:8080'), 'http://tini:8080');
+  assert.equal(cliInstallBase('not a url', 'http://tini:8080'), 'http://tini:8080');
 });
 
 test('certificate: the token starts empty and is sent only when typed; the domain goes with every save', () => {
