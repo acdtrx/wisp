@@ -28,3 +28,45 @@ export function normalizeImageRef(ref) {
   if (domain === 'docker.io' && !remainder.includes('/')) remainder = `library/${remainder}`;
   return `${domain}/${remainder}`;
 }
+
+/**
+ * A ref whose registry host is `localhost`: an image of this host's own, which
+ * came from no registry and is never pulled. `localhost:5000/app` names a
+ * registry on this host, and is pulled like any other.
+ */
+export function isLocalImageRef(ref) {
+  return normalizeImageRef(ref).startsWith('localhost/');
+}
+
+/**
+ * The name an uploaded image is stored under: the name its archive carries,
+ * with the registry host replaced by `localhost` (Docker Hub's `library/`
+ * dropped with it). A name already under `localhost/` is kept.
+ *
+ *   myapp:v1                      → localhost/myapp:v1
+ *   docker.io/library/nginx:1.27  → localhost/nginx:1.27
+ *   docker.io/me/app:1            → localhost/me/app:1
+ *   ghcr.io/me/app:2              → localhost/me/app:2
+ *   localhost/app:dev             → localhost/app:dev
+ */
+export function localImageNameFor(archiveName) {
+  const normalized = normalizeImageRef(archiveName);
+  if (normalized.startsWith('localhost/')) return normalized;
+  const slash = normalized.indexOf('/');
+  const domain = normalized.slice(0, slash);
+  let path = normalized.slice(slash + 1);
+  if (domain === 'docker.io' && path.startsWith('library/')) path = path.slice('library/'.length);
+  return `localhost/${path}`;
+}
+
+/**
+ * containerd cannot rename an image on import: an import stores each image
+ * under a name of Wisp's own, under this prefix, until it has named it. Those
+ * names are no image of the library's: never listed, used or deleted by name.
+ */
+export const IMAGE_IMPORT_NAME_PREFIX = 'localhost/wisp-import-';
+
+/** Whether `name` is one an import works under while it runs. */
+export function isImageImportWorkName(name) {
+  return typeof name === 'string' && name.startsWith(IMAGE_IMPORT_NAME_PREFIX);
+}
