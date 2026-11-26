@@ -58,9 +58,9 @@ The philosophy: direct flows and clear choices instead of a setting for everythi
 
 ### Agents and automation
 
-- **API tokens** (read-only or admin) for scripts: made in the page, shown once, revocable.
+- **API tokens** for scripts and agents, read-only, agent or admin: made in the page, shown once, revocable.
 - **MCP endpoint** (`/mcp`), so a coding agent can look at the deployment: every VM and container with its address, a container's `.local` name, a workload's settings (secrets masked), logs, images, live host figures, the hardware inventory.
-- **Agent deploys, with guard rails**: with an admin token an agent can deploy a container, update images and start or stop containers. It cannot change a VM. It is a deliberate subset: no deletes, no mounts, no root, and an app's settings are filtered per app (an agent can add a Caddy host, never touch the TLS credentials).
+- **Agent deploys, with guard rails**: an agent token builds, runs and updates containers: over MCP it deploys a container, updates images and starts or stops containers; over the REST API it also edits a container's settings and env, its folders and files kept on the host, and its services, and takes a backup. It cannot delete, give a container more reach into the host (storage shares, devices, root, the network), change a VM or change the host, and an app's settings are filtered per app (an agent can add a Caddy host, never touch the TLS credentials).
 
 ## What it's not
 
@@ -113,7 +113,7 @@ Wisp has **full access to libvirt, containerd, the host's storage and the creden
 
 - One password per host, stored as a scrypt hash in `config/wisp-password`. Optional single sign-on (OIDC) sits beside it; the password stays as the way back in.
 - A session lasts 7 days from its last use.
-- API tokens are stored as hashes, and are read-only or admin.
+- API tokens are stored as hashes, and are read-only, agent or admin.
 
 ## Documentation
 

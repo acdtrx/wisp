@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-26
+
+### New Features
+- **An agent token scope** — a third API token scope between read-only and admin: it builds, runs and updates containers (create, lifecycle, settings and env, folders and files kept on the host, services, a backup, the image check) and cannot delete, give a container more reach into the host, or change a VM or the host. Over MCP it calls every tool. The token form preselects it; existing tokens keep their scope.
+- **The token form is a dialog** — a label and the three scopes, each with what it allows.
+
 ## 2026-11-25
 
 ### New Features
