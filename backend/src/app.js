@@ -216,6 +216,14 @@ export async function buildApp(log) {
   // What every route of Wisp's own gets: an undeclared querystring or body
   // takes nothing, and every error answers the one error body.
   app.addHook('onRoute', completeRouteSchema);
+
+  // The body keys an agent route refuses from an agent token: the last
+  // preHandler of the route that declares them, so the schema and the
+  // route's own checks of the request's shape answer their 400 first.
+  app.addHook('onRoute', (routeOptions) => {
+    if (!routeOptions.config?.agentRefuses) return;
+    routeOptions.preHandler = [...[].concat(routeOptions.preHandler ?? []), refuseAgentKeys];
+  });
   async function registerPluginWithPublicRoutes(plugin, opts) {
     await app.after();
     markingPluginRoutesPublic = true;
@@ -233,7 +241,6 @@ export async function buildApp(log) {
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
 
   app.addHook('onRequest', createAuthHook());
-  app.addHook('preHandler', refuseAgentKeys);
 
   await app.register(fastifyWebsocket);
 

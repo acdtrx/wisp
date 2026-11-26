@@ -328,9 +328,10 @@ export function callerScope(request) {
 
 /**
  * The body keys an `agent` route refuses from an `agent` token, declared in
- * its options as `config: { auth: 'agent', agentRefuses: [...] }`. A
- * `preHandler`: it runs once the body passed its schema (a malformed request
- * is 400 first) and before the handler writes anything.
+ * its options as `config: { auth: 'agent', agentRefuses: [...] }`. The
+ * route's last `preHandler` (app.js): it runs once the body passed its schema
+ * and the route's own checks of its shape (a malformed request is 400 first),
+ * and before the handler writes anything.
  */
 export async function refuseAgentKeys(request) {
   const refused = request.routeOptions.config?.agentRefuses;

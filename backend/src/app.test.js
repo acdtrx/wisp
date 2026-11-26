@@ -256,6 +256,19 @@ test('a body that breaks its schema and carries a refused key answers 400 VALIDA
   assert.equal(res.json().error, 'VALIDATION_FAILED');
 });
 
+test('appConfig sent with a refused key answers the stand-alone rule\'s 400 to an agent token, as to every caller', async () => {
+  const session = await login('10.0.0.9');
+  for (const headers of [bearer(AGENT_TOKEN), bearer(ADMIN_TOKEN), { cookie: session.cookie, 'x-csrf-token': session.csrf }]) {
+    const res = await app.inject({
+      method: 'PATCH', url: '/api/containers/web', headers, remoteAddress: '10.0.0.9', payload: { appConfig: { hosts: [] }, runAsRoot: true },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.json(), {
+      error: 'VALIDATION_FAILED', detail: 'body/runAsRoot cannot be sent with body/appConfig: an appConfig save stands alone',
+    });
+  }
+});
+
 test('an agent token passes the check with the keys its route allows', async () => {
   const res = await app.inject({ method: 'PATCH', url: '/api/containers/web', headers: bearer(AGENT_TOKEN), payload: { autostart: true } });
   assert.notEqual(res.json().error, 'SCOPE_INSUFFICIENT');

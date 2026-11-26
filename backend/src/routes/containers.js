@@ -477,21 +477,26 @@ export default async function containerRoutes(fastify) {
   // An appConfig save stands alone: the app module regenerates the env,
   // mounts and files from it. Any other body is a configuration update, a
   // rename included (a body `name` other than the URL's runs first, the rest
-  // applies under the new name).
+  // applies under the new name). The stand-alone rule is part of the request's
+  // shape: a preHandler of the route's own, which runs after the schema and
+  // before an agent token's narrowing (app.js), so it is 400 for every caller.
   fastify.patch('/containers/:name', {
     config: { auth: 'agent', agentRefuses: ['name', 'runAsRoot', 'network', 'devices', 'mounts', 'mountRenames'] },
     schema: { params: nameParams, body: containerPatchSchema, response: { 204: noContentSchema } },
+    preHandler: async (request) => {
+      if (!('appConfig' in request.body)) return;
+      const others = Object.keys(request.body).filter((key) => key !== 'appConfig');
+      if (others.length > 0) {
+        throw createAppError(
+          'VALIDATION_FAILED',
+          `${others.map((key) => `body/${key}`).join(', ')} cannot be sent with body/appConfig: an appConfig save stands alone`,
+        );
+      }
+    },
     handler: async (request, reply) => {
       const body = request.body;
       const { name } = request.params;
       if ('appConfig' in body) {
-        const others = Object.keys(body).filter((key) => key !== 'appConfig');
-        if (others.length > 0) {
-          throw createAppError(
-            'VALIDATION_FAILED',
-            `${others.map((key) => `body/${key}`).join(', ')} cannot be sent with body/appConfig: an appConfig save stands alone`,
-          );
-        }
         await saveContainerAppConfig({ name, appConfig: body.appConfig, scope: callerScope(request) });
         return reply.code(204).send();
       }
