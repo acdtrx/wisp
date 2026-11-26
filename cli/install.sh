@@ -3,50 +3,62 @@
 # Linux (docs/specs/CLI.md, Getting it):
 #   curl -fsSL <url>/api/cli/install.sh | sh
 # The Wisp writes its own address into wisp_url as it serves the script. The
-# binary goes to ~/.local/bin/wisp, with no root.
+# binary goes to ~/.local/bin/wisp, with no root. The body is one function,
+# called on the last line, so a download cut off midway runs nothing.
 set -eu
 
 wisp_url='{{wisp_url}}'
-dest_dir="$HOME/.local/bin"
-dest="$dest_dir/wisp"
 
 fail() {
   printf 'wisp install: %s\n' "$1" >&2
   exit 1
 }
 
-case "$(uname -s)" in
-  Darwin) os=darwin ;;
-  Linux) os=linux ;;
-  *) fail "no wisp CLI for $(uname -s) here: this script is for macOS and Linux, install.ps1 for Windows" ;;
-esac
-case "$(uname -m)" in
-  x86_64 | amd64) arch=amd64 ;;
-  arm64 | aarch64) arch=arm64 ;;
-  *) fail "no wisp CLI for the $(uname -m) processor" ;;
-esac
-platform="$os-$arch"
-command -v curl >/dev/null 2>&1 || fail "curl is needed to download the CLI"
+main() {
+  dest_dir="$HOME/.local/bin"
+  dest="$dest_dir/wisp"
 
-mkdir -p "$dest_dir" || fail "cannot make $dest_dir"
-tmp="$(mktemp "$dest_dir/.wisp-install.XXXXXX")" || fail "cannot write in $dest_dir"
-trap 'rm -f "$tmp"' EXIT
-trap 'exit 1' INT TERM
+  case "$(uname -s)" in
+    Darwin) os=darwin ;;
+    Linux) os=linux ;;
+    *) fail "no wisp CLI for $(uname -s) here: this script is for macOS and Linux, install.ps1 for Windows" ;;
+  esac
+  case "$(uname -m)" in
+    x86_64 | amd64) arch=amd64 ;;
+    arm64 | aarch64) arch=arm64 ;;
+    *) fail "no wisp CLI for the $(uname -m) processor" ;;
+  esac
+  platform="$os-$arch"
+  command -v curl >/dev/null 2>&1 || fail "curl is needed to download the CLI"
 
-printf 'Downloading the wisp CLI for %s from %s\n' "$platform" "$wisp_url"
-# A download that stops moving (under 1 KiB/s for 30 s) ends rather than waits.
-curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 30 -o "$tmp" "$wisp_url/api/cli/wisp-$platform" \
-  || fail "the download from $wisp_url failed"
-chmod 0755 "$tmp"
-"$tmp" help >/dev/null 2>&1 || fail "the downloaded CLI does not run on this machine"
-mv -f "$tmp" "$dest"
-printf 'Installed %s\n' "$dest"
+  mkdir -p "$dest_dir" || fail "cannot make $dest_dir"
+  tmp="$(mktemp "$dest_dir/.wisp-install.XXXXXX")" || fail "cannot write in $dest_dir"
+  trap 'rm -f "$tmp"' EXIT
+  trap 'exit 1' INT TERM
 
-case ":$PATH:" in
-  *":$dest_dir:"*) ;;
-  *)
-    printf '\n%s is not on your PATH. Add it in your shell'"'"'s profile:\n' "$dest_dir"
-    printf '%s\n' "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    ;;
-esac
-printf '\nNext, sign in with an API token (Host → App Config → API tokens):\n  wisp login %s\n' "$wisp_url"
+  printf 'Downloading the wisp CLI for %s from %s\n' "$platform" "$wisp_url"
+  # A download that stops moving (under 1 KiB/s for 30 s) ends rather than waits.
+  curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 30 -o "$tmp" "$wisp_url/api/cli/wisp-$platform" \
+    || fail "the download from $wisp_url failed"
+  chmod 0755 "$tmp"
+  # The download is the CLI if it runs and says so (with no environment it
+  # has no Wisp to reach: it prints its version and ends).
+  said="$(env -i "$tmp" version 2>/dev/null | head -n 1)" || true
+  case "$said" in
+    "wisp CLI  "*) ;;
+    *) fail "the download from $wisp_url is not a wisp CLI that runs on this machine" ;;
+  esac
+  mv -f "$tmp" "$dest"
+  printf 'Installed %s\n' "$dest"
+
+  case ":$PATH:" in
+    *":$dest_dir:"*) ;;
+    *)
+      printf '\n%s is not on your PATH. Add it in your shell'"'"'s profile:\n' "$dest_dir"
+      printf '%s\n' "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      ;;
+  esac
+  printf '\nNext, sign in with an API token (Host → App Config → API tokens):\n  wisp login %s\n' "$wisp_url"
+}
+
+main "$@"
