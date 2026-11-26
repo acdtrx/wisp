@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  normalizeImageRef, isLocalImageRef, localImageNameFor, isImageImportWorkName,
+  normalizeImageRef, isLocalImageRef, localImageNameFor, isImageImportWorkName, isTaggedImageName,
 } from './containerImageRef.js';
 
 test('a ref is normalized by Docker\'s rule', () => {
@@ -19,6 +19,11 @@ test('a ref is normalized by Docker\'s rule', () => {
 test('a ref is this host\'s own when its registry host is localhost, and a registry on localhost\'s port is not', () => {
   assert.equal(isLocalImageRef('localhost/myapp:v1'), true);
   assert.equal(isLocalImageRef('localhost/me/app'), true);
+  // Any case, and the fully qualified host.
+  assert.equal(isLocalImageRef('LOCALHOST/app'), true);
+  assert.equal(isLocalImageRef('LocalHost/app:v1'), true);
+  assert.equal(isLocalImageRef('localhost./app'), true);
+  assert.equal(isLocalImageRef('LOCALHOST:5000/app'), false);
   for (const ref of ['localhost:5000/myapp:v1', 'myapp:v1', 'localhost', 'localhost:v1', 'docker.io/library/busybox:latest', 'ghcr.io/me/app']) {
     assert.equal(isLocalImageRef(ref), false, ref);
   }
@@ -43,5 +48,14 @@ test('the names an import works under are its own prefix\'s only', () => {
   assert.equal(isImageImportWorkName('localhost/wisp-import-0123abcd@sha256:00'), true);
   for (const name of ['localhost/wisp-importer:1', 'localhost/myapp:v1', 'wisp-import-1', '', null]) {
     assert.equal(isImageImportWorkName(name), false, String(name));
+  }
+});
+
+test('an image reference of a name and a tag follows the reference grammar', () => {
+  for (const ok of ['myapp', 'myapp:v1', 'docker.io/library/myapp:v1', 'ghcr.io/me/app:2', 'nas:5000/team/app:3', 'LOCALHOST/app:v1', 'localhost/a.b_c__d-e:1.0-rc_1']) {
+    assert.equal(isTaggedImageName(ok), true, ok);
+  }
+  for (const bad of ['', 'MyApp:v1', 'my app:v1', 'localhost/', 'localhost./app', 'app@sha256:0123', 'app:', '-app', 'app:-v1', `a/${'b'.repeat(260)}`, 'a'.repeat(1000), null]) {
+    assert.equal(isTaggedImageName(bad), false, String(bad).slice(0, 40));
   }
 });

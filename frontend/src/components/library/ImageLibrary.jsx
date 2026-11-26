@@ -59,9 +59,11 @@ const FILTERS_PICKER_CONTAINER = [
   { key: 'container', label: 'OCI' },
 ];
 
-/** An image under `localhost/`: this host's own (an upload), never pulled, so never checked for updates. */
+/** An image whose registry host is `localhost` (any case, no port): this host's own, never pulled, so never checked for updates. */
 function isLocalImage(name) {
-  return String(name).startsWith('localhost/');
+  const text = String(name);
+  const slash = text.indexOf('/');
+  return slash > 0 && text.slice(0, slash).replace(/\.$/, '').toLowerCase() === 'localhost';
 }
 
 function shortDigest(digest) {

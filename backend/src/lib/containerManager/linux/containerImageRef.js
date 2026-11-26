@@ -30,12 +30,33 @@ export function normalizeImageRef(ref) {
 }
 
 /**
- * A ref whose registry host is `localhost`: an image of this host's own, which
- * came from no registry and is never pulled. `localhost:5000/app` names a
- * registry on this host, and is pulled like any other.
+ * A ref whose registry host is `localhost`, in any case and with no port
+ * (`localhost./app` too, its fully qualified form): an image of this host's
+ * own, which came from no registry and is never pulled. `localhost:5000/app`
+ * names a registry on this host, and is pulled like any other.
  */
 export function isLocalImageRef(ref) {
-  return normalizeImageRef(ref).startsWith('localhost/');
+  if (typeof ref !== 'string') return false;
+  const slash = ref.indexOf('/');
+  if (slash <= 0) return false;
+  return ref.slice(0, slash).replace(/\.$/, '').toLowerCase() === 'localhost';
+}
+
+/* The image reference grammar (distribution/reference), for a name and an
+ * optional tag: an archive names its images by tag, never by digest. */
+const DOMAIN_COMPONENT = '(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])';
+const DOMAIN = `(?:${DOMAIN_COMPONENT}(?:\\.${DOMAIN_COMPONENT})*|\\[[a-fA-F0-9:]+\\])(?::[0-9]+)?`;
+const PATH_COMPONENT = '[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*';
+const TAG = '[\\w][\\w.-]{0,127}';
+const TAGGED_NAME_RE = new RegExp(`^((?:${DOMAIN}/)?${PATH_COMPONENT}(?:/${PATH_COMPONENT})*)(?::${TAG})?$`);
+const NAME_MAX = 255;
+
+/** Whether `ref` is a valid image reference of a name and an optional tag (`app`, `ghcr.io/me/app:2`). */
+export function isTaggedImageName(ref) {
+  // The longest name and tag; past it the pattern is not tried at all.
+  if (typeof ref !== 'string' || ref.length > NAME_MAX + 1 + 128) return false;
+  const match = TAGGED_NAME_RE.exec(ref);
+  return !!match && match[1].length <= NAME_MAX;
 }
 
 /**

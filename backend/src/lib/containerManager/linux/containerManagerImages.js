@@ -1,7 +1,7 @@
 /**
  * List and delete OCI images in containerd (wisp namespace).
  */
-import { getClient, callUnary } from './containerManagerConnection.js';
+import { getClient, callUnary, containerError } from './containerManagerConnection.js';
 import { normalizeImageRef, isImageImportWorkName } from './containerImageRef.js';
 import { compressedBlobSizeForImageName } from './containerManagerOciSize.js';
 import { readImageMeta, writeImageMeta, withImageMetaWriteLock } from './containerManagerImageMeta.js';
@@ -34,9 +34,14 @@ function protoTimestampToIso(ts) {
  * update all store refs through this, so a start always finds the image by
  * the stored name.
  * @param {string} imageRef - trimmed, non-empty
+ * A name an import works under is no image a caller can name: it answers as
+ * one that is not there.
  * @returns {Promise<{ ref: string, local: boolean }>} `local` when the literal name is present
  */
 export async function resolveContainerImageRef(imageRef) {
+  if (isImageImportWorkName(imageRef)) {
+    throw containerError('CONTAINER_IMAGE_NOT_FOUND', `No image ${imageRef} on this host`);
+  }
   if (await getImageDigest(imageRef)) return { ref: imageRef, local: true };
   return { ref: normalizeImageRef(imageRef), local: false };
 }

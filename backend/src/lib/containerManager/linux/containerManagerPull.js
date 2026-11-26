@@ -6,7 +6,7 @@ import {
   containerError, getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS, packProtoAny,
 } from './containerManagerConnection.js';
 import { openProgressStream } from './containerManagerTransferStreams.js';
-import { normalizeImageRef, isLocalImageRef } from './containerImageRef.js';
+import { normalizeImageRef, isLocalImageRef, isImageImportWorkName } from './containerImageRef.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 import { SNAPSHOTTER } from './containerManagerSnapshot.js';
 import {
@@ -122,6 +122,8 @@ export async function readContent(digest) {
  * Walks OCI index / Docker manifest list (and nested indexes) — never uses manifests[0] as fallback.
  */
 async function resolveManifest(imageRef) {
+  // An import's own name, stored before callers were refused it: not there.
+  if (isImageImportWorkName(imageRef)) throw containerError('CONTAINER_IMAGE_NOT_FOUND', `No image ${imageRef} on this host`);
   const imgRes = await callUnary(getClient('images'), 'get', { name: imageRef });
   const digest = imgRes.image?.target?.digest;
   if (!digest) return null;
