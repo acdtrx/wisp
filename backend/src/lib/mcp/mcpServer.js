@@ -118,7 +118,7 @@ export async function handleMcpMessage(message, { scope, log }) {
         return { status: 200, body: rpcError(id, INVALID_PARAMS, `Unknown tool: ${String(name)}`) };
       }
       if (!scopeCovers(scope, tool.scope)) {
-        return { status: 200, body: toolError(id, createAppError('SCOPE_INSUFFICIENT', `Tool "${tool.name}" needs an agent- or admin-scoped API token`)) };
+        return { status: 200, body: toolError(id, createAppError('SCOPE_INSUFFICIENT', `Tool "${tool.name}" needs an API token whose scope is ${tool.scope} or above; this one is ${scope}-scoped`)) };
       }
       const args = params?.arguments ?? {};
       const invalid = argumentValidators.get(tool.name)(args);

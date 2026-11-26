@@ -407,6 +407,11 @@ test('a mutating tool answers a read token SCOPE_INSUFFICIENT, and runs for an a
     payload: { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'start_container', arguments: { name: 'x' } } },
   })).json().result.structuredContent.error;
   assert.equal(await call(READ_TOKEN), 'SCOPE_INSUFFICIENT');
+  const refusal = (await app.inject({
+    method: 'POST', url: '/mcp', headers: bearer(READ_TOKEN),
+    payload: { jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'start_container', arguments: { name: 'x' } } },
+  })).json().result.structuredContent.detail;
+  assert.equal(refusal, 'Tool "start_container" needs an API token whose scope is agent or above; this one is read-scoped');
   for (const token of [AGENT_TOKEN, ADMIN_TOKEN]) {
     const error = await call(token);
     assert.ok(error && error !== 'SCOPE_INSUFFICIENT', `${token}: ${error}`);
