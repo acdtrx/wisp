@@ -30,6 +30,8 @@ type fakeWisp struct {
 func newFakeWisp(t *testing.T, version string) *fakeWisp {
 	t.Helper()
 	f := &fakeWisp{version: version, tokens: map[string]bool{}, routes: map[string]http.HandlerFunc{}}
+	// The route a login checks its token on.
+	f.routes["GET /api/jobs"] = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]any{"jobs": []any{}}) }
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f

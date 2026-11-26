@@ -108,7 +108,8 @@ func report(env *Env, c *call, err error) int {
 			fmt.Fprintln(env.Stderr, strings.TrimSpace(string(refused.Body)))
 			return exitFailed
 		}
-		line := refused.Error()
+		// The API's code and message, after what the command adds before them.
+		line := err.Error()
 		if refused.Code == "CLI_VERSION_MISMATCH" && c != nil {
 			line += " Run \"" + c.updateCommand() + "\" to get the CLI of that Wisp."
 		}
