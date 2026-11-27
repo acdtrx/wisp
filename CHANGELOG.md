@@ -8,10 +8,16 @@
 - **Files and images from the CLI** — `wisp containers upload` sends a file to a file mount, or a zip or a whole folder (zipped as it is sent) to a folder mount; `wisp images push` uploads a `docker save` archive, from a file or a pipe, and prints the `localhost/` name to run it by.
 - **Deploy and image update over REST** — `POST /api/containers/deploy` (create, settings, mounts and start as one job) and `POST /api/containers/:name/image-update`, the jobs MCP's `deploy_container` and `update_container_image` start; `deploy_container` takes a command and `start: false`.
 - **MCP's instructions say what the CLI adds** — settings, mounts, uploads and images, beyond the tools.
+- **The whole host from the CLI** — `wisp overview` maps the host, every container and every VM with its state and address; `wisp vms list` and `show` read the VMs, a running one with its guest's name and address; `wisp host stats` and `hardware` print the host's live figures and its hardware.
+- **Mount sizes and the image check from the CLI** — `wisp containers usage` prints the size on disk of each mount, and `wisp images check` runs the image update check and waits for it.
+- **The overview and the host's figures over REST** — `GET /api/overview` and `GET /api/host/stats` answer what MCP's `get_deployment_overview` and `get_host_stats` return; `GET /api/vms/:name` carries when the VM started and its guest's name and address, as `get_vm` does.
 
 ### Bug Fixes
 - **An upload reaches a running container** — a zip upload empties the mount's folder and fills it, and a file upload is written into the mount's own file, as the editor's save is; the container read the old content until a restart.
 - **A deploy refuses an env name given twice** — in `env` and in `secretEnv`, where it silently became a secret; an empty name is refused too.
+- **The overview gives a container's address without its mask** — `10.0.0.5`, where MCP's overview sent `10.0.0.5/24`.
+- **A guest that does not answer is asked once in 30 s** — a VM whose guest agent hung until its bound was asked again by every read.
+- **A zip upload's staging file is removed at the next start** — a crash during the upload or the extract left a file as large as the zip in the container's folder.
 
 ## 2026-11-26
 
