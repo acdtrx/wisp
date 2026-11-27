@@ -31,6 +31,7 @@ import {
   deleteContainer,
   renameContainer,
   updateContainerConfig,
+  validateContainerMounts,
   addContainerMount,
   updateContainerMount,
   removeContainerMount,
@@ -154,27 +155,34 @@ function deployEnv(env, secretEnv) {
 /**
  * Deploy a container (`POST /api/containers/deploy`, MCP `deploy_container`):
  * create a generic one from `spec.image` with its env, apply the settings as a
- * configuration update — its follow-ups included — and start it unless
- * `spec.start` is false, as one job holding the new name's lock. Its `.local`
+ * configuration update — its follow-ups included — add `spec.mounts` one by
+ * one as the mount route adds one (checked before the job, as a list), and
+ * start it unless `spec.start` is false, as one job holding the new name's
+ * lock. Its `.local`
  * name is published once it runs, by the network-change event, as for any
  * start. A failure after the create says the container now exists, stopped,
  * and keeps the failure's code (INTERNAL_ERROR for one without a code from the
  * table). `done`: the container's config, secrets masked.
  */
 export function startContainerDeployJob({ spec, log }) {
-  const { name, start = true } = spec;
+  const { name, start = true, mounts = [] } = spec;
   const changes = Object.fromEntries(DEPLOY_SETTINGS.filter((key) => spec[key] !== undefined).map((key) => [key, spec[key]]));
   return startJob({
     kind: JOB_KIND.CONTAINER_DEPLOY,
     title: titleForContainerDeploy(name),
     subject: container(name),
-    check: () => assertContainerNameAvailable(name),
+    check: async () => {
+      await assertContainerNameAvailable(name);
+      validateContainerMounts(mounts);
+    },
     log,
     run: async (report) => {
       await createContainer({ name, image: spec.image.trim(), env: deployEnv(spec.env, spec.secretEnv) }, report);
       let failed = 'its settings could not be applied; it exists, stopped: fix them, then start it';
       try {
         await applyContainerConfigChanges({ name, changes, log });
+        failed = 'a mount could not be made; it exists, stopped: fix its mounts, then start it';
+        for (const mount of mounts) await addContainerMount(name, mount);
         if (start) {
           report({ step: 'starting' });
           failed = 'failed to start; it exists, stopped: read its logs, fix it, then start it';

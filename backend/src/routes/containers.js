@@ -356,7 +356,7 @@ export default async function containerRoutes(fastify) {
   // Create, settings and start as one job, for a caller that cannot follow
   // three requests (the wisp CLI). Generic containers only, for every caller.
   fastify.post('/containers/deploy', {
-    config: { auth: 'agent' },
+    config: { auth: 'agent', agentRefuses: ['mounts/*/sourceId', 'mounts/*/subPath'] },
     schema: {
       body: {
         type: 'object',
@@ -373,6 +373,7 @@ export default async function containerRoutes(fastify) {
           localDns: { type: 'boolean' },
           cpuLimit: containerPatchSchema.properties.cpuLimit,
           memoryLimitMiB: containerPatchSchema.properties.memoryLimitMiB,
+          mounts: { type: 'array', items: mountBodySchema },
           start: { type: 'boolean' },
         },
         additionalProperties: false,

@@ -30,7 +30,7 @@ const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).h
 mockModule('./containerManager/index.js', [
   'getContainerDir', 'assertContainerState', 'assertContainerNameAvailable', 'listContainers', 'getContainerConfig',
   'createContainer', 'startContainer', 'stopContainer', 'restartContainer', 'killContainer', 'deleteContainer',
-  'renameContainer', 'updateContainerConfig', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
+  'renameContainer', 'updateContainerConfig', 'validateContainerMounts', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
   'addContainerService', 'updateContainerService', 'removeContainerService', 'planMountFileUpload',
   'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
   'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
@@ -211,6 +211,40 @@ test('a deploy creates with the env, applies the settings and the command as one
     ['startContainer', 'd'],
   ]);
   assertUnlocked('d');
+});
+
+test('a deploy adds its mounts after the settings and before the start, each as the mount route does', async () => {
+  const mounts = [
+    { type: 'directory', name: 'site', containerPath: '/srv' },
+    { type: 'file', name: 'conf', containerPath: '/etc/app.conf', readonly: true, secret: true },
+  ];
+  const { jobId } = await startContainerDeployJob({ spec: { name: 'd', image: 'nginx:1.27', autostart: true, mounts }, log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(calls.find(([name]) => name === 'validateContainerMounts'), ['validateContainerMounts', mounts]);
+  const order = names().filter((name) => ['updateContainerConfig', 'addContainerMount', 'startContainer'].includes(name));
+  assert.deepEqual(order, ['updateContainerConfig', 'addContainerMount', 'addContainerMount', 'startContainer']);
+  assert.deepEqual(calls.filter(([name]) => name === 'addContainerMount').map(([, ...args]) => args), [['d', mounts[0]], ['d', mounts[1]]]);
+});
+
+test('a deploy whose mounts are refused answers before any job, and creates nothing', async () => {
+  impl.validateContainerMounts = () => { throw createAppError('CONTAINER_MOUNT_DUPLICATE', 'Duplicate mount name "site"'); };
+  const jobsBefore = listJobs().length;
+  await assert.rejects(
+    startContainerDeployJob({ spec: { name: 'd', image: 'nginx:1.27', mounts: [{}, {}] }, log }),
+    (err) => err.code === 'CONTAINER_MOUNT_DUPLICATE',
+  );
+  assert.equal(listJobs().length, jobsBefore);
+  assert.equal(names().includes('createContainer'), false);
+  assertUnlocked('d');
+});
+
+test('a deploy whose mount fails says the container exists, stopped, and starts nothing', async () => {
+  impl.addContainerMount = async () => { throw createAppError('INVALID_CONTAINER_MOUNTS', 'Invalid mount name'); };
+  const { jobId } = await startContainerDeployJob({ spec: { name: 'd', image: 'x', mounts: [{ type: 'directory', name: 'a', containerPath: '/a' }] }, log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.equal(readJob(jobId).error, 'INVALID_CONTAINER_MOUNTS');
+  assert.match(readJob(jobId).detail, /^Container "d" was created but a mount could not be made; it exists, stopped/);
+  assert.equal(names().includes('startContainer'), false);
 });
 
 test('a deploy with start false leaves the container defined and stopped', async () => {

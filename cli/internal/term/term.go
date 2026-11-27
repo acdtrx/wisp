@@ -1,5 +1,6 @@
-// Package term reads a secret from the terminal with the typing hidden,
-// through the system's own terminal calls (one file per platform).
+// Package term reads standard input: a secret from the terminal with the
+// typing hidden, through the system's own terminal calls (one file per
+// platform), and a line or a stream with a bound on the wait.
 package term
 
 import (
@@ -50,8 +51,8 @@ var ErrNoLine = errors.New("no line came")
 // A blocked read of standard input cannot be stopped on every platform the
 // CLI ships for (a pipe takes no deadline on Windows), so on the bound the
 // read is left behind, and the program, which has nothing more to read,
-// ends with the error: its exit ends the read. This is the CLI's one
-// goroutine without an owner that waits for it.
+// ends with the error: its exit ends the read. This, and ReaderWithin's, are
+// the CLI's only goroutines without an owner that waits for them.
 func ReadLineWithin(r io.Reader, d time.Duration) (string, error) {
 	type read struct {
 		line string

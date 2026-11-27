@@ -104,6 +104,7 @@ export { updateContainerConfig } from './containerManagerConfig.js';
 export { setContainerPendingRestart } from './containerManagerPendingRestart.js';
 
 export {
+  validateContainerMounts,
   addContainerMount,
   updateContainerMount,
   removeContainerMount,

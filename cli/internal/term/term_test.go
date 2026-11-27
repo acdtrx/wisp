@@ -1,6 +1,7 @@
 package term
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -52,5 +53,21 @@ func TestReadLineWithinGivesUp(t *testing.T) {
 	}
 	if got, err := ReadLineWithin(strings.NewReader("tok\n"), time.Second); got != "tok" || err != nil {
 		t.Fatalf("got %q %v", got, err)
+	}
+}
+
+func TestReaderWithinReadsToTheEndOrGivesUp(t *testing.T) {
+	got, err := io.ReadAll(ReaderWithin(context.Background(), strings.NewReader(strings.Repeat("x", 200<<10)), time.Second))
+	if err != nil || len(got) != 200<<10 {
+		t.Fatalf("read %d bytes, %v", len(got), err)
+	}
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	go pw.Write([]byte("some"))
+	r := ReaderWithin(context.Background(), pr, 50*time.Millisecond)
+	got, err = io.ReadAll(r)
+	var stalled *StalledError
+	if string(got) != "some" || !errors.As(err, &stalled) {
+		t.Fatalf("read %q, %v", got, err)
 	}
 }

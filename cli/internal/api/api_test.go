@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -185,5 +186,77 @@ func TestARedirectIsNeverFollowed(t *testing.T) {
 	}
 	if reached.Load() != 0 {
 		t.Fatalf("the redirect was followed %d times", reached.Load())
+	}
+}
+
+func TestUploadStreamsOneFilePart(t *testing.T) {
+	var name, content string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"UPLOAD_NO_FILE","detail":"no file"}`)
+			return
+		}
+		b, _ := io.ReadAll(file)
+		name, content = header.Filename, string(b)
+		w.WriteHeader(202)
+		fmt.Fprint(w, `{"jobId":"j"}`)
+	}))
+	defer srv.Close()
+	body, err := New(srv.URL, "t", "v").Upload(context.Background(), "/up", "site.zip", func(w io.Writer) error {
+		for i := 0; i < 100; i++ {
+			if _, err := w.Write(bytes.Repeat([]byte{byte('a' + i%26)}, 10_000)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil || string(body) != `{"jobId":"j"}` || name != "site.zip" || len(content) != 1_000_000 || content[999_999] != 'v' {
+		t.Fatalf("body %q err %v name %q len %d", body, err, name, len(content))
+	}
+}
+
+func TestAnUploadThatStopsMovingEndsAndASourceErrorIsItsOwn(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "t", "v")
+	c.uploadIdle = 100 * time.Millisecond
+	block := make(chan struct{})
+	defer close(block)
+	_, err := c.Upload(context.Background(), "/up", "f", func(w io.Writer) error {
+		w.Write([]byte("start"))
+		select {
+		case <-block:
+		case <-time.After(500 * time.Millisecond): // a source slower than the bound
+		}
+		return nil
+	})
+	var stalledErr *StalledError
+	if !errors.As(err, &stalledErr) {
+		t.Fatalf("got %v", err)
+	}
+	gone := errors.New("read site/index.html: gone")
+	if _, err := c.Upload(context.Background(), "/up", "f", func(io.Writer) error { return gone }); !errors.Is(err, gone) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestAnUploadRefusedIsTheRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(409)
+		fmt.Fprint(w, `{"error":"CONTAINER_BUSY","detail":"busy"}`)
+	}))
+	defer srv.Close()
+	_, err := New(srv.URL, "t", "v").Upload(context.Background(), "/up", "f", func(w io.Writer) error {
+		_, err := w.Write(bytes.Repeat([]byte("x"), 1<<20))
+		return err
+	})
+	var refused *Error
+	if !errors.As(err, &refused) || refused.Code != "CONTAINER_BUSY" {
+		t.Fatalf("got %v", err)
 	}
 }

@@ -34,6 +34,17 @@ async function saveMountsChange(containerName, config, signatureBefore) {
 }
 
 /**
+ * Check a list of mounts to add to a container with none yet, as
+ * addContainerMount checks each (a duplicate name or path within the list
+ * included), before anything is written: INVALID_CONTAINER_MOUNTS or
+ * CONTAINER_MOUNT_DUPLICATE.
+ * @param {object[]} mounts
+ */
+export function validateContainerMounts(mounts) {
+  validateAndNormalizeMounts(mounts, resolveMount);
+}
+
+/**
  * Append one mount, create backing artifact. Returns { requiresRestart }.
  * @param {string} containerName
  * @param {{ type: string, name: string, containerPath: string, readonly?: boolean, sourceId?: string|null, subPath?: string }} mountDef

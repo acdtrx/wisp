@@ -265,6 +265,14 @@ function objectProblems(schema, path, root = schema, followed = new Set()) {
   return found;
 }
 
+/** Whether a body schema lists the key a path names: `*` steps into a list's items. */
+function bodySchemaLists(schema, segments) {
+  if (segments.length === 0) return true;
+  const [head, ...rest] = segments;
+  const next = head === '*' ? schema?.items : schema?.properties?.[head];
+  return next !== undefined && bodySchemaLists(next, rest);
+}
+
 /**
  * A route's declared schemas as the report shows them, and what they lack:
  * params naming every URL param; every object of its input and of its answers
@@ -272,7 +280,8 @@ function objectProblems(schema, path, root = schema, followed = new Set()) {
  * lib/schemaValidation.js); a response schema for a 2xx, unless the route
  * answers a stream, a file, a redirect or MCP (`config.answers`); the body
  * keys an `agent` route refuses from an `agent` token (`config.agentRefuses`)
- * on an `agent` route only, each one its body schema lists.
+ * on an `agent` route only, each one its body schema lists (a path's last key
+ * inside the objects and lists it steps through).
  * @param {{ method: string, url: string, declaredSchema?: object, config?: object, websocket?: boolean }} route
  */
 export function routeSchemaProblems({ url, declaredSchema, config, websocket }) {
@@ -286,11 +295,10 @@ export function routeSchemaProblems({ url, declaredSchema, config, websocket }) 
   if (!websocket && answers === 'websocket') problems.push('config.answers \'websocket\' on a route that is not one');
   const refuses = config?.agentRefuses;
   if (refuses !== undefined) {
-    const bodyKeys = Object.keys(schema.body?.properties ?? {});
     if (config.auth !== 'agent') problems.push('config.agentRefuses on a route that is not agent');
     if (!Array.isArray(refuses) || refuses.length === 0) problems.push('config.agentRefuses must list the body keys it refuses');
     else {
-      const unlisted = refuses.filter((key) => !bodyKeys.includes(key));
+      const unlisted = refuses.filter((key) => !bodySchemaLists(schema.body, key.split('/')));
       if (unlisted.length > 0) problems.push(`config.agentRefuses names keys the body schema does not list: ${unlisted.join(', ')}`);
     }
   }

@@ -164,3 +164,16 @@ test('propertyNames and the unevaluated keywords are descended into too', () => 
   const body = openOnPurpose({ type: 'object', propertyNames: { maxLength: 3 }, unevaluatedProperties: OPEN });
   assert.deepEqual(problems({ body }), ['body/propertyNames has no type', unlisted('/unevaluatedProperties')]);
 });
+
+/* ── The keys an agent route refuses ─────────────────────────────────── */
+
+test('agentRefuses names keys of the body, and keys inside its objects and lists by path', () => {
+  const body = closed({ name: { type: 'string' }, mounts: { type: 'array', items: closed({ sourceId: { type: 'string' } }) } });
+  const agentRoute = (agentRefuses) => routeSchemaProblems({
+    method: 'POST', url: '/x', config: { auth: 'agent', agentRefuses }, declaredSchema: { body, response: { 202: closed() } },
+  });
+  assert.deepEqual(agentRoute(['name', 'mounts/*/sourceId']), []);
+  assert.deepEqual(agentRoute(['mounts/*/subPath', 'mounts/sourceId', 'other']), [
+    'config.agentRefuses names keys the body schema does not list: mounts/*/subPath, mounts/sourceId, other',
+  ]);
+});

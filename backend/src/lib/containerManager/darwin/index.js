@@ -243,6 +243,10 @@ export async function setContainerPendingRestart() {
   throw noContainerd();
 }
 
+export function validateContainerMounts() {
+  throw noContainerd();
+}
+
 export async function addContainerMount() {
   throw noContainerd();
 }

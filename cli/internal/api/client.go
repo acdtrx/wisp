@@ -21,15 +21,17 @@ import (
 const VersionHeader = "Wisp-Cli-Version"
 
 // The bounds (CODING-RULES §6): a short request has a fixed total, since a Wisp
-// answers every one within 45 s; a stream or a download has a bound on the time
-// without data, since it shows progress. A stream's Wisp writes a keepalive
-// every 25 s.
+// answers every one within 45 s; a stream, a download or an upload has a bound
+// on the time without data, since it shows progress. A stream's Wisp writes a
+// keepalive every 25 s; a Wisp drops an upload whose body sends nothing for
+// 60 s.
 const (
 	connectTimeout   = 10 * time.Second
 	headerTimeout    = 30 * time.Second
 	requestTimeout   = 60 * time.Second
 	streamIdle       = 60 * time.Second
 	downloadIdle     = 30 * time.Second
+	uploadIdle       = 60 * time.Second
 	maxResponseBytes = 64 << 20
 )
 
@@ -81,9 +83,9 @@ type Client struct {
 	token   string
 	version string
 	http    *http.Client
-	// The bounds on a short request, and on a stream's and a download's time
-	// without data.
-	requestTimeout, streamIdle, downloadIdle time.Duration
+	// The bounds on a short request, and on a stream's, a download's and an
+	// upload's time without data.
+	requestTimeout, streamIdle, downloadIdle, uploadIdle time.Duration
 }
 
 // New is a client of the Wisp at base (scheme, host and port), sending token
@@ -104,7 +106,7 @@ func New(base, token, version string) *Client {
 		// refused as not a Wisp's, so neither the token nor the address check
 		// ever follows one to another server, scheme or port.
 		http:           &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
-		requestTimeout: requestTimeout, streamIdle: streamIdle, downloadIdle: downloadIdle,
+		requestTimeout: requestTimeout, streamIdle: streamIdle, downloadIdle: downloadIdle, uploadIdle: uploadIdle,
 	}
 }
 

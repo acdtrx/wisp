@@ -228,6 +228,10 @@ const NARROWED = [
   ['POST', '/api/containers/web/mounts', { type: 'directory', name: 'm', containerPath: '/m', subPath: 'x' }, 'subPath'],
   ['PATCH', '/api/containers/web/mounts/m', { sourceId: 'nas' }, 'sourceId'],
   ['PATCH', '/api/containers/web/mounts/m', { subPath: 'x' }, 'subPath'],
+  ...['sourceId', 'subPath'].map((key) => ['POST', '/api/containers/deploy', {
+    name: 'web', image: 'nginx',
+    mounts: [{ type: 'directory', name: 'a', containerPath: '/a' }, { type: 'directory', name: 'm', containerPath: '/m', [key]: 'x' }],
+  }, `mounts/1/${key}`]),
 ];
 
 test('an agent token sending a key its route keeps admin answers 403 SCOPE_INSUFFICIENT naming the key, before the handler', async () => {

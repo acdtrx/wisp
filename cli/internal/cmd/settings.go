@@ -1,9 +1,17 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"math"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/acdtrx/wisp/cli/internal/term"
 )
 
 // The settings flags of `containers create` and `containers set`
@@ -138,6 +146,13 @@ func (c *call) deployBody() (map[string]any, error) {
 	if secretEnv != nil {
 		body["secretEnv"] = secretEnv
 	}
+	mounts, err := c.mounts()
+	if err != nil {
+		return nil, err
+	}
+	if mounts != nil {
+		body["mounts"] = mounts
+	}
 	if c.switches["no-start"] {
 		body["start"] = false
 	}
@@ -193,4 +208,96 @@ func (c *call) patchBody() (map[string]any, error) {
 		body["envPatch"] = envPatch
 	}
 	return body, nil
+}
+
+// The mount flags of create and set: each adds one mount kept on this host.
+var (
+	mountFlag = flagDef{Name: "mount", Value: "<name>:<container-path>[:ro]", Repeat: true,
+		Usage: "Adds a folder kept on this host, by that name, at that path in the container; ro mounts it read-only. It starts empty: \"wisp containers upload\" fills it. May be repeated."}
+	fileMountFlag = flagDef{Name: "file-mount", Value: "<name>:<container-path>[:ro][:secret]", Repeat: true,
+		Usage: "Adds a file kept on this host; ro mounts it read-only, secret makes its content write-only. It starts empty: \"wisp containers upload\" writes it. May be repeated."}
+	tmpfsFlag = flagDef{Name: "tmpfs", Value: "<name>:<container-path>[:<MiB>]", Repeat: true,
+		Usage: "Adds a folder in memory, empty at every start, of 64 MiB or the size given. May be repeated."}
+	appConfigFlag = flagDef{Name: "app-config", Value: "<file>",
+		Usage: "Changes an app container's config: the fields to change, as a JSON object in the file, or - for standard input. Goes alone: no other setting with it."}
+)
+
+// mounts reads the mount flags as POST …/mounts bodies: the folders, then
+// the files, then the memory folders, each in the order given.
+func (c *call) mounts() ([]map[string]any, error) {
+	var out []map[string]any
+	for _, kind := range []struct {
+		flag, mountType string
+		options         []string
+	}{
+		{"mount", "directory", []string{"ro"}},
+		{"file-mount", "file", []string{"ro", "secret"}},
+		{"tmpfs", "tmpfs", nil},
+	} {
+		for _, v := range c.lists[kind.flag] {
+			parts := strings.Split(v, ":")
+			if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+				return nil, usagef(c.cmd.Path, "--%s takes <name>:<container-path>, not %q", kind.flag, v)
+			}
+			m := map[string]any{"type": kind.mountType, "name": parts[0], "containerPath": parts[1]}
+			if kind.mountType == "tmpfs" {
+				if len(parts) > 3 {
+					return nil, usagef(c.cmd.Path, "--tmpfs takes <name>:<container-path>[:<MiB>], not %q", v)
+				}
+				if len(parts) == 3 {
+					size, err := strconv.Atoi(parts[2])
+					if err != nil {
+						return nil, usagef(c.cmd.Path, "--tmpfs takes its size as a whole number of MiB, not %q", parts[2])
+					}
+					m["sizeMiB"] = size
+				}
+				out = append(out, m)
+				continue
+			}
+			for _, opt := range parts[2:] {
+				if !slices.Contains(kind.options, opt) || m[optionField(opt)] != nil {
+					return nil, usagef(c.cmd.Path, "--%s takes %s after the path, each once, not %q", kind.flag, strings.Join(kind.options, " or "), opt)
+				}
+				m[optionField(opt)] = true
+			}
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+func optionField(opt string) string {
+	if opt == "ro" {
+		return "readonly"
+	}
+	return opt
+}
+
+// maxAppConfig bounds the app config read from a file or standard input.
+const maxAppConfig = 1 << 20
+
+// appConfig reads --app-config: the JSON in the file, or on standard input.
+// Nil when the flag is not given.
+func (c *call) appConfig(ctx context.Context) (json.RawMessage, error) {
+	path, ok := c.values["app-config"]
+	if !ok {
+		return nil, nil
+	}
+	var raw []byte
+	var err error
+	if path == "-" {
+		raw, err = io.ReadAll(io.LimitReader(term.ReaderWithin(ctx, c.env.Stdin, c.env.TokenWait), maxAppConfig+1))
+	} else {
+		raw, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the app config: %w", err)
+	}
+	if len(raw) > maxAppConfig {
+		return nil, usagef(c.cmd.Path, "the app config is over %d bytes", maxAppConfig)
+	}
+	if !json.Valid(raw) {
+		return nil, usagef(c.cmd.Path, "the app config in %s is not JSON", path)
+	}
+	return json.RawMessage(raw), nil
 }

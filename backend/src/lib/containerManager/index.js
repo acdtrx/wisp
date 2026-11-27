@@ -72,6 +72,7 @@ export const supportsImageUpdateChecks = impl.supportsImageUpdateChecks;
 export const updateContainerConfig = impl.updateContainerConfig;
 export const setContainerPendingRestart = impl.setContainerPendingRestart;
 
+export const validateContainerMounts = impl.validateContainerMounts;
 export const addContainerMount = impl.addContainerMount;
 export const updateContainerMount = impl.updateContainerMount;
 export const removeContainerMount = impl.removeContainerMount;

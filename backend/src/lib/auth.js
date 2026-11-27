@@ -327,17 +327,31 @@ export function callerScope(request) {
 }
 
 /**
+ * Where `body` holds what one `agentRefuses` entry names, as `a/0/b` paths:
+ * the entry is a key, or a path of keys through the body, split on `/`, in
+ * which a `*` step is each item of a list (each mount's `sourceId`).
+ */
+function sentPaths(value, segments, at = []) {
+  if (segments.length === 0) return [at.join('/')];
+  const [head, ...rest] = segments;
+  if (head === '*') {
+    return Array.isArray(value) ? value.flatMap((item, i) => sentPaths(item, rest, [...at, i])) : [];
+  }
+  return value && typeof value === 'object' && Object.hasOwn(value, head) ? sentPaths(value[head], rest, [...at, head]) : [];
+}
+
+/**
  * The body keys an `agent` route refuses from an `agent` token, declared in
- * its options as `config: { auth: 'agent', agentRefuses: [...] }`. The
- * route's last `preHandler` (app.js): it runs once the body passed its schema
- * and the route's own checks of its shape (a malformed request is 400 first),
- * and before the handler writes anything.
+ * its options as `config: { auth: 'agent', agentRefuses: [...] }`: a key, or a
+ * path to one inside the body (above). The route's last `preHandler`
+ * (app.js): it runs once the body passed its schema and the route's own
+ * checks of its shape (a malformed request is 400 first), and before the
+ * handler writes anything.
  */
 export async function refuseAgentKeys(request) {
   const refused = request.routeOptions.config?.agentRefuses;
   if (!refused || callerScope(request) !== 'agent') return;
-  const body = request.body;
-  const sent = body && typeof body === 'object' ? refused.filter((key) => Object.hasOwn(body, key)) : [];
+  const sent = refused.flatMap((key) => sentPaths(request.body, key.split('/')));
   if (sent.length === 0) return;
   const keys = sent.map((key) => `body/${key}`).join(', ');
   throw createAppError('SCOPE_INSUFFICIENT', `${keys}: an agent token cannot send ${sent.length > 1 ? 'these' : 'this'}; it needs an admin-scoped token or a session`);
