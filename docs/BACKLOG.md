@@ -277,6 +277,14 @@ bound, where the read never touched the guest before (the VMs and host from the 
 build, 2026-11-27). **Revisit trigger:** a VM page that opens slowly while its guest
 hangs.
 
+**The VM page's header state lags a stop by up to 5 s.** The page lays the stats
+stream's run state over the list's (`useWorkload`, `liveConfig`), and the stats stream
+ticks every 5 s while the list moves on libvirt's event: when a stop's job ends, Stop is
+enabled again while the header still reads "Running" for a few seconds, and a click then
+answers `VM_NOT_RUNNING` (seen on tini, about 6 s, while building "VMs started and
+stopped by an agent", 2026-11-28). **Revisit trigger:** a stale state on the page
+misleads a user, or the header's run state is touched for another reason.
+
 ## Containers and apps
 
 **A Samba server run as a Wisp container never answers SMB.** Both
