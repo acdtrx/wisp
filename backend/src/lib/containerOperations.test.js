@@ -250,13 +250,13 @@ test('a deploy whose mount fails says the container exists, stopped, and starts 
 
 test('a deploy\'s env is checked as a PATCH\'s, before any job: a name given twice is refused, not made secret', async () => {
   impl.validateEnvPatch = (patch) => {
-    if (Object.keys(patch).some((key) => !key.trim())) throw createAppError('CONFIG_ERROR', 'envPatch keys must be non-empty strings');
+    if (Object.keys(patch).some((key) => !key.trim())) throw createAppError('CONFIG_ERROR', 'An env variable needs a name: an empty one, or one of spaces only, is refused');
   };
   const jobsBefore = listJobs().length;
   for (const [env, secretEnv, detail] of [
-    [{ '': 'x' }, {}, 'envPatch keys must be non-empty strings'],
-    [{ A: '1' }, { A: '2' }, 'Env var "A" is given twice (in env and secretEnv): give it once'],
-    [{ A: '1', ' A ': '2' }, {}, 'Env var "A" is given twice (in env and env): give it once'],
+    [{ '': 'x' }, {}, 'An env variable needs a name: an empty one, or one of spaces only, is refused'],
+    [{ A: '1' }, { A: '2' }, 'Env variable "A" is given twice (in env and secretEnv): give it once'],
+    [{ A: '1', ' A ': '2' }, {}, 'Env variable "A" is given twice (in env and env): give it once'],
   ]) {
     await assert.rejects(
       startContainerDeployJob({ spec: { name: 'd', image: 'x', env, secretEnv }, log }),

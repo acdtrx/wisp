@@ -158,7 +158,7 @@ function deployEnvPatch(env = {}, secretEnv = {}) {
     for (const [key, value] of Object.entries(values)) {
       const name = key.trim();
       if (name && givenIn[name]) {
-        throw createAppError('CONFIG_ERROR', `Env var "${name}" is given twice (in ${givenIn[name]} and ${source}): give it once`);
+        throw createAppError('CONFIG_ERROR', `Env variable "${name}" is given twice (in ${givenIn[name]} and ${source}): give it once`);
       }
       givenIn[name] = source;
       patch[name || key] = secret ? { value, secret: true } : { value };

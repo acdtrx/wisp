@@ -10,11 +10,11 @@ test('an env change of named entries and removals passes', () => {
 });
 
 test('an env change is refused for a key of nothing, or an entry, a value or a flag of the wrong type', () => {
-  assert.throws(() => validateEnvPatch(null), refusal('envPatch must be an object'));
-  assert.throws(() => validateEnvPatch([]), refusal('envPatch must be an object'));
-  assert.throws(() => validateEnvPatch({ '': { value: 'x' } }), refusal('envPatch keys must be non-empty strings'));
-  assert.throws(() => validateEnvPatch({ '  ': null }), refusal('envPatch keys must be non-empty strings'));
-  assert.throws(() => validateEnvPatch({ A: 'x' }), refusal('envPatch entry for "A" must be an object or null'));
-  assert.throws(() => validateEnvPatch({ A: { value: 1 } }), refusal('envPatch value for "A" must be a string'));
-  assert.throws(() => validateEnvPatch({ A: { value: 'x', secret: 'yes' } }), refusal('envPatch secret flag for "A" must be boolean'));
+  assert.throws(() => validateEnvPatch(null), refusal('The env change must be an object of env variables'));
+  assert.throws(() => validateEnvPatch([]), refusal('The env change must be an object of env variables'));
+  assert.throws(() => validateEnvPatch({ '': { value: 'x' } }), refusal('An env variable needs a name: an empty one, or one of spaces only, is refused'));
+  assert.throws(() => validateEnvPatch({ '  ': null }), refusal('An env variable needs a name: an empty one, or one of spaces only, is refused'));
+  assert.throws(() => validateEnvPatch({ A: 'x' }), refusal('Env variable "A": give it as { value, secret }, or null to remove it'));
+  assert.throws(() => validateEnvPatch({ A: { value: 1 } }), refusal('Env variable "A": its value must be a string'));
+  assert.throws(() => validateEnvPatch({ A: { value: 'x', secret: 'yes' } }), refusal('Env variable "A": its secret flag must be true or false'));
 });
