@@ -269,6 +269,14 @@ report the capability (the host's API) and the UI show it where VMs are created 
 started. **Revisit trigger:** the first install on a host without KVM, or a user
 puzzled by a VM that will not start there.
 
+**The VM read waits for a hung guest agent.** `GET /api/vms/:name`, which the VM page
+fetches on every change of the VM, asks the guest agent for its address and name when
+the VM runs with the agent and the 30 s cache holds no answer: a guest whose agent
+hangs delays that read up to libvirt's own agent timeout, capped at 30 s by the call's
+bound, where the read never touched the guest before (the VMs and host from the CLI
+build, 2026-11-27). **Revisit trigger:** a VM page that opens slowly while its guest
+hangs.
+
 ## Containers and apps
 
 **A Samba server run as a Wisp container never answers SMB.** Both
