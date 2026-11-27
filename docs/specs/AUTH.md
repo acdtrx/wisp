@@ -72,7 +72,7 @@ The header must carry `alg === 'HS256'` — any other value (including `none`) i
 | `public` | anyone | `POST /api/auth/login`, the three OIDC routes, the CLI's downloads (`/api/cli`, [CLI.md](CLI.md#getting-it)), static assets + SPA shell |
 | `session` | browser session only — API tokens get **403** `SESSION_REQUIRED` | the rest of `/api/auth/*` (logout, change-password, token management), `PATCH /api/settings/oidc`, the `/ws` consoles |
 | `read` | session, or an API token of any scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
-| `agent` | session, or an `agent`- or `admin`-scoped API token; a `read` token gets **403** `SCOPE_INSUFFICIENT` | what building, running and updating a container takes ([§ The `agent` scope](#the-agent-scope)): create, lifecycle, config, the mounts kept on this host and their content, services, a container's backup, the image update check |
+| `agent` | session, or an `agent`- or `admin`-scoped API token; a `read` token gets **403** `SCOPE_INSUFFICIENT` | what building, running and updating a container takes ([§ The `agent` scope](#the-agent-scope)): create, lifecycle, config, the mounts kept on this host and their content, services, a container's backup, the image update check; and a VM's start and stop |
 | `admin` | session, or an `admin`-scoped API token; a `read` or `agent` token gets **403** `SCOPE_INSUFFICIENT` | every other mutation, plus GETs that make outbound requests |
 | `mcp` | API token only (any scope) — cookies ignored; per-tool scope in the MCP layer | `/mcp` |
 
@@ -150,7 +150,7 @@ A token keeps the scope it was made with: there is no changing it, only revoking
 
 ### The `agent` scope
 
-For a coding agent that builds, runs and updates containers. It cannot delete, cannot give a container more reach into the host, and cannot change a VM or the host. The token form preselects it.
+For a coding agent that builds, runs and updates containers, and starts and stops VMs. It cannot delete, cannot give a container more reach into the host, cannot create or edit a VM, and cannot change the host. The token form preselects it.
 
 | Area | An `agent` token may |
 |------|----------------------|
@@ -162,6 +162,7 @@ For a coding agent that builds, runs and updates containers. It cannot delete, c
 | Services | Add, edit and remove the names a container announces |
 | Images | Upload an image; check for updates; point a container at another image |
 | Backups | Take a backup of a container |
+| VMs | Start, stop, restart and force stop |
 
 | Area | Stays `admin` |
 |------|---------------|
@@ -169,7 +170,7 @@ For a coding agent that builds, runs and updates containers. It cannot delete, c
 | Restores and eject | Restoring a backup, ejecting an app |
 | A container's reach into the host | A mount backed by a storage share or drive, devices, running as root, the bridge and the MAC |
 | Containers | Renaming one; creating one from an app; an app's other fields |
-| VMs | Every change |
+| VMs | Creating, editing, renaming and deleting one; its disks, CD-ROMs, USB devices and first boot setup; pause and resume; its backups |
 | The host | Storage, bridges, power, OS updates, Wisp updates, settings, the certificate, the library, sections, the Home page |
 
 Token management, the consoles and sign-on stay out of every token's reach ([Denied surfaces](#denied-surfaces-every-scope)).

@@ -148,21 +148,23 @@ Raw libvirt domain XML (for debugging/inspection).
 
 - **200:** `{ xml: string }`
 
-### POST /api/vms/:name/start · `admin`
+### POST /api/vms/:name/start · `agent`
 
 - **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `VM_NOT_FOUND`
 - **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **Job errors:** `LIBVIRT_ERROR`
 
-### POST /api/vms/:name/stop · `admin`
+### POST /api/vms/:name/stop · `agent`
 
-Graceful shutdown (ACPI).
+Graceful shutdown: asks the guest to shut down (ACPI), then waits until the VM is off.
 
-- **204:** shutdown requested; the state change arrives on the `vms` topic
-- **409:** `VM_BUSY` — another operation on this VM holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock). The stop holds it only while the request is sent, so a force stop is accepted while the guest shuts down.
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`, once the VM is off, whatever turned it off (a force stop meanwhile included). **Shared** ([API.md → Background jobs](API.md#background-jobs)): a stop of a VM whose stop still waits answers that job's ack
+- **404:** `VM_NOT_FOUND`
+- **409:** `VM_NOT_RUNNING` — any state but running, paused included; `VM_BUSY` — another operation on this VM holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock). The job holds it only while the request is sent to libvirt, so a force stop is accepted while it waits.
+- **Job errors:** `LIBVIRT_ERROR`; `VM_STOP_TIMEOUT` — the VM is not off **5 min** after the request: it is left as it is, running or still shutting down
 
-### POST /api/vms/:name/force-stop · `admin`
+### POST /api/vms/:name/force-stop · `agent`
 
 Immediate force stop (destroy).
 
@@ -170,7 +172,7 @@ Immediate force stop (destroy).
 - **404:** `VM_NOT_FOUND` | **409:** `VM_NOT_RUNNING`; `VM_BUSY` — another operation on this VM holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **Job errors:** `LIBVIRT_ERROR`
 
-### POST /api/vms/:name/reboot · `admin`
+### POST /api/vms/:name/reboot · `agent`
 
 - **204:** reboot requested
 - **409:** `VM_BUSY` — as for stop

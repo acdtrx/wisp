@@ -127,12 +127,12 @@ from, so it is complete: no command, flag or argument exists outside it.
 | The whole host | `overview` |
 | `containers` | `list`, `show`, `create`, `set`, `update`, `start`, `stop`, `restart`, `logs`, `upload`, `usage` |
 | `images` | `list`, `push`, `check` |
-| `vms` | `list`, `show` |
+| `vms` | `list`, `show`, `start`, `stop`, `restart` |
 | `host` | `stats`, `hardware` |
 | `jobs` | `list`, `wait` |
 
-**VMs and the host are read, never changed.** No command creates, starts, stops or edits
-a VM, or changes the host: none of that is an `agent` token's to do.
+**A VM is started and stopped, never created or edited, and the host is only read.**
+The rest is not an `agent` token's to do.
 
 **`wisp overview` is where to start**: one call that maps the host, every container and
 every VM, with the address each one answers at.
@@ -161,6 +161,9 @@ env and mounts among them. There is no command group per part of a container.
 | `images check` | `POST /api/containers/images/check-updates` | Checks every image for a newer one, as one job. Prints how many images were checked, how many have a newer one and how many containers run an older one; `overview` then shows which |
 | `vms list` | `GET /api/vms` | |
 | `vms show <name>` | `GET /api/vms/:name` | The VM's state and settings (CPU, memory, firmware, disks, network cards) and, while it runs, how long it has been up and the guest's name and address |
+| `vms start <name>` | `POST /api/vms/:name/start` | |
+| `vms stop <name>` | `POST /api/vms/:name/stop`; with `--force`, `…/force-stop` | Asks the guest to shut down, and ends when the VM is off. `--force` powers it off at once |
+| `vms restart <name>` | `POST /api/vms/:name/reboot` | Asks the guest to restart, and ends at once: nothing tells when a guest is back up |
 | `host stats` | `GET /api/host/stats` | One sample of the host's live figures: CPU, temperatures, memory, disk and network rates, pending updates |
 | `host hardware` | `GET /api/host/hardware` | The hardware: CPU, board, memory modules, disks with their health, PCI devices, GPUs |
 | `jobs list` | `GET /api/jobs` | |
@@ -214,7 +217,8 @@ say otherwise.
 
 ## Not supported
 
-- Changing a VM or the host, deletes and whatever else an `agent` token cannot do. An
+- Creating or editing a VM, changing the host, deletes and whatever else an `agent` token
+  cannot do. An
   `admin` token widens what the same commands may touch, not the list of commands.
 - A token stored anywhere but the profile file or the environment (no keychain).
 - Talking to a Wisp of another version.

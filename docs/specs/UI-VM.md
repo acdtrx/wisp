@@ -9,6 +9,9 @@ the shared components are in [UI.md](UI.md); the three shapes (view, edit, act) 
 - **Header**: the VM's icon and name, its state, and the tabs Overview and Console.
   Actions, as icons: Start when it is stopped; Stop and Restart when it runs. A "More"
   menu holds Pause or Resume, Force stop, Rename, Change icon, Back up now and Delete.
+  Stop asks the guest to shut down and runs as a job until the VM is off: a guest that
+  does not shut down shows as that job's failure, and Force stop stays available
+  meanwhile.
   Restart reboots the guest, which keeps the running settings: so while a saved change
   waits (or the host's QEMU was replaced) the header says "Stop and start to apply".
   Back up now needs the VM shut off.

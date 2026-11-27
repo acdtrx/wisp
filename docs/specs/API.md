@@ -69,7 +69,7 @@ In-memory job registry (server process only; no persistence across restart) (set
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | vm-backup | vm-start | vm-force-stop | vm-delete | vm-restore | container-create | container-backup | container-restore | container-restore-new | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-zip-extract | container-deploy | container-image-update | container-image-update-check | container-image-import | container-image-delete | library-download | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | certificate-issue | self-update",
+      "kind": "vm-create | vm-backup | vm-start | vm-stop | vm-force-stop | vm-delete | vm-restore | container-create | container-backup | container-restore | container-restore-new | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-zip-extract | container-deploy | container-image-update | container-image-update-check | container-image-import | container-image-delete | library-download | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | certificate-issue | self-update",
       "title": "string",
       "subject": { "type": "vm | container", "name": "string" },
       "status": "running | done | error | cancelled",
