@@ -51,7 +51,7 @@ func (c *Client) Upload(ctx context.Context, path, fileName string, write func(c
 		if res != nil {
 			res.Body.Close()
 		}
-		return nil, &StalledError{URL: u, After: c.uploadIdle}
+		return nil, &StalledError{URL: u, After: c.uploadIdle, Upload: true}
 	}
 	if writeErr != nil && !errors.Is(writeErr, errAnswered) {
 		if res != nil {
@@ -60,14 +60,14 @@ func (c *Client) Upload(ctx context.Context, path, fileName string, write func(c
 		return nil, writeErr
 	}
 	if err != nil {
-		return nil, stalled(ctx, u, c.uploadIdle, err)
+		return nil, err
 	}
 	defer res.Body.Close()
 	body, err := readAnswer(u, res)
-	if err != nil {
-		return nil, stalled(ctx, u, c.uploadIdle, err)
+	if err != nil && errors.Is(context.Cause(ctx), errIdle) {
+		return nil, &StalledError{URL: u, After: c.uploadIdle, Upload: true}
 	}
-	return body, nil
+	return body, err
 }
 
 // idleWriter touches the watch on every write that went through.

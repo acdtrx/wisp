@@ -67,13 +67,17 @@ func (e *NotWispError) Error() string {
 	return fmt.Sprintf("%s did not answer as a Wisp: %s", e.URL, e.Reason)
 }
 
-// StalledError ends a stream or a download that stopped moving.
+// StalledError ends a stream, a download or an upload that stopped moving.
 type StalledError struct {
-	URL   string
-	After time.Duration
+	URL    string
+	After  time.Duration
+	Upload bool // what stopped is what the CLI sends, not what the Wisp does
 }
 
 func (e *StalledError) Error() string {
+	if e.Upload {
+		return fmt.Sprintf("the upload to %s made no progress for %s: gave up", e.URL, e.After)
+	}
 	return fmt.Sprintf("%s sent nothing for %s: gave up", e.URL, e.After)
 }
 

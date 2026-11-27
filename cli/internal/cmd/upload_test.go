@@ -297,7 +297,7 @@ func TestAPushFromAPipeThatSendsNothingEndsAtTheBound(t *testing.T) {
 	r.stdinR, r.uploadIdle = pr, 200*time.Millisecond
 	start := time.Now()
 	r.do("images", "push", "-").wantCode(1)
-	if !strings.Contains(r.stderr.String(), "sent nothing for 200ms") || time.Since(start) > 5*time.Second {
+	if !strings.Contains(r.stderr.String(), "made no progress for 200ms") || time.Since(start) > 5*time.Second {
 		t.Fatalf("stderr %q after %s", r.stderr.String(), time.Since(start))
 	}
 }

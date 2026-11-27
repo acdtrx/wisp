@@ -26,7 +26,7 @@ func TestAPushOfAFIFOThatNoOneWritesEndsAtTheBound(t *testing.T) {
 	r.uploadIdle = 200 * time.Millisecond
 	start := time.Now()
 	r.do("images", "push", fifo).wantCode(1)
-	if !strings.Contains(r.stderr.String(), "nothing for 200ms") || time.Since(start) > 5*time.Second {
+	if !strings.Contains(r.stderr.String(), "no progress for 200ms") || time.Since(start) > 5*time.Second {
 		t.Fatalf("stderr %q after %s", r.stderr.String(), time.Since(start))
 	}
 }
