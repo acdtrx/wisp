@@ -39,3 +39,11 @@ test('selecting a container opens its stats stream at its interval', async () =>
   store.getState().deselect();
   assert.equal(request.signal.aborted, true);
 });
+
+test("a container's page takes the list's state, scheduled restart and pending restart over its record", async () => {
+  const { liveConfig } = await import('./workloadStore.js');
+  const record = { name: 'a', state: 'running', image: 'nginx', scheduledRestart: null, pendingRestart: { since: 1 } };
+  const item = { name: 'a', state: 'stopped', scheduledRestart: { attempt: 1, at: 5 } };
+  assert.deepEqual(liveConfig(record, item, ['state', 'scheduledRestart', 'pendingRestart']),
+    { name: 'a', state: 'stopped', image: 'nginx', scheduledRestart: { attempt: 1, at: 5 }, pendingRestart: null });
+});

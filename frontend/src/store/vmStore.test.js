@@ -75,13 +75,13 @@ test('selecting a VM opens its stats stream; deselecting closes it', async () =>
   assert.equal(useVmStatsStore.getState().data, null);
 });
 
-test('the config shown takes the list fields and the live run state over the record', async () => {
+test("the config shown takes the list's fields, the run state among them, over the record", async () => {
   const { liveConfig } = await import('./workloadStore.js');
-  const record = { name: 'a', state: 'shutoff', vcpus: 2, pendingRestart: { since: 1 } };
-  assert.deepEqual(liveConfig(record, { name: 'a', state: 'running' }, ['state', 'pendingRestart'], null),
-    { name: 'a', state: 'running', vcpus: 2, pendingRestart: null });
-  assert.deepEqual(liveConfig(record, null, ['state'], 'paused'), { ...record, state: 'paused' });
-  assert.equal(liveConfig(null, { state: 'running' }, ['state'], null), null);
+  const record = { name: 'a', state: 'running', vcpus: 2, pendingRestart: { since: 1 } };
+  assert.deepEqual(liveConfig(record, { name: 'a', state: 'shutoff' }, ['state', 'pendingRestart']),
+    { name: 'a', state: 'shutoff', vcpus: 2, pendingRestart: null });
+  assert.deepEqual(liveConfig(record, null, ['state']), record);
+  assert.equal(liveConfig(null, { state: 'running' }, ['state']), null);
 });
 
 test('a workload store over a name that is not on the wire is refused when it is made', async () => {

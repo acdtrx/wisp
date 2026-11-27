@@ -4,18 +4,19 @@ import { assertTopic } from '../api/events.js';
 import { errorText } from '../api/errors.js';
 import { useRecord } from '../hooks/useRecord.js';
 import { runCommand } from './commands.js';
-import { createStreamStore, liveData, streamSource, topicSource } from './streamStore.js';
+import { createStreamStore, streamSource, topicSource } from './streamStore.js';
 import { withEntry, withError, withErrorsRenamed, withoutError, withoutErrorsOfVanished } from './workloadActions.js';
 
 /**
  * A workload's config as its page shows it: the record, with the list item's `fields`
- * laid over it (absent ones null) and the stats stream's run state over that.
+ * laid over it (absent ones null). The run state is the list's, which moves on the
+ * manager's events; the stats stream, sampled every few seconds, never overrides it,
+ * or a page would show a state seconds old beside actions that follow the list.
  */
-export function liveConfig(config, item, fields, liveState) {
+export function liveConfig(config, item, fields) {
   if (config == null) return null;
   const next = { ...config };
   if (item) for (const field of fields) next[field] = item[field] ?? null;
-  if (liveState != null) next.state = liveState;
   return next;
 }
 
@@ -128,16 +129,12 @@ export function createWorkloadStore(spec) {
   /**
    * Workload `name` as its page shows it: its config record (`useRecord`), with what
    * is live laid over it — the list item's fields (`spec.listFields`), which change on
-   * every event, and the run state of its stats stream while it is the selected one.
-   * `seed` is what the header paints from the list item before the config loads.
+   * every event, the run state among them. `seed` is what the header paints from the list item before the config loads.
    */
   function useWorkload(name) {
     const record = useRecord(spec.record, name);
     const item = useStore((s) => s.data?.find((w) => w.name === name) ?? null);
-    const statsState = useStatsStore((s) => liveData(s)?.state ?? null);
-    const selected = useStore((s) => s.selected === name);
-    const liveState = selected ? statsState : null;
-    const config = useMemo(() => liveConfig(record.data, item, spec.listFields, liveState), [record.data, item, liveState]);
+    const config = useMemo(() => liveConfig(record.data, item, spec.listFields), [record.data, item]);
     const seed = useMemo(() => (item ? spec.seed(item) : null), [item]);
     return { record, config, seed, item };
   }
