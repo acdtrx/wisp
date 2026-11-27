@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/acdtrx/wisp/cli/internal/api"
 )
@@ -66,7 +67,10 @@ var errJobCancelled = errors.New("the job was cancelled: the Wisp stopped it as 
 // jobEvent is one event of a job's progress stream (docs/specs/API.md, Job
 // store contract).
 type jobEvent struct {
-	Step    string          `json:"step"`
+	Step string `json:"step"`
+	// What the step is about, for a job of many: an image's ref, a container's name.
+	Ref     string          `json:"ref"`
+	Name    string          `json:"name"`
 	Percent *float64        `json:"percent"`
 	Detail  string          `json:"detail"`
 	Result  json.RawMessage `json:"result"`
@@ -94,7 +98,7 @@ func waitForJob(ctx context.Context, c *call, client *api.Client, jobID string) 
 			end = errJobCancelled
 			return true, nil
 		}
-		line := e.Step
+		line := strings.Join(strings.Fields(e.Step+" "+e.Ref+" "+e.Name), " ")
 		if e.Percent != nil {
 			line += fmt.Sprintf(" %.0f%%", *e.Percent)
 		}

@@ -104,6 +104,15 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 		case "/api/vms/ubuntu":
 			rw.Header().Set("Content-Type", "application/json")
 			rw.Write([]byte(e2eVM))
+		case "/api/containers/web/mounts/usage":
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(`{"name":"web","mounts":[{"name":"cache","containerPath":"/var/cache","type":"tmpfs","source":"tmpfs","hostPath":null,"sizeBytes":null,"partial":false},{"name":"data","containerPath":"/data","type":"directory","source":"local","hostPath":"/x","sizeBytes":2048,"partial":true}]}`))
+		case "/api/containers/images/check-updates":
+			if w.token == "wisp_read_e2e" {
+				reply(403, map[string]string{"error": "SCOPE_INSUFFICIENT", "detail": "This route needs an agent or admin token"})
+				return
+			}
+			reply(202, map[string]any{"jobId": "j-1", "kind": "container-image-update-check", "title": "Check image updates", "subject": nil})
 		case "/api/host/stats":
 			rw.Header().Set("Content-Type", "application/json")
 			rw.Write([]byte(`{"cpu":{"allocated":2,"total":4,"usagePercent":12.5,"perCore":[10,15]},"cpuTemp":null,"cpuTempThresholds":null,"thermalZones":[],"cpuPowerWatts":null,"memory":{"allocatedGB":2,"totalGB":16,"usagePercent":40,"usedBytes":1,"buffersBytes":1,"cachedBytes":1,"swapTotalBytes":0,"swapUsedBytes":0},"loadAvg":[0.5,0.4,0.3],"disk":{"readMBs":0,"writeMBs":0},"net":{"rxMBs":0,"txMBs":0},"runningVMs":1,"runningContainers":0,"pendingUpdates":0,"updatesLastChecked":null,"updateOperationInProgress":false,"rebootRequired":false,"rebootReasons":[],"certificateFailed":false,"wispUpdate":{"current":"9.9.9-e2e","latest":null,"available":false,"lastChecked":null}}`))
@@ -238,6 +247,14 @@ func TestTheBuiltBinaryReadsTheHost(t *testing.T) {
 	if got.code != 0 || !strings.Contains(got.stdout, "12.5% of 4 cores") || !strings.Contains(got.stdout, "Sensors:\n  none") {
 		t.Fatalf("host stats: %+v", got)
 	}
+	got = runWisp(t, bin, env, "", "containers", "usage", "web")
+	if got.code != 0 || !strings.Contains(got.stdout, "nothing: a memory folder") || !strings.Contains(got.stdout, "at least 2.0 KiB") {
+		t.Fatalf("containers usage: %+v", got)
+	}
+	got = runWisp(t, bin, env, "", "images", "check")
+	if got.code != 1 || !strings.HasPrefix(got.stderr, "SCOPE_INSUFFICIENT: ") {
+		t.Fatalf("images check with a read token: %+v", got)
+	}
 	got = runWisp(t, bin, env, "", "host", "hardware")
 	if got.code != 0 || !strings.Contains(got.stdout, "Test CPU") || !strings.Contains(got.stdout, "UHD Graphics") || !strings.Contains(got.stdout, "Memory modules:\n  none") {
 		t.Fatalf("host hardware: %+v", got)
@@ -300,13 +317,19 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 	}
 }
 
-func TestTheBuiltBinaryCreatesAContainerAndAnInterruptLeavesTheJob(t *testing.T) {
+func TestTheBuiltBinaryChecksImagesCreatesAContainerAndAnInterruptLeavesTheJob(t *testing.T) {
 	bin := buildWisp(t, t.TempDir(), e2eVersion)
 	wisp := newE2EWisp(t, e2eVersion, "wisp_agent_e2e")
 	env := append(homeEnv(t.TempDir()), "WISP_URL="+wisp.URL, "WISP_TOKEN=wisp_agent_e2e")
+	wisp.job.Store(e2eJob{frames: []string{`{"step":"checking","ref":"nginx:1.27","index":1,"total":1}`, `{"step":"done","result":{"checked":1,"updated":0,"flaggedContainers":0,"lastCheckedAt":"2026-11-27T12:00:00.000Z"}}`}})
+	got := runWisp(t, bin, env, "", "images", "check")
+	if got.code != 0 || got.stdout != "Checked 1 image: 0 have a newer one, and 0 containers run an older one.\n" || !strings.Contains(got.stderr, "checking nginx:1.27") {
+		t.Fatalf("images check: %+v", got)
+	}
+
 	wisp.job.Store(e2eJob{frames: []string{`{"step":"pulling"}`, `{"step":"starting"}`, `{"step":"done","result":{"name":"web","state":"running","env":{"K":{"value":"v"}}}}`}})
 
-	got := runWisp(t, bin, env, "", "containers", "create", "web", "--image", "nginx:1.27", "--env", "K=v", "--", "nginx", "-g", "daemon off;")
+	got = runWisp(t, bin, env, "", "containers", "create", "web", "--image", "nginx:1.27", "--env", "K=v", "--", "nginx", "-g", "daemon off;")
 	if got.code != 0 || !strings.Contains(got.stdout, "running") || !strings.Contains(got.stdout, "K=v") || !strings.Contains(got.stderr, "starting") {
 		t.Fatalf("create: %+v", got)
 	}

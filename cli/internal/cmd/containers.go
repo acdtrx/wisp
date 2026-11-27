@@ -353,3 +353,54 @@ func runContainersLogs(ctx context.Context, c *call) error {
 	}
 	return err
 }
+
+func runContainersUsage(ctx context.Context, c *call) error {
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	var usage struct {
+		Mounts []struct {
+			Name          string   `json:"name"`
+			ContainerPath string   `json:"containerPath"`
+			Type          string   `json:"type"`
+			Source        string   `json:"source"`
+			SizeBytes     *float64 `json:"sizeBytes"`
+			Partial       bool     `json:"partial"`
+		} `json:"mounts"`
+	}
+	body, err := client.GetJSON(ctx, containerPath(c.args[0], "mounts", "usage"), nil, &usage)
+	if err != nil {
+		return err
+	}
+	if c.switches["json"] {
+		printJSON(c.env.Stdout, body)
+		return nil
+	}
+	if len(usage.Mounts) == 0 {
+		fmt.Fprintf(c.env.Stdout, "%s has no mounts.\n", c.args[0])
+		return nil
+	}
+	t := newTable(c.env.Stdout, "NAME", "KIND", "PATH", "ON DISK")
+	for _, m := range usage.Mounts {
+		var size string
+		switch {
+		case m.Source == "tmpfs":
+			size = "nothing: a memory folder"
+		case m.Source == "missing":
+			size = "unknown: its host mount is no longer configured"
+		case m.SizeBytes == nil:
+			size = "unknown"
+		case m.Partial:
+			// Some entries could not be read, or the walk ran out of time.
+			size = "at least " + bytesText(*m.SizeBytes)
+		default:
+			size = bytesText(*m.SizeBytes)
+		}
+		if m.Source == "storage" {
+			size += ", on a host mount"
+		}
+		t.row(m.Name, m.Type, m.ContainerPath, size)
+	}
+	return t.flush()
+}

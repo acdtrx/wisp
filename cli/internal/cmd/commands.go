@@ -363,6 +363,17 @@ func commandTable() []*command {
 			run:     runContainersUpload,
 		},
 		{
+			Path: "containers usage", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Print the size on disk of each of a container's mounts",
+			About: "Prints each mount of the container with its kind, its path in the container and the\n" +
+				"size of its data on this host's disk, measured now: a large folder can take seconds. A\n" +
+				"memory folder (--tmpfs) holds nothing on disk. A size the Wisp could not finish, for\n" +
+				"entries it could not read or a walk that ran out of time, reads as \"at least\".",
+			Flags:   []flagDef{jsonFlag},
+			Example: "wisp containers usage web",
+			run:     runContainersUsage,
+		},
+		{
 			Path: "images list", MaxArgs: 0,
 			Summary: "List the container images",
 			About:   "Lists the images the Wisp's containers run from: name, size, when it was last updated,\nand digest. An uploaded image's name is under localhost/.",
@@ -384,6 +395,21 @@ func commandTable() []*command {
 			Flags:   []flagDef{{Name: "no-wait", Usage: "Print the import's job id and end once the archive is sent."}, jobJSONFlag},
 			Example: "wisp images push ./myapp.tar\ndocker save myapp:v1 | wisp images push -",
 			run:     runImagesPush,
+		},
+		{
+			Path: "images check", MaxArgs: 0,
+			Summary: "Check every image for a newer one",
+			About: "Checks every image the Wisp holds for a newer one at its registry, as one job: the\n" +
+				"check Wisp runs every hour by itself, run now, and joined when one already runs. An\n" +
+				"image under localhost/ (one \"wisp images push\" uploaded) has no registry and is passed.\n" +
+				"The command prints the job's progress on standard error and ends when it does, with\n" +
+				"how many images were checked, how many have a newer one and how many containers run an\n" +
+				"older one; \"wisp overview\" then shows which. It changes no container: \"wisp\n" +
+				"containers update\" moves one to the newer image. An interrupt (Ctrl-C) ends the wait,\n" +
+				"never the job.",
+			Flags:   []flagDef{noWaitFlag, jobJSONFlag},
+			Example: "wisp images check",
+			run:     runImagesCheck,
 		},
 		{
 			Path: "vms list", MaxArgs: 0,
