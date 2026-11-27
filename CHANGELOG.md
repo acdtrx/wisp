@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-27
+
+### New Features
+- **Containers from the `wisp` CLI** — `wisp containers create` makes a container with its env, secret env, command, limits and mounts and starts it, as one job; `start`, `stop` and `restart` wait for their job, and `--no-wait` hands back the job's id for `wisp jobs wait`.
+- **Change a container from the CLI** — `wisp containers set` changes any of its settings, adds env and mounts, and saves an app's config (a Caddy's sites); `wisp containers update` pulls its image again, or moves it to another, and restarts it.
+- **Files and images from the CLI** — `wisp containers upload` sends a file to a file mount, or a zip or a whole folder (zipped as it is sent) to a folder mount; `wisp images push` uploads a `docker save` archive, from a file or a pipe, and prints the `localhost/` name to run it by.
+- **Deploy and image update over REST** — `POST /api/containers/deploy` (create, settings, mounts and start as one job) and `POST /api/containers/:name/image-update`, the jobs MCP's `deploy_container` and `update_container_image` start; `deploy_container` takes a command and `start: false`.
+- **MCP's instructions say what the CLI adds** — settings, mounts, uploads and images, beyond the tools.
+
 ## 2026-11-26
 
 ### New Features

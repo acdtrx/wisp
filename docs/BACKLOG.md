@@ -565,7 +565,21 @@ the lookup itself; the GET through the SSRF guard succeeds). Where the images ar
 published needs looking up before the fix. **Revisit trigger:** a user downloading Home
 Assistant OS, or the next work on the library presets.
 
+## The CLI
+
+**`wisp containers show` prints a container's uptime a thousand times too long.** The
+API's `uptime` is milliseconds (`processUptimeMsFromProc`); the CLI's `durationText`
+reads it as seconds, so a container up two minutes shows "up 33h20m0s" (seen on tini in
+the containers-from-the-CLI build, 2026-11-27; `read_test.go`'s fixture took seconds
+too). **Revisit trigger:** the next change to `containers show`, or a user reading the
+line.
+
 ## Checks, tests, development
+
+**The CLI's update e2e test races under `go test -race`.** `TestTheBuiltBinaryUpdatesItself`
+sets the stand-in Wisp's `binary` between runs while its handler goroutines read it,
+unguarded (`cli/e2e_test.go`); `npm run check` runs `go test` without `-race`, so it
+passes (found 2026-11-27). **Revisit trigger:** the check runs the Go tests with `-race`.
 
 **A helper refusal test can hit the 10 s test timeout under load.** `wisp-mount.test.js`'s
 "a credentials file of another user is refused" timed out once in a full `npm run check`
