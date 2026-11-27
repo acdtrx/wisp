@@ -95,6 +95,9 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 			rw.Write([]byte(`[{"name":"web","image":"nginx:1.27","state":"running","updateAvailable":false,"scheduledRestart":null,"pendingRestart":null}]`))
 		case "/api/jobs":
 			reply(200, map[string]any{"jobs": []any{}})
+		case "/api/overview":
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(e2eOverview))
 		case "/api/containers/deploy":
 			body, _ := io.ReadAll(r.Body)
 			w.deployBody.Store(string(body))
@@ -116,6 +119,10 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 	t.Cleanup(w.Close)
 	return w
 }
+
+const e2eOverview = `{"wispVersion":"9.9.9-e2e","serverName":"Lab","host":{"hostname":"lab","kernel":"6.8.0","primaryAddress":"192.168.1.5","uptimeSeconds":3600,"libvirtVersion":"10.0.0","qemuVersion":"8.2.2"},"bridges":["br0"],"sections":[],"certificate":null,` +
+	`"containers":[{"name":"web","state":"stopped","image":"nginx:1.27","updateAvailable":false,"ip":null,"lastKnownIp":"192.168.1.20","bridge":"br0","mdnsName":null,"app":null,"autostart":false,"autoBackup":false,"restartPolicy":"never"}],` +
+	`"vms":[{"name":"ubuntu","state":"running","vcpus":2,"memoryMiB":2048,"profile":"linux","ip":"192.168.1.10","guestHostname":"ubuntu"}]}`
 
 type result struct {
 	stdout, stderr string
@@ -174,6 +181,22 @@ func TestBuiltBinaryAgainstAStandInWisp(t *testing.T) {
 	got = runWisp(t, bin, withEnv, "", "containers", "frob")
 	if got.code != 2 || wisp.requests.Load() != before {
 		t.Fatalf("unknown command: %+v, %d requests", got, wisp.requests.Load()-before)
+	}
+}
+
+func TestTheBuiltBinaryReadsTheHost(t *testing.T) {
+	bin := buildWisp(t, t.TempDir(), e2eVersion)
+	wisp := newE2EWisp(t, e2eVersion, "wisp_read_e2e")
+	env := append(homeEnv(t.TempDir()), "WISP_URL="+wisp.URL, "WISP_TOKEN=wisp_read_e2e")
+
+	got := runWisp(t, bin, env, "", "overview")
+	if got.code != 0 || !strings.Contains(got.stdout, "Certificate:  none") || !strings.Contains(got.stdout, "old address 192.168.1.20") ||
+		!strings.Contains(got.stdout, "192.168.1.10") {
+		t.Fatalf("overview: %+v", got)
+	}
+	got = runWisp(t, bin, env, "", "overview", "--json")
+	if got.code != 0 || strings.TrimSpace(got.stdout) != e2eOverview {
+		t.Fatalf("overview --json: %+v", got)
 	}
 }
 

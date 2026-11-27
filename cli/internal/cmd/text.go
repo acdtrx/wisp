@@ -54,6 +54,30 @@ func onOff(b bool) string {
 	return "off"
 }
 
+// orNone is a value the API may send as null, or "none".
+func orNone(s *string) string {
+	if s == nil || *s == "" {
+		return "none"
+	}
+	return *s
+}
+
+// orDash is a table cell the API may send as null, or "—".
+func orDash(s *string) string {
+	if s == nil || *s == "" {
+		return "—"
+	}
+	return *s
+}
+
+// listOrNone is a list, or "none" when it is empty.
+func listOrNone(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	return strings.Join(items, ", ")
+}
+
 // bytesText is a size in bytes, for reading.
 func bytesText(n float64) string {
 	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}

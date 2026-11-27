@@ -19,8 +19,11 @@ type command struct {
 	// TakesCommand: what follows `--` is the command a container runs, not
 	// arguments of this one.
 	TakesCommand bool
-	Example      string
-	run          func(ctx context.Context, c *call) error
+	// Section is the heading a one-word command is listed under (group);
+	// "" for the CLI's own commands.
+	Section string
+	Example string
+	run     func(ctx context.Context, c *call) error
 }
 
 // flagDef is one flag of a command: a switch when Value is empty, else a
@@ -57,15 +60,17 @@ func (c *command) argsWanted() string {
 	}
 }
 
-// group is a heading of the overview, and for a word like `containers` the
-// commands under it.
+// group is a heading of the overview: for a word like `containers`, the
+// commands under it; else the one-word commands whose Section names it.
 type group struct {
-	Word  string // "" for the CLI's own commands
-	Title string
+	Word    string // the word of `wisp <word> <command>`, or "" for one-word commands
+	Section string // for one-word commands: the Section of those under it
+	Title   string
 }
 
 var groups = []group{
-	{Word: "", Title: "The CLI itself"},
+	{Title: "The CLI itself"},
+	{Section: "host", Title: "The whole host (start here)"},
 	{Word: "containers", Title: "Containers"},
 	{Word: "images", Title: "Images"},
 	{Word: "jobs", Title: "Jobs"},
@@ -85,6 +90,14 @@ func groupOf(c *command) string {
 		return word
 	}
 	return ""
+}
+
+// has says whether c is listed under g.
+func (g group) has(c *command) bool {
+	if g.Word != "" {
+		return groupOf(c) == g.Word
+	}
+	return groupOf(c) == "" && c.Section == g.Section
 }
 
 func groupCommands(word string) []string {
@@ -166,6 +179,21 @@ func commandTable() []*command {
 			About:   "With no argument, lists every command. With a command, prints it in full: its\narguments, its flags and an example. \"wisp <command> --help\" does the same.",
 			Example: "wisp help containers logs",
 			run:     runHelp,
+		},
+		{
+			Path: "overview", MaxArgs: 0, Section: "host",
+			Summary: "Map the whole host: every container and VM, with its address",
+			About: "Where to start: one call that prints the Wisp's version and name, its host (address,\n" +
+				"uptime, kernel, libvirt and QEMU), the host's bridges and the certificate's domain (every\n" +
+				"Caddy site is under it), then every container and every VM, each with its state and the\n" +
+				"address it answers at. A container has its own address on the LAN while it runs, and\n" +
+				"<name>.local with Local DNS on. A container that is not running has no address: its\n" +
+				"last one shows as old, as another machine may hold it now. A VM's address and name are\n" +
+				"its guest's, which only a guest with the QEMU guest agent tells. \"wisp containers show\"\n" +
+				"prints a container in full.",
+			Flags:   []flagDef{jsonFlag},
+			Example: "wisp overview\nwisp overview --json",
+			run:     runOverview,
 		},
 		{
 			Path: "containers list", MaxArgs: 0,

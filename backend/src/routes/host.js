@@ -26,6 +26,7 @@ import {
   getProfilerSoftwareOverview,
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
+import { buildDeploymentOverview } from '../lib/deploymentOverview.js';
 import { asAppError, createAppError } from '../lib/appErrors.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
@@ -40,6 +41,81 @@ import {
 import { isOsUpgradeRunning, startOsUpdateCheckJob } from '../lib/updateChecks.js';
 import { jobAckSchema, noContentSchema } from './schemas.js';
 import { JOB_KIND } from '../../../shared/wireNames.js';
+
+const nullableString = { type: ['string', 'null'] };
+
+/** GET /overview: the deployment's map (lib/deploymentOverview.js). */
+const overviewSchema = {
+  type: 'object',
+  properties: {
+    wispVersion: { type: 'string' },
+    serverName: { type: 'string' },
+    host: {
+      type: 'object',
+      properties: {
+        hostname: { type: 'string' },
+        kernel: { type: 'string' },
+        primaryAddress: nullableString,
+        uptimeSeconds: { type: 'number' },
+        libvirtVersion: nullableString,
+        qemuVersion: nullableString,
+      },
+      additionalProperties: false,
+    },
+    bridges: { type: 'array', items: { type: 'string' } },
+    sections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, name: { type: 'string' } },
+        additionalProperties: false,
+      },
+    },
+    certificate: {
+      type: ['object', 'null'],
+      properties: { domain: { type: 'string' }, validUntil: { type: 'string' } },
+      additionalProperties: false,
+    },
+    containers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          state: { type: 'string' },
+          image: { type: 'string' },
+          updateAvailable: { type: 'boolean' },
+          ip: nullableString,
+          lastKnownIp: nullableString,
+          bridge: nullableString,
+          mdnsName: nullableString,
+          app: nullableString,
+          autostart: { type: 'boolean' },
+          autoBackup: { type: 'boolean' },
+          restartPolicy: nullableString,
+        },
+        additionalProperties: false,
+      },
+    },
+    vms: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          state: { type: 'string' },
+          vcpus: { type: 'integer' },
+          memoryMiB: { type: 'integer' },
+          profile: nullableString,
+          ip: nullableString,
+          guestHostname: nullableString,
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  additionalProperties: false,
+};
 
 function getOsRelease() {
   try {
@@ -114,6 +190,14 @@ export default async function hostRoutes(fastify) {
         throw asAppError(err, 'Failed to get host info');
       }
     },
+  });
+
+  // The whole deployment in one answer, the MCP get_deployment_overview's
+  // body too (docs/specs/API-HOST.md).
+  fastify.get('/overview', {
+    config: { auth: 'read' },
+    schema: { response: { 200: overviewSchema } },
+    handler: async () => buildDeploymentOverview(),
   });
 
   // A job (it refreshes the package index), shared with a check already

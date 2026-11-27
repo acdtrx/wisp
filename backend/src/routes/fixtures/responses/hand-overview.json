@@ -1,0 +1,66 @@
+{
+  "route": "GET /api/overview",
+  "status": 200,
+  "note": "A running container, a stopped one with its last lease, an app container, a running VM with its guest's address and one that is off.",
+  "body": {
+    "wispVersion": "3.0.0",
+    "serverName": "Lab",
+    "host": {
+      "hostname": "lab",
+      "kernel": "6.8.0-49-generic",
+      "primaryAddress": "192.168.1.5",
+      "uptimeSeconds": 86400,
+      "libvirtVersion": "10.0.0",
+      "qemuVersion": "8.2.2"
+    },
+    "bridges": ["br0", "br0-vlan22"],
+    "sections": [{ "id": "s-1", "name": "Media" }],
+    "certificate": { "domain": "lab.example.com", "validUntil": "2027-02-01T00:00:00.000Z" },
+    "containers": [
+      {
+        "name": "web",
+        "state": "running",
+        "image": "docker.io/library/nginx:1.27",
+        "updateAvailable": true,
+        "ip": "192.168.1.20",
+        "bridge": "br0",
+        "mdnsName": "web.local",
+        "app": null,
+        "autostart": true,
+        "autoBackup": false,
+        "restartPolicy": "unless-stopped"
+      },
+      {
+        "name": "worker",
+        "state": "stopped",
+        "image": "localhost/worker:v3",
+        "updateAvailable": false,
+        "ip": null,
+        "lastKnownIp": "192.168.1.21",
+        "bridge": "br0",
+        "mdnsName": null,
+        "app": null,
+        "autostart": false,
+        "autoBackup": false,
+        "restartPolicy": "never"
+      },
+      {
+        "name": "caddy",
+        "state": "running",
+        "image": "docker.io/library/caddy:2",
+        "updateAvailable": false,
+        "ip": "192.168.1.22",
+        "bridge": null,
+        "mdnsName": "caddy.local",
+        "app": "caddy-reverse-proxy",
+        "autostart": true,
+        "autoBackup": true,
+        "restartPolicy": null
+      }
+    ],
+    "vms": [
+      { "name": "ubuntu", "state": "running", "vcpus": 4, "memoryMiB": 4096, "profile": "linux", "ip": "192.168.1.10", "guestHostname": "ubuntu" },
+      { "name": "old", "state": "shutoff", "vcpus": 2, "memoryMiB": 2048, "profile": null, "ip": null, "guestHostname": null }
+    ]
+  }
+}

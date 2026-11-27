@@ -1,0 +1,22 @@
+{
+  "route": "GET /api/overview",
+  "status": 200,
+  "note": "A Wisp with no certificate, no section and no workload, libvirt not connected.",
+  "body": {
+    "wispVersion": "3.0.0",
+    "serverName": "My Server",
+    "host": {
+      "hostname": "dev",
+      "kernel": "25.6.0",
+      "primaryAddress": null,
+      "uptimeSeconds": 12.5,
+      "libvirtVersion": null,
+      "qemuVersion": null
+    },
+    "bridges": [],
+    "sections": [],
+    "certificate": null,
+    "containers": [],
+    "vms": []
+  }
+}

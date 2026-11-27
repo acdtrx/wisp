@@ -13,6 +13,9 @@ Wisp it talks to: the Wisp serves it, and "wisp update" fetches it again after t
 is updated.
 
 Usage: wisp [--profile <name>] <command> [arguments] [flags]
+
+Start with "wisp overview": one call that maps the Wisp's host, every container and
+every VM, with the address each one answers at.
 `
 
 const overviewShared = `Signing in:
@@ -57,7 +60,7 @@ func printOverview(w io.Writer) {
 	fmt.Fprint(w, overviewIntro+"\n")
 	for _, g := range groups {
 		fmt.Fprintf(w, "%s:\n", g.Title)
-		printCommandList(w, g.Word)
+		printCommandList(w, g)
 		fmt.Fprintln(w)
 	}
 	fmt.Fprint(w, overviewShared)
@@ -65,14 +68,14 @@ func printOverview(w io.Writer) {
 
 func printGroup(w io.Writer, word string) {
 	fmt.Fprintf(w, "Usage: wisp [--profile <name>] %s <command> [arguments] [flags]\n\n", word)
-	printCommandList(w, word)
+	printCommandList(w, group{Word: word})
 	fmt.Fprintf(w, "\nRun \"wisp help %s <command>\" for a command in full.\n", word)
 }
 
-func printCommandList(w io.Writer, word string) {
+func printCommandList(w io.Writer, g group) {
 	tw := tabwriter.NewWriter(w, 0, 8, 3, ' ', 0)
 	for _, c := range commandTable() {
-		if groupOf(c) != word {
+		if !g.has(c) {
 			continue
 		}
 		fmt.Fprintf(tw, "  %s\t%s\n", strings.TrimSpace(c.Path+" "+c.Usage), c.Summary)

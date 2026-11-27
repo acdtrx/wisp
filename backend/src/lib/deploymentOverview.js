@@ -3,8 +3,8 @@
  * every container (list summary + its full `container.json`) and every VM
  * (+ guest network when running).
  *
- * Two consumers, one join (CODING-RULES §2): the MCP `get_deployment_overview`
- * tool projects `buildDeploymentOverview()` straight out, and the Home page's
+ * Two consumers, one join (CODING-RULES §2): `GET /api/overview` and the MCP
+ * `get_deployment_overview` tool both answer `buildDeploymentOverview()`, and the Home page's
  * tile derivation (`lib/homeTiles.js`) reads `gatherDeployment()` for the
  * appConfig/services detail the MCP shape doesn't carry. Keeping both on the
  * same gather means a workload that appears to one always appears to the other.
@@ -72,9 +72,9 @@ export async function gatherDeployment() {
 }
 
 /**
- * Project the aggregate into the MCP `get_deployment_overview` payload. The
- * field set and ordering here are the tool's public contract — change them
- * only alongside docs/specs/MCP.md.
+ * Project the aggregate into the body of `GET /api/overview`, which the MCP
+ * `get_deployment_overview` tool returns too. The field set is the route's
+ * public contract (docs/specs/API-HOST.md), and its response schema lists it.
  */
 export async function buildDeploymentOverview() {
   const deployment = await gatherDeployment();
