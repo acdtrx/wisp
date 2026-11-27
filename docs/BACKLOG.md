@@ -90,6 +90,14 @@ matters, or the two copies are found to differ.
 
 ## Networking: addresses, DHCP, mDNS, bridges
 
+**The overview's container addresses carry their mask.** `container.json` keeps
+`network.ip` with its mask (`10.79.1.250/24`, CONTAINERS.md), and `GET /api/overview`
+(and so MCP's `get_deployment_overview` and `wisp overview`) passes it on as a
+container's `ip` and `lastKnownIp`, where API-HOST.md's example shows a bare address;
+a VM's `ip` has none (seen on tini, 2026-11-27). **Revisit trigger:** an agent that
+uses the address as it is (`curl http://10.79.1.250/24/`), or the overview's next
+change.
+
 **Two containers of the same name on two Wisp hosts get the same address.** The backend
 passes the container's name as the CNI container ID, and the CNI `dhcp` plugin builds its
 DHCP client identity from that ID, the network's name (`wisp-bridge` on every host) and
@@ -443,6 +451,15 @@ the CPU, disk and network rates are 0 rather than missing (`getVMStats`,
 `getContainerStats`). **Revisit trigger:** a zero seen and taken for a real figure, or the
 stats shapes' next change.
 
+**A host stats sample's rates are since the last sample, whoever took it.** The host's
+CPU use (and per core), disk and network rates are deltas from the previous call of the
+stats sample, kept module-wide: the first sample after Wisp starts reads 0% and 0 MB/s,
+and one taken with no events stream open averages over however long ago the last one
+was. `GET /api/host/stats`, `wisp host stats` and MCP's `get_host_stats` take such a
+sample on demand (seen on tini, 2026-11-27: the first `wisp host stats` after a restart
+read 0% CPU on every core, the second 1.3%). **Revisit trigger:** a one-off sample taken
+for a real figure, or the stats sampler's next change.
+
 **A hung CIFS mount blocks Node's filesystem calls.** The readers of a share that remain
 on libuv's thread pool can each be held there by an unresponsive SMB share, and about 4
 held at once stall all of Wisp's file access: listings, writes and deletes on an SMB
@@ -573,6 +590,12 @@ Assistant OS, or the next work on the library presets.
 on the Mac (exit `null`, not 64) while other test files ran beside it, and passed alone
 (found in the host-certificate build, 2026-11-25). **Revisit trigger:** it fails again, or
 any helper test times out in the release workflow.
+
+**The CLI's FIFO push test races its own two messages.** `TestAPushOfAFIFOThatNoOneWritesEndsAtTheBound`
+(`cli/internal/cmd/upload_unix_test.go`) wants "no progress for 200ms"; once in a
+full `go test` on the Mac it got the source read's own bound first ("nothing came from …
+for 200ms"), and passed when run again (found in the CLI VMs and host build,
+2026-11-27). **Revisit trigger:** it fails again, or fails in the release workflow.
 
 **No check refuses a duplicate JSX prop.** A component given the same prop twice keeps
 the last one silently: that is how a doubled `saveDisabledReason` on the VM General card
