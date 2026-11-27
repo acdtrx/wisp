@@ -12,7 +12,11 @@
  *   of the module), once for each platform: `go run` would build the tool
  *   for GOOS, so it is installed once, for this machine, into a temporary
  *   folder, and run with each GOOS/GOARCH;
- * - `go test ./...`: the unit tests and the end-to-end test of the built binary.
+ * - `go test -race ./...`: the unit tests and the end-to-end test of the built
+ *   binary, under the race detector. It needs cgo but on macOS, so the test
+ *   step alone runs with CGO_ENABLED=1 there, and fails saying so when no C
+ *   compiler is installed; every build, the test's own of the binary
+ *   included, stays CGO_ENABLED=0.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -72,12 +76,19 @@ try {
   rmSync(toolDir, { recursive: true, force: true });
 }
 
-const test = run('go test', 'go', ['test', './...']);
-if (!test.ok) problems.push(`go test:\n${test.output}`);
+// The race detector runs on Go's own runtime on macOS, and through cgo elsewhere.
+const raceNeedsCgo = process.platform !== 'darwin';
+const cc = raceNeedsCgo ? (spawnSync('go', ['env', 'CC'], { encoding: 'utf8' }).stdout.trim() || 'gcc') : null;
+if (raceNeedsCgo && spawnSync(cc, ['--version'], { encoding: 'utf8' }).error) {
+  problems.push(`go test -race needs a C compiler on ${process.platform} (the race detector runs through cgo there), and ${cc} is not installed: install gcc (apt install gcc) or clang.`);
+} else {
+  const test = run('go test -race', 'go', ['test', '-race', './...'], raceNeedsCgo ? { CGO_ENABLED: '1' } : {});
+  if (!test.ok) problems.push(`go test -race:\n${test.output}`);
+}
 
 if (problems.length > 0) {
   for (const p of problems) console.error(p);
   console.error(`\nThe CLI's check fails (${probe.stdout.trim()}, in ${path.relative(process.cwd(), CLI_DIR) || 'cli'}).`);
   process.exit(1);
 }
-console.log(`OK — the CLI is gofmt-clean, vets and passes staticcheck on ${PLATFORMS.length} platforms, and passes its tests (${probe.stdout.trim()}).`);
+console.log(`OK — the CLI is gofmt-clean, vets and passes staticcheck on ${PLATFORMS.length} platforms, and passes its tests under the race detector (${probe.stdout.trim()}).`);
