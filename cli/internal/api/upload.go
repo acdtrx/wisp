@@ -17,9 +17,11 @@ var errAnswered = errors.New("the request ended")
 // Upload sends one multipart POST whose one file part, named fileName, is
 // what write writes, streamed to the Wisp as it is written, and answers the
 // 2xx body. An upload that stops moving, and an answer that does not come,
-// end after the bound on the time without progress. An error of write's own
-// (a file that cannot be read) is answered as it is.
-func (c *Client) Upload(ctx context.Context, path, fileName string, write func(w io.Writer) error) ([]byte, error) {
+// end after the bound on the time without progress, whatever write waits
+// on: write gets a context done at that bound, and reads its source so that
+// it returns then (term.SourceWithin). An error of write's own (a file that
+// cannot be read) is answered as it is.
+func (c *Client) Upload(ctx context.Context, path, fileName string, write func(ctx context.Context, w io.Writer) error) ([]byte, error) {
 	u := c.url(path, nil)
 	ctx, watch, stop := watchIdle(ctx, c.uploadIdle)
 	defer stop()
@@ -35,7 +37,7 @@ func (c *Client) Upload(ctx context.Context, path, fileName string, write func(w
 			if err != nil {
 				return err
 			}
-			if err := write(idleWriter{w: part, watch: watch}); err != nil {
+			if err := write(ctx, idleWriter{w: part, watch: watch}); err != nil {
 				return err
 			}
 			return mw.Close()
@@ -45,6 +47,12 @@ func (c *Client) Upload(ctx context.Context, path, fileName string, write func(w
 	res, err := c.send(ctx, http.MethodPost, path, nil, "application/json", pr, mw.FormDataContentType())
 	pr.CloseWithError(errAnswered) // a write still under way fails, and the writer ends
 	wg.Wait()
+	if errors.Is(context.Cause(ctx), errIdle) {
+		if res != nil {
+			res.Body.Close()
+		}
+		return nil, &StalledError{URL: u, After: c.uploadIdle}
+	}
 	if writeErr != nil && !errors.Is(writeErr, errAnswered) {
 		if res != nil {
 			res.Body.Close()

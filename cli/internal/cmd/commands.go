@@ -216,11 +216,11 @@ func commandTable() []*command {
 		{
 			Path: "containers set", Usage: "<name>", MinArgs: 1, MaxArgs: 1, TakesCommand: true,
 			Summary: "Change a container's settings",
-			About: "Changes the settings given and leaves the rest as they are: one request on the Wisp.\n" +
-				"\"wisp containers show\" prints them after. A change a running container cannot take\n" +
-				"(the image, the env, the command, the limits) waits for its restart, and the container\n" +
-				"shows a restart pending; the restart policy, autostart, the backup and Local DNS apply at\n" +
-				"once. A setting the token may not change is the Wisp's refusal.\n\n" +
+			About: "Changes the settings given and leaves the rest as they are; \"wisp containers show\"\n" +
+				"prints them after. A change a running container cannot take (the image, the env, the\n" +
+				"command, the limits) waits for its restart, and the container shows a restart pending;\n" +
+				"the restart policy, autostart, the backup and Local DNS apply at once. A setting the\n" +
+				"token may not change is the Wisp's refusal.\n\n" +
 				"--env sets a variable and keeps the others; --secret-env sets one stored write-only;\n" +
 				"--unset-env removes one. --image points the container at another image for its next\n" +
 				"start, which pulls it when the Wisp does not hold it; \"wisp containers update\n" +
@@ -322,7 +322,9 @@ func commandTable() []*command {
 				"extract is a job on the Wisp: the command prints its progress on standard error and\n" +
 				"ends when it does. A mount the token may not write, or the container busy with\n" +
 				"another command, is the Wisp's refusal. A secret file mount takes a file too, and no\n" +
-				"command reads it back.",
+				"command reads it back. In a folder, a symbolic link to a file is sent as that file;\n" +
+				"a link to a folder, or anything that is not a file or a folder, ends the command\n" +
+				"before anything is sent, and so does an empty folder: there is nothing to send.",
 			Flags: []flagDef{
 				{Name: "no-wait", Usage: "For a folder or a zip: print the extract's job id and end once the upload is sent."},
 				{Name: "json", Usage: "Print the API's JSON instead of text, unchanged: the extract job's result, or with --no-wait its ack. A file's upload answers none."},

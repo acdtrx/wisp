@@ -27,7 +27,14 @@ func TestAFolderIsZippedAsItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := Write(&out, fsys, entries); err != nil {
+	read := func(path string) io.Reader {
+		data, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bytes.NewReader(data)
+	}
+	if err := Write(&out, fsys, entries, read); err != nil {
 		t.Fatal(err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(out.Bytes()), int64(out.Len()))
@@ -74,5 +81,12 @@ func TestWhatAZipCannotHoldIsRefusedBeforeAnythingIsSent(t *testing.T) {
 	}
 	if _, err := List(fsys); err == nil || !strings.Contains(err.Error(), "fifo") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestAFolderWithNothingInItListsNothing(t *testing.T) {
+	entries, err := List(fstest.MapFS{})
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("%v, %v", entries, err)
 	}
 }

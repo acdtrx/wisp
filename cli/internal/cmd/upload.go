@@ -7,26 +7,23 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/acdtrx/wisp/cli/internal/api"
 	"github.com/acdtrx/wisp/cli/internal/folderzip"
 	"github.com/acdtrx/wisp/cli/internal/term"
 )
 
-// stdinIdle bounds the wait for an archive on standard input, as the Wisp
-// bounds an upload's.
-const stdinIdle = 60 * time.Second
+// fileSource reads the file at path under the upload's bound: a read that
+// blocks (a FIFO, a process substitution, a stalled network share) ends the
+// upload when the bound does (term.SourceWithin).
+func (c *call) fileSource(ctx context.Context, path string) io.Reader {
+	return term.SourceWithin(ctx, path, func() (io.ReadCloser, error) { return os.Open(path) }, c.env.UploadIdle)
+}
 
 // copyFile is an upload's writer for the file at path.
-func copyFile(path string) func(io.Writer) error {
-	return func(w io.Writer) error {
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		if _, err := io.Copy(w, f); err != nil {
+func (c *call) copyFile(path string) func(context.Context, io.Writer) error {
+	return func(ctx context.Context, w io.Writer) error {
+		if _, err := io.Copy(w, c.fileSource(ctx, path)); err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 		return nil
@@ -38,6 +35,15 @@ func runContainersUpload(ctx context.Context, c *call) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return usagef(c.cmd.Path, "%s", err)
+	}
+	var entries []folderzip.Entry
+	if info.IsDir() {
+		if entries, err = folderzip.List(os.DirFS(path)); err != nil {
+			return fmt.Errorf("nothing sent: %w", err)
+		}
+		if len(entries) == 0 {
+			return usagef(c.cmd.Path, "nothing to send: %s is an empty folder", path)
+		}
 	}
 	client, err := c.client()
 	if err != nil {
@@ -59,21 +65,26 @@ func runContainersUpload(ctx context.Context, c *call) error {
 		}
 	}
 	if !toZip {
-		if _, err := client.Upload(ctx, containerPath(name, "mounts", mount, "file"), filepath.Base(path), copyFile(path)); err != nil {
+		if _, err := client.Upload(ctx, containerPath(name, "mounts", mount, "file"), filepath.Base(path), c.copyFile(path)); err != nil {
 			return err
 		}
 		fmt.Fprintf(c.env.Stdout, "Wrote %s to mount %q of %s.\n", path, mount, name)
 		return nil
 	}
-	write, fileName := copyFile(path), filepath.Base(path)
+	write, fileName := c.copyFile(path), filepath.Base(path)
 	if info.IsDir() {
 		fsys := os.DirFS(path)
-		entries, err := folderzip.List(fsys)
+		write = func(ctx context.Context, w io.Writer) error {
+			return folderzip.Write(w, fsys, entries, func(rel string) io.Reader {
+				return c.fileSource(ctx, filepath.Join(path, filepath.FromSlash(rel)))
+			})
+		}
+		// The folder's own name, also for "." or "dir/".
+		abs, err := filepath.Abs(path)
 		if err != nil {
 			return fmt.Errorf("nothing sent: %w", err)
 		}
-		write = func(w io.Writer) error { return folderzip.Write(w, fsys, entries) }
-		fileName = filepath.Base(filepath.Clean(path)) + ".zip"
+		fileName = filepath.Base(abs) + ".zip"
 	}
 	ack, err := client.Upload(ctx, containerPath(name, "mounts", mount, "zip"), fileName, write)
 	if err != nil {
@@ -89,11 +100,10 @@ func runContainersUpload(ctx context.Context, c *call) error {
 
 func runImagesPush(ctx context.Context, c *call) error {
 	path := c.args[0]
-	write, fileName := copyFile(path), filepath.Base(path)
+	write, fileName := c.copyFile(path), filepath.Base(path)
 	if path == "-" {
-		stdin := term.ReaderWithin(ctx, c.env.Stdin, stdinIdle)
-		write = func(w io.Writer) error {
-			if _, err := io.Copy(w, stdin); err != nil {
+		write = func(ctx context.Context, w io.Writer) error {
+			if _, err := io.Copy(w, term.ReaderWithin(ctx, c.env.Stdin, c.env.UploadIdle)); err != nil {
 				return fmt.Errorf("read the archive on standard input: %w", err)
 			}
 			return nil

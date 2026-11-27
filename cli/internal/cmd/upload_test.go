@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCreateSendsItsMountsInTheOneDeploy(t *testing.T) {
@@ -180,7 +181,9 @@ func TestAnUploadTheWispRefusesIsItsRefusal(t *testing.T) {
 	a.routes["POST /api/containers/web/mounts/site/zip"] = func(w http.ResponseWriter, req *http.Request) {
 		refuse(w, 409, "CONTAINER_BUSY", `Container "web" is busy (start in progress)`)
 	}
-	r.do("containers", "upload", "web", "site", t.TempDir()).wantCode(1)
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "index.html"), []byte("hi"), 0o644)
+	r.do("containers", "upload", "web", "site", dir).wantCode(1)
 	if r.stderr.String() != "CONTAINER_BUSY: Container \"web\" is busy (start in progress)\n" {
 		t.Fatalf("stderr %q", r.stderr.String())
 	}
@@ -246,5 +249,55 @@ func TestAnArchiveTheImportRefusesIsItsErrorAndExit1(t *testing.T) {
 	r.do("images", "push").wantCode(2)
 	if a.requestCount() != before {
 		t.Fatal("a wrong push line sent a request")
+	}
+}
+
+func TestAnEmptyFolderIsNothingToSend(t *testing.T) {
+	a, r := newAgentWisp(t)
+	r.do("containers", "upload", "web", "site", t.TempDir()).wantCode(2)
+	if !strings.Contains(r.stderr.String(), "nothing to send") || a.requestCount() != 0 {
+		t.Fatalf("stderr %q, %d requests", r.stderr.String(), a.requestCount())
+	}
+}
+
+func TestAFolderZipIsNamedForTheFolderAndAMountNameIsEscaped(t *testing.T) {
+	a, r := newAgentWisp(t)
+	var got []byte
+	var name, path string
+	a.routes["POST /api/containers/web/mounts/my site%/zip"] = func(w http.ResponseWriter, req *http.Request) {
+		path = req.URL.EscapedPath()
+		file, header, _ := req.FormFile("file")
+		got, _ = io.ReadAll(file)
+		name = header.Filename
+		writeJSON(w, 202, map[string]any{"jobId": "j-1", "kind": "k", "title": "Extract", "subject": nil})
+	}
+	jobRoute(a.fakeWisp, `{"step":"done","result":{}}`)
+	dir := filepath.Join(t.TempDir(), "public")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
+	t.Chdir(dir)
+	r.do("containers", "upload", "web", "my site%", ".").wantCode(0)
+	if name != "public.zip" || path != "/api/containers/web/mounts/my%20site%25/zip" || len(got) == 0 {
+		t.Fatalf("sent %d bytes as %q to %q", len(got), name, path)
+	}
+}
+
+func TestAPushFromAPipeThatSendsNothingEndsAtTheBound(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.routes["POST /api/containers/images/upload"] = func(w http.ResponseWriter, req *http.Request) {
+		io.Copy(io.Discard, req.Body)
+		writeJSON(w, 202, map[string]any{"jobId": "j-1", "kind": "k", "title": "Import", "subject": nil})
+	}
+	pr, pw, err := os.Pipe() // standard input that never sends, never closes
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pw.Close()
+	defer pr.Close()
+	r.stdinR, r.uploadIdle = pr, 200*time.Millisecond
+	start := time.Now()
+	r.do("images", "push", "-").wantCode(1)
+	if !strings.Contains(r.stderr.String(), "sent nothing for 200ms") || time.Since(start) > 5*time.Second {
+		t.Fatalf("stderr %q after %s", r.stderr.String(), time.Since(start))
 	}
 }

@@ -39,8 +39,12 @@ type Env struct {
 	// ReadHidden with the typing hidden, or read from Stdin.
 	StdinIsTerminal bool
 	ReadHidden      func() (string, error)
-	// TokenWait bounds the wait for a token on a Stdin that is not a terminal.
+	// TokenWait bounds the wait for a token on a Stdin that is not a terminal,
+	// and for an app config on standard input or in a file.
 	TokenWait time.Duration
+	// UploadIdle bounds an upload's time without progress, its source's
+	// reads included.
+	UploadIdle time.Duration
 	// Executable is the file `wisp update` replaces, and BinaryVersion asks
 	// a download which CLI it is before it does.
 	Executable    func() (string, error)
@@ -59,6 +63,7 @@ func System(version string) *Env {
 		StdinIsTerminal: term.IsTerminal(os.Stdin),
 		ReadHidden:      func() (string, error) { return term.ReadHidden(os.Stdin) },
 		TokenWait:       10 * time.Second,
+		UploadIdle:      60 * time.Second,
 		Executable:      selfupdate.Executable,
 		BinaryVersion:   selfupdate.VersionOf,
 	}

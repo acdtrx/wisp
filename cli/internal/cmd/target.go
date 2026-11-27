@@ -87,7 +87,11 @@ func (c *call) client() (*api.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return api.New(t.url, t.token, c.env.Version), nil
+	client := api.New(t.url, t.token, c.env.Version)
+	if c.env.UploadIdle > 0 {
+		client.WithUploadIdle(c.env.UploadIdle)
+	}
+	return client, nil
 }
 
 // parseWispURL takes a Wisp's address: http or https, a host and maybe a

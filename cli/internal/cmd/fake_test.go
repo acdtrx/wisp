@@ -91,16 +91,25 @@ func (f *fakeWisp) lastRequest() *http.Request {
 	return f.requests[len(f.requests)-1]
 }
 
-// lockedBuffer is a buffer a test may read while the command writes it.
+// lockedBuffer is a buffer a test may read while the command writes it; each
+// write signals changed, when set, so a test waits for output without polling.
 type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	changed chan struct{}
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	n, err := b.buf.Write(p)
+	if b.changed != nil {
+		select {
+		case b.changed <- struct{}{}:
+		default: // a signal is pending already: the waiter reads everything once woken
+		}
+	}
+	return n, err
 }
 
 func (b *lockedBuffer) String() string {
@@ -117,6 +126,26 @@ func (b *lockedBuffer) Reset() {
 	b.buf.Reset()
 }
 
+// interruptOnceItPrints cancels the run's context once its output holds want,
+// as Ctrl-C would, woken by each write; it gives up after 10 s, failing the
+// test, so it never outlives it.
+func (r *run) interruptOnceItPrints(want string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r.ctx = ctx
+	go func() {
+		defer cancel()
+		deadline := time.After(10 * time.Second)
+		for !strings.Contains(r.out(), want) {
+			select {
+			case <-r.changed:
+			case <-deadline:
+				r.t.Errorf("the run never printed %q", want)
+				return
+			}
+		}
+	}()
+}
+
 // run is one command line against an Env of buffers and a home of its own.
 type run struct {
 	t      *testing.T
@@ -130,7 +159,10 @@ type run struct {
 	exe    string
 	stdout lockedBuffer
 	stderr lockedBuffer
-	code   int
+	// changed is signalled by every write to stdout or stderr.
+	changed    chan struct{}
+	uploadIdle time.Duration
+	code       int
 }
 
 // out is all the run printed so far.
@@ -138,7 +170,9 @@ func (r *run) out() string { return r.stdout.String() + r.stderr.String() }
 
 func newRun(t *testing.T) *run {
 	home := t.TempDir()
-	return &run{t: t, home: home, env: map[string]string{"HOME": home}}
+	r := &run{t: t, home: home, env: map[string]string{"HOME": home}, changed: make(chan struct{}, 1), uploadIdle: 5 * time.Second}
+	r.stdout.changed, r.stderr.changed = r.changed, r.changed
+	return r
 }
 
 func (r *run) do(args ...string) *run {
@@ -153,6 +187,7 @@ func (r *run) do(args ...string) *run {
 		Platform:        "linux-amd64",
 		Stdin:           stdin,
 		TokenWait:       200 * time.Millisecond,
+		UploadIdle:      r.uploadIdle,
 		Stdout:          &r.stdout,
 		Stderr:          &r.stderr,
 		Getenv:          func(k string) string { return r.env[k] },

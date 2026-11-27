@@ -110,6 +110,12 @@ func New(base, token, version string) *Client {
 	}
 }
 
+// WithUploadIdle sets the bound on an upload's time without progress.
+func (c *Client) WithUploadIdle(d time.Duration) *Client {
+	c.uploadIdle = d
+	return c
+}
+
 // Base is the Wisp's address.
 func (c *Client) Base() string { return c.base }
 

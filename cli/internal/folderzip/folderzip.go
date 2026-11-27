@@ -53,20 +53,20 @@ func List(fsys fs.FS) ([]Entry, error) {
 	return entries, err
 }
 
-// Write writes entries of fsys to w as a zip, each file read as it is
-// written: a folder's entry ends with "/", and each keeps its mode and its
-// time.
-func Write(w io.Writer, fsys fs.FS, entries []Entry) error {
+// Write writes entries of fsys to w as a zip, each file's content read from
+// what read answers for its path, as it is written: a folder's entry ends
+// with "/", and each keeps its mode and its time.
+func Write(w io.Writer, fsys fs.FS, entries []Entry, read func(path string) io.Reader) error {
 	zw := zip.NewWriter(w)
 	for _, e := range entries {
-		if err := writeEntry(zw, fsys, e); err != nil {
+		if err := writeEntry(zw, fsys, e, read); err != nil {
 			return err
 		}
 	}
 	return zw.Close()
 }
 
-func writeEntry(zw *zip.Writer, fsys fs.FS, e Entry) error {
+func writeEntry(zw *zip.Writer, fsys fs.FS, e Entry, read func(path string) io.Reader) error {
 	info, err := fs.Stat(fsys, e.Path)
 	if err != nil {
 		return fmt.Errorf("%s: %w", e.Path, err)
@@ -87,12 +87,7 @@ func writeEntry(zw *zip.Writer, fsys fs.FS, e Entry) error {
 	if err != nil {
 		return err
 	}
-	src, err := fsys.Open(e.Path)
-	if err != nil {
-		return fmt.Errorf("%s: %w", e.Path, err)
-	}
-	defer src.Close()
-	n, err := io.Copy(dst, src)
+	n, err := io.Copy(dst, read(e.Path))
 	if err != nil {
 		return fmt.Errorf("%s: %w", e.Path, err)
 	}

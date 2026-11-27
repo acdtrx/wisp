@@ -51,7 +51,7 @@ var ErrNoLine = errors.New("no line came")
 // A blocked read of standard input cannot be stopped on every platform the
 // CLI ships for (a pipe takes no deadline on Windows), so on the bound the
 // read is left behind, and the program, which has nothing more to read,
-// ends with the error: its exit ends the read. This, and ReaderWithin's, are
+// ends with the error: its exit ends the read. This, and SourceWithin's, are
 // the CLI's only goroutines without an owner that waits for them.
 func ReadLineWithin(r io.Reader, d time.Duration) (string, error) {
 	type read struct {

@@ -7,24 +7,40 @@ import (
 	"time"
 )
 
-// StalledError is a standard input that sent nothing for its bound.
-type StalledError struct{ After time.Duration }
-
-func (e *StalledError) Error() string {
-	return fmt.Sprintf("nothing came on standard input for %s: gave up", e.After)
+// StalledError is a source that sent nothing for its bound.
+type StalledError struct {
+	What  string // what was read: "standard input", a file's path
+	After time.Duration
 }
 
-// ReaderWithin reads r, standard input, through a goroutine of its own, and
-// gives up once nothing came for d, or once ctx is done: a Read then answers
-// a *StalledError, or ctx's error. As for ReadLineWithin, the blocked read is
-// left behind, and the program, which has nothing more to read, ends with the
-// error: its exit ends the read.
+func (e *StalledError) Error() string {
+	return fmt.Sprintf("nothing came from %s for %s: gave up", e.What, e.After)
+}
+
+// ReaderWithin is SourceWithin for r, standard input.
 func ReaderWithin(ctx context.Context, r io.Reader, d time.Duration) io.Reader {
-	b := &boundedReader{ctx: ctx, chunks: make(chan chunk, 1), d: d}
+	return SourceWithin(ctx, "standard input", func() (io.ReadCloser, error) { return io.NopCloser(r), nil }, d)
+}
+
+// SourceWithin reads what open opens — standard input, or a file the user
+// named — through a goroutine of its own, the open included, and gives up
+// once nothing came for d, or once ctx is done: a Read then answers a
+// *StalledError, or ctx's error. A read that never returns cannot be stopped
+// on every platform the CLI ships for (a pipe, a FIFO, a stalled network
+// share), so it is left behind, as for ReadLineWithin, and the program, which
+// has nothing more to read, ends with the error: its exit ends the read.
+func SourceWithin(ctx context.Context, what string, open func() (io.ReadCloser, error), d time.Duration) io.Reader {
+	b := &boundedReader{ctx: ctx, what: what, chunks: make(chan chunk, 1), d: d}
 	go func() {
+		src, err := open()
+		if err != nil {
+			b.chunks <- chunk{nil, err}
+			return
+		}
+		defer src.Close()
 		for {
 			buf := make([]byte, 64<<10)
-			n, err := r.Read(buf)
+			n, err := src.Read(buf)
 			b.chunks <- chunk{buf[:n], err}
 			if err != nil {
 				return
@@ -41,6 +57,7 @@ type chunk struct {
 
 type boundedReader struct {
 	ctx     context.Context
+	what    string
 	chunks  chan chunk
 	d       time.Duration
 	pending []byte
@@ -58,7 +75,7 @@ func (b *boundedReader) Read(p []byte) (int, error) {
 			timer.Stop()
 			b.pending, b.err = c.data, c.err
 		case <-timer.C:
-			b.err = &StalledError{After: b.d}
+			b.err = &StalledError{What: b.what, After: b.d}
 		case <-b.ctx.Done():
 			timer.Stop()
 			b.err = b.ctx.Err()

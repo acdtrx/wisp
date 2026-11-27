@@ -8,10 +8,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/acdtrx/wisp/cli/internal/term"
 )
 
 func TestGetSendsTheVersionAndTheToken(t *testing.T) {
@@ -204,7 +207,7 @@ func TestUploadStreamsOneFilePart(t *testing.T) {
 		fmt.Fprint(w, `{"jobId":"j"}`)
 	}))
 	defer srv.Close()
-	body, err := New(srv.URL, "t", "v").Upload(context.Background(), "/up", "site.zip", func(w io.Writer) error {
+	body, err := New(srv.URL, "t", "v").Upload(context.Background(), "/up", "site.zip", func(_ context.Context, w io.Writer) error {
 		for i := 0; i < 100; i++ {
 			if _, err := w.Write(bytes.Repeat([]byte{byte('a' + i%26)}, 10_000)); err != nil {
 				return err
@@ -227,7 +230,7 @@ func TestAnUploadThatStopsMovingEndsAndASourceErrorIsItsOwn(t *testing.T) {
 	c.uploadIdle = 100 * time.Millisecond
 	block := make(chan struct{})
 	defer close(block)
-	_, err := c.Upload(context.Background(), "/up", "f", func(w io.Writer) error {
+	_, err := c.Upload(context.Background(), "/up", "f", func(_ context.Context, w io.Writer) error {
 		w.Write([]byte("start"))
 		select {
 		case <-block:
@@ -240,7 +243,7 @@ func TestAnUploadThatStopsMovingEndsAndASourceErrorIsItsOwn(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	gone := errors.New("read site/index.html: gone")
-	if _, err := c.Upload(context.Background(), "/up", "f", func(io.Writer) error { return gone }); !errors.Is(err, gone) {
+	if _, err := c.Upload(context.Background(), "/up", "f", func(context.Context, io.Writer) error { return gone }); !errors.Is(err, gone) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -251,12 +254,37 @@ func TestAnUploadRefusedIsTheRefusal(t *testing.T) {
 		fmt.Fprint(w, `{"error":"CONTAINER_BUSY","detail":"busy"}`)
 	}))
 	defer srv.Close()
-	_, err := New(srv.URL, "t", "v").Upload(context.Background(), "/up", "f", func(w io.Writer) error {
+	_, err := New(srv.URL, "t", "v").Upload(context.Background(), "/up", "f", func(_ context.Context, w io.Writer) error {
 		_, err := w.Write(bytes.Repeat([]byte("x"), 1<<20))
 		return err
 	})
 	var refused *Error
 	if !errors.As(err, &refused) || refused.Code != "CONTAINER_BUSY" {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestAnUploadWhoseSourceNeverSendsEndsAtTheBound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+	pr, pw, err := os.Pipe() // a source nothing is ever written to
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pw.Close()
+	defer pr.Close()
+	c := New(srv.URL, "t", "v").WithUploadIdle(100 * time.Millisecond)
+	start := time.Now()
+	_, err = c.Upload(context.Background(), "/up", "f", func(ctx context.Context, w io.Writer) error {
+		// The source's own bound is longer than the upload's: the upload's ends it.
+		_, err := io.Copy(w, term.SourceWithin(ctx, "the pipe", func() (io.ReadCloser, error) { return pr, nil }, time.Hour))
+		return err
+	})
+	var stalledErr *StalledError
+	if !errors.As(err, &stalledErr) || time.Since(start) > 5*time.Second {
+		t.Fatalf("got %v after %s", err, time.Since(start))
 	}
 }
