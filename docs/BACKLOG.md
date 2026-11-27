@@ -277,13 +277,12 @@ bound, where the read never touched the guest before (the VMs and host from the 
 build, 2026-11-27). **Revisit trigger:** a VM page that opens slowly while its guest
 hangs.
 
-**The VM page's header state lags a stop by up to 5 s.** The page lays the stats
-stream's run state over the list's (`useWorkload`, `liveConfig`), and the stats stream
-ticks every 5 s while the list moves on libvirt's event: when a stop's job ends, Stop is
-enabled again while the header still reads "Running" for a few seconds, and a click then
-answers `VM_NOT_RUNNING` (seen on tini, about 6 s, while building "VMs started and
-stopped by an agent", 2026-11-28). **Revisit trigger:** a stale state on the page
-misleads a user, or the header's run state is touched for another reason.
+**A start during a stop's wait can fail the stop with a false `VM_STOP_TIMEOUT`.** The
+stop's job sees the VM off only through a VM list announcement
+(`backend/src/lib/vmOperations.js`, `watchForVmOff`): a VM that goes off and is started
+again before the list is read again is never seen off, and the job fails at its 5 min
+bound though the guest did shut down. **Revisit trigger:** a stop seen to fail at its
+bound on a VM that did go off.
 
 ## Containers and apps
 
