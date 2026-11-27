@@ -27,13 +27,15 @@ const SERVER_INSTRUCTIONS =
   'subdomains are exposed and where they route. Secret values are always masked.';
 
 /**
- * The instructions' last line: the `wisp` CLI, installed from this Wisp
- * (docs/specs/MCP.md). `base` is the address the install lines name, or null
- * when the request names none.
+ * The instructions' last line: the `wisp` CLI, what it does beyond these
+ * tools, and how to install it from this Wisp (docs/specs/MCP.md). `base` is
+ * the address the install lines name, or null when the request names none.
  */
 function cliInstructions(base) {
   const at = base ?? "<this Wisp's address>";
-  return ' To work from a shell, install the wisp CLI from this Wisp, of its version: ' +
+  return ' To work from a shell, use the wisp CLI: it does what these tools do, and beyond them changes a ' +
+    'container\'s settings and env, adds its mounts, uploads files and folders into them, and pushes image ' +
+    'archives (docker save) to run with no registry. Install it from this Wisp, of its version: ' +
     `\`curl -fsSL ${at}/api/cli/install.sh | sh\` (macOS, Linux) or \`irm ${at}/api/cli/install.ps1 | iex\` (Windows); ` +
     `then sign in with \`wisp login ${at}\` and an API token, and run \`wisp help\`. ` +
     'Host → App Config → API tokens shows the same lines.';

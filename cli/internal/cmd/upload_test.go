@@ -194,3 +194,57 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return b
 }
+
+func TestImagesPushUploadsTheArchiveWaitsAndPrintsTheNames(t *testing.T) {
+	a, r := newAgentWisp(t)
+	var got []byte
+	var name string
+	a.uploadRoute("POST /api/containers/images/upload", &got, &name, func(w http.ResponseWriter) {
+		writeJSON(w, 202, map[string]any{"jobId": "j-1", "kind": "container-image-import", "title": "Import " + name, "subject": nil})
+	})
+	jobRoute(a.fakeWisp, `{"step":"importing","detail":"Importing myapp.tar…"}`,
+		`{"step":"done","result":{"images":[{"name":"localhost/myapp:v1","digest":"sha256:1"},{"name":"localhost/myapp:latest","digest":"sha256:1"}]}}`)
+	archive := filepath.Join(t.TempDir(), "myapp.tar")
+	os.WriteFile(archive, []byte("tar bytes"), 0o644)
+
+	r.do("images", "push", archive).wantCode(0)
+	if string(got) != "tar bytes" || name != "myapp.tar" {
+		t.Fatalf("sent %q as %q", got, name)
+	}
+	if r.stdout.String() != "localhost/myapp:v1\nlocalhost/myapp:latest\n" || !strings.Contains(r.stderr.String(), "Importing myapp.tar") {
+		t.Fatalf("stdout %q stderr %q", r.stdout.String(), r.stderr.String())
+	}
+
+	r.stdin = "piped tar bytes"
+	r.do("images", "push", "-").wantCode(0)
+	if string(got) != "piped tar bytes" || name != "stdin.tar" || r.stdout.String() != "localhost/myapp:v1\nlocalhost/myapp:latest\n" {
+		t.Fatalf("sent %q as %q, stdout %q", got, name, r.stdout.String())
+	}
+
+	r.do("images", "push", archive, "--json").wantCode(0)
+	if !strings.HasPrefix(r.stdout.String(), `{"images":[{"name":"localhost/myapp:v1"`) {
+		t.Fatalf("--json %q", r.stdout.String())
+	}
+}
+
+func TestAnArchiveTheImportRefusesIsItsErrorAndExit1(t *testing.T) {
+	a, r := newAgentWisp(t)
+	var got []byte
+	var name string
+	a.uploadRoute("POST /api/containers/images/upload", &got, &name, func(w http.ResponseWriter) {
+		writeJSON(w, 202, map[string]any{"jobId": "j-1", "kind": "container-image-import", "title": "Import", "subject": nil})
+	})
+	jobRoute(a.fakeWisp, `{"step":"error","error":"CONTAINER_IMAGE_PLATFORM_MISMATCH","detail":"The archive's image is not for linux/amd64: clit-arm:v1 is linux/arm64"}`)
+	archive := filepath.Join(t.TempDir(), "arm.tar")
+	os.WriteFile(archive, []byte("x"), 0o644)
+	r.do("images", "push", archive).wantCode(1)
+	if !strings.HasSuffix(r.stderr.String(), "CONTAINER_IMAGE_PLATFORM_MISMATCH: The archive's image is not for linux/amd64: clit-arm:v1 is linux/arm64\n") || r.stdout.Len() != 0 {
+		t.Fatalf("stderr %q stdout %q", r.stderr.String(), r.stdout.String())
+	}
+	before := a.requestCount()
+	r.do("images", "push", filepath.Join(t.TempDir(), "missing.tar")).wantCode(2)
+	r.do("images", "push").wantCode(2)
+	if a.requestCount() != before {
+		t.Fatal("a wrong push line sent a request")
+	}
+}
