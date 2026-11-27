@@ -16,7 +16,7 @@ export function getVMXML(name, { signal } = {}) {
   return api(`/api/vms/${encodeURIComponent(name)}/xml`, { signal });
 }
 
-/** Starts a job (start, force-stop, delete): answers `{ jobId, kind, title, subject }`; follow it with awaitJob. */
+/** Starts a job (start, stop, force-stop, delete): answers `{ jobId, kind, title, subject }`; follow it with awaitJob. */
 export function startVM(name) {
   return api(`/api/vms/${encodeURIComponent(name)}/start`, { method: 'POST' });
 }

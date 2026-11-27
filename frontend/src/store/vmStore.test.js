@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
-import { TOPIC } from '../../../shared/wireNames.js';
+import { JOB_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 let net;
 let store;
@@ -125,12 +125,28 @@ test("an action's end clears the busy slot only while the slot is still its own 
   stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', state: 'running' }] });
   await settle();
   const first = store.getState().rebootVM('a');
-  const second = store.getState().stopVM('a');
-  assert.deepEqual(store.getState().actions, { a: 'stop' });
+  const second = store.getState().suspendVM('a');
+  assert.deepEqual(store.getState().actions, { a: 'suspend' });
   (await net.nextExact('/api/vms/a/reboot')).respond(new Response(null, { status: 204 }));
   await first;
-  assert.deepEqual(store.getState().actions, { a: 'stop' });
-  (await net.nextExact('/api/vms/a/stop')).respond(new Response(null, { status: 204 }));
+  assert.deepEqual(store.getState().actions, { a: 'suspend' });
+  (await net.nextExact('/api/vms/a/suspend')).respond(new Response(null, { status: 204 }));
   await second;
   assert.deepEqual(store.getState().actions, {});
+});
+
+test("a stop is busy until its job ends, and a stop the guest ignored fails with the job's error", async () => {
+  const stream = await startList();
+  stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', state: 'running' }] });
+  await settle();
+  const stopping = store.getState().stopVM('a');
+  (await net.nextExact('/api/vms/a/stop')).respond(jsonResponse({ jobId: 'j1', kind: JOB_KIND.VM_STOP, title: 'Stop a', subject: { type: 'vm', name: 'a' } }, 202));
+  const progress = respondWithStream(await net.next('/api/jobs/j1/progress'));
+  progress.frame({ step: 'shutting-down' });
+  await settle();
+  assert.deepEqual(store.getState().actions, { a: 'stop' });
+  progress.frame({ step: 'error', error: 'VM_STOP_TIMEOUT', detail: 'VM "a" is not off 5 min after its guest was asked to shut down' });
+  assert.equal(await stopping, false);
+  assert.deepEqual(store.getState().actions, {});
+  assert.equal(store.getState().errors.a, 'VM "a" is not off 5 min after its guest was asked to shut down');
 });

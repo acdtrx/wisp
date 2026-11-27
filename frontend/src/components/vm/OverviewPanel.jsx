@@ -4,6 +4,7 @@ import {
   Archive, Loader2, Pause, Play, PlayCircle, RotateCcw, Smile, Square, TextCursorInput, Trash2, Zap,
 } from 'lucide-react';
 
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { updateVM } from '../../api/vms.js';
 import { startBackup } from '../../api/backups.js';
 import { useCommand } from '../../hooks/useCommand.js';
@@ -130,6 +131,8 @@ export default function OverviewPanel({ name }) {
   const needsStart = !!config.pendingRestart || staleBinary;
   const IconComp = getVmIcon(config.iconId || getDefaultIconId(config.profile)).component;
   const notRunning = isRunning ? undefined : 'it is not running';
+  /* A stop waits for the guest without the VM's lock: a force stop is what ends it. */
+  const forceStopReason = (busyJob?.kind === JOB_KIND.VM_STOP ? undefined : busy) ?? (isStopped ? 'it is not running' : undefined);
 
   const patchVm = (changes) => updateVM(name, changes);
 
@@ -153,7 +156,7 @@ export default function OverviewPanel({ name }) {
       isPaused
         ? { icon: PlayCircle, label: 'Resume', onClick: () => store().resumeVM(name), reason: busy ?? undefined }
         : { icon: Pause, label: 'Pause', onClick: () => store().suspendVM(name), reason: busy ?? notRunning },
-      { icon: Zap, label: 'Force stop', onClick: () => store().forceStopVM(name), reason: busy ?? (isStopped ? 'it is not running' : undefined) },
+      { icon: Zap, label: 'Force stop', onClick: () => store().forceStopVM(name), reason: forceStopReason },
     ],
     [
       { icon: TextCursorInput, label: 'Rename', onClick: () => setDialog('rename'), reason: busy ?? lockReason },
@@ -201,7 +204,7 @@ export default function OverviewPanel({ name }) {
           )}
           {!isStopped && (
             <>
-              <HeaderAction icon={Square} label="Stop" onClick={() => store().stopVM(name)} reason={busy} loading={actionLoading === 'stop' || actionLoading === 'force-stop'} />
+              <HeaderAction icon={Square} label="Stop" onClick={() => store().stopVM(name)} reason={busy ?? notRunning} loading={actionLoading === 'stop' || actionLoading === 'force-stop'} />
               <HeaderAction icon={RotateCcw} label="Restart" onClick={() => store().rebootVM(name)} reason={busy ?? notRunning} loading={actionLoading === 'reboot'} />
             </>
           )}

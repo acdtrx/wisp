@@ -17,10 +17,11 @@ const vms = createWorkloadStore({
   statsUrl: (name) => `/api/vms/${encodeURIComponent(name)}/stats`,
   commands: ({ job, icon, atAck }) => ({
     startVM: (name) => job(name, 'start', () => vmApi.startVM(name)),
-    /* Stop (an ACPI shutdown) and reboot are requests the guest may ignore, so they
-     * end at the ack: the list shows the VM stopping when it does. */
-    stopVM: (name) => atAck(name, 'stop', () => vmApi.stopVM(name)),
+    /* A stop asks the guest to shut down and is a job until the VM is off: a guest
+     * that ignores it fails the job at its bound. */
+    stopVM: (name) => job(name, 'stop', () => vmApi.stopVM(name)),
     forceStopVM: (name) => job(name, 'force-stop', () => vmApi.forceStopVM(name)),
+    /* A reboot is a request the guest may ignore: it ends at the ack. */
     rebootVM: (name) => atAck(name, 'reboot', () => vmApi.rebootVM(name)),
     suspendVM: (name) => atAck(name, 'suspend', () => vmApi.suspendVM(name)),
     resumeVM: (name) => atAck(name, 'resume', () => vmApi.resumeVM(name)),
