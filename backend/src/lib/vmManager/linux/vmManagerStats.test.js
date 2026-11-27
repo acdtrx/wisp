@@ -13,20 +13,25 @@ import { vmError } from '../vmManagerShared.js';
 /** The faked VMs, by name: their saved configuration, and their guest agent. */
 const vms = new Map();
 const agentCalls = [];
+/** The calls to a hung agent, each failed by the test as the call's bound would. */
+const hung = [];
+
+/** An agent call: its answer, a refusal with no agent, or a wait the test ends. */
+function agentAnswer(vm, answer) {
+  if (vm.agent === 'hang') {
+    return new Promise((resolve, reject) => { hung.push(() => reject(new Error('libvirt call timed out after 30000 ms'))); });
+  }
+  if (!vm.agent) return Promise.reject(new Error('Guest agent is not responding: QEMU guest agent is not connected'));
+  return Promise.resolve(answer(vm.agent));
+}
 
 function agentOf(name) {
   return {
-    InterfaceAddresses: async () => {
+    InterfaceAddresses: () => {
       agentCalls.push(name);
-      const vm = vms.get(name);
-      if (!vm.agent) throw new Error('Guest agent is not responding: QEMU guest agent is not connected');
-      return [['lo', '', [[0, '127.0.0.1', 8]]], ['enp1s0', '52:54:00:00:00:01', [[0, vm.agent.ip, 24]]]];
+      return agentAnswer(vms.get(name), (a) => [['lo', '', [[0, '127.0.0.1', 8]]], ['enp1s0', '52:54:00:00:00:01', [[0, a.ip, 24]]]]);
     },
-    GetHostname: async () => {
-      const vm = vms.get(name);
-      if (!vm.agent) throw new Error('Guest agent is not responding: QEMU guest agent is not connected');
-      return vm.agent.hostname;
-    },
+    GetHostname: () => agentAnswer(vms.get(name), (a) => a.hostname),
   };
 }
 
@@ -68,7 +73,7 @@ mock.module(url('./vmManagerList.js'), {
 });
 mock.module(url('./vmManagerXml.js'), { exports: { parseVMFromXML: () => null } });
 
-const { getVMDetail, getVMStats } = await import('./vmManagerStats.js');
+const { getVMDetail, getVMStats, getGuestNetwork } = await import('./vmManagerStats.js');
 
 let n = 0;
 /** A VM of a name of its own (the cache outlives a test), in state `stateCode`. */
@@ -82,6 +87,7 @@ function define({ stateCode = 1, guestAgent = true, agent = { ip: '192.168.1.10'
 
 beforeEach(() => {
   agentCalls.length = 0;
+  hung.length = 0;
   mock.timers.reset();
 });
 
@@ -121,6 +127,40 @@ test('the guest is asked at most once per 30 s, by the read and the stats stream
   assert.deepEqual((await getVMDetail(name)).guestNetwork, { ip: '192.168.1.99', hostname: 'renamed' });
   assert.equal(agentCalls.length, 2);
   assert.equal((await getVMStats(name)).guestIp, '192.168.1.99');
+  assert.equal(agentCalls.length, 2);
+});
+
+test('readers that come while the guest is asked share the one question', async () => {
+  const name = define({ agent: 'hang' });
+  const reads = [getVMDetail(name), getVMStats(name), getGuestNetwork(name), getVMDetail(name)];
+  while (hung.length < 2) await new Promise(setImmediate); // the one question's two calls
+  assert.equal(agentCalls.length, 1);
+  vms.get(name).agent = { ip: '192.168.1.10', hostname: 'guest' };
+  for (const fail of hung) fail();
+  const [detail, stats, net] = await Promise.all(reads);
+  assert.deepEqual(detail.guestNetwork, { ip: null, hostname: null });
+  assert.equal(stats.guestIp, undefined);
+  assert.deepEqual(net, { ip: null, hostname: null });
+  assert.equal(agentCalls.length, 1);
+});
+
+test("a guest that hangs costs one wait per 30 s from its end: its nulls are kept like an answer", async () => {
+  mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
+  const name = define({ agent: 'hang' });
+  const first = getVMDetail(name);
+  while (hung.length < 2) await new Promise(setImmediate);
+  mock.timers.tick(30_000); // the call's bound runs out
+  for (const fail of hung) fail();
+  assert.deepEqual((await first).guestNetwork, { ip: null, hostname: null });
+
+  mock.timers.tick(29_000);
+  assert.deepEqual((await getVMDetail(name)).guestNetwork, { ip: null, hostname: null });
+  await getVMStats(name);
+  assert.equal(agentCalls.length, 1);
+
+  vms.get(name).agent = { ip: '192.168.1.10', hostname: 'guest' };
+  mock.timers.tick(1_000);
+  assert.deepEqual((await getVMDetail(name)).guestNetwork, { ip: '192.168.1.10', hostname: 'guest' });
   assert.equal(agentCalls.length, 2);
 });
 

@@ -92,27 +92,44 @@ export async function getGuestHostnameFromIface(iface) {
  * the rest (DHCP renewals, hostnamectl, missed signals).
  */
 const guestInfoCache = new Map(); // name -> { ip, hostname, fetchedAt }
+/** The question to a guest in flight, by VM name: concurrent readers share it. */
+const guestInfoInFlight = new Map(); // name -> Promise<{ ip, hostname }>
 const GUEST_INFO_TTL_MS = 30_000;
 
 function invalidateGuestInfo(name) {
   guestInfoCache.delete(name);
+  guestInfoInFlight.delete(name);
 }
 
 /**
  * The guest's `{ ip, hostname }` from the cache, or asked of its agent when the
  * cache holds none younger than GUEST_INFO_TTL_MS. Either is null when the
- * agent does not answer: the two helpers swallow its errors.
+ * agent does not answer: the two helpers swallow its errors, and the nulls are
+ * kept like an answer. The age counts from the answer, so a guest that hangs
+ * until the call's bound costs one wait per TTL, not one per read; readers that
+ * come while the question is in flight wait for it rather than ask again.
  */
-async function readGuestInfo(name, agentIface) {
-  const now = Date.now();
+function readGuestInfo(name, agentIface) {
   const cached = guestInfoCache.get(name);
-  if (cached && (now - cached.fetchedAt) < GUEST_INFO_TTL_MS) return { ip: cached.ip, hostname: cached.hostname };
-  const [ip, hostname] = await Promise.all([
+  if (cached && (Date.now() - cached.fetchedAt) < GUEST_INFO_TTL_MS) {
+    return Promise.resolve({ ip: cached.ip, hostname: cached.hostname });
+  }
+  const inFlight = guestInfoInFlight.get(name);
+  if (inFlight) return inFlight;
+  const question = Promise.all([
     getGuestPrimaryAddressFromIface(agentIface),
     getGuestHostnameFromIface(agentIface),
-  ]);
-  guestInfoCache.set(name, { ip, hostname, fetchedAt: now });
-  return { ip, hostname };
+  ]).then(([ip, hostname]) => {
+    // An invalidation while it was in flight (the VM stopped, the agent came or
+    // went) drops this answer: the next read asks again.
+    if (guestInfoInFlight.get(name) === question) {
+      guestInfoInFlight.delete(name);
+      guestInfoCache.set(name, { ip, hostname, fetchedAt: Date.now() });
+    }
+    return { ip, hostname };
+  });
+  guestInfoInFlight.set(name, question);
+  return question;
 }
 
 // AgentLifecycle on either edge (connect or disconnect) means our cached probe
