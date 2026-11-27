@@ -827,10 +827,11 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Mount backing store (files/<mountName>) ───────────────────────
-  // The file part streams into a temp file beside the mount's file, renamed
-  // over it once the whole body is read (lib/containerOperations.js): the
-  // reply comes right after the upload, and every rejection leaves the mount
-  // as it was.
+  // The file part streams into a temp file beside the mount's file, written
+  // into that file in place once the whole body is read
+  // (lib/containerOperations.js): the reply comes right after the upload,
+  // every rejection leaves the mount as it was, and a running container
+  // reads the new content with no restart.
   fastify.post('/containers/:name/mounts/:mountName/file', {
     config: { auth: 'agent' },
     schema: { params: mountParams, response: { 204: noContentSchema } },

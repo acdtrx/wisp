@@ -552,21 +552,22 @@ export function removeContainerServiceRow(name, port) {
 /**
  * Replace a file mount's content with an upload. `stage(tmpPath, mode)`
  * writes the whole upload to `tmpPath` (beside the mount's file, in files/),
- * which is then renamed over it: an atomic replace, and every refusal leaves
- * the mount as it was. Locked from the first write to the rename; the temp
- * file goes on any failure.
+ * so every refusal leaves the mount as it was; its content is then written
+ * into the mount's own file, in place, and a running container reads it with
+ * no restart. Locked from the first write to the end of that write; the temp
+ * file goes in every case.
  */
 export function writeContainerMountFile({ name, mountName, stage }) {
   return withContainerOperationLock(name, 'file upload', async () => {
     assertMountNotAppManaged(await getContainerConfig(name), mountName);
     const plan = await planMountFileUpload(name, mountName);
-    let committed = false;
+    let committing = false;
     try {
       await stage(plan.tmp, plan.mode);
-      await commitMountFileUpload(plan);
-      committed = true;
+      committing = true;
+      await commitMountFileUpload(plan); // removes the temp file, on failure too
     } finally {
-      if (!committed) await unlink(plan.tmp).catch(() => { /* never created, or already gone */ });
+      if (!committing) await unlink(plan.tmp).catch(() => { /* never created, or already gone */ });
     }
   });
 }

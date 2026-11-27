@@ -307,6 +307,7 @@ Each code a client can receive, with its status.
 | `BACKUP_FAILED` | 500 | The backup failed |
 | `BACKUP_RESTORE_FAILED` | 500 | The restore failed |
 | `CONTAINER_ZIP_EXTRACT_TIMEOUT` | 500 | The zip extract was stopped at its bound |
+| `CONTAINER_MOUNT_WRITE_STALLED` | 500 | Writing an upload into a file mount made no progress and was stopped at its bound; the file holds part of it |
 | `LIBRARY_IO_FAILED` | 500 | A read or write in the image library failed |
 | `GITHUB_API` | 500 | GitHub's release API answered wrongly |
 | `NO_ASSET` | 500 | The release has no tarball asset |

@@ -18,6 +18,7 @@ import { readContainerConfig } from './containerManagerConfigIo.js';
 import { findMount, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
 import { validateMountSegmentName } from './containerMountNames.js';
 import { emptyMountFolder } from './containerMountFolder.js';
+import { writeMountFileInPlace } from './containerMountFile.js';
 import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
 import { atomicTmpName } from '../../base/index.js';
 
@@ -86,11 +87,11 @@ function isUnzipMissingError(err) {
 
 /**
  * Plan an upload to files/<mountName> (a file mount): `tmp` is a temp file
- * beside the destination (same filesystem, the atomic-write suffix boot
- * cleanup sweeps) that the caller streams the upload into, created at
- * `mode`, then `commitMountFileUpload` renames over the destination — an
- * atomic replace, the old content intact until then. A secret mount's file
- * is created at SECRET_MOUNT_FILE_MODE. The caller removes `tmp` on failure.
+ * beside the destination (the atomic-write suffix boot cleanup sweeps) that
+ * the caller streams the whole upload into, created at `mode` (a secret
+ * mount's at SECRET_MOUNT_FILE_MODE), so an upload that fails or is cut leaves
+ * the mount's file as it was. `commitMountFileUpload` then writes it into the
+ * mount's own file, in place. The caller removes `tmp` on failure.
  */
 export async function planMountFileUpload(containerName, mountName) {
   const config = await readContainerConfig(containerName);
@@ -103,14 +104,22 @@ export async function planMountFileUpload(containerName, mountName) {
   }
   await mkdir(getContainerFilesDir(containerName), { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  return { containerName, name: mountName, dest, tmp: atomicTmpName(dest), mode: mountFileWriteMode(m, undefined) ?? 0o666 };
+  const destMode = mountFileWriteMode(m, undefined);
+  return { containerName, name: mountName, dest, tmp: atomicTmpName(dest), mode: destMode ?? 0o666, destMode };
 }
 
-/** Put a planned upload in place (rename over the destination). */
-export async function commitMountFileUpload({ name, dest, tmp }) {
-  await rename(tmp, dest);
-  const s = await stat(dest);
-  return { name, size: s.size, modified: s.mtime.toISOString() };
+/**
+ * Write a planned, whole upload into the mount's file in place — the file
+ * kept, so a running container reads the new content with no restart, as
+ * after an editor save — then remove the temp file.
+ */
+export async function commitMountFileUpload({ name, dest, tmp, destMode }) {
+  try {
+    const { size, modified } = await writeMountFileInPlace(dest, { fromPath: tmp }, destMode);
+    return { name, size, modified };
+  } finally {
+    await rm(tmp, { force: true });
+  }
 }
 
 const UNZIP_MAX_LIST = 50 * 1024 * 1024;
@@ -446,9 +455,7 @@ export async function putMountFileTextContent(containerName, mountName, content,
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  const fileMode = mountFileWriteMode(m, mode);
-  if (fileMode != null) await chmodIfExists(dest, fileMode);
-  await writeFile(dest, bytes, fileMode != null ? { mode: fileMode } : undefined);
+  await writeMountFileInPlace(dest, bytes, mountFileWriteMode(m, mode));
   return { ok: true };
 }
 
