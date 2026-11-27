@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-28
+
+### New Features
+- **An agent token starts and stops a VM** — start, stop, restart and force stop, over the API, MCP (`start_vm`, `stop_vm`, `force_stop_vm`, `restart_vm`) and the CLI (`wisp vms start | stop [--force] | restart`); creating, editing and deleting a VM stay admin.
+- **A VM's stop ends when the VM is off** — it runs as a job on the page, the API, MCP and the CLI; a guest that ignores the request fails it after 5 min (`VM_STOP_TIMEOUT`), and Force stop stays available meanwhile.
+
+### Bug Fixes
+- **Stop is refused on a VM that is not running** — a paused one included, where the request went to a guest that could not act on it.
+- **A page's state follows the VM or container at once** — the header waited for the next stats tick, up to 5 s, and now shows "Shutting Down" too.
+
 ## 2026-11-27
 
 ### New Features
