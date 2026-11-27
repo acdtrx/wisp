@@ -113,8 +113,8 @@ func TestCreateWithLimitsRemovedAndSwitchesOff(t *testing.T) {
 	a, r := newAgentWisp(t)
 	a.startsJob("POST /api/containers/deploy", "Deploy web")
 	jobRoute(a.fakeWisp, `{"step":"done","result":{"name":"web"}}`)
-	r.do("containers", "create", "--autostart", "off", "web", "--auto-backup", "on", "--cpu", "none", "--memory", "none", "--image", "x").wantCode(0)
-	if got := asJSON(a.body(t, "POST /api/containers/deploy")); got != `{"autoBackup":true,"autostart":false,"cpuLimit":null,"image":"x","memoryLimitMiB":null,"name":"web"}` {
+	r.do("containers", "create", "--autostart", "off", "web", "--auto-backup", "on", "--cpu", "none", "--memory", "none", "--image", "x", "--no-command").wantCode(0)
+	if got := asJSON(a.body(t, "POST /api/containers/deploy")); got != `{"autoBackup":true,"autostart":false,"command":null,"cpuLimit":null,"image":"x","memoryLimitMiB":null,"name":"web"}` {
 		t.Fatalf("body %s", got)
 	}
 }
@@ -134,6 +134,7 @@ func TestAWrongCreateOrLifecycleLineExits2AndSendsNothing(t *testing.T) {
 		{"containers", "create", "web", "--image", "x", "--image", "y"},
 		{"containers", "create", "web", "--image", "x", "--"},
 		{"containers", "create", "web", "--image", "x", "--unset-env", "A"},
+		{"containers", "create", "web", "--image", "x", "--no-command", "--", "sh"},
 		{"containers", "start"},
 		{"containers", "stop", "a", "b"},
 		{"containers", "restart", "web", "--image", "x"},

@@ -116,7 +116,12 @@ func (c *call) commonSettings(body map[string]any) error {
 	if err := c.limit("memory", "memoryLimitMiB", true, body); err != nil {
 		return err
 	}
-	if c.command != nil {
+	switch {
+	case c.switches["no-command"] && c.command != nil:
+		return usagef(c.cmd.Path, "--no-command and -- <command> cannot both be given")
+	case c.switches["no-command"]:
+		body["command"] = nil
+	case c.command != nil:
 		body["command"] = c.command
 	}
 	return nil
@@ -159,24 +164,18 @@ func (c *call) deployBody() (map[string]any, error) {
 	return body, nil
 }
 
-// unsetEnvFlag and noCommandFlag are `containers set`'s alone.
+// unsetEnvFlag is `containers set`'s alone.
 var (
 	unsetEnvFlag  = flagDef{Name: "unset-env", Value: "KEY", Repeat: true, Usage: "Removes an env variable. May be repeated."}
-	noCommandFlag = flagDef{Name: "no-command", Usage: "Run the image's own command again, in place of the one set."}
+	noCommandFlag = flagDef{Name: "no-command", Usage: "Run the image's own command, in place of one set before."}
 )
 
 // patchBody is `containers set`'s settings and env: PATCH
 // /api/containers/:name. Empty when the line sets neither.
 func (c *call) patchBody() (map[string]any, error) {
 	body := map[string]any{}
-	if c.switches["no-command"] && c.command != nil {
-		return nil, usagef(c.cmd.Path, "--no-command and -- <command> cannot both be given")
-	}
 	if err := c.commonSettings(body); err != nil {
 		return nil, err
-	}
-	if c.switches["no-command"] {
-		body["command"] = nil
 	}
 	seen := map[string]string{}
 	env, err := c.keyValues("env", seen)

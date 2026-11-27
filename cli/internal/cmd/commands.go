@@ -204,7 +204,7 @@ func commandTable() []*command {
 				"the wait, never the job.",
 			Flags: []flagDef{
 				imageFlag, envFlag, secretEnvFlag, mountFlag, fileMountFlag, tmpfsFlag, cpuFlag, memoryFlag, restartFlag,
-				autostartFlag, backupFlag, localDNSFlag,
+				autostartFlag, backupFlag, localDNSFlag, noCommandFlag,
 				{Name: "no-start", Usage: "Leave the container defined and stopped."},
 				noWaitFlag, jobJSONFlag,
 			},
