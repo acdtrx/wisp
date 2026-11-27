@@ -48,6 +48,8 @@ type e2eWisp struct {
 	// The deploy's body, and its job's progress (an e2eJob).
 	deployBody atomic.Value
 	job        atomic.Value
+	// The VM lifecycle requests that reached it.
+	vmRequests atomic.Int32
 }
 
 // e2eJob is the frames of a job's progress; with hangs, the stream stays
@@ -125,6 +127,12 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 			body, _ := io.ReadAll(r.Body)
 			w.deployBody.Store(string(body))
 			reply(202, map[string]any{"jobId": "j-1", "kind": "container-deploy", "title": "Deploy web", "subject": map[string]string{"type": "container", "name": "web"}})
+		case "/api/vms/ubuntu/start", "/api/vms/ubuntu/force-stop":
+			w.vmRequests.Add(1)
+			reply(202, map[string]any{"jobId": "j-1", "kind": "vm-" + strings.TrimPrefix(r.URL.Path, "/api/vms/ubuntu/"), "title": "ubuntu", "subject": map[string]string{"type": "vm", "name": "ubuntu"}})
+		case "/api/vms/ubuntu/reboot":
+			w.vmRequests.Add(1)
+			rw.WriteHeader(204)
 		case "/api/jobs/j-1/progress":
 			rw.Header().Set("Content-Type", "text/event-stream")
 			job, _ := w.job.Load().(e2eJob)
@@ -364,6 +372,29 @@ func TestTheBuiltBinaryChecksImagesCreatesAContainerAndAnInterruptLeavesTheJob(t
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(stderr.String(), "the job j-1 goes on") {
 		t.Fatalf("interrupted: %v\nstderr: %s", err, stderr.String())
+	}
+}
+
+func TestTheBuiltBinaryStartsStopsAndRestartsAVM(t *testing.T) {
+	bin := buildWisp(t, t.TempDir(), e2eVersion)
+	wisp := newE2EWisp(t, e2eVersion, "wisp_agent_e2e")
+	env := append(homeEnv(t.TempDir()), "WISP_URL="+wisp.URL, "WISP_TOKEN=wisp_agent_e2e")
+	wisp.job.Store(e2eJob{frames: []string{`{"step":"done","result":{"name":"ubuntu"}}`}})
+	for _, c := range []struct {
+		args   []string
+		stdout string
+	}{
+		{[]string{"vms", "start", "ubuntu"}, "Started ubuntu.\n"},
+		{[]string{"vms", "stop", "ubuntu", "--force"}, "Stopped ubuntu.\n"},
+		{[]string{"vms", "restart", "ubuntu"}, "Asked the guest of ubuntu to restart.\n"},
+	} {
+		got := runWisp(t, bin, env, "", c.args...)
+		if got.code != 0 || got.stdout != c.stdout {
+			t.Fatalf("%v: %+v", c.args, got)
+		}
+	}
+	if n := wisp.vmRequests.Load(); n != 3 {
+		t.Fatalf("%d VM requests reached the Wisp, want 3", n)
 	}
 }
 

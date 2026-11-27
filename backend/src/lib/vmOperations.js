@@ -1,7 +1,7 @@
 /**
  * Every command that changes a VM (app glue): one purpose-named function per
- * command, with its lock and its follow-ups, which the routes call (MCP has no
- * VM command). A job takes the VM's operation lock through the job starter
+ * command, with its lock and its follow-ups, which the routes and the MCP
+ * tools call. A job takes the VM's operation lock through the job starter
  * (`subject`), for the whole job; an instant command through
  * `withVmOperationLock`, for the call. No route takes a lock itself
  * (docs/specs/BACKUPS.md → Per-VM operation lock).

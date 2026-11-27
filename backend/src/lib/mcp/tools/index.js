@@ -2,6 +2,7 @@ import { overviewTools } from './overviewTools.js';
 import { containerTools } from './containerTools.js';
 import { containerAgentTools } from './containerAgentTools.js';
 import { vmTools } from './vmTools.js';
+import { vmAgentTools } from './vmAgentTools.js';
 import { hostTools } from './hostTools.js';
 import { jobTools } from './jobTools.js';
 
@@ -10,7 +11,7 @@ import { jobTools } from './jobTools.js';
  * `scope` is the minimum token scope required ('read' | 'agent'), compared
  * with the token's in the scopes' one order (lib/apiTokenScopes.js).
  */
-export const allTools = [...overviewTools, ...containerTools, ...containerAgentTools, ...vmTools, ...hostTools, ...jobTools];
+export const allTools = [...overviewTools, ...containerTools, ...containerAgentTools, ...vmTools, ...vmAgentTools, ...hostTools, ...jobTools];
 
 {
   const names = new Set();

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -210,4 +211,49 @@ func printVM(c *call, d *vmDetail, now time.Time) {
 		t.row("  "+orDash(nic.MAC), source, orDash(nic.Model))
 	}
 	t.flush()
+}
+
+func vmPath(name, action string) string {
+	return "/api/vms/" + url.PathEscape(name) + "/" + action
+}
+
+func runVMsStart(ctx context.Context, c *call) error {
+	name := c.args[0]
+	_, waited, err := runJobRequest(ctx, c, http.MethodPost, vmPath(name, "start"), nil)
+	if err != nil || !waited || c.switches["json"] {
+		return err
+	}
+	fmt.Fprintf(c.env.Stdout, "Started %s.\n", name)
+	return nil
+}
+
+// runVMsStop asks the guest to shut down, a job that ends when the VM is off;
+// with --force it powers the VM off.
+func runVMsStop(ctx context.Context, c *call) error {
+	name := c.args[0]
+	action := "stop"
+	if c.switches["force"] {
+		action = "force-stop"
+	}
+	_, waited, err := runJobRequest(ctx, c, http.MethodPost, vmPath(name, action), nil)
+	if err != nil || !waited || c.switches["json"] {
+		return err
+	}
+	fmt.Fprintf(c.env.Stdout, "Stopped %s.\n", name)
+	return nil
+}
+
+// runVMsRestart asks the guest to restart: the Wisp answers at once, as
+// nothing tells when a guest is back up.
+func runVMsRestart(ctx context.Context, c *call) error {
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	name := c.args[0]
+	if _, err := client.Send(ctx, http.MethodPost, vmPath(name, "reboot"), nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.env.Stdout, "Asked the guest of %s to restart.\n", name)
+	return nil
 }

@@ -161,3 +161,59 @@ func TestTheUptimeIsTheHostsByItsDateHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestVMsStartAndAForcedStopWaitForTheirJob(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.startsJob("POST /api/vms/ubuntu/start", "Start ubuntu")
+	a.startsJob("POST /api/vms/ubuntu/force-stop", "Force stop ubuntu")
+	jobRoute(a.fakeWisp, `{"step":"done","result":{"name":"ubuntu"}}`)
+	for _, c := range []struct {
+		args   []string
+		title  string
+		stdout string
+	}{
+		{[]string{"vms", "start", "ubuntu"}, "Start ubuntu", "Started ubuntu.\n"},
+		{[]string{"vms", "stop", "ubuntu", "--force"}, "Force stop ubuntu", "Stopped ubuntu.\n"},
+	} {
+		r.do(c.args...).wantCode(0)
+		if r.stdout.String() != c.stdout || r.stderr.String() != c.title+": job j-1\n" {
+			t.Fatalf("%v: stdout %q stderr %q", c.args, r.stdout.String(), r.stderr.String())
+		}
+	}
+	if a.lastRequest().URL.Path != "/api/jobs/j-1/progress" {
+		t.Fatalf("last request %s", a.lastRequest().URL.Path)
+	}
+	r.do("vms", "stop", "--force", "ubuntu", "--no-wait").wantCode(0)
+	if r.stdout.String() != "j-1\n" || a.lastRequest().URL.Path != "/api/vms/ubuntu/force-stop" {
+		t.Fatalf("--no-wait: stdout %q, last request %s", r.stdout.String(), a.lastRequest().URL.Path)
+	}
+}
+
+func TestStartingARunningVMIsTheWispsRefusal(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.routes["POST /api/vms/ubuntu/start"] = func(w http.ResponseWriter, req *http.Request) {
+		refuse(w, 409, "VM_ALREADY_RUNNING", `VM "ubuntu" is already running`)
+	}
+	r.do("vms", "start", "ubuntu").wantCode(1)
+	if r.stderr.String() != "VM_ALREADY_RUNNING: VM \"ubuntu\" is already running\n" || r.stdout.Len() != 0 {
+		t.Fatalf("stderr %q stdout %q", r.stderr.String(), r.stdout.String())
+	}
+}
+
+func TestVMsRestartAsksTheGuestAndEndsAtOnce(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.answers("POST /api/vms/ubuntu/reboot", 204)
+	r.do("vms", "restart", "ubuntu").wantCode(0)
+	if r.stdout.String() != "Asked the guest of ubuntu to restart.\n" || r.stderr.Len() != 0 {
+		t.Fatalf("stdout %q stderr %q", r.stdout.String(), r.stderr.String())
+	}
+	if a.lastRequest().URL.Path != "/api/vms/ubuntu/reboot" {
+		t.Fatalf("last request %s", a.lastRequest().URL.Path)
+	}
+	before := a.requestCount()
+	r.do("vms", "restart", "ubuntu", "--json").wantCode(2)
+	r.do("vms", "start").wantCode(2)
+	if a.requestCount() != before {
+		t.Fatal("a wrong line sent a request")
+	}
+}

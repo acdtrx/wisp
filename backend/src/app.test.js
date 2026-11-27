@@ -287,6 +287,55 @@ test('a read token cannot start the OS package check: 403 SCOPE_INSUFFICIENT, an
   assert.deepEqual(await jobs(), before);
 });
 
+/*
+ * A VM's lifecycle is an agent token's (AUTH.md, The agent scope); what a VM is
+ * stays admin. The VM `x` does not exist and no manager is connected: a route
+ * the caller passes answers what the manager says, the same for both tokens.
+ */
+const VM_AGENT_ROUTES = ['/api/vms/x/start', '/api/vms/x/force-stop', '/api/vms/x/reboot'];
+const VM_ADMIN_ROUTES = [
+  ['POST', '/api/vms', { name: 'x', profile: 'linux' }],
+  ['PATCH', '/api/vms/x', { vcpus: 2 }],
+  ['DELETE', '/api/vms/x'],
+  ['POST', '/api/vms/x/disks', { slot: 'sdb', sizeGB: 10 }],
+  ['DELETE', '/api/vms/x/disks/sdb'],
+  ['POST', '/api/vms/x/disks/sda/resize', { sizeGB: 40 }],
+  ['POST', '/api/vms/x/cdrom/sdc', { path: 'a.iso' }],
+  ['DELETE', '/api/vms/x/cdrom/sdc'],
+  ['POST', '/api/vms/x/usb', { vendorId: '1234', productId: '5678' }],
+  ['DELETE', '/api/vms/x/usb/1234:5678'],
+  ['PUT', '/api/vms/x/cloudinit', { hostname: 'x' }],
+  ['DELETE', '/api/vms/x/cloudinit'],
+  ['POST', '/api/vms/x/suspend'],
+  ['POST', '/api/vms/x/resume'],
+  ['POST', '/api/vms/x/backup', {}],
+  ['POST', '/api/backups/restore', { destinationId: 'local', vmName: 'x', timestamp: '2026-01-01T00-00-00', newVmName: 'y' }],
+  ['DELETE', '/api/backups', { destinationId: 'local', vmName: 'x', timestamp: '2026-01-01T00-00-00' }],
+];
+
+test('an agent token starts, force-stops and restarts a VM as an admin one does; a read token answers 403', async () => {
+  for (const url of VM_AGENT_ROUTES) {
+    const answer = async (token) => {
+      const res = await app.inject({ method: 'POST', url, headers: bearer(token) });
+      return { status: res.statusCode, error: res.json().error };
+    };
+    const admin = await answer(ADMIN_TOKEN);
+    assert.notEqual(admin.error, 'SCOPE_INSUFFICIENT', url);
+    assert.deepEqual(await answer(AGENT_TOKEN), admin, url);
+    assert.deepEqual(await answer(READ_TOKEN), SCOPE, url);
+  }
+});
+
+test('an agent token on a VM\'s create, edit, delete, devices, first boot setup, pause, resume and backups answers 403', async () => {
+  for (const [method, url, payload] of VM_ADMIN_ROUTES) {
+    const res = await app.inject({ method, url, payload, headers: bearer(AGENT_TOKEN) });
+    assert.equal(res.statusCode, 403, `${method} ${url}`);
+    assert.equal(res.json().error, 'SCOPE_INSUFFICIENT', `${method} ${url}`);
+    const admin = await app.inject({ method, url, payload, headers: bearer(ADMIN_TOKEN) });
+    assert.notEqual(admin.json().error, 'SCOPE_INSUFFICIENT', `admin ${method} ${url}`);
+  }
+});
+
 test('a token on a session route answers 403 SESSION_REQUIRED', async () => {
   const res = await app.inject({ method: 'PATCH', url: '/api/settings/oidc', headers: bearer(ADMIN_TOKEN), payload: {} });
   assert.equal(res.statusCode, 403);
@@ -392,7 +441,7 @@ const READ_TOOLS = [
 ];
 const AGENT_TOOLS = [
   'deploy_container', 'update_container_image', 'start_container', 'stop_container', 'restart_container',
-  'update_app_config', 'check_image_updates',
+  'update_app_config', 'check_image_updates', 'start_vm', 'force_stop_vm', 'restart_vm',
 ];
 
 test('tools/list shows a read token the read tools only, and an agent and an admin token every tool', async () => {
@@ -419,6 +468,20 @@ test('a mutating tool answers a read token SCOPE_INSUFFICIENT, and runs for an a
   for (const token of [AGENT_TOKEN, ADMIN_TOKEN]) {
     const error = await call(token);
     assert.ok(error && error !== 'SCOPE_INSUFFICIENT', `${token}: ${error}`);
+  }
+});
+
+// The VM does not exist: a tool that runs answers what the manager says, never the scope refusal.
+test('the VM lifecycle tools answer a read token SCOPE_INSUFFICIENT, and run for an agent and an admin token', async () => {
+  for (const name of ['start_vm', 'force_stop_vm', 'restart_vm']) {
+    const call = async (token) => (await app.inject({
+      method: 'POST', url: '/mcp', headers: bearer(token),
+      payload: { jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name, arguments: { name: 'x' } } },
+    })).json().result.structuredContent.error;
+    assert.equal(await call(READ_TOKEN), 'SCOPE_INSUFFICIENT', name);
+    const admin = await call(ADMIN_TOKEN);
+    assert.ok(admin && admin !== 'SCOPE_INSUFFICIENT', `${name}: ${admin}`);
+    assert.equal(await call(AGENT_TOKEN), admin, name);
   }
 });
 

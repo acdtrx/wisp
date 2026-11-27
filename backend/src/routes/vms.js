@@ -313,14 +313,15 @@ export default async function vmsRoutes(fastify) {
   // Lifecycle actions — all POST /vms/:name/<action>. Start and force-stop are
   // jobs — starting a large VM, or waiting for QEMU to exit, can outlast a
   // short request: the POST answers 202 with the job's ack. Stop, reboot,
-  // suspend and resume answer at once.
+  // suspend and resume answer at once. An agent token starts, stops and
+  // restarts a VM; pause and resume stay admin (AUTH.md, The agent scope).
   const lifecycleJobs = [
     { path: 'start', start: startVmStartJob },
     { path: 'force-stop', start: startVmForceStopJob },
   ];
   for (const { path, start } of lifecycleJobs) {
     fastify.post(`/vms/:name/${path}`, {
-      config: { auth: 'admin' },
+      config: { auth: 'agent' },
       schema: {
         params: vmParamsSchema(),
         response: { 202: jobAckSchema },
@@ -333,15 +334,15 @@ export default async function vmsRoutes(fastify) {
   }
 
   const lifecycleActions = [
-    { path: 'stop', request: requestVmStop },
-    { path: 'reboot', request: requestVmReboot },
-    { path: 'suspend', request: requestVmSuspend },
-    { path: 'resume', request: requestVmResume },
+    { path: 'stop', request: requestVmStop, auth: 'admin' },
+    { path: 'reboot', request: requestVmReboot, auth: 'agent' },
+    { path: 'suspend', request: requestVmSuspend, auth: 'admin' },
+    { path: 'resume', request: requestVmResume, auth: 'admin' },
   ];
 
-  for (const { path, request: send } of lifecycleActions) {
+  for (const { path, request: send, auth } of lifecycleActions) {
     fastify.post(`/vms/:name/${path}`, {
-      config: { auth: 'admin' },
+      config: { auth },
       schema: {
         params: vmParamsSchema(),
         response: { 204: noContentSchema },

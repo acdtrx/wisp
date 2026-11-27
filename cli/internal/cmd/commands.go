@@ -416,7 +416,7 @@ func commandTable() []*command {
 			Summary: "List the VMs",
 			About: "Lists every VM: its name, its state, its vCPUs, its memory and its profile (what it was\n" +
 				"made as: linux, windows-11 or other), and whether it waits for a restart: a saved\n" +
-				"change, or a QEMU updated since it started. VMs are read, never changed, from the CLI.",
+				"change, or a QEMU updated since it started.",
 			Flags:   []flagDef{jsonFlag},
 			Example: "wisp vms list",
 			run:     runVMsList,
@@ -427,11 +427,45 @@ func commandTable() []*command {
 			About: "Prints a VM's state and, while it runs, how long it has been up and its guest's name and\n" +
 				"address, which only a guest with the QEMU guest agent tells (they may be 30 s old); then\n" +
 				"its settings: profile, CPU, memory, firmware, machine, boot order, autostart, each disk\n" +
-				"with its size and each network card with its bridge and MAC. VMs are read, never\n" +
-				"changed, from the CLI.",
+				"with its size and each network card with its bridge and MAC.",
 			Flags:   []flagDef{jsonFlag},
 			Example: "wisp vms show ubuntu",
 			run:     runVMsShow,
+		},
+		{
+			Path: "vms start", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Start a stopped VM",
+			About: "Starts the VM, a job on the Wisp: the command prints its progress on standard error and\n" +
+				"ends once QEMU runs; the guest then boots on its own (\"wisp vms show\" tells its\n" +
+				"address once its guest agent answers). A VM already running, or busy with another\n" +
+				"command, is the Wisp's refusal. An interrupt (Ctrl-C) ends the wait, never the job.",
+			Flags:   []flagDef{noWaitFlag, jobJSONFlag},
+			Example: "wisp vms start ubuntu",
+			run:     runVMsStart,
+		},
+		{
+			Path: "vms stop", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Stop a running VM",
+			About: "Asks the guest to shut down, a job on the Wisp that ends when the VM is off; a guest that\n" +
+				"is not off after 5 minutes fails the job (VM_STOP_TIMEOUT) and is left running. A stop\n" +
+				"while another stop of the VM waits follows that one. --force powers the VM off at once,\n" +
+				"as pulling its plug: the guest loses what it has not written, and a stop that waits ends\n" +
+				"with it. The command prints the job's progress on standard error. A VM not running, or\n" +
+				"busy with another command, is the Wisp's refusal. An interrupt (Ctrl-C) ends the wait,\n" +
+				"never the job.",
+			Flags:   []flagDef{{Name: "force", Usage: "Power the VM off at once instead of asking its guest."}, noWaitFlag, jobJSONFlag},
+			Example: "wisp vms stop ubuntu\nwisp vms stop ubuntu --force",
+			run:     runVMsStop,
+		},
+		{
+			Path: "vms restart", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Ask a running VM's guest to restart",
+			About: "Asks the guest to restart, and ends at once: nothing tells when a guest is back up\n" +
+				"(\"wisp vms show\" tells its state and address). The guest keeps the running settings:\n" +
+				"a saved change waits for a stop and a start. A VM not running, or busy with another\n" +
+				"command, is the Wisp's refusal.",
+			Example: "wisp vms restart ubuntu",
+			run:     runVMsRestart,
 		},
 		{
 			Path: "host stats", MaxArgs: 0,
