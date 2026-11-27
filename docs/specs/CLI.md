@@ -14,6 +14,12 @@ that manages an install, `wispctl`, is another program ([DEPLOYMENT.md](DEPLOYME
   every platform, so installing and updating need no internet and the two always match.
 - **One version on both sides.** A CLI and a Wisp of different versions do not talk
   ([Version check](#version-check)).
+- **A command answers a whole question, and the server does the joining.** The commands
+  are made to be useful, not to mirror the API route by route: `vms show` prints a VM
+  with its address, `overview` the whole host. What a command prints is one answer of
+  the API, so where a question needs facts from several places the API has a read that
+  joins them. The CLI assembles no picture of its own: `--json` is the server's answer,
+  and any other client gets the same.
 - **No dependencies.** Go's standard library only ([TECH-STACK.md](../TECH-STACK.md)).
 
 ## Getting it
@@ -118,11 +124,18 @@ from, so it is complete: no command, flag or argument exists outside it.
 | Group | Commands |
 |-------|----------|
 | The CLI itself | `login`, `logout`, `profiles`, `default`, `version`, `update`, `help` |
-| `containers` | `list`, `show`, `create`, `set`, `update`, `start`, `stop`, `restart`, `logs`, `upload` |
-| `images` | `list`, `push` |
+| The whole host | `overview` |
+| `containers` | `list`, `show`, `create`, `set`, `update`, `start`, `stop`, `restart`, `logs`, `upload`, `usage` |
+| `images` | `list`, `push`, `check` |
+| `vms` | `list`, `show` |
+| `host` | `stats`, `hardware` |
 | `jobs` | `list`, `wait` |
 
-Nothing for VMs or the host.
+**VMs and the host are read, never changed.** No command creates, starts, stops or edits
+a VM, or changes the host: none of that is an `agent` token's to do.
+
+**`wisp overview` is where to start**: one call that maps the host, every container and
+every VM, with the address each one answers at.
 
 **One command reads a container and one changes it.** `containers show` prints
 everything about a container: its settings, env, mounts and, for an app container, the
@@ -133,6 +146,7 @@ env and mounts among them. There is no command group per part of a container.
 
 | Command | Request | Notes |
 |---------|---------|-------|
+| `overview` | `GET /api/overview` | Wisp's version, the host, its bridges, the certificate's domain, and every container and VM with its state and address |
 | `containers list` | `GET /api/containers` | |
 | `containers show <name>` | `GET /api/containers/:name` | Secrets masked, as the API sends them |
 | `containers create <name> --image <ref> [settings]` | `POST /api/containers/deploy` | Creates a generic container with the [settings](#the-settings-flags) given, mounts included, and starts it: one job. `--no-start` leaves it stopped, for files to be uploaded first |
@@ -141,8 +155,14 @@ env and mounts among them. There is no command group per part of a container.
 | `containers start` / `stop` / `restart <name>` | the lifecycle routes | |
 | `containers logs <name>` | `GET /api/containers/:name/logs` | The newest run's last lines (`--lines`, default 100), then ends; `--follow` keeps printing new lines; `--run <id>` picks a run |
 | `containers upload <name> <mount> <path>` | `POST …/mounts/:mountName/file` or `…/zip`; for a file, `GET /api/containers/:name` first | A file goes to a file mount. A zip or a folder goes to a folder mount and **replaces its content**. A file is sent by the mount's kind, which the CLI reads first. A folder is zipped by the CLI as it is sent: a link to a file is sent as that file, a link to anything else is refused, and so is a folder with nothing in it |
+| `containers usage <name>` | `GET /api/containers/:name/mounts/usage` | The size on disk of each mount's data. Can take seconds on a large folder |
 | `images list` | `GET /api/containers/images` | |
 | `images push <archive>` | `POST /api/containers/images/upload` | An archive file, or `-` for standard input (`docker save myapp:v1 \| wisp images push -`). Prints the `localhost/` name each image is stored under |
+| `images check` | `POST /api/containers/images/check-updates` | Checks every image for a newer one, as one job. Prints how many images were checked, how many have a newer one and how many containers run an older one; `overview` then shows which |
+| `vms list` | `GET /api/vms` | |
+| `vms show <name>` | `GET /api/vms/:name` | The VM's state and settings (CPU, memory, firmware, disks, network cards) and, while it runs, how long it has been up and the guest's name and address |
+| `host stats` | `GET /api/host/stats` | One sample of the host's live figures: CPU, temperatures, memory, disk and network rates, pending updates |
+| `host hardware` | `GET /api/host/hardware` | The hardware: CPU, board, memory modules, disks with their health, PCI devices, GPUs |
 | `jobs list` | `GET /api/jobs` | |
 | `jobs wait <id>` | `GET /api/jobs/:jobId/progress` | |
 
@@ -194,7 +214,7 @@ say otherwise.
 
 ## Not supported
 
-- VMs, the host's settings, deletes and whatever else an `agent` token cannot do. An
+- Changing a VM or the host, deletes and whatever else an `agent` token cannot do. An
   `admin` token widens what the same commands may touch, not the list of commands.
 - A token stored anywhere but the profile file or the environment (no keychain).
 - Talking to a Wisp of another version.

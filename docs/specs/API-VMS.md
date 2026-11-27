@@ -115,7 +115,12 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
 
 Full VM configuration parsed from domain XML.
 
-- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `profile` (`null` for a domain Wisp neither created nor migrated), `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `pendingRestart` — `pendingRestart` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
+- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `profile` (`null` for a domain Wisp neither created nor migrated), `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `pendingRestart`, `startedAt`, `guestNetwork` — `pendingRestart` and `startedAt` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
+
+**`guestNetwork`** is `{ ip, hostname }`, what the guest agent says of the running guest:
+its primary address and its own name. Both are `null` while the VM is off, without the
+agent, or when the guest does not answer; a guest that does not answer never fails the
+read. They may be up to 30 s old.
 
 Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, rounded) for **`device: "disk"`** entries with a file `source`, when `qemu-img info` succeeds. Omitted if the image is missing or size read fails.
 

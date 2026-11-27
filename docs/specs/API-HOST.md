@@ -30,6 +30,79 @@ Host system information.
 
 `osRelease` is `null` on macOS (development) when the system profiler fails (there is no `/etc/os-release`). `libvirtVersion` and `qemuVersion` are typically `null` when libvirt is not connected.
 
+### GET /api/host/stats · `read`
+
+One sample of the host's live figures, for a client that wants them once and holds no
+stream open.
+
+- **200:** the [`stats` topic's payload](API.md#stats-topic-payload), as the events
+  stream sends it.
+- **500:** the error body of the read that failed, where the stream would send an error
+  frame.
+
+### GET /api/overview · `read`
+
+The whole deployment in one answer: what runs here, and at which address. It is what the
+MCP tool `get_deployment_overview` returns ([MCP.md](MCP.md)) and what `wisp overview`
+prints ([CLI.md](CLI.md)); the Home page's tiles are derived from the same gather.
+
+- **200:**
+
+```json
+{
+  "wispVersion": "3.0.0",
+  "serverName": "string",
+  "host": {
+    "hostname": "string",
+    "kernel": "string",
+    "primaryAddress": "string | null",
+    "uptimeSeconds": 12345,
+    "libvirtVersion": "string | null",
+    "qemuVersion": "string | null"
+  },
+  "bridges": ["br0"],
+  "sections": [{ "id": "string", "name": "string" }],
+  "certificate": { "domain": "example.com", "validUntil": "ISO time" },
+  "containers": [
+    {
+      "name": "web",
+      "state": "running",
+      "image": "docker.io/library/nginx:1.27",
+      "updateAvailable": false,
+      "ip": "192.168.1.20",
+      "bridge": "br0",
+      "mdnsName": "web.local",
+      "app": null,
+      "autostart": true,
+      "autoBackup": false,
+      "restartPolicy": "unless-stopped"
+    }
+  ],
+  "vms": [
+    {
+      "name": "ubuntu-server",
+      "state": "running",
+      "vcpus": 4,
+      "memoryMiB": 4096,
+      "profile": "linux",
+      "ip": "192.168.1.10",
+      "guestHostname": "myvm"
+    }
+  ]
+}
+```
+
+- `certificate` is the certificate Wisp holds, or `null` ([CERTIFICATES.md](CERTIFICATES.md)):
+  every Caddy site is under its `domain`.
+- **A container's `ip`** is its address while it runs, else `null`. A container that is
+  not running carries `lastKnownIp` too: its last DHCP lease, which another machine may
+  hold by now.
+- `mdnsName` is `null` with Local DNS off; `app` is the app's id, `null` for a generic
+  container.
+- **A VM's `ip` and `guestHostname`** come from the guest agent, and are `null` without
+  it or while the VM is off. A VM's `autostart` is on `GET /api/vms/:name` only.
+- No secret is in it.
+
 ### GET /api/host/bridges · `read`
 
 List network bridge interfaces available on the host. The list is ordered so that non-`virbr*` bridges (e.g. `br0`) appear first when `WISP_DEFAULT_BRIDGE` is unset; when set, that bridge is first.
