@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"os"
@@ -42,6 +41,10 @@ func (c *call) keyValues(name string, seen map[string]string) (map[string]string
 	for _, v := range values {
 		key, value, ok := strings.Cut(v, "=")
 		if !ok || key == "" {
+			if name == "secret-env" {
+				// Never the argument: it may be the secret, with its = or its key lost.
+				return nil, usagef(c.cmd.Path, "--secret-env takes KEY=VALUE, with a KEY before the =")
+			}
 			return nil, usagef(c.cmd.Path, "--%s takes KEY=VALUE, not %q", name, v)
 		}
 		if other, dup := seen[key]; dup {
@@ -275,22 +278,24 @@ func optionField(opt string) string {
 // maxAppConfig bounds the app config read from a file or standard input.
 const maxAppConfig = 1 << 20
 
-// appConfig reads --app-config: the JSON in the file, or on standard input.
-// Nil when the flag is not given.
+// appConfig reads --app-config: the JSON in the file, or on standard input,
+// both under the same bounds on size and on the wait. Nil when the flag is
+// not given. Nothing is sent before it is read, so a failure is exit 2.
 func (c *call) appConfig(ctx context.Context) (json.RawMessage, error) {
 	path, ok := c.values["app-config"]
 	if !ok {
 		return nil, nil
 	}
-	var raw []byte
-	var err error
-	if path == "-" {
-		raw, err = io.ReadAll(io.LimitReader(term.ReaderWithin(ctx, c.env.Stdin, c.env.TokenWait), maxAppConfig+1))
-	} else {
-		raw, err = os.ReadFile(path)
+	source := term.ReaderWithin(ctx, c.env.Stdin, c.env.TokenWait)
+	if path != "-" {
+		if _, err := os.Stat(path); err != nil {
+			return nil, usagef(c.cmd.Path, "--app-config: %s", err)
+		}
+		source = term.SourceWithin(ctx, path, func() (io.ReadCloser, error) { return os.Open(path) }, c.env.TokenWait)
 	}
+	raw, err := io.ReadAll(io.LimitReader(source, maxAppConfig+1))
 	if err != nil {
-		return nil, fmt.Errorf("read the app config: %w", err)
+		return nil, usagef(c.cmd.Path, "read the app config: %s", err)
 	}
 	if len(raw) > maxAppConfig {
 		return nil, usagef(c.cmd.Path, "the app config is over %d bytes", maxAppConfig)

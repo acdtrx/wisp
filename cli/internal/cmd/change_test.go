@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 // agentWisp is a stand-in Wisp for an agent token, with the job route j-1
@@ -222,14 +220,7 @@ func TestAnInterruptEndsTheCommandsWaitNotItsJob(t *testing.T) {
 		sseWrite(w, `{"step":"pulling"}`)
 		<-req.Context().Done()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	r.ctx = ctx
-	go func() {
-		for !strings.Contains(r.out(), "pulling") {
-			time.Sleep(10 * time.Millisecond)
-		}
-		cancel()
-	}()
+	r.interruptOnceItPrints("pulling")
 	r.do("containers", "create", "web", "--image", "x").wantCode(1)
 	if !strings.Contains(r.stderr.String(), "stopped waiting: the job j-1 goes on") {
 		t.Fatalf("stderr %q", r.stderr.String())
@@ -280,6 +271,7 @@ func TestAWrongSetLineExits2AndSendsNothing(t *testing.T) {
 		{"containers", "set", "web", "--unset-env", "A=1"},
 		{"containers", "set", "web", "--no-start"},
 		{"containers", "set", "web", "--cpu", "-"},
+		{"containers", "set", "web", "--app-config", "/no/such/file.json"},
 		{"containers", "update", "web", "--env", "A=1"},
 		{"containers", "update"},
 	} {
@@ -305,5 +297,15 @@ func TestUpdatePullsAndRestartsAsOneJob(t *testing.T) {
 	r.do("containers", "update", "web").wantCode(0)
 	if got := asJSON(a.body(t, "POST /api/containers/web/image-update")); got != `{}` {
 		t.Fatalf("body %s", got)
+	}
+}
+
+func TestAMalformedSecretEnvNeverEchoesItsValue(t *testing.T) {
+	_, r := newAgentWisp(t)
+	for _, v := range []string{"hunter2", "=hunter2"} {
+		r.do("containers", "create", "web", "--image", "x", "--secret-env", v).wantCode(2)
+		if strings.Contains(r.stderr.String(), "hunter2") {
+			t.Fatalf("stderr %q", r.stderr.String())
+		}
 	}
 }
