@@ -27,6 +27,7 @@ import {
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
 import { buildDeploymentOverview } from '../lib/deploymentOverview.js';
+import { buildHostStatsPayload } from '../lib/hostStatsSnapshot.js';
 import { asAppError, createAppError } from '../lib/appErrors.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
@@ -117,6 +118,91 @@ const overviewSchema = {
   additionalProperties: false,
 };
 
+const nullableNumber = { type: ['number', 'null'] };
+
+/** GET /host/stats: one sample, the `stats` topic's payload (lib/hostStatsSnapshot.js). */
+const hostStatsSchema = {
+  type: 'object',
+  properties: {
+    cpu: {
+      type: 'object',
+      properties: {
+        allocated: nullableNumber,
+        total: { type: 'number' },
+        usagePercent: { type: 'number' },
+        perCore: { type: 'array', items: { type: 'number' } },
+      },
+      additionalProperties: false,
+    },
+    cpuTemp: nullableNumber,
+    cpuTempThresholds: {
+      type: ['object', 'null'],
+      properties: { maxC: nullableNumber, critC: nullableNumber },
+      additionalProperties: false,
+    },
+    thermalZones: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          label: { type: 'string' },
+          tempC: nullableNumber,
+          maxC: nullableNumber,
+          critC: nullableNumber,
+          pciAddress: nullableString,
+        },
+        additionalProperties: false,
+      },
+    },
+    cpuPowerWatts: nullableNumber,
+    memory: {
+      type: 'object',
+      properties: {
+        allocatedGB: nullableNumber,
+        totalGB: { type: 'number' },
+        usagePercent: { type: 'number' },
+        usedBytes: { type: 'number' },
+        buffersBytes: { type: 'number' },
+        cachedBytes: { type: 'number' },
+        swapTotalBytes: { type: 'number' },
+        swapUsedBytes: { type: 'number' },
+      },
+      additionalProperties: false,
+    },
+    loadAvg: { type: ['array', 'null'], items: { type: 'number' } },
+    disk: {
+      type: 'object',
+      properties: { readMBs: { type: 'number' }, writeMBs: { type: 'number' } },
+      additionalProperties: false,
+    },
+    net: {
+      type: 'object',
+      properties: { rxMBs: { type: 'number' }, txMBs: { type: 'number' } },
+      additionalProperties: false,
+    },
+    runningVMs: nullableNumber,
+    runningContainers: nullableNumber,
+    pendingUpdates: { type: 'number' },
+    updatesLastChecked: nullableString,
+    updateOperationInProgress: { type: 'boolean' },
+    rebootRequired: { type: 'boolean' },
+    rebootReasons: { type: 'array', items: { type: 'string' } },
+    certificateFailed: { type: 'boolean' },
+    wispUpdate: {
+      type: 'object',
+      properties: {
+        current: { type: 'string' },
+        latest: nullableString,
+        available: { type: 'boolean' },
+        lastChecked: nullableString,
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+};
+
 function getOsRelease() {
   try {
     const content = readFileSync('/etc/os-release', 'utf8');
@@ -190,6 +276,14 @@ export default async function hostRoutes(fastify) {
         throw asAppError(err, 'Failed to get host info');
       }
     },
+  });
+
+  // One sample of the host's live figures, the `stats` topic's payload, the
+  // MCP get_host_stats's body too (docs/specs/API-HOST.md).
+  fastify.get('/host/stats', {
+    config: { auth: 'read' },
+    schema: { response: { 200: hostStatsSchema } },
+    handler: async () => buildHostStatsPayload(),
   });
 
   // The whole deployment in one answer, the MCP get_deployment_overview's

@@ -1,0 +1,50 @@
+{
+  "route": "GET /api/host/stats",
+  "status": 200,
+  "note": "No sensor, no power reading, libvirt and containerd down, no check yet: each figure it has none of is null.",
+  "body": {
+    "cpu": {
+      "allocated": null,
+      "total": 4,
+      "usagePercent": 0,
+      "perCore": []
+    },
+    "cpuTemp": null,
+    "cpuTempThresholds": null,
+    "thermalZones": [],
+    "cpuPowerWatts": null,
+    "memory": {
+      "allocatedGB": null,
+      "totalGB": 8,
+      "usagePercent": 50,
+      "usedBytes": 0,
+      "buffersBytes": 0,
+      "cachedBytes": 0,
+      "swapTotalBytes": 0,
+      "swapUsedBytes": 0
+    },
+    "loadAvg": null,
+    "disk": {
+      "readMBs": 0,
+      "writeMBs": 0
+    },
+    "net": {
+      "rxMBs": 0,
+      "txMBs": 0
+    },
+    "runningVMs": null,
+    "runningContainers": null,
+    "pendingUpdates": 0,
+    "updatesLastChecked": null,
+    "updateOperationInProgress": false,
+    "rebootRequired": false,
+    "rebootReasons": [],
+    "certificateFailed": false,
+    "wispUpdate": {
+      "current": "3.0.0",
+      "latest": null,
+      "available": false,
+      "lastChecked": null
+    }
+  }
+}

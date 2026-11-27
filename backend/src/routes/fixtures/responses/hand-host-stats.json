@@ -1,0 +1,81 @@
+{
+  "route": "GET /api/host/stats",
+  "status": 200,
+  "note": "A host with sensors, power, swap and VMs and containers running; a reboot and an update pending.",
+  "body": {
+    "cpu": {
+      "allocated": 6,
+      "total": 16,
+      "usagePercent": 34.2,
+      "perCore": [
+        12.5,
+        45,
+        8.3,
+        0
+      ]
+    },
+    "cpuTemp": 62.5,
+    "cpuTempThresholds": {
+      "maxC": 80,
+      "critC": 95
+    },
+    "thermalZones": [
+      {
+        "type": "x86_pkg_temp",
+        "label": "CPU Package",
+        "tempC": 62.5,
+        "maxC": 80,
+        "critC": 95,
+        "pciAddress": null
+      },
+      {
+        "type": "nvme nvme0",
+        "label": "nvme nvme0",
+        "tempC": 41,
+        "maxC": null,
+        "critC": null,
+        "pciAddress": "0000:01:00.0"
+      }
+    ],
+    "cpuPowerWatts": 45.2,
+    "memory": {
+      "allocatedGB": 12,
+      "totalGB": 64,
+      "usagePercent": 28.1,
+      "usedBytes": 19327352832,
+      "buffersBytes": 104857600,
+      "cachedBytes": 8589934592,
+      "swapTotalBytes": 4294967296,
+      "swapUsedBytes": 1048576
+    },
+    "loadAvg": [
+      1.2,
+      0.8,
+      0.6
+    ],
+    "disk": {
+      "readMBs": 1.2,
+      "writeMBs": 0.4
+    },
+    "net": {
+      "rxMBs": 2.1,
+      "txMBs": 0.8
+    },
+    "runningVMs": 3,
+    "runningContainers": 2,
+    "pendingUpdates": 4,
+    "updatesLastChecked": "2026-11-27T12:00:00.000Z",
+    "updateOperationInProgress": false,
+    "rebootRequired": true,
+    "rebootReasons": [
+      "linux-image-6.8.0-50-generic"
+    ],
+    "certificateFailed": false,
+    "wispUpdate": {
+      "current": "3.0.0",
+      "latest": "3.0.1",
+      "available": true,
+      "lastChecked": "2026-11-27T11:00:00.000Z"
+    }
+  }
+}

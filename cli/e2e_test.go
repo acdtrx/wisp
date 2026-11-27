@@ -104,6 +104,12 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 		case "/api/vms/ubuntu":
 			rw.Header().Set("Content-Type", "application/json")
 			rw.Write([]byte(e2eVM))
+		case "/api/host/stats":
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(`{"cpu":{"allocated":2,"total":4,"usagePercent":12.5,"perCore":[10,15]},"cpuTemp":null,"cpuTempThresholds":null,"thermalZones":[],"cpuPowerWatts":null,"memory":{"allocatedGB":2,"totalGB":16,"usagePercent":40,"usedBytes":1,"buffersBytes":1,"cachedBytes":1,"swapTotalBytes":0,"swapUsedBytes":0},"loadAvg":[0.5,0.4,0.3],"disk":{"readMBs":0,"writeMBs":0},"net":{"rxMBs":0,"txMBs":0},"runningVMs":1,"runningContainers":0,"pendingUpdates":0,"updatesLastChecked":null,"updateOperationInProgress":false,"rebootRequired":false,"rebootReasons":[],"certificateFailed":false,"wispUpdate":{"current":"9.9.9-e2e","latest":null,"available":false,"lastChecked":null}}`))
+		case "/api/host/hardware":
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(`{"cpu":{"model":"Test CPU","cores":4,"threads":8,"mhz":null,"cacheKb":null,"coreTypes":null},"disks":[],"filesystems":[],"network":[],"memory":[],"memoryError":null,"pciDevices":[{"address":"0000:00:02.0","classId":"0300","classCode":"030000","className":"VGA compatible controller","vendor":"Intel Corporation","vendorId":"8086","device":"UHD Graphics","deviceId":"3e92","driver":"i915"}],"system":null}`))
 		case "/api/vms/gone":
 			reply(404, map[string]string{"error": "VM_NOT_FOUND", "detail": `VM "gone" not found`})
 		case "/api/containers/deploy":
@@ -226,6 +232,15 @@ func TestTheBuiltBinaryReadsTheHost(t *testing.T) {
 	got = runWisp(t, bin, env, "", "vms", "show", "gone")
 	if got.code != 1 || !strings.HasPrefix(got.stderr, "VM_NOT_FOUND: ") {
 		t.Fatalf("vms show gone: %+v", got)
+	}
+
+	got = runWisp(t, bin, env, "", "host", "stats")
+	if got.code != 0 || !strings.Contains(got.stdout, "12.5% of 4 cores") || !strings.Contains(got.stdout, "Sensors:\n  none") {
+		t.Fatalf("host stats: %+v", got)
+	}
+	got = runWisp(t, bin, env, "", "host", "hardware")
+	if got.code != 0 || !strings.Contains(got.stdout, "Test CPU") || !strings.Contains(got.stdout, "UHD Graphics") || !strings.Contains(got.stdout, "Memory modules:\n  none") {
+		t.Fatalf("host hardware: %+v", got)
 	}
 }
 

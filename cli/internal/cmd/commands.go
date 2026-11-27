@@ -74,6 +74,7 @@ var groups = []group{
 	{Word: "containers", Title: "Containers"},
 	{Word: "images", Title: "Images"},
 	{Word: "vms", Title: "VMs"},
+	{Word: "host", Title: "The host"},
 	{Word: "jobs", Title: "Jobs"},
 }
 
@@ -405,6 +406,29 @@ func commandTable() []*command {
 			Flags:   []flagDef{jsonFlag},
 			Example: "wisp vms show ubuntu",
 			run:     runVMsShow,
+		},
+		{
+			Path: "host stats", MaxArgs: 0,
+			Summary: "Print one sample of the host's live figures",
+			About: "Prints the host's figures once, then ends: CPU use (per core too) and load, the CPU's\n" +
+				"temperature and power draw, memory and swap, disk and network rates, how many VMs and\n" +
+				"containers run, pending OS updates, whether a reboot is required, and Wisp's own\n" +
+				"update. Then each temperature sensor. A figure the host has no sensor for reads as\n" +
+				"none. The host is read, never changed, from the CLI.",
+			Flags:   []flagDef{jsonFlag},
+			Example: "wisp host stats",
+			run:     runHostStats,
+		},
+		{
+			Path: "host hardware", MaxArgs: 0,
+			Summary: "Print the host's hardware",
+			About: "Prints the host's hardware: the CPU, the board, system and BIOS, the memory modules,\n" +
+				"the disks with their health (SMART), the GPUs (its PCI display controllers) and every\n" +
+				"PCI device. A part the host has none of reads as none. Reading every disk's health can\n" +
+				"take seconds. The host is read, never changed, from the CLI.",
+			Flags:   []flagDef{jsonFlag},
+			Example: "wisp host hardware",
+			run:     runHostHardware,
 		},
 		{
 			Path: "jobs list", MaxArgs: 0,

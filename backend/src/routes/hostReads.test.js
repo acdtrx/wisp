@@ -31,11 +31,20 @@ process.env.WISP_CONFIG_PATH = path.join(dir, 'wisp-config.json');
 const fixture = (file) => JSON.parse(readFileSync(new URL(`./fixtures/responses/${file}`, import.meta.url), 'utf8')).body;
 const OVERVIEW = fixture('hand-overview.json');
 const VM = fixture('hand-vm-detail-running.json');
+const STATS = fixture('hand-host-stats.json');
 
 const mockModule = (file, exports) => mock.module(new URL(file, import.meta.url).href, { exports });
 mockModule('../lib/deploymentOverview.js', {
   gatherDeployment: async () => { throw new Error('not gathered in this test'); },
   buildDeploymentOverview: async () => structuredClone(OVERVIEW),
+});
+/** When set, the stats sample fails with it, as a read of it would. */
+let statsFailure = null;
+mockModule('../lib/hostStatsSnapshot.js', {
+  buildHostStatsPayload: async () => {
+    if (statsFailure) throw statsFailure;
+    return structuredClone(STATS);
+  },
 });
 // The VM manager as it is, but for the VM read.
 const vmManager = await import('../lib/vmManager/index.js');
@@ -88,8 +97,27 @@ test('GET /api/vms/:name answers the VM read to a read token, and get_vm the sam
   assert.equal(gone.json().error, 'VM_NOT_FOUND');
 });
 
-test('GET /api/overview with no token is 401', async () => {
-  const res = await app.inject({ method: 'GET', url: '/api/overview' });
-  assert.equal(res.statusCode, 401);
-  assert.equal(res.json().error, 'AUTH_REQUIRED');
+test('GET /api/host/stats answers one sample to a read token, and get_host_stats the same body', async () => {
+  const { rest, mcp } = await routeAndTool('/api/host/stats', 'get_host_stats');
+  assert.deepEqual(rest, STATS);
+  assert.deepEqual(mcp, STATS);
+});
+
+test('GET /api/host/stats answers the error body of the read that failed', async () => {
+  statsFailure = new Error('ENOENT: no such file or directory, open \'/proc/stat\'');
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/host/stats', headers: asRead });
+    assert.equal(res.statusCode, 500);
+    assert.equal(res.json().error, 'INTERNAL_ERROR');
+  } finally {
+    statsFailure = null;
+  }
+});
+
+test('the reads with no token are 401', async () => {
+  for (const url of ['/api/overview', '/api/host/stats', `/api/vms/${VM.name}`]) {
+    const res = await app.inject({ method: 'GET', url });
+    assert.equal(res.statusCode, 401, url);
+    assert.equal(res.json().error, 'AUTH_REQUIRED', url);
+  }
 });

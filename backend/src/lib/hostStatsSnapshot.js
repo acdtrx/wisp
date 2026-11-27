@@ -1,7 +1,7 @@
 /**
- * One host-stats snapshot in the exact shape the /api/stats SSE stream pushes.
- * Shared by the stats route (which sends it every 5 s) and the MCP
- * get_host_stats tool (which returns a single sample).
+ * One host-stats snapshot: the `stats` topic's payload. Shared by the events
+ * stream (which sends it every 5 s), and by `GET /api/host/stats` and the MCP
+ * get_host_stats tool (which answer a single sample).
  */
 import {
   getHostStats,
