@@ -41,6 +41,7 @@ export function titleForImageUpdateCheckSingle(ref) {
 }
 
 export const titleForVmStart = (name) => `Start ${name}`;
+export const titleForVmStop = (name) => `Stop ${name}`;
 export const titleForVmForceStop = (name) => `Force stop ${name}`;
 export const titleForVmDelete = (name) => `Delete ${name}`;
 export const titleForVmRestore = (newName) => `Restore ${newName}`;

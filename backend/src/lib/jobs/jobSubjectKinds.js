@@ -14,6 +14,7 @@ export const SUBJECT_KINDS = {
   [K.VM_CREATE]: { type: 'vm', lock: 'create' },
   [K.VM_BACKUP]: { type: 'vm', lock: 'backup' },
   [K.VM_START]: { type: 'vm', lock: 'start' },
+  [K.VM_STOP]: { type: 'vm', lock: 'stop' },
   [K.VM_FORCE_STOP]: { type: 'vm', lock: 'force stop' },
   [K.VM_DELETE]: { type: 'vm', lock: 'delete' },
   [K.VM_RESTORE]: { type: 'vm', lock: 'restore' },

@@ -36,10 +36,12 @@ subscribeDomainStopped(announceVMStopped);
 /**
  * The checks a lifecycle call makes first, alone and quick, for a caller that
  * answers them before starting slow work: `start` (VM_NOT_FOUND,
- * VM_ALREADY_RUNNING), `running` (VM_NOT_FOUND, VM_NOT_RUNNING), `exists`
+ * VM_ALREADY_RUNNING), `running` (VM_NOT_FOUND, VM_NOT_RUNNING when shut off:
+ * a force stop's test), `stop` (VM_NOT_FOUND, VM_NOT_RUNNING in any state but
+ * running: a paused guest cannot act on a shutdown request), `exists`
  * (VM_NOT_FOUND).
  * @param {string} name
- * @param {'start' | 'running' | 'exists'} what
+ * @param {'start' | 'running' | 'stop' | 'exists'} what
  */
 export async function assertVMState(name, what) {
   const path = await resolveDomain(name);
@@ -47,6 +49,7 @@ export async function assertVMState(name, what) {
   const state = await getDomainState(path);
   if (what === 'start' && state.code === VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_ALREADY_RUNNING', `VM "${name}" is already running`);
   if (what === 'running' && isShutOff(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (what === 'stop' && state.code !== VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 }
 
 export async function startVM(name) {
@@ -63,10 +66,11 @@ export async function startVM(name) {
   }
 }
 
+/** Ask the guest to shut down (ACPI); answers once libvirt has sent the request. */
 export async function stopVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (isShutOff(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (state.code !== VIR_DOMAIN_STATE_RUNNING) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {

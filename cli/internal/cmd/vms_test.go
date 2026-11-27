@@ -217,3 +217,27 @@ func TestVMsRestartAsksTheGuestAndEndsAtOnce(t *testing.T) {
 		t.Fatal("a wrong line sent a request")
 	}
 }
+
+func TestVMsStopAsksTheGuestAndEndsWhenTheVMIsOff(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.startsJob("POST /api/vms/ubuntu/stop", "Stop ubuntu")
+	jobRoute(a.fakeWisp, `{"step":"shutting-down"}`, `{"step":"done","result":{"name":"ubuntu"}}`)
+	r.do("vms", "stop", "ubuntu").wantCode(0)
+	if r.stdout.String() != "Stopped ubuntu.\n" || r.stderr.String() != "Stop ubuntu: job j-1\nshutting-down\n" {
+		t.Fatalf("stdout %q stderr %q", r.stdout.String(), r.stderr.String())
+	}
+	r.do("vms", "stop", "ubuntu", "--json").wantCode(0)
+	if strings.TrimSpace(r.stdout.String()) != `{"name":"ubuntu"}` {
+		t.Fatalf("--json: %q", r.stdout.String())
+	}
+}
+
+func TestAStopTheGuestIgnoresEndsWithTheJobsError(t *testing.T) {
+	a, r := newAgentWisp(t)
+	a.startsJob("POST /api/vms/ubuntu/stop", "Stop ubuntu")
+	jobRoute(a.fakeWisp, `{"step":"shutting-down"}`, `{"step":"error","error":"VM_STOP_TIMEOUT","detail":"VM \"ubuntu\" is not off 5 min after its guest was asked to shut down: it is left as it is"}`)
+	r.do("vms", "stop", "ubuntu").wantCode(1)
+	if !strings.HasSuffix(r.stderr.String(), "VM_STOP_TIMEOUT: VM \"ubuntu\" is not off 5 min after its guest was asked to shut down: it is left as it is\n") || r.stdout.Len() != 0 {
+		t.Fatalf("stderr %q stdout %q", r.stderr.String(), r.stdout.String())
+	}
+}

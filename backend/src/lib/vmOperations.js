@@ -33,6 +33,7 @@ import {
   detachUSBDevice,
   createBackup,
   listVMs,
+  subscribeVMListChange,
   isShutOff,
   planBackupRestore,
   restoreBackup,
@@ -43,6 +44,7 @@ import {
   titleForVmCreate,
   titleForVmBackup,
   titleForVmStart,
+  titleForVmStop,
   titleForVmForceStop,
   titleForVmDelete,
   titleForVmRestore,
@@ -133,6 +135,81 @@ export function startVmStartJob({ name, log }) {
   });
 }
 
+/** How long a stop waits for the guest to shut down (API-VMS.md). */
+const VM_STOP_WAIT_MS = 5 * 60 * 1000;
+
+function isOffIn(list, name) {
+  const found = list.find((v) => v.name === name);
+  return !found || isShutOff(found.stateCode);
+}
+
+/**
+ * Watch the VM list for VM `name` being off (shut off, or gone), from now on:
+ * set up before the stop's request, so an off that follows it at once is not
+ * missed. `wait(ms)` settles once it is off, or fails with VM_STOP_TIMEOUT
+ * after `ms`; `end()` stops the watch.
+ */
+function watchForVmOff(name) {
+  const { promise: off, resolve } = Promise.withResolvers();
+  const end = subscribeVMListChange((list) => { if (list && isOffIn(list, name)) resolve(); });
+  return {
+    end,
+    async wait(ms) {
+      listVMs().then(
+        (list) => { if (isOffIn(list, name)) resolve(); },
+        () => { /* the list could not be read: its next announcement decides */ },
+      );
+      let timer;
+      const bound = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(createAppError(
+          'VM_STOP_TIMEOUT',
+          `VM "${name}" is not off ${ms / 60000} min after its guest was asked to shut down: it is left as it is`,
+        )), ms);
+      });
+      try {
+        await Promise.race([off, bound]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
+/**
+ * Stop the VM as a job: ask the guest to shut down (ACPI), then wait until the
+ * VM is off, whatever turns it off, for VM_STOP_WAIT_MS at most. Shared: a
+ * stop while one waits answers its ack. The lock is held only while the
+ * request is sent, so a force stop is accepted while the guest shuts down
+ * (BACKUPS.md, Per-VM operation lock). `done`: `{ name }`.
+ */
+export function startVmStopJob({ name, log }) {
+  return startJob({
+    kind: JOB_KIND.VM_STOP,
+    title: titleForVmStop(name),
+    subject: vm(name),
+    shared: true,
+    check: () => assertVMState(name, 'stop'),
+    log,
+    run: async (report, _signal, releaseLock) => {
+      const watch = watchForVmOff(name);
+      try {
+        try {
+          await stopVM(name);
+        } catch (err) {
+          // Off (or paused) since the check: the wait tells which.
+          if (err.code !== 'VM_NOT_RUNNING') throw err;
+        }
+        releaseLock();
+        report({ step: 'shutting-down' });
+        await watch.wait(VM_STOP_WAIT_MS);
+      } finally {
+        watch.end();
+      }
+      return { name };
+    },
+  });
+}
+
 /** Force-stop the VM as a job (waiting for QEMU to exit). `done`: `{ name }`. */
 export function startVmForceStopJob({ name, log }) {
   return startJob({
@@ -201,14 +278,8 @@ export function startVmRestoreJob({ backupPath, newName, log }) {
 
 // ── Instant commands ────────────────────────────────────────────────
 
-// Stop, reboot, suspend and resume hold the lock only while the request is
-// sent to libvirt: the guest's shutdown runs on after the answer, so a force
-// stop stays possible while it is pending.
-
-/** Ask the guest to shut down (ACPI). */
-export function requestVmStop(name) {
-  return withVmOperationLock(name, 'stop', () => stopVM(name));
-}
+// Reboot, suspend and resume hold the lock only while the request is sent to
+// libvirt: the guest's reboot runs on after the answer.
 
 export function requestVmReboot(name) {
   return withVmOperationLock(name, 'reboot', () => rebootVM(name));

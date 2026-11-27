@@ -30,6 +30,7 @@ export {
   TITLE_LIBRARY_ARCH_CLOUD,
   TITLE_LIBRARY_HAOS,
   titleForVmStart,
+  titleForVmStop,
   titleForVmForceStop,
   titleForVmDelete,
   titleForVmRestore,

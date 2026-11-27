@@ -299,6 +299,7 @@ Each code a client can receive, with its status.
 | `INTERNAL_ERROR` | 500 | An error without a code: a fault on the server |
 | `CONFIG_INVALID` | 500 | `wisp-config.json` fails its strict read |
 | `LIBVIRT_ERROR` | 500 | libvirt refused or failed the call |
+| `VM_STOP_TIMEOUT` | 500 | The VM was not off 5 min after its stop asked the guest to shut down; it is left as it is. A job's error only |
 | `VM_DELETE_INCOMPLETE` | 500 | The VM was deleted, but its folder could not be removed; the detail names it |
 | `CONTAINERD_ERROR` | 500 | containerd failed the call, or did not answer in time |
 | `CONTAINER_DELETE_INCOMPLETE` | 500 | The container was deleted, but its network lease was not released; the detail names the cause |

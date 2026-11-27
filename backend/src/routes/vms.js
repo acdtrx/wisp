@@ -9,9 +9,9 @@ import {
   startVmCreateJob,
   startVmBackupJob,
   startVmStartJob,
+  startVmStopJob,
   startVmForceStopJob,
   startVmDeleteJob,
-  requestVmStop,
   requestVmReboot,
   requestVmSuspend,
   requestVmResume,
@@ -310,13 +310,14 @@ export default async function vmsRoutes(fastify) {
     },
   });
 
-  // Lifecycle actions — all POST /vms/:name/<action>. Start and force-stop are
-  // jobs — starting a large VM, or waiting for QEMU to exit, can outlast a
-  // short request: the POST answers 202 with the job's ack. Stop, reboot,
-  // suspend and resume answer at once. An agent token starts, stops and
+  // Lifecycle actions — all POST /vms/:name/<action>. Start, stop and
+  // force-stop are jobs — starting a large VM, waiting for the guest to shut
+  // down or for QEMU to exit can outlast a short request: the POST answers 202
+  // with the job's ack. Reboot, suspend and resume answer at once. An agent token starts, stops and
   // restarts a VM; pause and resume stay admin (AUTH.md, The agent scope).
   const lifecycleJobs = [
     { path: 'start', start: startVmStartJob },
+    { path: 'stop', start: startVmStopJob },
     { path: 'force-stop', start: startVmForceStopJob },
   ];
   for (const { path, start } of lifecycleJobs) {
@@ -334,7 +335,6 @@ export default async function vmsRoutes(fastify) {
   }
 
   const lifecycleActions = [
-    { path: 'stop', request: requestVmStop, auth: 'admin' },
     { path: 'reboot', request: requestVmReboot, auth: 'agent' },
     { path: 'suspend', request: requestVmSuspend, auth: 'admin' },
     { path: 'resume', request: requestVmResume, auth: 'admin' },

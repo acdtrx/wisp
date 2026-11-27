@@ -251,8 +251,8 @@ function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
  *
  * - `subject`: the workload a job of a subject kind acts on (SUBJECT_KINDS),
  *   absent for any other kind. The lock is taken under the kind's label and
- *   released when `run` settles, before the terminal event, so an action
- *   taken on `done` never meets a stale busy.
+ *   released when `run` settles (or earlier, by `releaseLock`), before the
+ *   terminal event, so an action taken on `done` never meets a stale busy.
  * - `check()`: runs after the claim, before the job exists; what it throws is
  *   thrown to the caller (the lock released), never a failed job. Under a
  *   subject's lock it may be async; without a subject it must be synchronous,
@@ -264,10 +264,13 @@ function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
  * - `interruptible`: the job need not finish — `cancelInterruptibleJobs`
  *   (shutdown) aborts its run's `signal`, and a run that then rejects ends
  *   it `cancelled`. Other jobs must finish and get no signal.
- * - `run(report, signal)`: `report(event)` pushes a progress event; the
- *   resolved value is the job's `result` (`{ step: 'done', result }`) and
- *   must hold only what a client may see — no host paths. A rejection fails
- *   the job with its error body.
+ * - `run(report, signal, releaseLock)`: `report(event)` pushes a progress
+ *   event; the resolved value is the job's `result` (`{ step: 'done',
+ *   result }`) and must hold only what a client may see — no host paths. A
+ *   rejection fails the job with its error body. `releaseLock()` gives the
+ *   subject's lock back before the job ends: only the VM stop calls it, once
+ *   its request is sent, so it waits for the guest without the lock
+ *   (BACKUPS.md, Per-VM operation lock).
  *
  * @param {object} opts
  * @param {string} opts.kind - a JOB_KIND value
@@ -278,7 +281,7 @@ function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
  * @param {boolean} [opts.interruptible]
  * @param {() => Promise<void> | void} [opts.check]
  * @param {import('fastify').FastifyBaseLogger} opts.log
- * @param {(report: (event: object) => void, signal?: AbortSignal) => Promise<unknown>} opts.run
+ * @param {(report: (event: object) => void, signal?: AbortSignal, releaseLock?: () => void) => Promise<unknown>} opts.run
  * @returns {Promise<JobAck>}
  */
 export async function startJob({
@@ -337,7 +340,7 @@ export async function startJob({
     if (job.status === 'running') pushEvent(job, event);
   };
   Promise.resolve()
-    .then(() => run(report, job.abort?.signal))
+    .then(() => run(report, job.abort?.signal, release))
     .then(
       (result) => {
         release();

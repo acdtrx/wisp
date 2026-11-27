@@ -127,7 +127,7 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 			body, _ := io.ReadAll(r.Body)
 			w.deployBody.Store(string(body))
 			reply(202, map[string]any{"jobId": "j-1", "kind": "container-deploy", "title": "Deploy web", "subject": map[string]string{"type": "container", "name": "web"}})
-		case "/api/vms/ubuntu/start", "/api/vms/ubuntu/force-stop":
+		case "/api/vms/ubuntu/start", "/api/vms/ubuntu/stop", "/api/vms/ubuntu/force-stop":
 			w.vmRequests.Add(1)
 			reply(202, map[string]any{"jobId": "j-1", "kind": "vm-" + strings.TrimPrefix(r.URL.Path, "/api/vms/ubuntu/"), "title": "ubuntu", "subject": map[string]string{"type": "vm", "name": "ubuntu"}})
 		case "/api/vms/ubuntu/reboot":
@@ -385,6 +385,7 @@ func TestTheBuiltBinaryStartsStopsAndRestartsAVM(t *testing.T) {
 		stdout string
 	}{
 		{[]string{"vms", "start", "ubuntu"}, "Started ubuntu.\n"},
+		{[]string{"vms", "stop", "ubuntu"}, "Stopped ubuntu.\n"},
 		{[]string{"vms", "stop", "ubuntu", "--force"}, "Stopped ubuntu.\n"},
 		{[]string{"vms", "restart", "ubuntu"}, "Asked the guest of ubuntu to restart.\n"},
 	} {
@@ -393,8 +394,8 @@ func TestTheBuiltBinaryStartsStopsAndRestartsAVM(t *testing.T) {
 			t.Fatalf("%v: %+v", c.args, got)
 		}
 	}
-	if n := wisp.vmRequests.Load(); n != 3 {
-		t.Fatalf("%d VM requests reached the Wisp, want 3", n)
+	if n := wisp.vmRequests.Load(); n != 4 {
+		t.Fatalf("%d VM requests reached the Wisp, want 4", n)
 	}
 }
 

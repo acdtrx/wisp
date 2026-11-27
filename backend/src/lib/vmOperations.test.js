@@ -9,6 +9,8 @@ import { beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createAppError } from './appErrors.js';
+import { createEmitter } from './base/index.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const calls = [];
 const impl = {};
@@ -26,7 +28,7 @@ const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).h
 mockModule('./vmManager/index.js', [
   'assertVMNameAvailable', 'createVM', 'assertVMState', 'startVM', 'stopVM', 'forceStopVM', 'rebootVM', 'suspendVM',
   'resumeVM', 'deleteVM', 'updateVMConfig', 'renameVM', 'attachDisk', 'createAndAttachDisk', 'detachDisk', 'resizeDiskBySlot',
-  'attachISO', 'ejectISO', 'attachUSBDevice', 'detachUSBDevice', 'createBackup', 'listVMs',
+  'attachISO', 'ejectISO', 'attachUSBDevice', 'detachUSBDevice', 'createBackup', 'listVMs', 'subscribeVMListChange',
   'isShutOff', 'planBackupRestore', 'restoreBackup', 'getVMConfig',
 ]);
 mockModule('./cloudInit.js', ['generateCloudInit', 'rebuildCloudInitISO', 'updateCloudInit', 'detachCloudInitDisk']);
@@ -36,8 +38,10 @@ mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'for
 mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
-const { editVmConfig, saveVmCloudInit, startVmCreateJob, startVmDeleteJob } = await import('./vmOperations.js');
-const { whenJobEnds } = await import('./jobs/index.js');
+const {
+  editVmConfig, saveVmCloudInit, startVmCreateJob, startVmDeleteJob, startVmStopJob, startVmForceStopJob,
+} = await import('./vmOperations.js');
+const { readJob, whenJobEnds } = await import('./jobs/index.js');
 const { acquireVmOperationLock } = await import('./vmOperationLock.js');
 
 const log = { debug() {}, info() {}, warn() {}, error() {}, child() { return log; } };
@@ -145,4 +149,97 @@ test('a first boot setup is saved only on a VM whose profile takes one; one with
   await saveVmCloudInit('v', SETUP);
   assert.deepEqual(calls.at(-1), ['updateCloudInit', 'v', SETUP]);
   assertUnlocked('v');
+});
+
+/*
+ * The stop: the VM list is the one the stop watches. `listChange` holds its
+ * subscribers; `announce(state)` tells them the list with VM `s` in that state
+ * (a libvirt state code: 1 running, 5 shut off).
+ */
+let listChange;
+let listed = 1;
+function announce(stateCode) {
+  listed = stateCode;
+  listChange.emit([{ name: 's', stateCode }]);
+}
+
+function standInVmList() {
+  listChange = createEmitter('test VM list', () => log);
+  listed = 1;
+  impl.isShutOff = (code) => code === 5;
+  impl.listVMs = async () => [{ name: 's', stateCode: listed }];
+  impl.subscribeVMListChange = listChange.subscribe;
+}
+
+/** Until the stop's request has been sent and its wait begun. */
+async function untilWaiting(jobId) {
+  while (readJob(jobId).progress?.step !== 'shutting-down') await new Promise(setImmediate);
+}
+
+test('a stop asks the guest, then waits without the lock, and ends done once the VM is off', async () => {
+  standInVmList();
+  const { jobId, kind } = await startVmStopJob({ name: 's', log });
+  assert.equal(kind, JOB_KIND.VM_STOP);
+  await untilWaiting(jobId);
+  // The watch is set up before the request, so an off right after it is not missed.
+  assert.deepEqual(names().slice(0, 3), ['assertVMState', 'subscribeVMListChange', 'stopVM']);
+  assert.deepEqual(calls[0], ['assertVMState', 's', 'stop']);
+  assertUnlocked('s');
+  assert.equal(readJob(jobId).status, 'running');
+  announce(5);
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(readJob(jobId).result, { name: 's' });
+  assert.equal(listChange.size(), 0, 'the watch ended');
+});
+
+test('a stop of a VM that is not running is refused before any job', async () => {
+  standInVmList();
+  impl.assertVMState = async () => { throw createAppError('VM_NOT_RUNNING', 'VM "s" is not running'); };
+  await assert.rejects(startVmStopJob({ name: 's', log }), (err) => err.code === 'VM_NOT_RUNNING');
+  assert.ok(!names().includes('stopVM'));
+  assertUnlocked('s');
+});
+
+test('a second stop while the first waits answers the first one\'s ack', async () => {
+  standInVmList();
+  const first = await startVmStopJob({ name: 's', log });
+  await untilWaiting(first.jobId);
+  const second = await startVmStopJob({ name: 's', log });
+  assert.deepEqual(second, first);
+  assert.equal(names().filter((n) => n === 'stopVM').length, 1);
+  announce(5);
+  assert.equal(await whenJobEnds(first.jobId), 'done');
+});
+
+test('a force stop while a stop waits is accepted, and the stop ends done', async () => {
+  standInVmList();
+  impl.forceStopVM = async () => { announce(5); };
+  const stop = await startVmStopJob({ name: 's', log });
+  await untilWaiting(stop.jobId);
+  const force = await startVmForceStopJob({ name: 's', log });
+  assert.equal(await whenJobEnds(force.jobId), 'done');
+  assert.equal(await whenJobEnds(stop.jobId), 'done');
+  assertUnlocked('s');
+});
+
+test('a VM already off when the wait begins ends the stop done', async () => {
+  standInVmList();
+  impl.stopVM = async () => { listed = 5; };
+  const { jobId } = await startVmStopJob({ name: 's', log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+});
+
+test('a VM not off 5 min after the request fails the stop with VM_STOP_TIMEOUT, and is left as it is', async (t) => {
+  standInVmList();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { jobId } = await startVmStopJob({ name: 's', log });
+  await untilWaiting(jobId);
+  t.mock.timers.tick(5 * 60 * 1000 - 1);
+  await new Promise(setImmediate);
+  assert.equal(readJob(jobId).status, 'running', 'not before the bound');
+  t.mock.timers.tick(1);
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.equal(readJob(jobId).error, 'VM_STOP_TIMEOUT');
+  assert.ok(!names().includes('forceStopVM'), 'the VM is left running');
+  assert.equal(listChange.size(), 0, 'the watch ended');
 });

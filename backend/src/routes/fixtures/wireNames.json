@@ -27,6 +27,7 @@
     "VM_CREATE": "vm-create",
     "VM_BACKUP": "vm-backup",
     "VM_START": "vm-start",
+    "VM_STOP": "vm-stop",
     "VM_FORCE_STOP": "vm-force-stop",
     "VM_DELETE": "vm-delete",
     "VM_RESTORE": "vm-restore",

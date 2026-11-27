@@ -292,7 +292,7 @@ test('a read token cannot start the OS package check: 403 SCOPE_INSUFFICIENT, an
  * stays admin. The VM `x` does not exist and no manager is connected: a route
  * the caller passes answers what the manager says, the same for both tokens.
  */
-const VM_AGENT_ROUTES = ['/api/vms/x/start', '/api/vms/x/force-stop', '/api/vms/x/reboot'];
+const VM_AGENT_ROUTES = ['/api/vms/x/start', '/api/vms/x/stop', '/api/vms/x/force-stop', '/api/vms/x/reboot'];
 const VM_ADMIN_ROUTES = [
   ['POST', '/api/vms', { name: 'x', profile: 'linux' }],
   ['PATCH', '/api/vms/x', { vcpus: 2 }],
@@ -313,7 +313,7 @@ const VM_ADMIN_ROUTES = [
   ['DELETE', '/api/backups', { destinationId: 'local', vmName: 'x', timestamp: '2026-01-01T00-00-00' }],
 ];
 
-test('an agent token starts, force-stops and restarts a VM as an admin one does; a read token answers 403', async () => {
+test('an agent token starts, stops, force-stops and restarts a VM as an admin one does; a read token answers 403', async () => {
   for (const url of VM_AGENT_ROUTES) {
     const answer = async (token) => {
       const res = await app.inject({ method: 'POST', url, headers: bearer(token) });
@@ -441,7 +441,7 @@ const READ_TOOLS = [
 ];
 const AGENT_TOOLS = [
   'deploy_container', 'update_container_image', 'start_container', 'stop_container', 'restart_container',
-  'update_app_config', 'check_image_updates', 'start_vm', 'force_stop_vm', 'restart_vm',
+  'update_app_config', 'check_image_updates', 'start_vm', 'stop_vm', 'force_stop_vm', 'restart_vm',
 ];
 
 test('tools/list shows a read token the read tools only, and an agent and an admin token every tool', async () => {
@@ -473,7 +473,7 @@ test('a mutating tool answers a read token SCOPE_INSUFFICIENT, and runs for an a
 
 // The VM does not exist: a tool that runs answers what the manager says, never the scope refusal.
 test('the VM lifecycle tools answer a read token SCOPE_INSUFFICIENT, and run for an agent and an admin token', async () => {
-  for (const name of ['start_vm', 'force_stop_vm', 'restart_vm']) {
+  for (const name of ['start_vm', 'stop_vm', 'force_stop_vm', 'restart_vm']) {
     const call = async (token) => (await app.inject({
       method: 'POST', url: '/mcp', headers: bearer(token),
       payload: { jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name, arguments: { name: 'x' } } },
