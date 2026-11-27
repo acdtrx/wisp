@@ -68,12 +68,11 @@ func bytesText(n float64) string {
 	return fmt.Sprintf("%.1f %s", n, units[i])
 }
 
-// durationText is a length of time in seconds, to the minute past an hour.
-func durationText(seconds float64) string {
-	d := time.Duration(seconds) * time.Second
+// durationText is a length of time in milliseconds, as the API gives an
+// uptime, to the second under an hour and to the minute past one.
+func durationText(ms float64) string {
+	d := time.Duration(ms) * time.Millisecond
 	switch {
-	case d < time.Minute:
-		return d.String()
 	case d < time.Hour:
 		return d.Truncate(time.Second).String()
 	default:

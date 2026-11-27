@@ -1,17 +1,15 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 const webDetail = `{"name":"web","uuid":"u1","type":"container","image":"docker.io/library/caddy:2","state":"running",
 "command":["caddy","run","--config","/etc/caddy/Caddyfile"],"cpuLimit":1.5,"memoryLimitMiB":null,"restartPolicy":"unless-stopped",
-"autostart":true,"autoBackup":false,"runAsRoot":false,"localDns":true,"mdnsHostname":"web.local","pid":4242,"uptime":7260,
+"autostart":true,"autoBackup":false,"runAsRoot":false,"localDns":true,"mdnsHostname":"web.local","pid":4242,"uptime":7260500,
 "env":{"PLAIN":{"value":"hello"},"API_KEY":{"value":null,"secret":true,"isSet":true}},
 "mounts":[{"type":"directory","name":"site","containerPath":"/srv","readonly":true},{"type":"file","name":"cert","containerPath":"/etc/c.pem","secret":true,"isSet":true,"sizeBytes":2048}],
 "devices":[],"services":[{"port":80,"type":"_http._tcp","txt":{"path":"/"}}],
@@ -133,14 +131,7 @@ func TestLogsFollowPrintsNewLinesUntilInterrupted(t *testing.T) {
 		sseWrite(w, `{"type":"line","line":"new 1"}`, `{"type":"line","line":"new 2"}`)
 		<-req.Context().Done()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	r.ctx = ctx
-	go func() {
-		for !strings.Contains(r.out(), "new 2") {
-			time.Sleep(10 * time.Millisecond)
-		}
-		cancel()
-	}()
+	r.interruptOnceItPrints("new 2")
 	r.do("containers", "logs", "web", "--follow").wantCode(0)
 	if r.stdout.String() != "old\nnew 1\nnew 2\n" {
 		t.Fatalf("stdout %q", r.stdout.String())
@@ -194,16 +185,17 @@ func TestAnInterruptEndsTheWaitNotTheJob(t *testing.T) {
 		sseWrite(w, `{"step":"pulling"}`)
 		<-req.Context().Done()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	r.ctx = ctx
-	go func() {
-		for !strings.Contains(r.out(), "pulling") {
-			time.Sleep(10 * time.Millisecond)
-		}
-		cancel()
-	}()
+	r.interruptOnceItPrints("pulling")
 	r.do("jobs", "wait", "j-1").wantCode(1)
 	if !strings.Contains(r.stderr.String(), "the job j-1 goes on") {
 		t.Fatalf("stderr %q", r.stderr.String())
+	}
+}
+
+func TestAnUptimeIsTheAPIsMilliseconds(t *testing.T) {
+	for ms, want := range map[float64]string{450: "0s", 70_400: "1m10s", 3_599_999: "59m59s", 7_260_500: "2h1m0s"} {
+		if got := durationText(ms); got != want {
+			t.Errorf("durationText(%v) = %q, want %q", ms, got, want)
+		}
 	}
 }
