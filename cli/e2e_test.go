@@ -98,6 +98,14 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 		case "/api/overview":
 			rw.Header().Set("Content-Type", "application/json")
 			rw.Write([]byte(e2eOverview))
+		case "/api/vms":
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(`[]`))
+		case "/api/vms/ubuntu":
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(e2eVM))
+		case "/api/vms/gone":
+			reply(404, map[string]string{"error": "VM_NOT_FOUND", "detail": `VM "gone" not found`})
 		case "/api/containers/deploy":
 			body, _ := io.ReadAll(r.Body)
 			w.deployBody.Store(string(body))
@@ -123,6 +131,10 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 const e2eOverview = `{"wispVersion":"9.9.9-e2e","serverName":"Lab","host":{"hostname":"lab","kernel":"6.8.0","primaryAddress":"192.168.1.5","uptimeSeconds":3600,"libvirtVersion":"10.0.0","qemuVersion":"8.2.2"},"bridges":["br0"],"sections":[],"certificate":null,` +
 	`"containers":[{"name":"web","state":"stopped","image":"nginx:1.27","updateAvailable":false,"ip":null,"lastKnownIp":"192.168.1.20","bridge":"br0","mdnsName":null,"app":null,"autostart":false,"autoBackup":false,"restartPolicy":"never"}],` +
 	`"vms":[{"name":"ubuntu","state":"running","vcpus":2,"memoryMiB":2048,"profile":"linux","ip":"192.168.1.10","guestHostname":"ubuntu"}]}`
+
+const e2eVM = `{"name":"ubuntu","state":"running","stateCode":1,"autostart":false,"vcpus":2,"memoryMiB":2048,"profile":"linux","firmware":"uefi","cpuMode":"host-passthrough","cpuTopology":null,"bootOrder":["hd"],` +
+	`"disks":[{"slot":"sda","device":"disk","bus":"virtio","source":"/var/lib/wisp/vms/ubuntu/disk0.qcow2","sizeGiB":20}],"nics":[{"type":"bridge","mac":"52:54:00:00:00:01","source":"br0","model":"virtio"}],` +
+	`"guestAgent":true,"pendingRestart":null,"startedAt":1764150000000,"guestNetwork":{"ip":"192.168.1.10","hostname":"ubuntu"}}`
 
 type result struct {
 	stdout, stderr string
@@ -197,6 +209,23 @@ func TestTheBuiltBinaryReadsTheHost(t *testing.T) {
 	got = runWisp(t, bin, env, "", "overview", "--json")
 	if got.code != 0 || strings.TrimSpace(got.stdout) != e2eOverview {
 		t.Fatalf("overview --json: %+v", got)
+	}
+
+	got = runWisp(t, bin, env, "", "vms", "list")
+	if got.code != 0 || got.stdout != "No VMs.\n" {
+		t.Fatalf("vms list: %+v", got)
+	}
+	got = runWisp(t, bin, env, "", "vms", "show", "ubuntu")
+	if got.code != 0 || !strings.Contains(got.stdout, "192.168.1.10") || !strings.Contains(got.stdout, "20 GiB") || !strings.Contains(got.stdout, "52:54:00:00:00:01") {
+		t.Fatalf("vms show: %+v", got)
+	}
+	got = runWisp(t, bin, env, "", "vms", "show", "ubuntu", "--json")
+	if got.code != 0 || strings.TrimSpace(got.stdout) != e2eVM {
+		t.Fatalf("vms show --json: %+v", got)
+	}
+	got = runWisp(t, bin, env, "", "vms", "show", "gone")
+	if got.code != 1 || !strings.HasPrefix(got.stderr, "VM_NOT_FOUND: ") {
+		t.Fatalf("vms show gone: %+v", got)
 	}
 }
 

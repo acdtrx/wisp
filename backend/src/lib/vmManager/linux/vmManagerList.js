@@ -351,5 +351,6 @@ export async function getVMConfig(name) {
     state: STATE_NAMES[stateCode] ?? 'unknown',
     stateCode,
     autostart,
+    startedAt,
   };
 }

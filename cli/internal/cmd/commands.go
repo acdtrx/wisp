@@ -73,6 +73,7 @@ var groups = []group{
 	{Section: "host", Title: "The whole host (start here)"},
 	{Word: "containers", Title: "Containers"},
 	{Word: "images", Title: "Images"},
+	{Word: "vms", Title: "VMs"},
 	{Word: "jobs", Title: "Jobs"},
 }
 
@@ -190,7 +191,7 @@ func commandTable() []*command {
 				"<name>.local with Local DNS on. A container that is not running has no address: its\n" +
 				"last one shows as old, as another machine may hold it now. A VM's address and name are\n" +
 				"its guest's, which only a guest with the QEMU guest agent tells. \"wisp containers show\"\n" +
-				"prints a container in full.",
+				"and \"wisp vms show\" print one in full.",
 			Flags:   []flagDef{jsonFlag},
 			Example: "wisp overview\nwisp overview --json",
 			run:     runOverview,
@@ -382,6 +383,28 @@ func commandTable() []*command {
 			Flags:   []flagDef{{Name: "no-wait", Usage: "Print the import's job id and end once the archive is sent."}, jobJSONFlag},
 			Example: "wisp images push ./myapp.tar\ndocker save myapp:v1 | wisp images push -",
 			run:     runImagesPush,
+		},
+		{
+			Path: "vms list", MaxArgs: 0,
+			Summary: "List the VMs",
+			About: "Lists every VM: its name, its state, its vCPUs, its memory and its profile (what it was\n" +
+				"made as: linux, windows-11 or other), and whether it waits for a restart: a saved\n" +
+				"change, or a QEMU updated since it started. VMs are read, never changed, from the CLI.",
+			Flags:   []flagDef{jsonFlag},
+			Example: "wisp vms list",
+			run:     runVMsList,
+		},
+		{
+			Path: "vms show", Usage: "<name>", MinArgs: 1, MaxArgs: 1,
+			Summary: "Print everything about a VM",
+			About: "Prints a VM's state and, while it runs, how long it has been up and its guest's name and\n" +
+				"address, which only a guest with the QEMU guest agent tells (they may be 30 s old); then\n" +
+				"its settings: profile, CPU, memory, firmware, machine, boot order, autostart, each disk\n" +
+				"with its size and each network card with its bridge and MAC. VMs are read, never\n" +
+				"changed, from the CLI.",
+			Flags:   []flagDef{jsonFlag},
+			Example: "wisp vms show ubuntu",
+			run:     runVMsShow,
 		},
 		{
 			Path: "jobs list", MaxArgs: 0,

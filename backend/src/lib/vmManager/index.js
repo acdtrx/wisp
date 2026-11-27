@@ -19,6 +19,7 @@ export const listHostFirmware = impl.listHostFirmware;
 
 export const listVMs = impl.listVMs;
 export const getVMConfig = impl.getVMConfig;
+export const getVMDetail = impl.getVMDetail;
 export const findVMsUsingImage = impl.findVMsUsingImage;
 export const subscribeVMListChange = impl.subscribeVMListChange;
 export const subscribeVMChange = impl.subscribeVMChange;

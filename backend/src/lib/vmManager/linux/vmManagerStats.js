@@ -14,8 +14,11 @@ import {
   detachAgentSubscription,
 } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
-import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK, isShutOff } from './libvirtConstants.js';
 import {
+  STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VIR_DOMAIN_STATE_RUNNING, VM_STATS_MASK, isShutOff,
+} from './libvirtConstants.js';
+import {
+  getVMConfig,
   subscribeVMListChange,
   getCachedStaleBinary,
   getCachedVcpus,
@@ -74,11 +77,13 @@ export async function getGuestHostnameFromIface(iface) {
 }
 
 /**
- * Per-VM guest-agent info cache. qemu-ga `InterfaceAddresses` and `GetHostname` are
- * expensive (libvirtd → virtio-serial → guest agent process inside the VM) and the
- * data they return rarely changes — hostname is set at boot, IP changes on DHCP
- * renewal (typically hours). The per-VM stats SSE refreshes every 5 s but we only
- * hit the agent every GUEST_INFO_TTL_MS, so 5 in 6 ticks read straight from cache.
+ * Per-VM guest-agent info cache, the one every reader of the guest's address and
+ * name goes through (the stats stream, the VM read, the deployment overview).
+ * qemu-ga `InterfaceAddresses` and `GetHostname` are expensive (libvirtd →
+ * virtio-serial → guest agent process inside the VM) and the data they return
+ * rarely changes — hostname is set at boot, IP changes on DHCP renewal
+ * (typically hours). The per-VM stats SSE refreshes every 5 s but we only hit
+ * the agent every GUEST_INFO_TTL_MS, so 5 in 6 ticks read straight from cache.
  *
  * Invalidation happens on three boundaries: cached state turns non-running (stop /
  * start cycles re-fetch on the next running tick), libvirt AgentLifecycle fires
@@ -91,6 +96,23 @@ const GUEST_INFO_TTL_MS = 30_000;
 
 function invalidateGuestInfo(name) {
   guestInfoCache.delete(name);
+}
+
+/**
+ * The guest's `{ ip, hostname }` from the cache, or asked of its agent when the
+ * cache holds none younger than GUEST_INFO_TTL_MS. Either is null when the
+ * agent does not answer: the two helpers swallow its errors.
+ */
+async function readGuestInfo(name, agentIface) {
+  const now = Date.now();
+  const cached = guestInfoCache.get(name);
+  if (cached && (now - cached.fetchedAt) < GUEST_INFO_TTL_MS) return { ip: cached.ip, hostname: cached.hostname };
+  const [ip, hostname] = await Promise.all([
+    getGuestPrimaryAddressFromIface(agentIface),
+    getGuestHostnameFromIface(agentIface),
+  ]);
+  guestInfoCache.set(name, { ip, hostname, fetchedAt: now });
+  return { ip, hostname };
 }
 
 // AgentLifecycle on either edge (connect or disconnect) means our cached probe
@@ -138,21 +160,31 @@ async function listenToRunningAgents(list) {
 subscribeVMListChange((list) => { listenToRunningAgents(list); });
 
 /**
- * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
- * Returns `{ ip, hostname }` with either field possibly null. Exposed on the
- * vmManager facade so glue (the deployment overview, MCP's get_vm) can read
- * current network state without touching libvirt ifaces. Either field is null
- * when the agent is not configured or not responding; a VM that cannot be
- * looked up throws. `domainPath` (a VM list row's) saves the lookup by name.
+ * A running VM's guest-agent IP + hostname, through the cache: `{ ip, hostname }`,
+ * either field null when the agent is not configured or not responding; a VM
+ * that cannot be looked up throws. `domainPath` (a VM list row's) saves the
+ * lookup by name.
  */
 export async function getGuestNetwork(name, { domainPath } = {}) {
-  const path = domainPath ?? await resolveDomain(name);
+  const path = domainPath ?? getCachedDomainPath(name) ?? await resolveDomain(name);
   const { agentIface } = await getDomainObjAndIface(path);
-  const [ip, hostname] = await Promise.all([
-    getGuestPrimaryAddressFromIface(agentIface),
-    getGuestHostnameFromIface(agentIface),
-  ]);
-  return { ip, hostname };
+  return readGuestInfo(name, agentIface);
+}
+
+/**
+ * The VM read (`GET /api/vms/:name`, MCP's get_vm): the saved configuration
+ * and state, and `guestNetwork`, the guest's `{ ip, hostname }`. The guest is
+ * asked only while the VM runs with the agent configured, so a VM that is off
+ * or has no agent reads as fast as its configuration; a guest that does not
+ * answer reads as nulls, never as a failed read.
+ */
+export async function getVMDetail(name) {
+  const { _hostdevs, ...config } = await getVMConfig(name);
+  if (config.stateCode !== VIR_DOMAIN_STATE_RUNNING || !config.guestAgent) {
+    if (isShutOff(config.stateCode)) invalidateGuestInfo(name);
+    return { ...config, guestNetwork: { ip: null, hostname: null } };
+  }
+  return { ...config, guestNetwork: await getGuestNetwork(name) };
 }
 
 function offlineStats(stateCode) {
@@ -241,17 +273,7 @@ export async function getVMStats(name) {
   let guestHostname = null;
   let guestAgent = null; // null = not configured in domain XML
   if (getCachedGuestAgent(name)) {
-    const cached = guestInfoCache.get(name);
-    if (cached && (now - cached.fetchedAt) < GUEST_INFO_TTL_MS) {
-      guestIp = cached.ip;
-      guestHostname = cached.hostname;
-    } else {
-      [guestIp, guestHostname] = await Promise.all([
-        getGuestPrimaryAddressFromIface(agentIface),
-        getGuestHostnameFromIface(agentIface),
-      ]);
-      guestInfoCache.set(name, { ip: guestIp, hostname: guestHostname, fetchedAt: now });
-    }
+    ({ ip: guestIp, hostname: guestHostname } = await readGuestInfo(name, agentIface));
     // Treat any successful response as "agent connected." Both helpers swallow
     // their own errors and return null when qemu-ga isn't responding.
     guestAgent = { connected: !!(guestIp || guestHostname) };

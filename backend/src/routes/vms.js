@@ -1,6 +1,6 @@
 import {
   listVMs,
-  getVMConfig,
+  getVMDetail,
   getVMXML,
   getVMStats,
   getVMUSBDevices,
@@ -87,7 +87,7 @@ const vmListItemSchema = {
   additionalProperties: false,
 };
 
-/** GET /vms/:name: the VM's saved configuration (its inactive domain XML) and its state. */
+/** GET /vms/:name: the VM's saved configuration (its inactive domain XML), its state and its guest's network. */
 const vmDetailSchema = {
   type: 'object',
   properties: {
@@ -169,6 +169,12 @@ const vmDetailSchema = {
     virtioRng: { type: 'boolean' },
     iconId: { type: ['string', 'null'] },
     pendingRestart: pendingRestartSchema,
+    startedAt: { type: ['number', 'null'] },
+    guestNetwork: {
+      type: 'object',
+      properties: { ip: { type: ['string', 'null'] }, hostname: { type: ['string', 'null'] } },
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 };
@@ -269,16 +275,14 @@ export default async function vmsRoutes(fastify) {
     },
   });
 
-  // GET /vms/:name — full VM config
+  // GET /vms/:name — the VM read, MCP's get_vm's body too
   fastify.get('/vms/:name', {
     config: { auth: 'read' },
     schema: {
       params: vmParamsSchema(),
       response: { 200: vmDetailSchema },
     },
-    handler: async (request) => {
-      return await getVMConfig(request.params.name);
-    },
+    handler: async (request) => getVMDetail(request.params.name),
   });
 
   // DELETE /vms/:name — delete VM

@@ -1,7 +1,7 @@
 {
   "route": "GET /api/vms/:name",
   "status": 200,
-  "note": "A domain whose XML leaves arch, machine, CPU mode, topology and graphics unsaid; a disk with no slot, bus or source.",
+  "note": "A domain whose XML leaves arch, machine, CPU mode, topology and graphics unsaid; a disk with no slot, bus or source. Running, its guest agent silent: the guest's network is nulls.",
   "body": {
     "_hostdevs": [],
     "arch": null,
@@ -80,6 +80,11 @@
     "videoModel": "virtio",
     "virtioRng": true,
     "vtpm": false,
-    "profile": null
+    "profile": null,
+    "startedAt": 1768392000000,
+    "guestNetwork": {
+      "ip": null,
+      "hostname": null
+    }
   }
 }

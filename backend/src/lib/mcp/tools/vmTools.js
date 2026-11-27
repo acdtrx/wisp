@@ -1,4 +1,4 @@
-import { getVMConfig, getGuestNetwork } from '../../vmManager/index.js';
+import { getVMDetail } from '../../vmManager/index.js';
 import { vmNameSchema } from '../../validation.js';
 
 export const vmTools = [
@@ -7,7 +7,7 @@ export const vmTools = [
     title: 'VM detail',
     description:
       'Full configuration and state of one virtual machine: its profile (what it was made as: linux, windows-11 or other), vCPUs, memory, disks, NICs, firmware, ' +
-      'plus the guest network (IP/hostname via qemu-guest-agent, null when the agent is absent).',
+      'startedAt (epoch ms, null while off), plus the guest network (IP/hostname via qemu-guest-agent, up to 30 s old; null while off or without the agent).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -17,15 +17,6 @@ export const vmTools = [
       additionalProperties: false,
     },
     scope: 'read',
-    handler: async ({ name }) => {
-      const config = await getVMConfig(name);
-      let guestNetwork = { ip: null, hostname: null };
-      try {
-        guestNetwork = await getGuestNetwork(name);
-      } catch {
-        /* stopped VM or no guest agent — network unknown */
-      }
-      return { ...config, guestNetwork };
-    },
+    handler: ({ name }) => getVMDetail(name),
   },
 ];

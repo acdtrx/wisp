@@ -52,7 +52,7 @@ export {
 
 export { subscribeVMChange } from './vmManagerChange.js';
 
-export { getGuestNetwork } from './vmManagerStats.js';
+export { getGuestNetwork, getVMDetail } from './vmManagerStats.js';
 
 export {
   assertVMState, startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM, subscribeVMStopped,

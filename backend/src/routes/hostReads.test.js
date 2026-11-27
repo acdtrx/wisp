@@ -14,6 +14,8 @@ import path from 'node:path';
 
 import Fastify from 'fastify';
 
+import { createAppError } from '../lib/appErrors.js';
+
 const READ_TOKEN = 'wisp_read_host-reads-test-token';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'wisp-host-reads-test-'));
@@ -28,11 +30,21 @@ process.env.WISP_CONFIG_PATH = path.join(dir, 'wisp-config.json');
 
 const fixture = (file) => JSON.parse(readFileSync(new URL(`./fixtures/responses/${file}`, import.meta.url), 'utf8')).body;
 const OVERVIEW = fixture('hand-overview.json');
+const VM = fixture('hand-vm-detail-running.json');
 
 const mockModule = (file, exports) => mock.module(new URL(file, import.meta.url).href, { exports });
 mockModule('../lib/deploymentOverview.js', {
   gatherDeployment: async () => { throw new Error('not gathered in this test'); },
   buildDeploymentOverview: async () => structuredClone(OVERVIEW),
+});
+// The VM manager as it is, but for the VM read.
+const vmManager = await import('../lib/vmManager/index.js');
+mockModule('../lib/vmManager/index.js', {
+  ...vmManager,
+  getVMDetail: async (name) => {
+    if (name !== VM.name) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
+    return structuredClone(VM);
+  },
 });
 
 let app;
@@ -65,6 +77,15 @@ test('GET /api/overview answers the overview to a read token, and get_deployment
   const { rest, mcp } = await routeAndTool('/api/overview', 'get_deployment_overview');
   assert.deepEqual(rest, OVERVIEW);
   assert.deepEqual(mcp, OVERVIEW);
+});
+
+test('GET /api/vms/:name answers the VM read to a read token, and get_vm the same body', async () => {
+  const { rest, mcp } = await routeAndTool(`/api/vms/${VM.name}`, 'get_vm', { name: VM.name });
+  assert.deepEqual(rest, VM);
+  assert.deepEqual(mcp, VM);
+  const gone = await app.inject({ method: 'GET', url: '/api/vms/gone', headers: asRead });
+  assert.equal(gone.statusCode, 404);
+  assert.equal(gone.json().error, 'VM_NOT_FOUND');
 });
 
 test('GET /api/overview with no token is 401', async () => {

@@ -1,0 +1,90 @@
+{
+  "route": "GET /api/vms/:name",
+  "status": 200,
+  "note": "A running VM whose guest agent answers: when it started, and its guest's address and name.",
+  "body": {
+    "arch": "x86_64",
+    "autostart": false,
+    "bootMenu": false,
+    "bootOrder": [
+      "hd",
+      "cdrom"
+    ],
+    "cpuFeatures": [],
+    "cpuMode": "host-passthrough",
+    "cpuTopology": {
+      "cores": 2,
+      "dies": 1,
+      "sockets": 1,
+      "threads": 1
+    },
+    "disks": [
+      {
+        "bus": "virtio",
+        "device": "disk",
+        "driverType": "qcow2",
+        "readonly": false,
+        "sizeGiB": 32,
+        "slot": "sda",
+        "source": "/var/lib/wisp/vms/vm-a/disk0.qcow2"
+      },
+      {
+        "bus": "sata",
+        "device": "cdrom",
+        "driverType": "raw",
+        "readonly": true,
+        "slot": "sdc",
+        "source": null
+      },
+      {
+        "bus": "sata",
+        "device": "cdrom",
+        "driverType": "raw",
+        "readonly": true,
+        "slot": "sdd",
+        "source": null
+      }
+    ],
+    "features": {
+      "hyperv": false
+    },
+    "firmware": "uefi",
+    "graphics": {
+      "autoport": "yes",
+      "listen": "127.0.0.1",
+      "port": -1,
+      "type": "vnc"
+    },
+    "guestAgent": true,
+    "iconId": null,
+    "machineType": "pc-q35-9.2",
+    "memBalloon": true,
+    "memoryMiB": 8192,
+    "name": "vm-a",
+    "nestedVirt": false,
+    "nics": [
+      {
+        "mac": "52:54:00:00:00:01",
+        "model": "virtio",
+        "source": "br0",
+        "target": null,
+        "type": "bridge"
+      }
+    ],
+    "osType": "hvm",
+    "pendingRestart": null,
+    "state": "running",
+    "stateCode": 1,
+    "uuid": "00000000-0000-4000-8000-000000000001",
+    "vcpus": 2,
+    "videoModel": "virtio",
+    "virtioRng": true,
+    "vtpm": false,
+    "profile": "linux",
+    "startedAt": 1768392000000,
+    "guestNetwork": {
+      "ip": "192.168.1.10",
+      "hostname": "vm-a"
+    }
+  }
+}
