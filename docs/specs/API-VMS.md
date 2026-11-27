@@ -175,7 +175,8 @@ Immediate force stop (destroy).
 ### POST /api/vms/:name/reboot · `agent`
 
 - **204:** reboot requested
-- **409:** `VM_BUSY` — as for stop
+- **404:** `VM_NOT_FOUND`
+- **409:** `VM_NOT_RUNNING` — any state but running; `VM_BUSY` — as for stop
 
 ### POST /api/vms/:name/suspend · `admin`
 
