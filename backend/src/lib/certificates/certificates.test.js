@@ -177,7 +177,9 @@ function authority(url, init) {
     const text = execFileSync('openssl', ['req', '-inform', 'DER', '-noout', '-text', '-verify'], { input: csr, stdio: ['pipe', 'pipe', 'ignore'] }).toString();
     assert.match(text, /DNS:example\.com, DNS:\*\.example\.com|DNS:home\.example\.com, DNS:\*\.home\.example\.com/);
     world.cert = execFileSync('openssl', [
-      'x509', '-req', '-inform', 'DER', '-in', '/dev/stdin', '-CA', path.join(dir, 'ca.pem'), '-CAkey', path.join(dir, 'ca.key'),
+      // The request comes on standard input, openssl's default: a child cannot open
+      // /dev/stdin on Linux, where its input is a socket.
+      'x509', '-req', '-inform', 'DER', '-CA', path.join(dir, 'ca.pem'), '-CAkey', path.join(dir, 'ca.key'),
       '-days', '90', '-copy_extensions', 'copy',
     ], { input: csr, stdio: ['pipe', 'pipe', 'ignore'] }).toString();
     world.order.status = 'processing';

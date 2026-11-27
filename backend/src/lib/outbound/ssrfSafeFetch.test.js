@@ -12,8 +12,11 @@ import { after, before, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import * as undici from 'undici';
 
@@ -99,7 +102,16 @@ before(async () => {
 
   const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const key = privateKey.export({ type: 'pkcs8', format: 'pem' });
-  const cert = execFileSync('openssl', ['req', '-new', '-x509', '-key', '/dev/stdin', '-subj', '/CN=stub.test', '-days', '1'], { input: key });
+  // The key goes to openssl in a file: a child cannot open /dev/stdin on Linux, where its
+  // input is a socket.
+  const dir = mkdtempSync(path.join(tmpdir(), 'wisp-ssrf-test-'));
+  let cert;
+  try {
+    writeFileSync(path.join(dir, 'key.pem'), key, { mode: 0o600 });
+    cert = execFileSync('openssl', ['req', '-new', '-x509', '-key', path.join(dir, 'key.pem'), '-subj', '/CN=stub.test', '-days', '1']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
   tlsServer = createTlsServer({ key, cert }, (req, res) => {
     res.writeHead(302, { location: `http://stub.test:${port}/slow` });
     res.end();
@@ -109,9 +121,10 @@ before(async () => {
 });
 
 after(async () => {
-  server.closeAllConnections();
-  tlsServer.closeAllConnections();
-  await Promise.all([server, tlsServer].map((s) => new Promise((resolve) => s.close(resolve))));
+  // A setup that failed part-way leaves only what it started: close that, so the run ends.
+  const started = [server, tlsServer].filter(Boolean);
+  for (const s of started) s.closeAllConnections();
+  await Promise.all(started.map((s) => new Promise((resolve) => s.close(resolve))));
 });
 
 test('each hop closes its Agent, and the last closes only after the body is read, in full', async () => {
