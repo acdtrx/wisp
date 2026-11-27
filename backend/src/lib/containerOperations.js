@@ -31,6 +31,7 @@ import {
   deleteContainer,
   renameContainer,
   updateContainerConfig,
+  validateEnvPatch,
   validateContainerMounts,
   addContainerMount,
   updateContainerMount,
@@ -144,23 +145,37 @@ export function startContainerCreateJob({ spec, log }) {
 /** The deploy's settings, applied as a configuration update after the create. */
 const DEPLOY_SETTINGS = ['command', 'restartPolicy', 'autostart', 'autoBackup', 'localDns', 'cpuLimit', 'memoryLimitMiB'];
 
-/** The deploy's env in the create's shape: each `secretEnv` value stored write-only. */
-function deployEnv(env, secretEnv) {
-  const out = {};
-  for (const [key, value] of Object.entries(env ?? {})) out[key] = { value };
-  for (const [key, value] of Object.entries(secretEnv ?? {})) out[key] = { value, secret: true };
-  return out;
+/**
+ * The deploy's env as an env change, each `secretEnv` value stored write-only,
+ * checked as a PATCH's is (validateEnvPatch). A name given twice — in `env`
+ * and `secretEnv`, or as two keys that trim to it — is refused rather than
+ * one silently winning.
+ */
+function deployEnvPatch(env = {}, secretEnv = {}) {
+  const patch = {};
+  const givenIn = {};
+  for (const [source, values, secret] of [['env', env, false], ['secretEnv', secretEnv, true]]) {
+    for (const [key, value] of Object.entries(values)) {
+      const name = key.trim();
+      if (name && givenIn[name]) {
+        throw createAppError('CONFIG_ERROR', `Env var "${name}" is given twice (in ${givenIn[name]} and ${source}): give it once`);
+      }
+      givenIn[name] = source;
+      patch[name || key] = secret ? { value, secret: true } : { value };
+    }
+  }
+  validateEnvPatch(patch);
+  return patch;
 }
 
 /**
  * Deploy a container (`POST /api/containers/deploy`, MCP `deploy_container`):
- * create a generic one from `spec.image` with its env, apply the settings as a
+ * create a generic one from `spec.image`, apply its env and settings as one
  * configuration update — its follow-ups included — add `spec.mounts` one by
- * one as the mount route adds one (checked before the job, as a list), and
- * start it unless `spec.start` is false, as one job holding the new name's
- * lock. Its `.local`
- * name is published once it runs, by the network-change event, as for any
- * start. A failure after the create says the container now exists, stopped,
+ * one as the mount route adds one, and start it unless `spec.start` is false,
+ * as one job holding the new name's lock. The env and the mounts are checked
+ * before the job, so their refusals answer at once. Its `.local` name is
+ * published once it runs, by the network-change event, as for any start. A failure after the create says the container now exists, stopped,
  * and keeps the failure's code (INTERNAL_ERROR for one without a code from the
  * table). `done`: the container's config, secrets masked.
  */
@@ -173,11 +188,13 @@ export function startContainerDeployJob({ spec, log }) {
     subject: container(name),
     check: async () => {
       await assertContainerNameAvailable(name);
+      const envPatch = deployEnvPatch(spec.env, spec.secretEnv);
+      if (Object.keys(envPatch).length > 0) changes.envPatch = envPatch;
       validateContainerMounts(mounts);
     },
     log,
     run: async (report) => {
-      await createContainer({ name, image: spec.image.trim(), env: deployEnv(spec.env, spec.secretEnv) }, report);
+      await createContainer({ name, image: spec.image.trim() }, report);
       let failed = 'its settings could not be applied; it exists, stopped: fix them, then start it';
       try {
         await applyContainerConfigChanges({ name, changes, log });

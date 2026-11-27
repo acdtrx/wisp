@@ -30,7 +30,7 @@ const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).h
 mockModule('./containerManager/index.js', [
   'getContainerDir', 'assertContainerState', 'assertContainerNameAvailable', 'listContainers', 'getContainerConfig',
   'createContainer', 'startContainer', 'stopContainer', 'restartContainer', 'killContainer', 'deleteContainer',
-  'renameContainer', 'updateContainerConfig', 'validateContainerMounts', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
+  'renameContainer', 'updateContainerConfig', 'validateEnvPatch', 'validateContainerMounts', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
   'addContainerService', 'updateContainerService', 'removeContainerService', 'planMountFileUpload',
   'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
   'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
@@ -204,9 +204,10 @@ test('a deploy creates with the env, applies the settings and the command as one
   assert.deepEqual(readJob(jobId).result, { name: 'd', state: 'running', masked: true });
   const manager = calls.filter(([name]) => ['createContainer', 'updateContainerConfig', 'startContainer'].includes(name));
   assert.deepEqual(manager.map(([name, ...args]) => [name, ...args.filter((a) => typeof a !== 'function')]), [
-    ['createContainer', { name: 'd', image: 'nginx:1.27', env: { A: { value: '1' }, S: { value: 'hush', secret: true } } }],
+    ['createContainer', { name: 'd', image: 'nginx:1.27' }],
     ['updateContainerConfig', 'd', {
       command: ['nginx', '-g', 'daemon off;'], restartPolicy: 'always', autostart: true, cpuLimit: 0.5, memoryLimitMiB: 128,
+      envPatch: { A: { value: '1' }, S: { value: 'hush', secret: true } },
     }],
     ['startContainer', 'd'],
   ]);
@@ -245,6 +246,26 @@ test('a deploy whose mount fails says the container exists, stopped, and starts 
   assert.equal(readJob(jobId).error, 'INVALID_CONTAINER_MOUNTS');
   assert.match(readJob(jobId).detail, /^Container "d" was created but a mount could not be made; it exists, stopped/);
   assert.equal(names().includes('startContainer'), false);
+});
+
+test('a deploy\'s env is checked as a PATCH\'s, before any job: a name given twice is refused, not made secret', async () => {
+  impl.validateEnvPatch = (patch) => {
+    if (Object.keys(patch).some((key) => !key.trim())) throw createAppError('CONFIG_ERROR', 'envPatch keys must be non-empty strings');
+  };
+  const jobsBefore = listJobs().length;
+  for (const [env, secretEnv, detail] of [
+    [{ '': 'x' }, {}, 'envPatch keys must be non-empty strings'],
+    [{ A: '1' }, { A: '2' }, 'Env var "A" is given twice (in env and secretEnv): give it once'],
+    [{ A: '1', ' A ': '2' }, {}, 'Env var "A" is given twice (in env and env): give it once'],
+  ]) {
+    await assert.rejects(
+      startContainerDeployJob({ spec: { name: 'd', image: 'x', env, secretEnv }, log }),
+      (err) => err.code === 'CONFIG_ERROR' && err.message === detail,
+    );
+  }
+  assert.equal(listJobs().length, jobsBefore);
+  assert.equal(names().includes('createContainer'), false);
+  assertUnlocked('d');
 });
 
 test('a deploy with start false leaves the container defined and stopped', async () => {

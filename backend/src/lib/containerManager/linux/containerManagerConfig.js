@@ -15,6 +15,7 @@ import { readContainerConfig, writeContainerConfig } from './containerManagerCon
 import { resolveContainerImageRef } from './containerManagerImages.js';
 import { RESTART_POLICIES } from './containerManagerRestartState.js';
 import { markPendingRestart, restartSignature } from './containerManagerPendingRestart.js';
+import { validateEnvPatch } from './containerEnvPatch.js';
 
 /**
  * Apply an envPatch delta to config.env (structured shape: { KEY: { value, secret? } }).
@@ -30,17 +31,12 @@ import { markPendingRestart, restartSignature } from './containerManagerPendingR
  *   - Adding a brand-new key with secret:true requires an explicit value.
  */
 function applyEnvPatch(config, envPatch) {
-  if (!envPatch || typeof envPatch !== 'object' || Array.isArray(envPatch)) {
-    throw containerError('CONFIG_ERROR', 'envPatch must be an object');
-  }
+  validateEnvPatch(envPatch);
   if (!config.env || typeof config.env !== 'object') config.env = {};
   let mutated = false;
 
   for (const [rawKey, entry] of Object.entries(envPatch)) {
-    const key = typeof rawKey === 'string' ? rawKey.trim() : '';
-    if (!key) {
-      throw containerError('CONFIG_ERROR', 'envPatch keys must be non-empty strings');
-    }
+    const key = rawKey.trim();
 
     if (entry === null) {
       if (key in config.env) {
@@ -48,16 +44,6 @@ function applyEnvPatch(config, envPatch) {
         mutated = true;
       }
       continue;
-    }
-
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      throw containerError('CONFIG_ERROR', `envPatch entry for "${key}" must be an object or null`);
-    }
-    if ('value' in entry && entry.value != null && typeof entry.value !== 'string') {
-      throw containerError('CONFIG_ERROR', `envPatch value for "${key}" must be a string`);
-    }
-    if ('secret' in entry && typeof entry.secret !== 'boolean') {
-      throw containerError('CONFIG_ERROR', `envPatch secret flag for "${key}" must be boolean`);
     }
 
     const prev = config.env[key];

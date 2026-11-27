@@ -19,6 +19,7 @@ export {
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from '../linux/containerManagerFileModes.js';
 export { validateMountSegmentName, validateSubPath } from '../linux/containerMountNames.js';
 export { isLocalImageRef } from '../linux/containerImageRef.js';
+export { validateEnvPatch } from '../linux/containerEnvPatch.js';
 
 
 export { containerError };

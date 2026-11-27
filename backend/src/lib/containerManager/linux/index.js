@@ -101,6 +101,7 @@ export {
 } from './containerManagerImageUpdates.js';
 
 export { updateContainerConfig } from './containerManagerConfig.js';
+export { validateEnvPatch } from './containerEnvPatch.js';
 export { setContainerPendingRestart } from './containerManagerPendingRestart.js';
 
 export {

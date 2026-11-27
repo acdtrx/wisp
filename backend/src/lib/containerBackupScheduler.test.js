@@ -24,7 +24,7 @@ const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).h
 mockModule('./containerManager/index.js', [
   'getContainerDir', 'assertContainerState', 'assertContainerNameAvailable', 'listContainers', 'getContainerConfig',
   'createContainer', 'startContainer', 'stopContainer', 'restartContainer', 'killContainer', 'deleteContainer',
-  'renameContainer', 'updateContainerConfig', 'validateContainerMounts', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
+  'renameContainer', 'updateContainerConfig', 'validateEnvPatch', 'validateContainerMounts', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
   'addContainerService', 'updateContainerService', 'removeContainerService', 'planMountFileUpload',
   'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
   'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
