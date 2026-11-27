@@ -25,9 +25,10 @@ Global flag, before the command:
 
 Every command:
   Flags and arguments may come in either order. Output is text, a table for a list and
-  labelled lines for one thing; with --json, the API's own JSON, unchanged. What a command
-  prints is on standard output; progress and errors are on standard error. An error is one
-  line, the API's code and its message (with --json, the API's error body).
+  labelled lines for one thing. What a command prints is on standard output; progress and
+  errors are on standard error. An error is one line, the API's code and its message.
+  The commands that print what the API sent take --json, which prints the API's own JSON
+  instead, unchanged, and an error as the API's error body.
   Exit codes: 0 done; 1 the request or the job failed; 2 the command line was wrong, and
   nothing was sent.
 
