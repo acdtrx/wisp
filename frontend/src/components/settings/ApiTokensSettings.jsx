@@ -21,16 +21,16 @@ import { cliInstallBase } from '../host/settingsForms.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens see everything ' +
-  'and change nothing; agent tokens also build, run and update containers; admin tokens can do everything ' +
-  'a token can. Tokens cannot open consoles, change the password, change SSO settings, or manage other ' +
-  'tokens. The token value is shown once at creation — only a hash is stored.';
+  'and change nothing; agent tokens also build, run and update containers, and start and stop VMs; admin ' +
+  'tokens can do everything a token can. Tokens cannot open consoles, change the password, change SSO ' +
+  'settings, or manage other tokens. The token value is shown once at creation — only a hash is stored.';
 
 const LABEL_MAX = 64;
 
 /* The three scopes, in their order, each with what it allows (docs/specs/AUTH.md, Scopes). */
 const SCOPES = [
   { value: 'read', label: 'Read-only', detail: 'See everything, change nothing.' },
-  { value: 'agent', label: 'Agent', detail: 'Build, run and update containers; no deletes, no VMs, no host.' },
+  { value: 'agent', label: 'Agent', detail: 'Build, run and update containers, start and stop VMs; no deletes, no VM or host changes.' },
   { value: 'admin', label: 'Admin', detail: 'Everything a token can do.' },
 ];
 
