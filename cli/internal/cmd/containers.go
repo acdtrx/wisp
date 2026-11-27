@@ -75,7 +75,7 @@ type containerDetail struct {
 	ImageDigest    string   `json:"imageDigest"`
 	ImagePulledAt  string   `json:"imagePulledAt"`
 	PID            *int     `json:"pid"`
-	Uptime         *float64 `json:"uptime"`
+	Uptime         *float64 `json:"uptime"` // milliseconds
 	MDNSHostname   *string  `json:"mdnsHostname"`
 	Env            map[string]struct {
 		Value  *string `json:"value"`
@@ -116,8 +116,14 @@ type containerDetail struct {
 	} `json:"metadata"`
 }
 
+// containerPath is the API path of a container's route, each segment escaped:
+// a name the user gives (the container's, a mount's) may hold any character.
 func containerPath(name string, rest ...string) string {
-	return "/api/containers/" + strings.Join(append([]string{url.PathEscape(name)}, rest...), "/")
+	segments := append([]string{name}, rest...)
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return "/api/containers/" + strings.Join(segments, "/")
 }
 
 func runContainersShow(ctx context.Context, c *call) error {
