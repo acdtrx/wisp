@@ -1,11 +1,13 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -285,6 +287,49 @@ func TestAnUploadWhoseSourceNeverSendsEndsAtTheBound(t *testing.T) {
 	})
 	var stalledErr *StalledError
 	if !errors.As(err, &stalledErr) || time.Since(start) > 5*time.Second {
+		t.Fatalf("got %v after %s", err, time.Since(start))
+	}
+}
+
+func TestAnEarlyRefusalEndsAnUploadWhoseSourceIsStalled(t *testing.T) {
+	// A Wisp that refuses on the request's headers, before reading the body,
+	// as Fastify's hooks do. Go's own test server answers only once the body
+	// is read, so this stand-in speaks HTTP by hand.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		br := bufio.NewReader(conn)
+		for line := ""; line != "\r\n"; {
+			if line, err = br.ReadString('\n'); err != nil {
+				return
+			}
+		}
+		body := `{"error":"CONTAINER_BUSY","detail":"busy"}`
+		fmt.Fprintf(conn, "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+		io.Copy(io.Discard, br)
+	}()
+	pr, pw, err := os.Pipe() // a source nothing is ever written to
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pw.Close()
+	defer pr.Close()
+	c := New("http://"+ln.Addr().String(), "t", "v").WithUploadIdle(time.Minute)
+	start := time.Now()
+	_, err = c.Upload(context.Background(), "/up", "f", func(ctx context.Context, w io.Writer) error {
+		_, err := io.Copy(w, term.SourceWithin(ctx, "the pipe", func() (io.ReadCloser, error) { return pr, nil }, time.Hour))
+		return err
+	})
+	var refused *Error
+	if !errors.As(err, &refused) || refused.Code != "CONTAINER_BUSY" || time.Since(start) > 5*time.Second {
 		t.Fatalf("got %v after %s", err, time.Since(start))
 	}
 }
