@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // errAnswered ends an upload's writing once the request has ended: the
@@ -55,23 +56,32 @@ func (c *Client) Upload(ctx context.Context, path, fileName string, write func(c
 	endWriting(errAnswered) // the writer ends now, whatever it waits on
 	pr.CloseWithError(errAnswered)
 	wg.Wait()
-	if errors.Is(context.Cause(ctx), errIdle) {
-		if res != nil {
-			res.Body.Close()
+	return uploadOutcome(u, c.uploadIdle, func() bool { return errors.Is(context.Cause(ctx), errIdle) }, res, ownErr, err)
+}
+
+// uploadOutcome is what an upload answers, first match: the Wisp's answer,
+// when one came, even as the bound ran out (unless its body was cut by
+// it); else the bound on its time without progress; its source's own
+// error; the request's.
+func uploadOutcome(u string, idle time.Duration, stalled func() bool, res *http.Response, ownErr, sendErr error) ([]byte, error) {
+	if res != nil {
+		defer res.Body.Close()
+		body, err := readAnswer(u, res)
+		var refused *Error
+		var notWisp *NotWispError
+		if err != nil && !errors.As(err, &refused) && !errors.As(err, &notWisp) && stalled() {
+			return nil, &StalledError{URL: u, After: idle, Upload: true} // the answer's body was cut by the bound
 		}
-		return nil, &StalledError{URL: u, After: c.uploadIdle, Upload: true}
+		return body, err
 	}
-	if ownErr != nil {
-		if res != nil {
-			res.Body.Close()
-		}
+	switch {
+	case stalled():
+		return nil, &StalledError{URL: u, After: idle, Upload: true}
+	case ownErr != nil:
 		return nil, ownErr
+	default:
+		return nil, sendErr
 	}
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	return readAnswer(u, res)
 }
 
 // idleWriter touches the watch on every write that went through.

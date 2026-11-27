@@ -333,3 +333,33 @@ func TestAnEarlyRefusalEndsAnUploadWhoseSourceIsStalled(t *testing.T) {
 		t.Fatalf("got %v after %s", err, time.Since(start))
 	}
 }
+
+func TestAnUploadSaysWhatHappenedInOrder(t *testing.T) {
+	answer := func(status int, body string) *http.Response {
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(status)
+		rec.WriteString(body)
+		return rec.Result()
+	}
+	stalled, moving := func() bool { return true }, func() bool { return false }
+	own, sent := errors.New("read app.tar: input/output error"), errors.New("reach http://w: connection reset")
+
+	// An answer that came wins over the bound running out in the same instant.
+	if body, err := uploadOutcome("http://w/up", time.Minute, stalled, answer(202, `{"jobId":"j"}`), nil, nil); err != nil || string(body) != `{"jobId":"j"}` {
+		t.Errorf("an answer and a stall: %q, %v", body, err)
+	}
+	var refused *Error
+	if _, err := uploadOutcome("http://w/up", time.Minute, stalled, answer(409, `{"error":"CONTAINER_BUSY","detail":"busy"}`), own, sent); !errors.As(err, &refused) {
+		t.Errorf("a refusal and a stall: %v", err)
+	}
+	var stalledErr *StalledError
+	if _, err := uploadOutcome("http://w/up", time.Minute, stalled, nil, own, sent); !errors.As(err, &stalledErr) || !stalledErr.Upload {
+		t.Errorf("no answer, the bound first: %v", err)
+	}
+	if _, err := uploadOutcome("http://w/up", time.Minute, moving, nil, own, sent); err != own {
+		t.Errorf("no answer, the source's error next: %v", err)
+	}
+	if _, err := uploadOutcome("http://w/up", time.Minute, moving, nil, nil, sent); err != sent {
+		t.Errorf("no answer, the request's last: %v", err)
+	}
+}
