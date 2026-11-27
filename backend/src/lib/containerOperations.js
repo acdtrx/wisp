@@ -13,7 +13,6 @@
  * assignment, its last backup attempt and its `.local` name — are
  * lib/workloadFollowUps.js's, the same as a VM's.
  */
-import { randomBytes } from 'node:crypto';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -84,6 +83,7 @@ import {
   titleForContainerMountDataDelete,
   titleForZipExtract,
 } from './jobs/index.js';
+import { atomicTmpName } from './base/index.js';
 import { tryAcquireContainerOperationLock, withContainerOperationLock } from './containerOperationLock.js';
 import { getHeldCertificate } from './hostCertificateStore.js';
 import { createAppError, isAppError, wrapAppError } from './appErrors.js';
@@ -582,10 +582,11 @@ export function writeContainerMountFile({ name, mountName, stage }) {
  * run extracts. So no rename, delete or edit lands between the staging and
  * the extract, and what the check throws is the request's answer, never a
  * failed job. The staging file goes when the extract ends, or with the check
- * that failed. `done`: `{ name, mount }`.
+ * that failed; it carries the atomic-write suffix, so one a crash leaves is
+ * removed at the next start (bootCleanup.js). `done`: `{ name, mount }`.
  */
 export function startContainerZipExtractJob({ name, mountName, stage, log }) {
-  const stagingPath = join(getContainerDir(name), `.wisp-upload-${randomBytes(8).toString('hex')}`);
+  const stagingPath = atomicTmpName(join(getContainerDir(name), '.wisp-upload'));
   let plan;
   return startJob({
     kind: JOB_KIND.CONTAINER_ZIP_EXTRACT,

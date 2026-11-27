@@ -8,8 +8,8 @@
  *
  * Conservative by design: only removes regular files matching the suffix
  * pattern produced by writeJsonAtomic (and by a file-mount upload's temp file
- * in a container's files/), never a name a mount is configured under. Never
- * touches user data.
+ * in a container's files/, and a zip upload's staging file in a container's
+ * folder), never a name a mount is configured under. Never touches user data.
  */
 import { readdir, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

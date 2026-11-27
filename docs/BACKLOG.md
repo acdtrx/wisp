@@ -373,11 +373,12 @@ can't reach it). The CLI would be the Darwin manager's one exec caller, which ne
 user's validation (CODING-RULES §7). **Revisit trigger:** the user wants Wisp to run
 containers on a Mac.
 
-**A zip upload's staging file is not removed at the next start.** The zip upload stages
-its archive as `.wisp-upload-<hex>` in the container's directory and removes it when the
-extract ends; a crash in between leaves it there, and the boot sweep removes only the
-atomic-write suffix (seen building the image archive upload, 2026-11-26). **Revisit
-trigger:** a container directory found holding a `.wisp-upload-` file.
+**A container that crash-loops reads stopped with a pid.** Seen on tini (2026-11-27): a
+container whose command failed at once, restarted by its policy, read `state: stopped`
+with a `pid` in `GET /api/containers/:name` between two attempts, and the CLI printed
+"State: stopped (pid 6141)". Not looked into: whether the pid is the exited task's, kept
+until the task is deleted, or the next attempt's, set before the state. **Revisit
+trigger:** the next change to the restart policy's code or to a container's state read.
 
 ## Backups
 
