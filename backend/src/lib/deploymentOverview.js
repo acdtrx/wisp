@@ -71,6 +71,11 @@ export async function gatherDeployment() {
   };
 }
 
+/** A stored container address without its mask (`192.168.1.20/24` → `192.168.1.20`), or null. */
+function bareAddress(ip) {
+  return ip ? ip.split('/')[0] : null;
+}
+
 /**
  * Project the aggregate into the body of `GET /api/overview`, which the MCP
  * `get_deployment_overview` tool returns too. The field set is the route's
@@ -85,13 +90,14 @@ export async function buildDeploymentOverview() {
     // memory — the lease may have been reassigned to another workload
     // by now, so never present it as a current `ip`.
     const running = summary.state === 'running';
+    const address = bareAddress(config.network?.ip);
     return {
       name: summary.name,
       state: summary.state,
       image: summary.image,
       updateAvailable: summary.updateAvailable === true,
-      ip: running ? config.network?.ip ?? null : null,
-      ...(running ? {} : { lastKnownIp: config.network?.ip ?? null }),
+      ip: running ? address : null,
+      ...(running ? {} : { lastKnownIp: address }),
       bridge: config.network?.interface ?? null,
       mdnsName: config.localDns ? `${summary.name}.local` : null,
       app: config.metadata?.app ?? null,

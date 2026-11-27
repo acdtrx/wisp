@@ -90,14 +90,6 @@ matters, or the two copies are found to differ.
 
 ## Networking: addresses, DHCP, mDNS, bridges
 
-**The overview's container addresses carry their mask.** `container.json` keeps
-`network.ip` with its mask (`10.79.1.250/24`, CONTAINERS.md), and `GET /api/overview`
-(and so MCP's `get_deployment_overview` and `wisp overview`) passes it on as a
-container's `ip` and `lastKnownIp`, where API-HOST.md's example shows a bare address;
-a VM's `ip` has none (seen on tini, 2026-11-27). **Revisit trigger:** an agent that
-uses the address as it is (`curl http://10.79.1.250/24/`), or the overview's next
-change.
-
 **Two containers of the same name on two Wisp hosts get the same address.** The backend
 passes the container's name as the CNI container ID, and the CNI `dhcp` plugin builds its
 DHCP client identity from that ID, the network's name (`wisp-bridge` on every host) and
