@@ -9,6 +9,10 @@
 - **Deploy and image update over REST** — `POST /api/containers/deploy` (create, settings, mounts and start as one job) and `POST /api/containers/:name/image-update`, the jobs MCP's `deploy_container` and `update_container_image` start; `deploy_container` takes a command and `start: false`.
 - **MCP's instructions say what the CLI adds** — settings, mounts, uploads and images, beyond the tools.
 
+### Bug Fixes
+- **An upload reaches a running container** — a zip upload empties the mount's folder and fills it, and a file upload is written into the mount's own file, as the editor's save is; the container read the old content until a restart.
+- **A deploy refuses an env name given twice** — in `env` and in `secretEnv`, where it silently became a secret; an empty name is refused too.
+
 ## 2026-11-26
 
 ### New Features
