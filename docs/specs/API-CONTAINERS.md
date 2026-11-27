@@ -48,7 +48,7 @@ Create a generic container on the default bridge, apply its settings and start i
 
 **Body:** `{ name, image, env?, secretEnv?, command?, mounts?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB?, start? }`. `env` and `secretEnv` map a name to its value, a `secretEnv` value stored write-only. `mounts` is a list of mounts, each as [`POST …/mounts`](#post-apicontainersnamemounts--agent) takes one, made before the start. The settings are `PATCH`'s, applied as a `PATCH` applies them. `start` defaults to `true`; `false` leaves the container defined and stopped. There is no `app`: the route creates generic containers, for every caller.
 
-**202:** `{ jobId, kind, title, subject }`; `done` result: the new container, as `GET /api/containers/:name` gives it, secrets masked. When the start fails, the container stays defined, stopped, and the job's error says so | **409:** `CONTAINER_EXISTS`, `CONTAINER_BUSY` | **400:** `VALIDATION_FAILED` | **422:** a mount's refusals, as `POST …/mounts` | **503:** `NO_CONTAINERD`
+**202:** `{ jobId, kind, title, subject }`; `done` result: the new container, as `GET /api/containers/:name` gives it, secrets masked. When the start fails, the container stays defined, stopped, and the job's error says so | **409:** `CONTAINER_EXISTS`, `CONTAINER_BUSY` | **400:** `VALIDATION_FAILED` | **422:** a mount's refusals, as `POST …/mounts`; `CONFIG_ERROR` for an env name that is empty, or given in both `env` and `secretEnv` | **503:** `NO_CONTAINERD`
 
 *An `agent` token:* `sourceId` and `subPath` in a mount.
 
@@ -279,13 +279,13 @@ The file part is consumed while iterating, never held across later parts (settle
 
 ### POST /api/containers/:name/mounts/:mountName/file · `agent`
 
-Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
+Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file in place, once the upload is whole: a running container reads the new content with no restart, as after a save from the editor.
 
 **204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **409:** `CONTAINER_BUSY` — the upload holds the lock from its first byte to the replace | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `agent`
 
-Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check, the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip. The upload and the extract hold the container's operation lock as one, from the upload's first byte to the end of the extract: the upload is received in the job's check, before the job exists.
+Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check, the extract is a [job](API.md#job-routes): it empties `files/<mountName>/` and extracts the zip into it. The folder itself is kept, so a running container sees the new content with no restart. The upload and the extract hold the container's operation lock as one, from the upload's first byte to the end of the extract: the upload is received in the job's check, before the job exists.
 
 **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` — another command holds the lock when the upload starts; while the upload and its extract run, other commands get it | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
 

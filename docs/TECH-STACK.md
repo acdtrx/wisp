@@ -116,9 +116,9 @@
 - **Its checks run in `npm run check`**: `gofmt -l` (any output fails), `go vet ./...`,
   staticcheck at a pinned version (`honnef.co/go/tools/cmd/staticcheck`, installed into
   a temporary folder for the run: a build tool, not a dependency of the module), both
-  for every platform the CLI ships for, and `go test ./...`: table tests, and
-  `net/http/httptest` for a stand-in Wisp. The check needs Go installed, and says so
-  when it is not.
+  for every platform the CLI ships for, and `go test -race ./...`: table tests, and
+  `net/http/httptest` for a stand-in Wisp. The check needs Go installed, and on Linux a
+  C compiler for the race detector, and says so when one is missing.
 - Contract: [specs/CLI.md](specs/CLI.md).
 
 ## Deployment

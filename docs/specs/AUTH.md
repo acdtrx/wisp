@@ -181,7 +181,7 @@ Token management, the consoles and sign-on stay out of every token's reach ([Den
 
 - The refusal is **403** `SCOPE_INSUFFICIENT`, its `detail` naming the key or the reason.
 - It comes after the request passed its schema (a malformed request is **400** first) and before anything is written or a job starts.
-- The body keys a route refuses are declared in its options, beside its level, and one hook enforces them; `npm run route-access` prints them with the level. A refusal that depends on what is stored (the mount's backing, the app's writable fields) is made by the operation, which is told the caller's scope.
+- The body keys a route refuses, a key of a list's items among them (a mount's `sourceId`), are declared in its options, beside its level, and one hook enforces them; `npm run route-access` prints them with the level. A refusal that depends on what is stored (the mount's backing, the app's writable fields) is made by the operation, which is told the caller's scope.
 
 **The scope is not a wall around the containers that exist.** An `agent` token may change the image, the command and the env of any container, one that runs as root or holds a device or a storage share included: what that container was given, the new image has.
 

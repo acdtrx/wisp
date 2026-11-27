@@ -140,7 +140,7 @@ env and mounts among them. There is no command group per part of a container.
 | `containers update <name> [--image <ref>]` | `POST /api/containers/:name/image-update` | Pulls the image again, or moves to another, and restarts a running container |
 | `containers start` / `stop` / `restart <name>` | the lifecycle routes | |
 | `containers logs <name>` | `GET /api/containers/:name/logs` | The newest run's last lines (`--lines`, default 100), then ends; `--follow` keeps printing new lines; `--run <id>` picks a run |
-| `containers upload <name> <mount> <path>` | `POST …/mounts/:mountName/file` or `…/zip` | A file goes to a file mount. A zip or a folder goes to a folder mount and **replaces its content**; a folder is zipped by the CLI as it is sent |
+| `containers upload <name> <mount> <path>` | `POST …/mounts/:mountName/file` or `…/zip`; for a file, `GET /api/containers/:name` first | A file goes to a file mount. A zip or a folder goes to a folder mount and **replaces its content**. A file is sent by the mount's kind, which the CLI reads first. A folder is zipped by the CLI as it is sent: a link to a file is sent as that file, a link to anything else is refused, and so is a folder with nothing in it |
 | `images list` | `GET /api/containers/images` | |
 | `images push <archive>` | `POST /api/containers/images/upload` | An archive file, or `-` for standard input (`docker save myapp:v1 \| wisp images push -`). Prints the `localhost/` name each image is stored under |
 | `jobs list` | `GET /api/jobs` | |
@@ -176,9 +176,11 @@ say otherwise.
 
 - **Flags and arguments** may come in either order.
 - **Output:** text by default, laid out for reading: a table for a list, labelled lines
-  for one thing. `--json` prints the API's own JSON instead, unchanged, for a script to
-  parse. What a command prints is on standard output; progress and errors are on
-  standard error.
+  for one thing. On a command that prints what the API sent, `--json` prints the API's
+  own JSON instead, unchanged, for a script to parse: a job's command prints the job's
+  result, or the job's ack with `--no-wait`. A command with no JSON to print takes no
+  `--json`: `containers set` and `containers logs` among them. What a command prints
+  is on standard output; progress and errors are on standard error.
 - **A command that starts a job waits for it**, printing the job's progress as it
   comes, and ends when the job does: with its result, or with its error. `--no-wait`
   prints the job's id and ends at once. An interrupt (Ctrl-C) ends the wait, never the

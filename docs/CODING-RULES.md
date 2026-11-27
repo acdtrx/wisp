@@ -285,9 +285,9 @@ For the CLI (`cli/`).
 - Pass `context.Context` as the first parameter of anything that does network I/O or may
   block; it is the cancellation primitive (§6).
 - Give every goroutine an owner that can stop it and waits for it; never fire and forget
-  a goroutine. The one exception: a read of standard input, which no platform lets
-  another goroutine interrupt everywhere. When its bound runs out the read is left
-  behind and the program ends with the error.
+  a goroutine. The one exception: a read of standard input or of a file the user named,
+  which no platform lets another goroutine interrupt everywhere. When its bound runs
+  out the read is left behind and the program ends with the error.
 - Keep package-level variables to constant-like data: lookup tables, sentinel errors,
   the build version. Pass mutable state in; `main` builds the graph.
 - Put platform-specific code behind **build-tagged files** (`x_windows.go` /
@@ -393,7 +393,7 @@ checks and the unit tests below for what they cover:
     platform behind it: timing, state and stream handling, rules. Platform code is
     verified by running it, below.
   - The CLI's Go checks (`scripts/check-go.mjs`): `gofmt`, `go vet` for every platform
-    the CLI ships for, staticcheck, and `go test` (`TECH-STACK.md`, The CLI).
+    the CLI ships for, staticcheck, and `go test -race` (`TECH-STACK.md`, The CLI).
 - Run the frontend build: it must pass.
 - Drive the change in the local dev stack where the platform supports it. The macOS dev
   environment runs stub managers (no libvirt/containerd): host-level pages verify locally,
