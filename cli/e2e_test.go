@@ -44,7 +44,7 @@ type e2eWisp struct {
 	version  string
 	token    string
 	requests atomic.Int32
-	binary   []byte
+	binary   atomic.Pointer[[]byte] // the download, or nil for none
 	// The deploy's body, and its job's progress (an e2eJob).
 	deployBody atomic.Value
 	job        atomic.Value
@@ -72,12 +72,13 @@ func newE2EWisp(t *testing.T, version, token string) *e2eWisp {
 			reply(200, map[string]any{"version": w.version, "platforms": []string{platform}})
 			return
 		case "/api/cli/wisp-" + platform:
-			if w.binary == nil {
+			binary := w.binary.Load()
+			if binary == nil {
 				reply(404, map[string]string{"error": "CLI_NOT_AVAILABLE", "detail": "none"})
 				return
 			}
 			rw.Header().Set("Content-Type", "application/octet-stream")
-			rw.Write(w.binary)
+			rw.Write(*binary)
 			return
 		}
 		if r.Header.Get("Authorization") != "Bearer "+w.token {
@@ -184,7 +185,7 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 	}
 	oldBin := buildWisp(t, t.TempDir(), "9.9.8-old")
 	wisp := newE2EWisp(t, e2eVersion, "wisp_read_e2e")
-	wisp.binary = newBytes
+	wisp.binary.Store(&newBytes)
 	env := append(homeEnv(t.TempDir()), "WISP_URL="+wisp.URL, "WISP_TOKEN=wisp_read_e2e")
 
 	got := runWisp(t, oldBin, env, "", "containers", "list")
@@ -192,7 +193,7 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 		t.Fatalf("across versions: %+v", got)
 	}
 	// A download that fails leaves the old binary, which still runs.
-	wisp.binary = nil
+	wisp.binary.Store(nil)
 	got = runWisp(t, oldBin, env, "", "update")
 	if got.code != 1 || !strings.Contains(got.stderr, "stays as it was") {
 		t.Fatalf("failed update: %+v", got)
@@ -207,7 +208,8 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 	}
 
 	// A 200 that is not the CLI (a portal's page) leaves it too.
-	wisp.binary = []byte("<html>Sign in to the Wi-Fi</html>")
+	portal := []byte("<html>Sign in to the Wi-Fi</html>")
+	wisp.binary.Store(&portal)
 	got = runWisp(t, oldBin, env, "", "update")
 	if got.code != 1 || !strings.Contains(got.stderr, "stays as it was") {
 		t.Fatalf("update from a portal: %+v", got)
@@ -216,7 +218,7 @@ func TestTheBuiltBinaryUpdatesItself(t *testing.T) {
 		t.Fatalf("after the portal: %+v", got)
 	}
 
-	wisp.binary = newBytes
+	wisp.binary.Store(&newBytes)
 	got = runWisp(t, oldBin, env, "", "update")
 	if got.code != 0 {
 		t.Fatalf("update: %+v", got)
@@ -251,14 +253,19 @@ func TestTheBuiltBinaryCreatesAContainerAndAnInterruptLeavesTheJob(t *testing.T)
 	wisp.job.Store(e2eJob{frames: []string{`{"step":"pulling"}`}, hangs: true})
 	c := exec.Command(bin, "containers", "create", "web", "--image", "nginx:1.27")
 	c.Env = env
-	var stderr lockedBuffer
+	stderr := lockedBuffer{changed: make(chan struct{}, 1)}
 	c.Stderr = &stderr
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for !strings.Contains(stderr.String(), "pulling") && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+	deadline := time.After(10 * time.Second)
+	for !strings.Contains(stderr.String(), "pulling") {
+		select {
+		case <-stderr.changed:
+		case <-deadline:
+			c.Process.Kill()
+			t.Fatalf("the CLI never printed its progress: %q", stderr.String())
+		}
 	}
 	if err := c.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)
@@ -270,16 +277,23 @@ func TestTheBuiltBinaryCreatesAContainerAndAnInterruptLeavesTheJob(t *testing.T)
 	}
 }
 
-// lockedBuffer is a buffer the test reads while the process writes it.
+// lockedBuffer is a buffer the test reads while the process writes it; each
+// write signals changed, so the test waits for output without polling.
 type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	changed chan struct{}
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	n, err := b.buf.Write(p)
+	select {
+	case b.changed <- struct{}{}:
+	default: // a signal is pending already: the waiter reads everything once woken
+	}
+	return n, err
 }
 
 func (b *lockedBuffer) String() string {
