@@ -185,6 +185,12 @@ func (c *Client) Send(ctx context.Context, method, path string, v any) ([]byte, 
 }
 
 func (c *Client) request(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, error) {
+	answer, _, err := c.exchange(ctx, method, path, query, body)
+	return answer, err
+}
+
+// exchange is request, with the answer's headers.
+func (c *Client) exchange(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, http.Header, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
 	var reader io.Reader
@@ -195,12 +201,13 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	res, err := c.send(ctx, method, path, query, "application/json", reader, contentType)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("%s did not answer within %s", c.url(path, query), c.requestTimeout)
+			return nil, nil, fmt.Errorf("%s did not answer within %s", c.url(path, query), c.requestTimeout)
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	defer res.Body.Close()
-	return readAnswer(c.url(path, query), res)
+	answer, err := readAnswer(c.url(path, query), res)
+	return answer, res.Header, err
 }
 
 // readAnswer reads a short answer's body: the 2xx body, or the refusal.
@@ -228,6 +235,23 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, v a
 		return nil, &NotWispError{URL: c.url(path, query), Reason: "its answer is not the JSON the route sends"}
 	}
 	return body, nil
+}
+
+// GetJSONDated is GetJSON, and the time the Wisp answered at, from its Date
+// header: the zero time when it sent none that parses.
+func (c *Client) GetJSONDated(ctx context.Context, path string, query url.Values, v any) ([]byte, time.Time, error) {
+	body, header, err := c.exchange(ctx, http.MethodGet, path, query, nil)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		return nil, time.Time{}, &NotWispError{URL: c.url(path, query), Reason: "its answer is not the JSON the route sends"}
+	}
+	at, err := http.ParseTime(header.Get("Date"))
+	if err != nil {
+		at = time.Time{}
+	}
+	return body, at, nil
 }
 
 // refusal turns a non-2xx answer into an *Error when it carries Wisp's error

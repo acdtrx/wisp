@@ -103,7 +103,7 @@ func runVMsShow(ctx context.Context, c *call) error {
 		return err
 	}
 	var d vmDetail
-	body, err := client.GetJSON(ctx, "/api/vms/"+url.PathEscape(c.args[0]), nil, &d)
+	body, answeredAt, err := client.GetJSONDated(ctx, "/api/vms/"+url.PathEscape(c.args[0]), nil, &d)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,12 @@ func runVMsShow(ctx context.Context, c *call) error {
 		printJSON(c.env.Stdout, body)
 		return nil
 	}
-	printVM(c, &d, time.Now())
+	// The uptime is the host's: startedAt against the host's clock, as its
+	// answer's Date says, so a client whose clock is off still prints it right.
+	if answeredAt.IsZero() {
+		answeredAt = time.Now()
+	}
+	printVM(c, &d, answeredAt)
 	return nil
 }
 
@@ -121,7 +126,8 @@ func printVM(c *call, d *vmDetail, now time.Time) {
 	l.line("Name", d.Name)
 	state := d.State
 	if d.StartedAt != nil {
-		state += " (up " + durationText(float64(now.UnixMilli())-*d.StartedAt) + ")"
+		// Date has whole seconds: a VM started within the second reads as up 0s.
+		state += " (up " + durationText(max(0, float64(now.UnixMilli())-*d.StartedAt)) + ")"
 	}
 	l.line("State", state)
 	if d.State == "running" {

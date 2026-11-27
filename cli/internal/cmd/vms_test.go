@@ -120,3 +120,44 @@ func TestAnUnknownVMIsTheWispsRefusal(t *testing.T) {
 		t.Fatalf("stderr %q stdout %q", r.stderr.String(), r.stdout.String())
 	}
 }
+
+func TestTheUptimeIsTheHostsByItsDateHeader(t *testing.T) {
+	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	body := strings.Replace(vmOffBody, `"state":"shutoff","stateCode":5`, `"state":"running","stateCode":1`, 1)
+	body = strings.Replace(body, `"startedAt":null`, fmt.Sprintf(`"startedAt":%d`, started.UnixMilli()), 1)
+	for _, c := range []struct {
+		date string // "" for no Date header
+		want string
+	}{
+		{started.Add(3*time.Hour + 20*time.Minute).Format(http.TimeFormat), "running (up 3h20m0s)"},
+		{started.Add(-2 * time.Second).Format(http.TimeFormat), "running (up 0s)"},
+	} {
+		f, r := readWisp(t)
+		f.routes["GET /api/vms/win"] = func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Date", c.date)
+			w.Write([]byte(body))
+		}
+		r.do("vms", "show", "win").wantCode(0)
+		if line(r.stdout.String(), "State:", c.want) == "" {
+			t.Errorf("Date %q: want %q:\n%s", c.date, c.want, r.stdout.String())
+		}
+	}
+
+	// With no Date, or one that does not parse, the client's clock.
+	recent := strings.Replace(body, fmt.Sprintf(`"startedAt":%d`, started.UnixMilli()), fmt.Sprintf(`"startedAt":%d`, time.Now().Add(-2*time.Hour).UnixMilli()), 1)
+	for _, date := range []string{"", "yesterday-ish"} {
+		f, r := readWisp(t)
+		f.routes["GET /api/vms/win"] = func(w http.ResponseWriter, r *http.Request) {
+			if date == "" {
+				w.Header()["Date"] = nil // net/http adds none
+			} else {
+				w.Header().Set("Date", date)
+			}
+			w.Write([]byte(recent))
+		}
+		r.do("vms", "show", "win").wantCode(0)
+		if line(r.stdout.String(), "State:", "running (up 2h0m0s)") == "" {
+			t.Errorf("Date %q:\n%s", date, r.stdout.String())
+		}
+	}
+}
