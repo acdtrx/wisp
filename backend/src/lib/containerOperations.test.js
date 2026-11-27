@@ -244,7 +244,7 @@ test('a deploy whose mount fails says the container exists, stopped, and starts 
   const { jobId } = await startContainerDeployJob({ spec: { name: 'd', image: 'x', mounts: [{ type: 'directory', name: 'a', containerPath: '/a' }] }, log });
   assert.equal(await whenJobEnds(jobId), 'error');
   assert.equal(readJob(jobId).error, 'INVALID_CONTAINER_MOUNTS');
-  assert.match(readJob(jobId).detail, /^Container "d" was created but a mount could not be made; it exists, stopped/);
+  assert.match(readJob(jobId).detail, /^Container "d" was created but mount "a" could not be made; it exists, stopped/);
   assert.equal(names().includes('startContainer'), false);
 });
 

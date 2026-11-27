@@ -198,8 +198,10 @@ export function startContainerDeployJob({ spec, log }) {
       let failed = 'its settings could not be applied; it exists, stopped: fix them, then start it';
       try {
         await applyContainerConfigChanges({ name, changes, log });
-        failed = 'a mount could not be made; it exists, stopped: fix its mounts, then start it';
-        for (const mount of mounts) await addContainerMount(name, mount);
+        for (const mount of mounts) {
+          failed = `mount "${mount.name}" could not be made; it exists, stopped: fix its mounts, then start it`;
+          await addContainerMount(name, mount);
+        }
         if (start) {
           report({ step: 'starting' });
           failed = 'failed to start; it exists, stopped: read its logs, fix it, then start it';
