@@ -271,15 +271,6 @@ puzzled by a VM that will not start there.
 
 ## Containers and apps
 
-**A running container does not see a folder mount's new content after a zip upload.**
-`extractMountZip` removes `files/<mount>` and makes it again, so the running task's bind
-mount still holds the removed folder: the container serves the old content (or nothing)
-until its restart. Seen on tini in the containers-from-the-CLI review fixes, 2026-11-27:
-`wisp containers upload` to a running busybox httpd answered 404, then served the files
-after a restart. A file mount's upload renames over its file, which may do the same.
-**Revisit trigger:** an agent shipping a site to a running container, or the next work on
-the mount uploads.
-
 **A Samba server run as a Wisp container never answers SMB.** Both
 `dperson/samba` and `ghcr.io/servercontainers/samba` (run as root) accept the TCP
 connection and the negotiate, then never reply, from the host and from the LAN alike; a

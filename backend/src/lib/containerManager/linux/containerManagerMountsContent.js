@@ -17,6 +17,7 @@ import { getContainerFilesDir } from './containerPaths.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
 import { findMount, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
 import { validateMountSegmentName } from './containerMountNames.js';
+import { emptyMountFolder } from './containerMountFolder.js';
 import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
 import { atomicTmpName } from '../../base/index.js';
 
@@ -222,12 +223,15 @@ export async function planMountZipExtract(containerName, mountName, zipPath) {
   return { containerName, mountName, zipPath };
 }
 
-/** Replace the directory mount's contents with the planned zip's (system `unzip`). The caller removes the zip. */
+/**
+ * Replace the directory mount's contents with the planned zip's (system
+ * `unzip`), in the same folder: a running container sees the new content at
+ * once. The caller removes the zip.
+ */
 export async function extractMountZip({ containerName, mountName, zipPath }) {
   await mkdir(getContainerFilesDir(containerName), { recursive: true });
   const destDir = artifactPath(containerName, mountName);
-  await rm(destDir, { recursive: true, force: true });
-  await mkdir(destDir, { recursive: true });
+  await emptyMountFolder(destDir);
   await extractZipWithUnzipCli(zipPath, resolve(destDir));
   return { ok: true };
 }
